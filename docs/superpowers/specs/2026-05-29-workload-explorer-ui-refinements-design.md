@@ -1,7 +1,7 @@
 # Workload Explorer UI refinements — design
 
 **Date:** 2026-05-29
-**Status:** Approved (design)
+**Status:** Implemented
 **Scope:** Frontend only — `frontend/src/features/containers/pages/workload-explorer.tsx`, `frontend/src/shared/components/tables/data-table.tsx`, `frontend/src/shared/components/ui/checkbox.tsx` (and their tests).
 
 ## Problem
