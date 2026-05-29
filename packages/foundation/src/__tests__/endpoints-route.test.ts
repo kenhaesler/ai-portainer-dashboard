@@ -101,6 +101,22 @@ describe('Endpoints Routes', () => {
       expect(body).toEqual([]);
     });
 
+    it('does not crash when the cache/upstream resolves undefined (#1270)', async () => {
+      // Regression: a cache layer or upstream resolving undefined (e.g. HTTP
+      // 204 / empty body) must not throw a TypeError on the .map() — the
+      // source-level `?? []` guard should yield an empty list instead.
+      vi.spyOn(portainerClient, 'getEndpoints').mockResolvedValue(undefined as any);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/endpoints',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(JSON.parse(response.body)).toEqual([]);
+    });
+
     it('returns 502 (not 401) when upstream Portainer returns 401', async () => {
       // Regression: an upstream Portainer auth failure must NOT surface as 401.
       // The frontend api client treats 401 as "session expired" and clears the

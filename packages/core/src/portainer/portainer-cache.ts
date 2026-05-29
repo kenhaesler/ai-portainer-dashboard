@@ -356,7 +356,11 @@ class HybridCache {
     const client = await this.ensureRedisClient();
     if (client) {
       try {
-        await client.del(this.getRedisKey(key));
+        // set() may store under either the plain key or the `:gz` compressed
+        // variant, so invalidation must delete both — otherwise a stale
+        // compressed entry survives invalidate-on-failure and re-poisons reads.
+        const redisKey = this.getRedisKey(key);
+        await client.del([redisKey, redisKey + ':gz']);
         this.resetRedisBackoff();
       } catch (err) {
         this.disableRedisTemporarily('redis-invalidate-failed', err);
@@ -724,9 +728,18 @@ export function cachedFetch<T>(
         return;
       }
       const data = await fetcher();
-      await cache.set(key, data, ttlSeconds);
+      if (data !== undefined) {
+        await cache.set(key, data, ttlSeconds);
+      }
       resolve(data);
     } catch (err) {
+      // Invalidate stale cache entry on fetch failure so the next call
+      // retries instead of returning a stale/undefined value (issue #1270).
+      try {
+        await cache.invalidate(key);
+      } catch {
+        // Best-effort invalidation — don't let it mask the real error
+      }
       reject(err);
     } finally {
       inFlight.delete(key);
@@ -760,8 +773,15 @@ export function cachedFetchSWR<T>(
         const revalidate = (async () => {
           try {
             const data = await fetcher();
-            await cache.set(key, data, ttlSeconds);
+            if (data !== undefined) {
+              await cache.set(key, data, ttlSeconds);
+            }
           } catch (err) {
+            try {
+              await cache.invalidate(key);
+            } catch {
+              // Best-effort
+            }
             log.warn({ key, err }, 'SWR background revalidation failed');
           } finally {
             inFlight.delete(key);
@@ -785,8 +805,15 @@ export function cachedFetchSWR<T>(
         const revalidate = (async () => {
           try {
             const data = await fetcher();
-            await cache.set(key, data, ttlSeconds);
+            if (data !== undefined) {
+              await cache.set(key, data, ttlSeconds);
+            }
           } catch (err) {
+            try {
+              await cache.invalidate(key);
+            } catch {
+              // Best-effort
+            }
             log.warn({ key, err }, 'SWR L2 background revalidation failed');
           } finally {
             inFlight.delete(key);
