@@ -803,4 +803,18 @@ describe('DataTable', () => {
       expect(onSelectionChange).toHaveBeenCalledWith([data[0]]);
     });
   });
+
+  describe('rowClassName', () => {
+    it('applies per-row classes returned by the rowClassName callback', () => {
+      render(
+        <DataTable
+          columns={testColumns}
+          data={makeRows(3)}
+          rowClassName={(row) => (row.name === 'container-2' ? 'bg-amber-500/5' : '')}
+        />,
+      );
+      expect(screen.getByText('container-2').closest('tr')?.className).toContain('bg-amber-500/5');
+      expect(screen.getByText('container-1').closest('tr')?.className).not.toContain('bg-amber-500/5');
+    });
+  });
 });

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { type ColumnDef } from '@tanstack/react-table';
 import {
   Shield, ShieldAlert, ShieldCheck, Search, RefreshCw,
@@ -102,6 +102,14 @@ export default function HarborVulnerabilitiesPage() {
     () => filtered.find((v) => v.id === expandedRow) ?? null,
     [filtered, expandedRow],
   );
+
+  // Collapse the detail panel if its row drops out of the current filter, so it
+  // doesn't silently reopen when the same row reappears.
+  useEffect(() => {
+    if (expandedRow !== null && !filtered.some((v) => v.id === expandedRow)) {
+      setExpandedRow(null);
+    }
+  }, [filtered, expandedRow]);
 
   const columns = useMemo<ColumnDef<VulnerabilityRecord, unknown>[]>(() => [
     {
@@ -347,6 +355,7 @@ export default function HarborVulnerabilitiesPage() {
                 data={filtered}
                 hideSearch
                 pageSize={15}
+                rowClassName={(v) => (v.in_use ? 'bg-amber-500/5' : '')}
                 onRowClick={(v) => setExpandedRow(expandedRow === v.id ? null : v.id)}
               />
               {expandedVuln && <VulnerabilityDetails vuln={expandedVuln} />}
