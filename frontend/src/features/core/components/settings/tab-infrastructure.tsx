@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import { type ColumnDef } from '@tanstack/react-table';
 import {
   Archive,
   BarChart3,
@@ -18,7 +19,9 @@ import {
   useCreatePortainerBackup,
   useDeletePortainerBackup,
   downloadPortainerBackup,
+  type PortainerBackupFile,
 } from '@/features/core/hooks/use-portainer-backups';
+import { DataTable } from '@/shared/components/tables/data-table';
 import { formatBytes } from '@/shared/lib/utils';
 import { toast } from 'sonner';
 
@@ -72,7 +75,7 @@ export function InfrastructureTab({ editedValues, originalValues, onChange, isSa
   );
 }
 
-function PortainerBackupManagement() {
+export function PortainerBackupManagement() {
   const { data, isLoading, refetch } = usePortainerBackups();
   const createBackup = useCreatePortainerBackup();
   const deleteBackupMut = useDeletePortainerBackup();
@@ -94,27 +97,90 @@ function PortainerBackupManagement() {
     });
   };
 
-  const handleDownload = async (filename: string) => {
+  const handleDownload = useCallback(async (filename: string) => {
     try {
       await downloadPortainerBackup(filename);
     } catch (err) {
       toast.error(`Download failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
-  };
+  }, []);
 
-  const handleDelete = (filename: string) => {
-    setDeletingFile(filename);
-    deleteBackupMut.mutate(filename, {
-      onSuccess: () => {
-        toast.success(`Deleted ${filename}`);
-        setDeletingFile(null);
+  const handleDelete = useCallback(
+    (filename: string) => {
+      setDeletingFile(filename);
+      deleteBackupMut.mutate(filename, {
+        onSuccess: () => {
+          toast.success(`Deleted ${filename}`);
+          setDeletingFile(null);
+        },
+        onError: (err) => {
+          toast.error(`Delete failed: ${err.message}`);
+          setDeletingFile(null);
+        },
+      });
+    },
+    [deleteBackupMut],
+  );
+
+  const columns = useMemo<ColumnDef<PortainerBackupFile, unknown>[]>(
+    () => [
+      {
+        accessorKey: 'filename',
+        header: 'Filename',
+        cell: ({ getValue }) => <span className="font-mono text-xs">{getValue<string>()}</span>,
       },
-      onError: (err) => {
-        toast.error(`Delete failed: ${err.message}`);
-        setDeletingFile(null);
+      {
+        accessorKey: 'size',
+        header: 'Size',
+        cell: ({ getValue }) => (
+          <span className="text-muted-foreground">{formatBytes(getValue<number>())}</span>
+        ),
       },
-    });
-  };
+      {
+        accessorKey: 'createdAt',
+        header: 'Created',
+        cell: ({ getValue }) => (
+          <span className="text-muted-foreground">
+            {new Date(getValue<string>()).toLocaleString()}
+          </span>
+        ),
+      },
+      {
+        id: 'actions',
+        header: () => <span className="block text-right">Actions</span>,
+        enableSorting: false,
+        cell: ({ row }) => {
+          const backup = row.original;
+          return (
+            <div className="flex items-center justify-end gap-2">
+              <button
+                onClick={() => handleDownload(backup.filename)}
+                className="flex items-center gap-1.5 rounded-md border border-input bg-background px-2.5 py-1.5 text-xs font-medium hover:bg-accent"
+                title="Download"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Download
+              </button>
+              <button
+                onClick={() => handleDelete(backup.filename)}
+                disabled={deletingFile === backup.filename}
+                className="flex items-center gap-1.5 rounded-md border border-destructive/30 bg-background px-2.5 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50"
+                title="Delete"
+              >
+                {deletingFile === backup.filename ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Trash2 className="h-3.5 w-3.5" />
+                )}
+                Delete
+              </button>
+            </div>
+          );
+        },
+      },
+    ],
+    [handleDownload, handleDelete, deletingFile],
+  );
 
   return (
     <div className="space-y-6">
@@ -205,53 +271,8 @@ function PortainerBackupManagement() {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
-                  <th className="px-4 py-2.5 font-medium">Filename</th>
-                  <th className="px-4 py-2.5 font-medium">Size</th>
-                  <th className="px-4 py-2.5 font-medium">Created</th>
-                  <th className="px-4 py-2.5 font-medium text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {backups.map((backup) => (
-                  <tr key={backup.filename} className="border-b last:border-0">
-                    <td className="px-4 py-3 font-mono text-xs">{backup.filename}</td>
-                    <td className="px-4 py-3 text-muted-foreground">{formatBytes(backup.size)}</td>
-                    <td className="px-4 py-3 text-muted-foreground">
-                      {new Date(backup.createdAt).toLocaleString()}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          onClick={() => handleDownload(backup.filename)}
-                          className="flex items-center gap-1.5 rounded-md border border-input bg-background px-2.5 py-1.5 text-xs font-medium hover:bg-accent"
-                          title="Download"
-                        >
-                          <Download className="h-3.5 w-3.5" />
-                          Download
-                        </button>
-                        <button
-                          onClick={() => handleDelete(backup.filename)}
-                          disabled={deletingFile === backup.filename}
-                          className="flex items-center gap-1.5 rounded-md border border-destructive/30 bg-background px-2.5 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50"
-                          title="Delete"
-                        >
-                          {deletingFile === backup.filename ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <Trash2 className="h-3.5 w-3.5" />
-                          )}
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="p-4">
+            <DataTable columns={columns} data={backups} hideSearch />
           </div>
         )}
       </div>
