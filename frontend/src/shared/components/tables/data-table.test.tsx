@@ -552,6 +552,36 @@ describe('DataTable', () => {
     });
   });
 
+  describe('selection hit-box', () => {
+    it('wraps the row checkbox in a padded label to enlarge the click target', () => {
+      render(<DataTable columns={testColumns} data={makeRows(2)} enableRowSelection />);
+      const input = screen.getByTestId('row-checkbox-0');
+      const label = input.closest('label');
+      expect(label).not.toBeNull();
+      expect(label?.className).toContain('p-2.5');
+      expect(label?.className).toContain('cursor-pointer');
+    });
+
+    it('toggles selection when the padded label is clicked, without firing onRowClick', () => {
+      const onRowClick = vi.fn();
+      const onSelectionChange = vi.fn();
+      const data = makeRows(2);
+      render(
+        <DataTable
+          columns={testColumns}
+          data={data}
+          enableRowSelection
+          onRowClick={onRowClick}
+          onSelectionChange={onSelectionChange}
+        />,
+      );
+      const label = screen.getByTestId('row-checkbox-0').closest('label')!;
+      fireEvent.click(label);
+      expect(onSelectionChange).toHaveBeenCalledWith([data[0]]);
+      expect(onRowClick).not.toHaveBeenCalled();
+    });
+  });
+
   describe('themed checkbox (#1288)', () => {
     it('header checkbox uses the themed primitive (input + adjacent indicator icon)', () => {
       render(

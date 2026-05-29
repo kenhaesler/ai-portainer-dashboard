@@ -98,19 +98,24 @@ export function DataTable<T>({
     if (!enableRowSelection) return null;
     return {
       id: '_selection',
-      size: 40,
+      size: 52,
       enableSorting: false,
       header: ({ table: tbl }) => {
         const allPageSelected = tbl.getIsAllPageRowsSelected();
         const somePageSelected = tbl.getIsSomePageRowsSelected();
         return (
-          <Checkbox
-            data-testid="select-all-checkbox"
-            aria-label="Select all on page"
-            checked={allPageSelected}
-            indeterminate={somePageSelected && !allPageSelected}
-            onChange={tbl.getToggleAllPageRowsSelectedHandler()}
-          />
+          <label
+            className="-m-2.5 inline-flex cursor-pointer items-center justify-center p-2.5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Checkbox
+              data-testid="select-all-checkbox"
+              aria-label="Select all on page"
+              checked={allPageSelected}
+              indeterminate={somePageSelected && !allPageSelected}
+              onChange={tbl.getToggleAllPageRowsSelectedHandler()}
+            />
+          </label>
         );
       },
       cell: ({ row }) => {
@@ -118,15 +123,20 @@ export function DataTable<T>({
         const isSelected = row.getIsSelected();
         const isDisabled = !isSelected && maxSelection !== undefined && selectedCount >= maxSelection;
         return (
-          <Checkbox
-            data-testid={`row-checkbox-${row.id}`}
-            aria-label={`Select row ${row.id}`}
-            checked={isSelected}
-            disabled={isDisabled}
-            title={isDisabled ? `Maximum of ${maxSelection} containers can be compared at once` : undefined}
-            onChange={row.getToggleSelectedHandler()}
+          <label
+            className="-m-2.5 inline-flex cursor-pointer items-center justify-center p-2.5"
             onClick={(e) => e.stopPropagation()}
-          />
+          >
+            <Checkbox
+              data-testid={`row-checkbox-${row.id}`}
+              aria-label={`Select row ${row.id}`}
+              checked={isSelected}
+              disabled={isDisabled}
+              title={isDisabled ? `Maximum of ${maxSelection} containers can be compared at once` : undefined}
+              onChange={row.getToggleSelectedHandler()}
+              onClick={(e) => e.stopPropagation()}
+            />
+          </label>
         );
       },
     };
