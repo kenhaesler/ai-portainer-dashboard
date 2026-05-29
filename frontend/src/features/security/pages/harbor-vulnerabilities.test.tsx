@@ -137,6 +137,30 @@ describe('HarborVulnerabilitiesPage', () => {
     render(<HarborVulnerabilitiesPage />);
     expect(screen.getByPlaceholderText(/Search by CVE/)).toBeInTheDocument();
   });
+
+  it('renders vulnerabilities in the shared DataTable', () => {
+    render(<HarborVulnerabilitiesPage />);
+    const table = screen.getByTestId('data-table');
+    expect(table).toBeInTheDocument();
+    // Column headers come from the memoized ColumnDef[]
+    expect(screen.getByRole('columnheader', { name: /CVE/ })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: /Severity/ })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: /Package/ })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: /Repository/ })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: /In Use/ })).toBeInTheDocument();
+    // Row data renders inside the DataTable body
+    expect(screen.getByText('myproject/nginx')).toBeInTheDocument();
+  });
+
+  it('expands a vulnerability detail panel on row click', async () => {
+    const { default: userEvent } = await import('@testing-library/user-event');
+    const user = userEvent.setup();
+    render(<HarborVulnerabilitiesPage />);
+    // Detail content is hidden until a row is clicked
+    expect(screen.queryByText('Critical vulnerability in OpenSSL')).not.toBeInTheDocument();
+    await user.click(screen.getByText('CVE-2024-1234'));
+    expect(screen.getByText('Critical vulnerability in OpenSSL')).toBeInTheDocument();
+  });
 });
 
 describe('HarborVulnerabilitiesPage (not configured)', () => {
