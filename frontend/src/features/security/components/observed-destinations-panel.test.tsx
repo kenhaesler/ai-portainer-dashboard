@@ -74,6 +74,34 @@ describe('ObservedDestinationsPanel', () => {
     expect(screen.getByText('17')).toBeInTheDocument();
   });
 
+  it('renders the rows inside the shared DataTable', async () => {
+    mockApiGet.mockResolvedValue({
+      destinations: [
+        {
+          peer: '10.0.0.5',
+          port: 443,
+          callCount: 17,
+          firstSeen: '2026-05-14T11:00:00Z',
+          lastSeen: '2026-05-14T12:00:00Z',
+          verdict: 'allow',
+          reason: 'RFC1918',
+        },
+      ],
+    });
+
+    renderWithProviders(<ObservedDestinationsPanel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('data-table')).toBeInTheDocument();
+    });
+    // Column headers carried over from the hand-rolled table.
+    expect(screen.getByText('Peer')).toBeInTheDocument();
+    expect(screen.getByText('Calls')).toBeInTheDocument();
+    expect(screen.getByText('Verdict')).toBeInTheDocument();
+    // Row rendered through the shared table.
+    expect(screen.getByTestId('table-row-0')).toBeInTheDocument();
+  });
+
   it('passes endpointId to the API when provided', async () => {
     mockApiGet.mockResolvedValue({ destinations: [] });
 

@@ -1,7 +1,10 @@
+import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { type ColumnDef } from '@tanstack/react-table';
 import { Globe } from 'lucide-react';
 import { api } from '@/shared/lib/api';
 import { cn } from '@/shared/lib/utils';
+import { DataTable } from '@/shared/components/tables/data-table';
 import { NoTraceDataCallout } from '@/features/observability/components/no-trace-data-callout';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 
@@ -59,6 +62,59 @@ export function ObservedDestinationsPanel({ endpointId }: Props) {
 
   const destinations = data?.destinations ?? [];
 
+  const columns = useMemo<ColumnDef<ObservedDestinationDto, unknown>[]>(() => [
+    {
+      accessorKey: 'peer',
+      header: 'Peer',
+      cell: ({ getValue }) => <span className="font-mono text-xs">{getValue<string>()}</span>,
+    },
+    {
+      accessorKey: 'port',
+      header: 'Port',
+      cell: ({ getValue }) => {
+        const port = getValue<number | null>();
+        return <span className="text-muted-foreground">{port ?? '—'}</span>;
+      },
+    },
+    {
+      accessorKey: 'callCount',
+      header: () => <span className="block text-right">Calls</span>,
+      cell: ({ getValue }) => <span className="block text-right">{getValue<number>()}</span>,
+    },
+    {
+      accessorKey: 'firstSeen',
+      header: 'First seen',
+      cell: ({ getValue }) => (
+        <span className="text-xs text-muted-foreground">{fmt(getValue<string>())}</span>
+      ),
+    },
+    {
+      accessorKey: 'lastSeen',
+      header: 'Last seen',
+      cell: ({ getValue }) => (
+        <span className="text-xs text-muted-foreground">{fmt(getValue<string>())}</span>
+      ),
+    },
+    {
+      accessorKey: 'verdict',
+      header: 'Verdict',
+      cell: ({ row }) => {
+        const { verdict, reason } = row.original;
+        return (
+          <span
+            className={cn(
+              'inline-flex rounded-full px-2 py-0.5 text-xs font-medium uppercase',
+              verdictClass(verdict),
+            )}
+            title={reason ?? undefined}
+          >
+            {verdict}
+          </span>
+        );
+      },
+    },
+  ], []);
+
   return (
     <SpotlightCard>
     <section className="rounded-lg border bg-card p-6 shadow-sm" data-testid="observed-destinations-panel">
@@ -90,42 +146,12 @@ export function ObservedDestinationsPanel({ endpointId }: Props) {
       )}
 
       {!isError && !isLoading && destinations.length > 0 && (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px] text-sm">
-            <thead>
-              <tr className="border-b bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
-                <th className="px-3 py-2.5 font-medium">Peer</th>
-                <th className="px-3 py-2.5 font-medium">Port</th>
-                <th className="px-3 py-2.5 font-medium text-right">Calls</th>
-                <th className="px-3 py-2.5 font-medium">First seen</th>
-                <th className="px-3 py-2.5 font-medium">Last seen</th>
-                <th className="px-3 py-2.5 font-medium">Verdict</th>
-              </tr>
-            </thead>
-            <tbody>
-              {destinations.map((row) => (
-                <tr key={`${row.peer}:${row.port ?? ''}`} className="border-b last:border-0">
-                  <td className="px-3 py-2.5 font-mono text-xs">{row.peer}</td>
-                  <td className="px-3 py-2.5 text-muted-foreground">{row.port ?? '—'}</td>
-                  <td className="px-3 py-2.5 text-right">{row.callCount}</td>
-                  <td className="px-3 py-2.5 text-xs text-muted-foreground">{fmt(row.firstSeen)}</td>
-                  <td className="px-3 py-2.5 text-xs text-muted-foreground">{fmt(row.lastSeen)}</td>
-                  <td className="px-3 py-2.5">
-                    <span
-                      className={cn(
-                        'inline-flex rounded-full px-2 py-0.5 text-xs font-medium uppercase',
-                        verdictClass(row.verdict),
-                      )}
-                      title={row.reason ?? undefined}
-                    >
-                      {row.verdict}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          columns={columns}
+          data={destinations}
+          hideSearch
+          minTableWidth={900}
+        />
       )}
     </section>
     </SpotlightCard>
