@@ -255,6 +255,34 @@ describe('DataTable', () => {
     });
   });
 
+  describe('sort direction indicator', () => {
+    it('marks sortable headers aria-sort="none" before any sort', () => {
+      render(<DataTable columns={testColumns} data={makeRows(5)} />);
+      const nameHeader = screen.getByText('Name').closest('th');
+      expect(nameHeader).toHaveAttribute('aria-sort', 'none');
+    });
+
+    it('sets aria-sort ascending then descending when toggling a header', () => {
+      render(<DataTable columns={testColumns} data={makeRows(5)} />);
+      const nameHeader = screen.getByText('Name').closest('th')!;
+      fireEvent.click(nameHeader);
+      expect(nameHeader).toHaveAttribute('aria-sort', 'ascending');
+      fireEvent.click(nameHeader);
+      expect(nameHeader).toHaveAttribute('aria-sort', 'descending');
+    });
+
+    it('swaps the neutral icon for a directional arrow on the active column', () => {
+      render(<DataTable columns={testColumns} data={makeRows(5)} />);
+      const nameHeader = screen.getByText('Name').closest('th')!;
+      // inactive → neutral up/down icon
+      expect(nameHeader.querySelector('svg.lucide-arrow-up-down')).toBeInTheDocument();
+      fireEvent.click(nameHeader);
+      // ascending → arrow-up, neutral icon gone
+      expect(nameHeader.querySelector('svg.lucide-arrow-up')).toBeInTheDocument();
+      expect(nameHeader.querySelector('svg.lucide-arrow-up-down')).not.toBeInTheDocument();
+    });
+  });
+
   describe('server-side pagination mode', () => {
     it('renders server pagination controls when serverPagination is provided', () => {
       const onPageChange = vi.fn();

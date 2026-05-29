@@ -15,7 +15,7 @@ import {
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { cn } from '@/shared/lib/utils';
 import { Checkbox } from '@/shared/components/ui/checkbox';
-import { ArrowUpDown, ChevronLeft, ChevronRight, ArrowUp } from 'lucide-react';
+import { ArrowUpDown, ChevronLeft, ChevronRight, ArrowUp, ArrowDown } from 'lucide-react';
 
 const ROW_HEIGHT = 48;
 const OVERSCAN = 10;
@@ -259,26 +259,45 @@ export function DataTable<T>({
     <thead className={cn('[&_tr]:border-b', useVirtual && 'sticky top-0 z-10 bg-card')}>
       {table.getHeaderGroups().map((headerGroup) => (
         <tr key={headerGroup.id} className="border-b transition-colors hover:bg-muted/50">
-          {headerGroup.headers.map((header) => (
-            <th
-              key={header.id}
-              style={{ width: header.getSize() !== 150 ? header.getSize() : undefined }}
-              className={cn(
-                'h-10 px-4 text-left align-middle font-medium text-muted-foreground',
-                header.column.getCanSort() && 'cursor-pointer select-none'
-              )}
-              onClick={header.column.getToggleSortingHandler()}
-            >
-              <div className="flex items-center gap-2">
-                {header.isPlaceholder
-                  ? null
-                  : flexRender(header.column.columnDef.header, header.getContext())}
-                {header.column.getCanSort() && (
-                  <ArrowUpDown className="h-4 w-4" />
+          {headerGroup.headers.map((header) => {
+            const canSort = header.column.getCanSort();
+            const sorted = header.column.getIsSorted(); // 'asc' | 'desc' | false
+            return (
+              <th
+                key={header.id}
+                style={{ width: header.getSize() !== 150 ? header.getSize() : undefined }}
+                aria-sort={
+                  !canSort
+                    ? undefined
+                    : sorted === 'asc'
+                      ? 'ascending'
+                      : sorted === 'desc'
+                        ? 'descending'
+                        : 'none'
+                }
+                className={cn(
+                  'h-10 px-4 text-left align-middle font-medium',
+                  canSort && 'cursor-pointer select-none',
+                  sorted ? 'text-foreground' : 'text-muted-foreground',
                 )}
-              </div>
-            </th>
-          ))}
+                onClick={header.column.getToggleSortingHandler()}
+              >
+                <div className="flex items-center gap-2">
+                  {header.isPlaceholder
+                    ? null
+                    : flexRender(header.column.columnDef.header, header.getContext())}
+                  {canSort &&
+                    (sorted === 'asc' ? (
+                      <ArrowUp className="h-4 w-4 text-foreground" />
+                    ) : sorted === 'desc' ? (
+                      <ArrowDown className="h-4 w-4 text-foreground" />
+                    ) : (
+                      <ArrowUpDown className="h-4 w-4 text-muted-foreground/40" />
+                    ))}
+                </div>
+              </th>
+            );
+          })}
         </tr>
       ))}
     </thead>
