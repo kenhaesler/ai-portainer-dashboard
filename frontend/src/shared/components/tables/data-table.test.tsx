@@ -584,6 +584,7 @@ describe('DataTable', () => {
 
   describe('autoFit mode', () => {
     let rectSpy: ReturnType<typeof vi.spyOn> | undefined;
+    let gcsSpy: ReturnType<typeof vi.spyOn> | undefined;
 
     const setViewport = (innerHeight: number, top: number) => {
       Object.defineProperty(window, 'innerHeight', { value: innerHeight, configurable: true });
@@ -605,6 +606,8 @@ describe('DataTable', () => {
     afterEach(() => {
       rectSpy?.mockRestore();
       rectSpy = undefined;
+      gcsSpy?.mockRestore();
+      gcsSpy = undefined;
       Object.defineProperty(window, 'innerHeight', { value: 768, configurable: true });
     });
 
@@ -707,6 +710,45 @@ describe('DataTable', () => {
       // toggling a row checkbox selects that row
       fireEvent.click(screen.getByTestId('row-checkbox-0'));
       expect(onSelectionChange).toHaveBeenCalledWith([data[0]]);
+    });
+
+    it('reserves the scroll container bottom padding so the page itself does not scroll', () => {
+      // The scroll container (e.g. the app <main>) reserves bottom padding as
+      // clearance for fixed chrome (mobile nav, floating action bars). autoFit
+      // must treat that padding as unavailable so the table ends above it.
+      // viewport 1000, container top 200, padding-bottom 144:
+      //   ignoring padding → 1000 - 200 - 40 - 56 - 24 = 680 → 14 rows/page
+      //   reserving padding → (1000 - 144) - 200 - 120 = 536 → floor(536/48) = 11 rows
+      Object.defineProperty(window, 'innerHeight', { value: 1000, configurable: true });
+      rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+        top: 200,
+        bottom: 1000,
+        left: 0,
+        right: 0,
+        width: 0,
+        height: 0,
+        x: 0,
+        y: 200,
+        toJSON: () => ({}),
+      } as DOMRect);
+      const realGcs = window.getComputedStyle.bind(window);
+      gcsSpy = vi.spyOn(window, 'getComputedStyle').mockImplementation(((
+        elt: Element,
+        pseudo?: string | null,
+      ) => {
+        if (elt instanceof HTMLElement && elt.hasAttribute('data-scroll-host')) {
+          return { overflowY: 'auto', paddingBottom: '144px' } as unknown as CSSStyleDeclaration;
+        }
+        return realGcs(elt, pseudo ?? undefined);
+      }) as typeof window.getComputedStyle);
+
+      render(
+        <div data-scroll-host>
+          <DataTable columns={testColumns} data={makeRows(30)} autoFit />
+        </div>,
+      );
+      expect(screen.getByText('container-11')).toBeInTheDocument();
+      expect(screen.queryByText('container-12')).not.toBeInTheDocument();
     });
   });
 

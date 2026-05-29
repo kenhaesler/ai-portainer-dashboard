@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { type ColumnDef, type RowSelectionState } from '@tanstack/react-table';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { AlertTriangle, Box, Boxes, Cog, Download, Eye, GitCompareArrows, ScrollText, X } from 'lucide-react';
+import { AlertTriangle, Box, Boxes, Cog, Download, GitCompareArrows, X } from 'lucide-react';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { useContainers, type Container } from '@/features/containers/hooks/use-containers';
 import { useEndpoints } from '@/features/containers/hooks/use-endpoints';
@@ -391,43 +391,6 @@ export default function WorkloadExplorerPage() {
         );
       },
     },
-    {
-      id: 'actions',
-      header: () => <span className="sr-only">Actions</span>,
-      size: 90,
-      enableSorting: false,
-      cell: ({ row }) => {
-        const container = row.original;
-        return (
-          <div className="flex items-center justify-end gap-1 opacity-0 transition-opacity duration-150 group-hover/row:opacity-100 group-focus-within/row:opacity-100 max-sm:opacity-100">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                navigate(`/containers/${container.endpointId}/${container.id}`);
-              }}
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-accent"
-              aria-label={`View details for ${container.name}`}
-              title="View details"
-            >
-              <Eye className="h-3.5 w-3.5 text-muted-foreground" />
-            </button>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                navigate(`/containers/${container.endpointId}/${container.id}?tab=logs`);
-              }}
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-accent"
-              aria-label={`View logs for ${container.name}`}
-              title="View logs"
-            >
-              <ScrollText className="h-3.5 w-3.5 text-muted-foreground" />
-            </button>
-          </div>
-        );
-      },
-    },
   ], [navigate, knownStackNames, selectedEndpoint, selectedGroup, selectedState]);
 
   if (isError) {
@@ -703,7 +666,7 @@ export default function WorkloadExplorerPage() {
                 data={searchFilteredContainers ?? filteredContainers}
                 hideSearch
                 autoFit
-                minTableWidth={860}
+                minTableWidth={770}
                 enableRowSelection
                 maxSelection={MAX_COMPARE}
                 onSelectionChange={handleSelectionChange}

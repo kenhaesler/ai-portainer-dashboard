@@ -942,10 +942,10 @@ describe('WorkloadExplorerPage — columns (#1288)', () => {
     return typeof col?.header === 'string' ? col.header : undefined;
   }
 
-  it('renders columns in order Name, Stackname, State, Endpoint, Imagename, Group, Actions', () => {
+  it('renders columns in order Name, Stackname, State, Endpoint, Imagename, Group (no Actions column)', () => {
     render(<WorkloadExplorerPage />);
     const ids = mockColumns?.map((c) => c.id ?? c.accessorKey);
-    expect(ids).toEqual(['name', 'stack', 'state', 'endpointName', 'image', 'group', 'actions']);
+    expect(ids).toEqual(['name', 'stack', 'state', 'endpointName', 'image', 'group']);
   });
 
   it('renames the stack and image headers to Stackname and Imagename', () => {
@@ -972,7 +972,7 @@ describe('WorkloadExplorerPage — columns (#1288)', () => {
 
   it('passes minTableWidth to the DataTable for horizontal scrolling', () => {
     render(<WorkloadExplorerPage />);
-    expect(screen.getByTestId('workloads-table')).toHaveAttribute('data-min-table-width', '860');
+    expect(screen.getByTestId('workloads-table')).toHaveAttribute('data-min-table-width', '770');
   });
 
   it('Imagename cell renders only the segment after the last "/" with the full path on title', () => {
