@@ -306,6 +306,102 @@ describe('MetricsDashboardPage', () => {
     expect(screen.getByText('Healthy: 1')).toBeTruthy();
   });
 
+  it('renders the forecast overview as a DataTable with column headers and rows', () => {
+    mockUseForecasts.mockReturnValue({
+      data: [
+        {
+          containerId: 'c-risk',
+          containerName: 'api-1',
+          metricType: 'cpu',
+          currentValue: 92,
+          trend: 'increasing',
+          slope: 1.1,
+          r_squared: 0.9,
+          forecast: [],
+          timeToThreshold: 1,
+          confidence: 'high',
+        },
+        {
+          containerId: 'c-stable',
+          containerName: 'worker-2',
+          metricType: 'memory',
+          currentValue: 48,
+          trend: 'stable',
+          slope: 0.1,
+          r_squared: 0.7,
+          forecast: [],
+          timeToThreshold: null,
+          confidence: 'medium',
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+
+    renderPage();
+
+    // The shared DataTable renders with its data-table testid (no per-table search).
+    expect(screen.getByTestId('data-table')).toBeInTheDocument();
+    expect(screen.queryByTestId('data-table-search')).not.toBeInTheDocument();
+
+    // Column headers are preserved.
+    expect(screen.getByRole('columnheader', { name: /Rank/ })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: /Container/ })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: /Metric/ })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: /Current/ })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: /Trend/ })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: /Threshold ETA/ })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: /Status/ })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: /Action/ })).toBeInTheDocument();
+
+    // Cell rendering / formatting is preserved.
+    expect(screen.getByText('92.0%')).toBeInTheDocument();
+    expect(screen.getByText('~1h')).toBeInTheDocument();
+    expect(screen.getByText('No breach predicted')).toBeInTheDocument();
+    expect(screen.getByText('critical')).toBeInTheDocument();
+    expect(screen.getByText('healthy')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'View Details' })).toHaveLength(2);
+  });
+
+  it('drills into a container when View Details is clicked in the DataTable', () => {
+    mockUseForecasts.mockReturnValue({
+      data: [
+        {
+          containerId: 'c1',
+          containerName: 'api-1',
+          metricType: 'cpu',
+          currentValue: 92,
+          trend: 'increasing',
+          slope: 1.1,
+          r_squared: 0.9,
+          forecast: [],
+          timeToThreshold: 1,
+          confidence: 'high',
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+
+    renderPage();
+
+    // Drilling selects the container (c1 → endpoint local), surfacing the network panel.
+    fireEvent.click(screen.getByRole('button', { name: 'View Details' }));
+    expect(screen.getByText('Network RX/TX by Network')).toBeInTheDocument();
+  });
+
+  it('shows skeleton loading rows (not a DataTable) while the forecast overview loads', () => {
+    mockUseForecasts.mockReturnValue({
+      data: [],
+      isLoading: true,
+      error: null,
+    });
+
+    renderPage();
+    // Loading state is the hand-rolled skeleton, not the DataTable.
+    expect(screen.queryByTestId('data-table')).not.toBeInTheDocument();
+  });
+
   it('renders forecast overview error state', () => {
     mockUseForecasts.mockReturnValue({
       data: [],
