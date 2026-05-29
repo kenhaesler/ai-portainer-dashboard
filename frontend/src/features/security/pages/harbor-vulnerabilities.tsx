@@ -1,10 +1,12 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { type ColumnDef } from '@tanstack/react-table';
 import {
   Shield, ShieldAlert, ShieldCheck, Search, RefreshCw,
   ExternalLink, AlertTriangle, CheckCircle2, Package, Bug,
 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
+import { DataTable } from '@/shared/components/tables/data-table';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 import {
   useHarborStatus,
@@ -95,6 +97,100 @@ export default function HarborVulnerabilitiesPage() {
         v.repository_name.toLowerCase().includes(q),
     );
   }, [vulnerabilities, searchQuery]);
+
+  const expandedVuln = useMemo(
+    () => filtered.find((v) => v.id === expandedRow) ?? null,
+    [filtered, expandedRow],
+  );
+
+  // Collapse the detail panel if its row drops out of the current filter, so it
+  // doesn't silently reopen when the same row reappears.
+  useEffect(() => {
+    if (expandedRow !== null && !filtered.some((v) => v.id === expandedRow)) {
+      setExpandedRow(null);
+    }
+  }, [filtered, expandedRow]);
+
+  const columns = useMemo<ColumnDef<VulnerabilityRecord, unknown>[]>(() => [
+    {
+      accessorKey: 'cve_id',
+      header: 'CVE',
+      cell: ({ getValue }) => <span className="font-mono text-xs">{getValue<string>()}</span>,
+    },
+    {
+      accessorKey: 'severity',
+      header: 'Severity',
+      cell: ({ getValue }) => {
+        const severity = getValue<string>();
+        return (
+          <span className={cn('inline-flex rounded-full px-2 py-0.5 text-xs font-medium', severityBadgeClass(severity))}>
+            {severity}
+          </span>
+        );
+      },
+    },
+    {
+      accessorKey: 'cvss_v3_score',
+      header: 'CVSS',
+      cell: ({ getValue }) => {
+        const score = getValue<number | null>();
+        return <span className="tabular-nums">{score != null ? score.toFixed(1) : '—'}</span>;
+      },
+    },
+    {
+      accessorKey: 'package',
+      header: 'Package',
+      cell: ({ row }) => {
+        const v = row.original;
+        return (
+          <div className="flex items-center gap-1.5">
+            <Package className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+            <span className="truncate max-w-[180px]">{v.package}</span>
+            <span className="text-muted-foreground text-xs">{v.version}</span>
+          </div>
+        );
+      },
+    },
+    {
+      accessorKey: 'repository_name',
+      header: 'Repository',
+      cell: ({ getValue }) => (
+        <span className="block truncate max-w-[200px]">{getValue<string>()}</span>
+      ),
+    },
+    {
+      id: 'status',
+      header: 'Status',
+      enableSorting: false,
+      cell: ({ row }) => {
+        const v = row.original;
+        return v.fixed_version ? (
+          <span className="text-emerald-600 dark:text-emerald-400 text-xs">
+            Fix: {v.fixed_version}
+          </span>
+        ) : (
+          <span className="text-muted-foreground text-xs">{v.status || 'No fix'}</span>
+        );
+      },
+    },
+    {
+      id: 'in_use',
+      header: 'In Use',
+      accessorFn: (v) => v.in_use,
+      cell: ({ row }) => {
+        const v = row.original;
+        const containers = parseContainers(v.matching_containers);
+        return v.in_use ? (
+          <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400 text-xs font-medium">
+            <Shield className="h-3 w-3" />
+            {containers.length} container{containers.length !== 1 ? 's' : ''}
+          </span>
+        ) : (
+          <span className="text-muted-foreground text-xs">—</span>
+        );
+      },
+    },
+  ], []);
 
   // Not configured state
   if (status && !status.configured) {
@@ -245,46 +341,28 @@ export default function HarborVulnerabilitiesPage() {
       {/* Vulnerability table */}
       {!isLoading && !isError && (
         <SpotlightCard>
-        <section className="rounded-lg border bg-card shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b bg-muted/50 text-left">
-                  <th className="px-3 py-2 font-medium">CVE</th>
-                  <th className="px-3 py-2 font-medium">Severity</th>
-                  <th className="px-3 py-2 font-medium">CVSS</th>
-                  <th className="px-3 py-2 font-medium">Package</th>
-                  <th className="px-3 py-2 font-medium">Repository</th>
-                  <th className="px-3 py-2 font-medium">Status</th>
-                  <th className="px-3 py-2 font-medium">In Use</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="px-3 py-8 text-center text-muted-foreground">
-                      {vulnerabilities.length === 0
-                        ? 'No vulnerability data yet. Click "Sync Now" to fetch from Harbor.'
-                        : 'No vulnerabilities match your filters.'}
-                    </td>
-                  </tr>
-                ) : (
-                  filtered.map((v) => (
-                    <VulnerabilityRow
-                      key={v.id}
-                      vuln={v}
-                      expanded={expandedRow === v.id}
-                      onToggle={() => setExpandedRow(expandedRow === v.id ? null : v.id)}
-                    />
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-          {filtered.length > 0 && (
-            <div className="border-t px-3 py-2 text-xs text-muted-foreground">
-              Showing {filtered.length} of {summary?.total ?? vulnerabilities.length} vulnerabilities
+        <section className="rounded-lg border bg-card p-4 shadow-sm">
+          {filtered.length === 0 ? (
+            <div className="px-3 py-8 text-center text-muted-foreground">
+              {vulnerabilities.length === 0
+                ? 'No vulnerability data yet. Click "Sync Now" to fetch from Harbor.'
+                : 'No vulnerabilities match your filters.'}
             </div>
+          ) : (
+            <>
+              <DataTable
+                columns={columns}
+                data={filtered}
+                hideSearch
+                pageSize={15}
+                rowClassName={(v) => (v.in_use ? 'bg-amber-500/5' : '')}
+                onRowClick={(v) => setExpandedRow(expandedRow === v.id ? null : v.id)}
+              />
+              {expandedVuln && <VulnerabilityDetails vuln={expandedVuln} />}
+              <div className="border-t px-3 py-2 text-xs text-muted-foreground">
+                Showing {filtered.length} of {summary?.total ?? vulnerabilities.length} vulnerabilities
+              </div>
+            </>
           )}
         </section>
         </SpotlightCard>
@@ -337,122 +415,69 @@ function SummaryCard({
   );
 }
 
-function VulnerabilityRow({
-  vuln,
-  expanded,
-  onToggle,
-}: {
-  vuln: VulnerabilityRecord;
-  expanded: boolean;
-  onToggle: () => void;
-}) {
+function VulnerabilityDetails({ vuln }: { vuln: VulnerabilityRecord }) {
   const containers = parseContainers(vuln.matching_containers);
   const tags = parseTags(vuln.tags);
   const links = parseLinks(vuln.links);
 
   return (
-    <>
-      <tr
-        onClick={onToggle}
-        className={cn(
-          'border-b cursor-pointer hover:bg-muted/30 transition-colors',
-          vuln.in_use && 'bg-amber-500/5',
-        )}
-      >
-        <td className="px-3 py-2 font-mono text-xs">{vuln.cve_id}</td>
-        <td className="px-3 py-2">
-          <span className={cn('inline-flex rounded-full px-2 py-0.5 text-xs font-medium', severityBadgeClass(vuln.severity))}>
-            {vuln.severity}
-          </span>
-        </td>
-        <td className="px-3 py-2 tabular-nums">
-          {vuln.cvss_v3_score != null ? vuln.cvss_v3_score.toFixed(1) : '—'}
-        </td>
-        <td className="px-3 py-2">
-          <div className="flex items-center gap-1.5">
-            <Package className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-            <span className="truncate max-w-[180px]">{vuln.package}</span>
-            <span className="text-muted-foreground text-xs">{vuln.version}</span>
+    <div className="mt-3 rounded-md border bg-muted/20 px-3 py-3">
+      <div className="mb-2 flex items-center gap-2">
+        <span className="font-mono text-xs">{vuln.cve_id}</span>
+        <span className={cn('inline-flex rounded-full px-2 py-0.5 text-xs font-medium', severityBadgeClass(vuln.severity))}>
+          {vuln.severity}
+        </span>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2 text-sm">
+        {vuln.description && (
+          <div className="sm:col-span-2">
+            <span className="text-muted-foreground text-xs">Description</span>
+            <p className="mt-0.5 text-xs leading-relaxed">{vuln.description}</p>
           </div>
-        </td>
-        <td className="px-3 py-2 truncate max-w-[200px]">{vuln.repository_name}</td>
-        <td className="px-3 py-2">
-          {vuln.fixed_version ? (
-            <span className="text-emerald-600 dark:text-emerald-400 text-xs">
-              Fix: {vuln.fixed_version}
-            </span>
-          ) : (
-            <span className="text-muted-foreground text-xs">{vuln.status || 'No fix'}</span>
-          )}
-        </td>
-        <td className="px-3 py-2">
-          {vuln.in_use ? (
-            <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400 text-xs font-medium">
-              <Shield className="h-3 w-3" />
-              {containers.length} container{containers.length !== 1 ? 's' : ''}
-            </span>
-          ) : (
-            <span className="text-muted-foreground text-xs">—</span>
-          )}
-        </td>
-      </tr>
-
-      {expanded && (
-        <tr className="border-b">
-          <td colSpan={7} className="px-3 py-3 bg-muted/20">
-            <div className="grid gap-2 sm:grid-cols-2 text-sm">
-              {vuln.description && (
-                <div className="sm:col-span-2">
-                  <span className="text-muted-foreground text-xs">Description</span>
-                  <p className="mt-0.5 text-xs leading-relaxed">{vuln.description}</p>
-                </div>
-              )}
-              {tags.length > 0 && (
-                <div>
-                  <span className="text-muted-foreground text-xs">Tags</span>
-                  <div className="mt-0.5 flex flex-wrap gap-1">
-                    {tags.map((t) => (
-                      <span key={t} className="rounded bg-muted px-1.5 py-0.5 text-xs">{t}</span>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {containers.length > 0 && (
-                <div>
-                  <span className="text-muted-foreground text-xs">Running In</span>
-                  <div className="mt-0.5 space-y-0.5">
-                    {containers.map((c) => (
-                      <div key={c.id} className="text-xs">
-                        <span className="font-mono">{c.name}</span>
-                        <span className="text-muted-foreground ml-1">({c.id})</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {links.length > 0 && (
-                <div className="sm:col-span-2">
-                  <span className="text-muted-foreground text-xs">References</span>
-                  <div className="mt-0.5 flex flex-wrap gap-2">
-                    {links.slice(0, 3).map((url) => (
-                      <a
-                        key={url}
-                        href={url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                      >
-                        <ExternalLink className="h-3 w-3" />
-                        {(() => { try { return new URL(url).hostname; } catch { return url; } })()}
-                      </a>
-                    ))}
-                  </div>
-                </div>
-              )}
+        )}
+        {tags.length > 0 && (
+          <div>
+            <span className="text-muted-foreground text-xs">Tags</span>
+            <div className="mt-0.5 flex flex-wrap gap-1">
+              {tags.map((t) => (
+                <span key={t} className="rounded bg-muted px-1.5 py-0.5 text-xs">{t}</span>
+              ))}
             </div>
-          </td>
-        </tr>
-      )}
-    </>
+          </div>
+        )}
+        {containers.length > 0 && (
+          <div>
+            <span className="text-muted-foreground text-xs">Running In</span>
+            <div className="mt-0.5 space-y-0.5">
+              {containers.map((c) => (
+                <div key={c.id} className="text-xs">
+                  <span className="font-mono">{c.name}</span>
+                  <span className="text-muted-foreground ml-1">({c.id})</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {links.length > 0 && (
+          <div className="sm:col-span-2">
+            <span className="text-muted-foreground text-xs">References</span>
+            <div className="mt-0.5 flex flex-wrap gap-2">
+              {links.slice(0, 3).map((url) => (
+                <a
+                  key={url}
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                >
+                  <ExternalLink className="h-3 w-3" />
+                  {(() => { try { return new URL(url).hostname; } catch { return url; } })()}
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

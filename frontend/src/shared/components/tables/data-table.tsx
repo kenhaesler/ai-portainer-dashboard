@@ -96,6 +96,12 @@ interface DataTableProps<T> {
    * overflows horizontally (themed scrollbar) instead of squashing columns.
    */
   minTableWidth?: number;
+  /**
+   * Optional per-row class hook. Returns extra classes applied to the row
+   * `<tr>` — use for whole-row state cues (e.g. highlighting) that a hand-rolled
+   * `<tr className=...>` previously provided.
+   */
+  rowClassName?: (row: T) => string;
 }
 
 export function DataTable<T>({
@@ -117,6 +123,7 @@ export function DataTable<T>({
   windowScroll,
   autoFit,
   minTableWidth,
+  rowClassName,
 }: DataTableProps<T>) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -383,7 +390,8 @@ export function DataTable<T>({
       className={cn(
         'group/row border-b transition-colors duration-200 hover:bg-muted/30',
         onRowClick && 'cursor-pointer',
-        enableRowSelection && row.getIsSelected() && 'bg-primary/5'
+        enableRowSelection && row.getIsSelected() && 'bg-primary/5',
+        rowClassName?.(row.original)
       )}
       onClick={() => onRowClick?.(row.original)}
     >

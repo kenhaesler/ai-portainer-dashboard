@@ -137,6 +137,53 @@ describe('HarborVulnerabilitiesPage', () => {
     render(<HarborVulnerabilitiesPage />);
     expect(screen.getByPlaceholderText(/Search by CVE/)).toBeInTheDocument();
   });
+
+  it('renders vulnerabilities in the shared DataTable', () => {
+    render(<HarborVulnerabilitiesPage />);
+    const table = screen.getByTestId('data-table');
+    expect(table).toBeInTheDocument();
+    // Column headers come from the memoized ColumnDef[]
+    expect(screen.getByRole('columnheader', { name: /CVE/ })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: /Severity/ })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: /Package/ })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: /Repository/ })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: /In Use/ })).toBeInTheDocument();
+    // Row data renders inside the DataTable body
+    expect(screen.getByText('myproject/nginx')).toBeInTheDocument();
+  });
+
+  it('expands a vulnerability detail panel on row click', async () => {
+    const { default: userEvent } = await import('@testing-library/user-event');
+    const user = userEvent.setup();
+    render(<HarborVulnerabilitiesPage />);
+    // Detail content is hidden until a row is clicked
+    expect(screen.queryByText('Critical vulnerability in OpenSSL')).not.toBeInTheDocument();
+    await user.click(screen.getByText('CVE-2024-1234'));
+    expect(screen.getByText('Critical vulnerability in OpenSSL')).toBeInTheDocument();
+  });
+
+  it('tints in-use rows so the whole-row cue is preserved', () => {
+    render(<HarborVulnerabilitiesPage />);
+    // CVE-2024-1234 is in_use:true, CVE-2024-5678 is in_use:false
+    expect(screen.getByText('CVE-2024-1234').closest('tr')?.className).toContain('bg-amber-500/5');
+    expect(screen.getByText('CVE-2024-5678').closest('tr')?.className).not.toContain('bg-amber-500/5');
+  });
+
+  it('does not reopen a detail panel when its filtered-out row reappears', async () => {
+    const { default: userEvent } = await import('@testing-library/user-event');
+    const user = userEvent.setup();
+    render(<HarborVulnerabilitiesPage />);
+    const search = screen.getByPlaceholderText(/Search by CVE/);
+    await user.click(screen.getByText('CVE-2024-1234'));
+    expect(screen.getByText('Critical vulnerability in OpenSSL')).toBeInTheDocument();
+    // Filter the expanded row out → panel hides and its state is cleared
+    await user.type(search, '5678');
+    expect(screen.queryByText('Critical vulnerability in OpenSSL')).not.toBeInTheDocument();
+    // Bring the row back → panel stays collapsed (state was cleared, not retained)
+    await user.clear(search);
+    expect(screen.getByText('CVE-2024-1234')).toBeInTheDocument();
+    expect(screen.queryByText('Critical vulnerability in OpenSSL')).not.toBeInTheDocument();
+  });
 });
 
 describe('HarborVulnerabilitiesPage (not configured)', () => {
