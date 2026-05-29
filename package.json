@@ -42,7 +42,7 @@
     "@testing-library/user-event": "^14.6.1",
     "@vitest/coverage-v8": "^4.1.6",
     "concurrently": "^9.1.0",
-    "eslint": "^10.3.0",
+    "eslint": "^10.4.0",
     "husky": "^9.1.7",
     "jsdom": "^29.1.1",
     "vitest": "^4.1.0"
