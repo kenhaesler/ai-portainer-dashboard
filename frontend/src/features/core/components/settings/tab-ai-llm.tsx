@@ -335,7 +335,9 @@ export function LlmSettingsSection({ values, originalValues, onChange, disabled 
     },
     {
       accessorKey: 'description',
-      header: 'Description',
+      // Hide the header too on narrow viewports so it doesn't sit above empty
+      // cells (the original column collapsed entirely below `sm`).
+      header: () => <span className="hidden sm:inline">Description</span>,
       enableSorting: false,
       cell: ({ getValue }) => (
         <span className="hidden text-xs text-muted-foreground sm:inline">{getValue<string>()}</span>
