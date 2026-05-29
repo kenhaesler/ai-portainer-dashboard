@@ -49,7 +49,6 @@ Each theme defines: semantic colors, sidebar colors, 5 chart colors, border radi
 - **Hero cards** — 2-column span for primary KPIs with animated counters + sparklines
 - **Sidebar** — Collapsible (60px/16rem), glassmorphic, 4 nav groups, hidden scrollbar (thin on hover)
 - **Header** — Fixed top: breadcrumbs, Ctrl+K command palette, theme toggle, user menu
-- **Activity Feed** — Fixed bottom: real-time events, expandable (max-h-64), translucent with animated background
 
 ## Animation Standards
 

@@ -176,7 +176,6 @@ Each feature contains: `pages/`, `components/`, `hooks/`, and optionally `lib/`.
 | `filter-store` | Endpoint + environment filters | Yes |
 | `search-store` | Search history (max 6 recent) | Yes |
 | `favorites-store` | Bookmarked containers/resources | Yes |
-| `activity-feed-store` | Event stream, unread count (max 50) | No |
 | `notification-store` | Toast queue | No |
 
 ### Providers
