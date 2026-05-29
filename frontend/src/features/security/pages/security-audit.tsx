@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react';
+import { type ColumnDef } from '@tanstack/react-table';
 import { Search, ShieldAlert } from 'lucide-react';
-import { useSecurityAudit } from '@/features/security/hooks/use-security-audit';
+import { useSecurityAudit, type SecurityAuditEntry } from '@/features/security/hooks/use-security-audit';
 import { useEndpoints } from '@/features/containers/hooks/use-endpoints';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
+import { DataTable } from '@/shared/components/tables/data-table';
 import { cn } from '@/shared/lib/utils';
 import { ObservedDestinationsPanel } from '@/features/security/components/observed-destinations-panel';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
@@ -99,6 +101,141 @@ export default function SecurityAuditPage() {
       });
   }, [entries, searchQuery, selectedSeverity, selectedIgnored, selectedStack]);
 
+  const columns = useMemo<ColumnDef<SecurityAuditEntry, unknown>[]>(() => [
+    {
+      id: 'container',
+      accessorKey: 'containerName',
+      header: 'Container',
+      cell: ({ row }) => {
+        const entry = row.original;
+        return (
+          <div className={cn(entry.ignored && 'opacity-70')}>
+            <div className="font-medium">{entry.containerName}</div>
+            <div className="text-xs text-muted-foreground">{entry.image}</div>
+          </div>
+        );
+      },
+    },
+    {
+      id: 'stack',
+      accessorKey: 'stackName',
+      header: 'Stack',
+      cell: ({ row }) => (
+        <span className={cn('text-muted-foreground', row.original.ignored && 'opacity-70')}>
+          {row.original.stackName ?? '—'}
+        </span>
+      ),
+    },
+    {
+      id: 'endpoint',
+      accessorKey: 'endpointName',
+      header: 'Endpoint',
+      cell: ({ row }) => (
+        <span className={cn('text-muted-foreground', row.original.ignored && 'opacity-70')}>
+          {row.original.endpointName}
+        </span>
+      ),
+    },
+    {
+      id: 'capabilities',
+      header: 'Capabilities Added',
+      enableSorting: false,
+      cell: ({ row }) => {
+        const entry = row.original;
+        return (
+          <div className={cn('flex flex-wrap gap-1.5', entry.ignored && 'opacity-70')}>
+            {entry.posture.capAdd.length === 0 ? (
+              <span className="inline-flex rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">None</span>
+            ) : (
+              entry.posture.capAdd.map((capability) => (
+                <span
+                  key={capability}
+                  className={cn('inline-flex rounded-full px-2 py-0.5 text-xs font-medium', capabilityBadgeClass(capability))}
+                >
+                  {capability}
+                </span>
+              ))
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      id: 'privileged',
+      header: 'Privileged',
+      accessorFn: (entry) => entry.posture.privileged,
+      cell: ({ row }) => {
+        const entry = row.original;
+        return (
+          <span
+            className={cn(
+              'inline-flex rounded-full px-2 py-0.5 text-xs font-medium',
+              entry.ignored && 'opacity-70',
+              entry.posture.privileged
+                ? 'bg-red-500/15 text-red-700 dark:text-red-400'
+                : 'bg-muted text-muted-foreground',
+            )}
+          >
+            {entry.posture.privileged ? 'Yes' : 'No'}
+          </span>
+        );
+      },
+    },
+    {
+      id: 'networkPid',
+      header: 'Network/PID',
+      enableSorting: false,
+      cell: ({ row }) => {
+        const entry = row.original;
+        return (
+          <span className={cn('text-xs text-muted-foreground', entry.ignored && 'opacity-70')}>
+            net={entry.posture.networkMode ?? '—'} | pid={entry.posture.pidMode ?? '—'}
+          </span>
+        );
+      },
+    },
+    {
+      id: 'severity',
+      accessorKey: 'severity',
+      header: 'Severity',
+      sortingFn: (a, b) => severityRank(a.original.severity) - severityRank(b.original.severity),
+      cell: ({ row }) => {
+        const entry = row.original;
+        return (
+          <span
+            className={cn(
+              'inline-flex rounded-full px-2 py-0.5 text-xs font-medium uppercase',
+              entry.ignored && 'opacity-70',
+              severityBadgeClass(entry.severity),
+            )}
+          >
+            {entry.severity}
+          </span>
+        );
+      },
+    },
+    {
+      id: 'ignored',
+      accessorKey: 'ignored',
+      header: 'Ignored',
+      cell: ({ row }) => {
+        const entry = row.original;
+        return (
+          <span
+            className={cn(
+              'inline-flex rounded-full px-2 py-0.5 text-xs font-medium',
+              entry.ignored
+                ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400'
+                : 'bg-muted text-muted-foreground',
+            )}
+          >
+            {entry.ignored ? 'Ignored' : 'Active'}
+          </span>
+        );
+      },
+    },
+  ], []);
+
   return (
     <div className="space-y-4">
       <div>
@@ -193,85 +330,12 @@ export default function SecurityAuditPage() {
             <p className="mt-1 text-sm text-muted-foreground">Try adjusting your search or filters.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1100px] text-sm">
-              <thead>
-                <tr className="border-b bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
-                  <th className="px-3 py-2.5 font-medium">Container</th>
-                  <th className="px-3 py-2.5 font-medium">Stack</th>
-                  <th className="px-3 py-2.5 font-medium">Endpoint</th>
-                  <th className="px-3 py-2.5 font-medium">Capabilities Added</th>
-                  <th className="px-3 py-2.5 font-medium">Privileged</th>
-                  <th className="px-3 py-2.5 font-medium">Network/PID</th>
-                  <th className="px-3 py-2.5 font-medium">Severity</th>
-                  <th className="px-3 py-2.5 font-medium">Ignored</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredEntries.map((entry) => (
-                  <tr
-                    key={`${entry.endpointId}:${entry.containerId}`}
-                    className={cn('border-b last:border-0', entry.ignored && 'opacity-70')}
-                  >
-                    <td className="px-3 py-3">
-                      <div className="font-medium">{entry.containerName}</div>
-                      <div className="text-xs text-muted-foreground">{entry.image}</div>
-                    </td>
-                    <td className="px-3 py-3 text-muted-foreground">{entry.stackName ?? '—'}</td>
-                    <td className="px-3 py-3 text-muted-foreground">{entry.endpointName}</td>
-                    <td className="px-3 py-3">
-                      <div className="flex flex-wrap gap-1.5">
-                        {entry.posture.capAdd.length === 0 ? (
-                          <span className="inline-flex rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">None</span>
-                        ) : (
-                          entry.posture.capAdd.map((capability) => (
-                            <span
-                              key={capability}
-                              className={cn('inline-flex rounded-full px-2 py-0.5 text-xs font-medium', capabilityBadgeClass(capability))}
-                            >
-                              {capability}
-                            </span>
-                          ))
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-3 py-3">
-                      <span
-                        className={cn(
-                          'inline-flex rounded-full px-2 py-0.5 text-xs font-medium',
-                          entry.posture.privileged
-                            ? 'bg-red-500/15 text-red-700 dark:text-red-400'
-                            : 'bg-muted text-muted-foreground',
-                        )}
-                      >
-                        {entry.posture.privileged ? 'Yes' : 'No'}
-                      </span>
-                    </td>
-                    <td className="px-3 py-3 text-xs text-muted-foreground">
-                      net={entry.posture.networkMode ?? '—'} | pid={entry.posture.pidMode ?? '—'}
-                    </td>
-                    <td className="px-3 py-3">
-                      <span className={cn('inline-flex rounded-full px-2 py-0.5 text-xs font-medium uppercase', severityBadgeClass(entry.severity))}>
-                        {entry.severity}
-                      </span>
-                    </td>
-                    <td className="px-3 py-3">
-                      <span
-                        className={cn(
-                          'inline-flex rounded-full px-2 py-0.5 text-xs font-medium',
-                          entry.ignored
-                            ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400'
-                            : 'bg-muted text-muted-foreground',
-                        )}
-                      >
-                        {entry.ignored ? 'Ignored' : 'Active'}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            columns={columns}
+            data={filteredEntries}
+            hideSearch
+            minTableWidth={1100}
+          />
         )}
       </section>
       </SpotlightCard>

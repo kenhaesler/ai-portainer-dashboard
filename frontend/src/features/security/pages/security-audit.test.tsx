@@ -64,6 +64,15 @@ describe('SecurityAuditPage', () => {
     expect(screen.getByText('warning')).toBeInTheDocument();
   });
 
+  it('renders the shared DataTable with column headers', () => {
+    renderWithClient(<SecurityAuditPage />);
+
+    expect(screen.getByTestId('data-table')).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: /Capabilities Added/ })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: /Privileged/ })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: /Severity/ })).toBeInTheDocument();
+  });
+
   it('renders the search input', () => {
     renderWithClient(<SecurityAuditPage />);
     expect(screen.getByPlaceholderText('Search containers by name or image...')).toBeInTheDocument();
