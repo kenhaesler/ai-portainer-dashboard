@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import { type ColumnDef } from '@tanstack/react-table';
 import {
   Radio,
   Play,
@@ -17,6 +18,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { StatusBadge } from '@/shared/components/feedback/status-badge';
+import { DataTable } from '@/shared/components/tables/data-table';
 import { RefreshButton } from '@/shared/components/ui/refresh-button';
 import { useEndpoints, useEndpointCapabilities } from '@/features/containers/hooks/use-endpoints';
 import { useContainers } from '@/features/containers/hooks/use-containers';
@@ -132,6 +134,155 @@ export default function PacketCapture() {
     const container = filteredRunningContainers.find((c) => c.id === value);
     setSelectedContainerName(container?.name ?? '');
   };
+
+  const stopMutate = stopCapture.mutate;
+  const deleteMutate = deleteCapture.mutate;
+  const analyzeMutate = analyzeMutation.mutate;
+  const analyzePending = analyzeMutation.isPending;
+  const analyzeVariables = analyzeMutation.variables;
+
+  const handleStop = useCallback((id: string) => stopMutate(id), [stopMutate]);
+  const handleDelete = useCallback((id: string) => deleteMutate(id), [deleteMutate]);
+  const handleDownload = useCallback((id: string) => downloadCapture(id, api.getToken()), []);
+  const handleAnalyze = useCallback((id: string) => analyzeMutate(id), [analyzeMutate]);
+  const toggleExpand = useCallback((id: string) => {
+    setExpandedAnalysis((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const columns = useMemo<ColumnDef<Capture, unknown>[]>(() => [
+    {
+      accessorKey: 'container_name',
+      header: 'Container',
+      cell: ({ row }) => {
+        const capture = row.original;
+        const analysis = parseAnalysis(capture);
+        const isExpanded = expandedAnalysis.has(capture.id);
+        return (
+          <div className="flex items-center gap-2">
+            {analysis && (
+              <button
+                onClick={() => toggleExpand(capture.id)}
+                className="-ml-1 rounded p-1 text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                title="Toggle analysis"
+              >
+                {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+              </button>
+            )}
+            <div>
+              <p className="font-medium">{capture.container_name}</p>
+              <p className="text-xs text-muted-foreground">{capture.id.slice(0, 8)}</p>
+            </div>
+          </div>
+        );
+      },
+    },
+    {
+      accessorKey: 'status',
+      header: 'Status',
+      cell: ({ row }) => {
+        const capture = row.original;
+        const analysis = parseAnalysis(capture);
+        return (
+          <div className="flex items-center gap-2">
+            <StatusBadge status={capture.status} />
+            {analysis && <HealthBadge status={analysis.health_status} />}
+          </div>
+        );
+      },
+    },
+    {
+      accessorKey: 'filter',
+      header: 'Filter',
+      cell: ({ row }) => (
+        <span className="text-muted-foreground">
+          {row.original.filter || <span className="italic">none</span>}
+        </span>
+      ),
+    },
+    {
+      accessorKey: 'file_size_bytes',
+      header: 'File Size',
+      cell: ({ row }) => (
+        <span className="text-muted-foreground">
+          {row.original.file_size_bytes ? formatBytes(row.original.file_size_bytes) : '-'}
+        </span>
+      ),
+    },
+    {
+      accessorKey: 'created_at',
+      header: 'Created',
+      cell: ({ row }) => (
+        <span className="text-muted-foreground">{new Date(row.original.created_at).toLocaleString()}</span>
+      ),
+    },
+    {
+      id: 'actions',
+      header: () => <span className="block text-right">Actions</span>,
+      enableSorting: false,
+      cell: ({ row }) => {
+        const capture = row.original;
+        const isActive = capture.status === 'capturing' || capture.status === 'pending' || capture.status === 'processing';
+        const hasFile = capture.capture_file && (capture.status === 'complete' || capture.status === 'succeeded');
+        const canAnalyze = hasFile && !isActive;
+        const isAnalyzing = analyzePending && analyzeVariables === capture.id;
+        return (
+          <div className="flex items-center justify-end gap-1">
+            {isActive && (
+              <button
+                onClick={() => handleStop(capture.id)}
+                className="rounded p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                title="Stop capture"
+              >
+                <Square className="h-4 w-4" />
+              </button>
+            )}
+            {canAnalyze && (
+              <button
+                onClick={() => handleAnalyze(capture.id)}
+                disabled={isAnalyzing}
+                className="rounded p-1.5 text-muted-foreground hover:bg-purple-500/10 hover:text-purple-500"
+                title="Analyze with AI"
+              >
+                {isAnalyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Brain className="h-4 w-4" />}
+              </button>
+            )}
+            {hasFile && (
+              <button
+                onClick={() => handleDownload(capture.id)}
+                className="rounded p-1.5 text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                title="Download PCAP"
+              >
+                <Download className="h-4 w-4" />
+              </button>
+            )}
+            {!isActive && (
+              <button
+                onClick={() => handleDelete(capture.id)}
+                className="rounded p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                title="Delete capture"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+        );
+      },
+    },
+  ], [expandedAnalysis, toggleExpand, handleStop, handleDelete, handleDownload, handleAnalyze, analyzePending, analyzeVariables]);
+
+  const expandedCaptures = useMemo(
+    () =>
+      captures
+        .filter((c) => expandedAnalysis.has(c.id))
+        .map((c) => ({ capture: c, analysis: parseAnalysis(c) }))
+        .filter((entry): entry is { capture: Capture; analysis: PcapAnalysisResult } => entry.analysis !== null),
+    [captures, expandedAnalysis],
+  );
 
   return (
     <div className="space-y-6">
@@ -334,44 +485,30 @@ export default function PacketCapture() {
           </div>
           </SpotlightCard>
         ) : (
-          <SpotlightCard>
-          <div className="overflow-x-auto rounded-lg border bg-card shadow-sm">
-            <table className="w-full text-sm">
-              <thead className="border-b bg-muted/50">
-                <tr>
-                  <th className="px-4 py-2 text-left font-medium">Container</th>
-                  <th className="px-4 py-2 text-left font-medium">Status</th>
-                  <th className="px-4 py-2 text-left font-medium">Filter</th>
-                  <th className="px-4 py-2 text-left font-medium">File Size</th>
-                  <th className="px-4 py-2 text-left font-medium">Created</th>
-                  <th className="px-4 py-2 text-right font-medium">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {captures.map((capture) => (
-                  <CaptureRow
-                    key={capture.id}
-                    capture={capture}
-                    onStop={() => stopCapture.mutate(capture.id)}
-                    onDelete={() => deleteCapture.mutate(capture.id)}
-                    onDownload={() => downloadCapture(capture.id, api.getToken())}
-                    onAnalyze={() => analyzeMutation.mutate(capture.id)}
-                    isAnalyzing={analyzeMutation.isPending && analyzeMutation.variables === capture.id}
-                    isExpanded={expandedAnalysis.has(capture.id)}
-                    onToggleExpand={() => {
-                      setExpandedAnalysis((prev) => {
-                        const next = new Set(prev);
-                        if (next.has(capture.id)) next.delete(capture.id);
-                        else next.add(capture.id);
-                        return next;
-                      });
-                    }}
-                  />
+          <>
+            <SpotlightCard>
+            <div className="rounded-lg border bg-card p-4 shadow-sm">
+              <DataTable columns={columns} data={captures} hideSearch minTableWidth={720} />
+            </div>
+            </SpotlightCard>
+
+            {expandedCaptures.length > 0 && (
+              <div className="space-y-3">
+                {expandedCaptures.map(({ capture, analysis }) => (
+                  <div key={capture.id} className="space-y-1">
+                    <p className="px-1 text-xs font-medium text-muted-foreground">
+                      {capture.container_name} · {capture.id.slice(0, 8)}
+                    </p>
+                    <AnalysisPanel
+                      analysis={analysis}
+                      onReanalyze={() => handleAnalyze(capture.id)}
+                      isAnalyzing={analyzePending && analyzeVariables === capture.id}
+                    />
+                  </div>
                 ))}
-              </tbody>
-            </table>
-          </div>
-          </SpotlightCard>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
@@ -525,113 +662,5 @@ function AnalysisPanel({ analysis, onReanalyze, isAnalyzing }: { analysis: PcapA
       )}
     </div>
     </SpotlightCard>
-  );
-}
-
-function CaptureRow({
-  capture,
-  onStop,
-  onDelete,
-  onDownload,
-  onAnalyze,
-  isAnalyzing,
-  isExpanded,
-  onToggleExpand,
-}: {
-  capture: Capture;
-  onStop: () => void;
-  onDelete: () => void;
-  onDownload: () => void;
-  onAnalyze: () => void;
-  isAnalyzing: boolean;
-  isExpanded: boolean;
-  onToggleExpand: () => void;
-}) {
-  const isActive = capture.status === 'capturing' || capture.status === 'pending' || capture.status === 'processing';
-  const hasFile = capture.capture_file && (capture.status === 'complete' || capture.status === 'succeeded');
-  const analysis = parseAnalysis(capture);
-  const canAnalyze = hasFile && !isActive;
-
-  return (
-    <>
-      <tr className="hover:bg-muted/30">
-        <td className="px-4 py-2">
-          <div className="flex items-center gap-2">
-            {analysis && (
-              <button onClick={onToggleExpand} className="-ml-1 rounded p-1 text-muted-foreground hover:bg-muted/50 hover:text-foreground" title="Toggle analysis">
-                {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-              </button>
-            )}
-            <div>
-              <p className="font-medium">{capture.container_name}</p>
-              <p className="text-xs text-muted-foreground">{capture.id.slice(0, 8)}</p>
-            </div>
-          </div>
-        </td>
-        <td className="px-4 py-2">
-          <div className="flex items-center gap-2">
-            <StatusBadge status={capture.status} />
-            {analysis && <HealthBadge status={analysis.health_status} />}
-          </div>
-        </td>
-        <td className="px-4 py-2 text-muted-foreground">
-          {capture.filter || <span className="italic">none</span>}
-        </td>
-        <td className="px-4 py-2 text-muted-foreground">
-          {capture.file_size_bytes ? formatBytes(capture.file_size_bytes) : '-'}
-        </td>
-        <td className="px-4 py-2 text-muted-foreground">
-          {new Date(capture.created_at).toLocaleString()}
-        </td>
-        <td className="px-4 py-2 text-right">
-          <div className="flex items-center justify-end gap-1">
-            {isActive && (
-              <button
-                onClick={onStop}
-                className="rounded p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                title="Stop capture"
-              >
-                <Square className="h-4 w-4" />
-              </button>
-            )}
-            {canAnalyze && (
-              <button
-                onClick={onAnalyze}
-                disabled={isAnalyzing}
-                className="rounded p-1.5 text-muted-foreground hover:bg-purple-500/10 hover:text-purple-500"
-                title="Analyze with AI"
-              >
-                {isAnalyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Brain className="h-4 w-4" />}
-              </button>
-            )}
-            {hasFile && (
-              <button
-                onClick={onDownload}
-                className="rounded p-1.5 text-muted-foreground hover:bg-primary/10 hover:text-primary"
-                title="Download PCAP"
-              >
-                <Download className="h-4 w-4" />
-              </button>
-            )}
-            {!isActive && (
-              <button
-                onClick={onDelete}
-                className="rounded p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                title="Delete capture"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
-            )}
-          </div>
-        </td>
-      </tr>
-      {analysis && isExpanded && (
-        <tr>
-          <td colSpan={6} className="px-4 py-3">
-            <AnalysisPanel analysis={analysis} onReanalyze={onAnalyze} isAnalyzing={isAnalyzing} />
-          </td>
-        </tr>
-      )}
-    </>
   );
 }
