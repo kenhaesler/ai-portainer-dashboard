@@ -5,7 +5,6 @@ import { Sidebar } from '@/features/core/components/layout/sidebar';
 import { Header } from '@/features/core/components/layout/header';
 import { MobileBottomNav } from '@/features/core/components/layout/mobile-bottom-nav';
 import { CommandPalette } from '@/features/core/components/layout/command-palette';
-import { ActivityFeed } from '@/shared/components/data-display/activity-feed';
 import { KeyboardShortcutsOverlay } from '@/shared/components/ui/keyboard-shortcuts-overlay';
 import { DashboardBackground } from '@/features/core/components/layout/dashboard-background';
 import { useUiStore } from '@/stores/ui-store';
@@ -31,10 +30,6 @@ function FrozenOutlet() {
 
 function getRouteDepth(pathname: string): number {
   return pathname.split('/').filter(Boolean).length;
-}
-
-export function getDesktopMainPaddingClass(): 'md:pb-12' {
-  return 'md:pb-12';
 }
 
 export function AppLayout() {
@@ -228,10 +223,7 @@ export function AppLayout() {
 
         {/* Main content — fades in from bottom */}
         <motion.main
-          className={cn(
-            'flex-1 overflow-y-auto p-3 pb-36 md:p-4',
-            getDesktopMainPaddingClass(),
-          )}
+          className="flex-1 overflow-y-auto p-3 pb-36 md:p-4"
           initial={showEntrance ? { y: 12, opacity: 0 } : false}
           animate={{ y: 0, opacity: 1 }}
           transition={
@@ -279,7 +271,6 @@ export function AppLayout() {
       {/* Mobile bottom nav — visible only on mobile */}
       <MobileBottomNav />
       <CommandPalette />
-      <ActivityFeed />
       <KeyboardShortcutsOverlay
         open={shortcutsOpen}
         onClose={() => setShortcutsOpen(false)}
