@@ -28,7 +28,7 @@ export async function endpointsRoutes(fastify: FastifyInstance) {
         TTL.ENDPOINTS,
         () => portainer.getEndpoints(),
       );
-      const normalized = endpoints.map(normalizeEndpoint);
+      const normalized = (endpoints || []).map(normalizeEndpoint);
       // Fill in live container counts for Edge Standard endpoints whose
       // Portainer Snapshots[] never gets populated (issue #1249).
       return await enrichEdgeStandardWithLiveInfo(normalized);
@@ -56,7 +56,7 @@ export async function endpointsRoutes(fastify: FastifyInstance) {
       log.error({ err }, 'Failed to fetch endpoints from Portainer (edge-status)');
       return reply.code(502).send({ error: 'Unable to connect to Portainer', details: msg });
     }
-    return endpoints.map((ep) => {
+    return (endpoints || []).map((ep) => {
       const normalized = normalizeEndpoint(ep);
       return {
         id: ep.Id,

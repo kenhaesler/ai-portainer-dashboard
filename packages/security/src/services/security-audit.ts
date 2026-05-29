@@ -122,7 +122,7 @@ async function computeSecurityAudit(endpointId?: number): Promise<SecurityAuditE
     () => getEndpoints(),
   );
   const scopedEndpoints = endpointId
-    ? endpoints.filter((endpoint) => endpoint.Id === endpointId)
+    ? (endpoints || []).filter((endpoint) => endpoint.Id === endpointId)
     : endpoints;
 
   const entries: SecurityAuditEntry[] = [];
