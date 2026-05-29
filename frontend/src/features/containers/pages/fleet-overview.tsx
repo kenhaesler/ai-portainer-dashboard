@@ -1041,7 +1041,7 @@ export default function InfrastructurePage() {
               data={filteredEndpoints}
               searchKey="name"
               searchPlaceholder="Search endpoints..."
-              pageSize={15}
+              autoFit
               onRowClick={(row) => handleEndpointClick(row.id)}
             />
           </div>
@@ -1207,7 +1207,7 @@ export default function InfrastructurePage() {
               data={filteredStacks}
               searchKey="name"
               searchPlaceholder="Search stacks..."
-              pageSize={15}
+              autoFit
               onRowClick={handleStackClick}
             />
           </div>
