@@ -134,7 +134,6 @@ export function DataTable<T>({
               disabled={isDisabled}
               title={isDisabled ? `Maximum of ${maxSelection} containers can be compared at once` : undefined}
               onChange={row.getToggleSelectedHandler()}
-              onClick={(e) => e.stopPropagation()}
             />
           </label>
         );
