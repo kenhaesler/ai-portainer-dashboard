@@ -403,6 +403,17 @@ describe('WorkloadExplorerPage', () => {
     expect(screen.queryByTestId('workload-status-summary')).not.toBeInTheDocument();
   });
 
+  it('renders the search bar above the filter dropdowns', () => {
+    mockQueryString = 'endpoint=1';
+    render(<WorkloadExplorerPage />);
+    const search = screen.getByTestId('workload-smart-search');
+    const endpointSelect = screen.getByTestId('endpoint-select');
+    // endpoint dropdown follows the search bar in document order
+    expect(
+      search.compareDocumentPosition(endpointSelect) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it('merges filter dropdowns and table into a single pane (#1313)', () => {
     mockQueryString = 'endpoint=1';
     render(<WorkloadExplorerPage />);

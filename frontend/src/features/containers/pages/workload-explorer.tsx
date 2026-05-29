@@ -563,7 +563,7 @@ export default function WorkloadExplorerPage() {
       ) : (
         // ── Original table / filter pane / selection-action-bar block ──
         <>
-          {/* Merged filter + table pane (#1313): dropdowns → chips → search → table */}
+          {/* Merged filter + table pane: search → dropdowns → chips → table */}
           {isLoading ? (
             <SkeletonChart size="lg" />
           ) : filteredContainers ? (
@@ -572,6 +572,14 @@ export default function WorkloadExplorerPage() {
               data-testid="workload-pane"
               className="rounded-lg border bg-card p-6 shadow-sm space-y-4"
             >
+              {/* Smart search */}
+              <WorkloadSmartSearch
+                containers={filteredContainers}
+                knownStackNames={knownStackNames}
+                onFiltered={setSearchFilteredContainers}
+                totalCount={filteredContainers.length}
+              />
+
               <div className="flex items-center gap-4 flex-wrap">
                 <div className="flex items-center gap-2">
                   <label htmlFor="endpoint-select" className="text-sm font-medium">
@@ -684,14 +692,6 @@ export default function WorkloadExplorerPage() {
                   )}
                 </div>
               )}
-
-              {/* Smart search */}
-              <WorkloadSmartSearch
-                containers={filteredContainers}
-                knownStackNames={knownStackNames}
-                onFiltered={setSearchFilteredContainers}
-                totalCount={filteredContainers.length}
-              />
 
               <DataTable
                 columns={columns}
