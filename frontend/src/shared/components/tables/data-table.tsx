@@ -29,6 +29,32 @@ const AUTO_FIT_FOOTER_PX = 56; // pagination footer reserve
 const AUTO_FIT_MARGIN_PX = 24; // breathing room above the viewport bottom
 const MIN_AUTO_ROWS = 5; // never page smaller than this
 
+/** Nearest ancestor that scrolls vertically (overflow-y auto/scroll), or null. */
+function getVerticalScrollParent(node: HTMLElement): HTMLElement | null {
+  let el = node.parentElement;
+  while (el) {
+    const { overflowY } = getComputedStyle(el);
+    if (overflowY === 'auto' || overflowY === 'scroll') return el;
+    el = el.parentElement;
+  }
+  return null;
+}
+
+/**
+ * Usable bottom edge (px from the viewport top) for content inside `el`'s scroll
+ * container. The container often reserves bottom padding as clearance for fixed
+ * chrome (mobile nav, floating action bars); that padding is unavailable, so we
+ * subtract it. Without it, autoFit sizes the table flush to the viewport and the
+ * reserved padding spills past it, leaving the page with a small dead scroll.
+ * Falls back to the viewport height when nothing scrolls.
+ */
+function getScrollableBottom(el: HTMLElement): number {
+  const scrollParent = getVerticalScrollParent(el);
+  if (!scrollParent) return window.innerHeight;
+  const padBottom = parseFloat(getComputedStyle(scrollParent).paddingBottom) || 0;
+  return Math.min(window.innerHeight, scrollParent.getBoundingClientRect().bottom - padBottom);
+}
+
 export interface ServerPaginationProps {
   total: number;
   page: number;
@@ -234,7 +260,7 @@ export function DataTable<T>({
     if (!el) return;
     const top = el.getBoundingClientRect().top;
     const available =
-      window.innerHeight - top - AUTO_FIT_HEADER_PX - AUTO_FIT_FOOTER_PX - AUTO_FIT_MARGIN_PX;
+      getScrollableBottom(el) - top - AUTO_FIT_HEADER_PX - AUTO_FIT_FOOTER_PX - AUTO_FIT_MARGIN_PX;
     const size = Math.max(MIN_AUTO_ROWS, Math.floor(available / ROW_HEIGHT));
     setAutoPageSize((prev) => (prev === size ? prev : size));
   }, [useAutoFit]);
