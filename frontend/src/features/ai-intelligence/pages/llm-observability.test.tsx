@@ -195,9 +195,11 @@ describe('LlmObservabilityPage', () => {
     } as ReturnType<typeof useLlmTraces>);
 
     renderPage();
-    // One DataTable for Model Breakdown, one for Recent Traces
-    expect(screen.getAllByTestId('data-table')).toHaveLength(2);
-    // No per-table search is rendered (both pass hideSearch)
+    // Three shared DataTables on this page: Model Breakdown + Recent Traces (this
+    // page), plus the embedded LlmLatencyBreakdown component, which became a
+    // DataTable in its own migration (#1339).
+    expect(screen.getAllByTestId('data-table')).toHaveLength(3);
+    // No per-table search is rendered (all pass hideSearch)
     expect(screen.queryByTestId('data-table-search')).toBeNull();
   });
 
