@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
 import {
   useReactTable,
   getCoreRowModel,
@@ -11,6 +11,8 @@ import {
   type ColumnFiltersState,
   type RowSelectionState,
   type Row,
+  type PaginationState,
+  type Updater,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { cn } from '@/shared/lib/utils';
@@ -22,6 +24,10 @@ const OVERSCAN = 10;
 const VIRTUAL_THRESHOLD = 50;
 const SCROLL_CONTAINER_HEIGHT = 600;
 const SCROLL_TO_TOP_THRESHOLD = 20;
+const AUTO_FIT_HEADER_PX = 40; // sticky header row (h-10)
+const AUTO_FIT_FOOTER_PX = 56; // pagination footer reserve
+const AUTO_FIT_MARGIN_PX = 24; // breathing room above the viewport bottom
+const MIN_AUTO_ROWS = 5; // never page smaller than this
 
 export interface ServerPaginationProps {
   total: number;
@@ -53,6 +59,17 @@ interface DataTableProps<T> {
    * dataset is bounded to a few hundred rows.
    */
   windowScroll?: boolean;
+  /**
+   * Paginate with a page size computed to fill the available viewport
+   * height. Recomputes on resize and when `data` changes. Mutually
+   * exclusive with `windowScroll`, virtualization, and `serverPagination`.
+   */
+  autoFit?: boolean;
+  /**
+   * Minimum table width in px. When the container is narrower the table
+   * overflows horizontally (themed scrollbar) instead of squashing columns.
+   */
+  minTableWidth?: number;
 }
 
 export function DataTable<T>({
@@ -72,10 +89,15 @@ export function DataTable<T>({
   getRowId: getRowIdProp,
   selectedRowIds,
   windowScroll,
+  autoFit,
+  minTableWidth,
 }: DataTableProps<T>) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  const [pageIndex, setPageIndex] = useState(0);
+  const [autoPageSize, setAutoPageSize] = useState(MIN_AUTO_ROWS);
+  const autoFitWrapperRef = useRef<HTMLDivElement>(null);
 
   // Sync controlled selection from parent (e.g. clear all checkboxes)
   useEffect(() => {
@@ -88,10 +110,13 @@ export function DataTable<T>({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const isServerPaginated = !!serverPagination;
-  const useWindowScroll = !!windowScroll && !isServerPaginated;
+  const useAutoFit = !!autoFit && !isServerPaginated;
+  const useWindowScroll = !!windowScroll && !isServerPaginated && !useAutoFit;
   const useVirtual = !useWindowScroll
+    && !useAutoFit
     && !isServerPaginated
     && (virtualScrolling ?? data.length > VIRTUAL_THRESHOLD);
+  const useClientPagination = !useVirtual && !useWindowScroll && !isServerPaginated;
 
   // Build the checkbox column when row selection is enabled
   const selectionColumn = useMemo<ColumnDef<T, any> | null>(() => {
@@ -152,9 +177,22 @@ export function DataTable<T>({
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
-    ...(useVirtual || isServerPaginated || useWindowScroll ? {} : { getPaginationRowModel: getPaginationRowModel() }),
+    ...(useClientPagination ? { getPaginationRowModel: getPaginationRowModel() } : {}),
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
+    ...(useAutoFit
+      ? {
+          onPaginationChange: (updater: Updater<PaginationState>) => {
+            setPageIndex((prev) => {
+              const next =
+                typeof updater === 'function'
+                  ? updater({ pageIndex: prev, pageSize: autoPageSize })
+                  : updater;
+              return next.pageIndex;
+            });
+          },
+        }
+      : {}),
     ...(enableRowSelection
       ? {
           enableRowSelection: (row) => {
@@ -169,8 +207,9 @@ export function DataTable<T>({
       sorting,
       columnFilters,
       ...(enableRowSelection ? { rowSelection } : {}),
+      ...(useAutoFit ? { pagination: { pageIndex, pageSize: autoPageSize } } : {}),
     },
-    ...(useVirtual || isServerPaginated || useWindowScroll ? {} : { initialState: { pagination: { pageSize } } }),
+    ...(useClientPagination && !useAutoFit ? { initialState: { pagination: { pageSize } } } : {}),
     ...(getRowIdProp ? { getRowId: (row: T) => getRowIdProp(row) } : {}),
   });
 
@@ -187,6 +226,45 @@ export function DataTable<T>({
       table.getColumn(searchKey)?.setFilterValue(externalSearchValue);
     }
   }, [externalSearchValue, searchKey, table]);
+
+  // Auto-fit: compute a page size that fills the available viewport height.
+  const recomputeAutoPageSize = useCallback(() => {
+    if (!useAutoFit) return;
+    const el = autoFitWrapperRef.current;
+    if (!el) return;
+    const top = el.getBoundingClientRect().top;
+    const available =
+      window.innerHeight - top - AUTO_FIT_HEADER_PX - AUTO_FIT_FOOTER_PX - AUTO_FIT_MARGIN_PX;
+    const size = Math.max(MIN_AUTO_ROWS, Math.floor(available / ROW_HEIGHT));
+    setAutoPageSize((prev) => (prev === size ? prev : size));
+  }, [useAutoFit]);
+
+  useLayoutEffect(() => {
+    recomputeAutoPageSize();
+  }, [recomputeAutoPageSize, data]);
+
+  useEffect(() => {
+    if (!useAutoFit) return;
+    let raf = 0;
+    const onResize = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(recomputeAutoPageSize);
+    };
+    window.addEventListener('resize', onResize);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      cancelAnimationFrame(raf);
+    };
+  }, [useAutoFit, recomputeAutoPageSize]);
+
+  // Keep pageIndex in range when the page size or data shrinks.
+  useEffect(() => {
+    if (!useAutoFit) return;
+    const pageCount = table.getPageCount();
+    if (pageCount > 0 && pageIndex > pageCount - 1) {
+      setPageIndex(pageCount - 1);
+    }
+  }, [useAutoFit, autoPageSize, data, pageIndex, table]);
 
   const { rows } = table.getRowModel();
 
@@ -240,6 +318,37 @@ export function DataTable<T>({
     : 0;
   const canServerPrev = serverPagination ? serverPagination.page > 1 : false;
   const canServerNext = serverPagination ? serverPagination.page < serverPageCount : false;
+
+  const tableStyle = minTableWidth ? { minWidth: minTableWidth } : undefined;
+
+  const renderClientPagination = () => {
+    if (table.getPageCount() <= 1) return null;
+    return (
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">
+          Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()} ({data.length} total)
+        </p>
+        <div className="flex items-center gap-2">
+          <button
+            className="inline-flex items-center justify-center rounded-md border border-input bg-background p-2 text-sm hover:bg-accent disabled:opacity-50"
+            onClick={() => table.previousPage()}
+            disabled={!table.getCanPreviousPage()}
+            aria-label="Previous page"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <button
+            className="inline-flex items-center justify-center rounded-md border border-input bg-background p-2 text-sm hover:bg-accent disabled:opacity-50"
+            onClick={() => table.nextPage()}
+            disabled={!table.getCanNextPage()}
+            aria-label="Next page"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+    );
+  };
 
   const renderRow = (row: Row<T>) => (
     <tr
@@ -367,9 +476,33 @@ export function DataTable<T>({
         </div>
       )}
 
-      {useWindowScroll ? (
-        <div className="rounded-md border" data-testid="window-scroll-container">
-          <table className="w-full caption-bottom text-sm">
+      {useAutoFit ? (
+        <>
+          <div
+            ref={autoFitWrapperRef}
+            className="overflow-x-auto rounded-md border"
+            data-testid="auto-fit-container"
+          >
+            <table className="w-full caption-bottom text-sm" style={tableStyle}>
+              {renderHeader()}
+              <tbody className="[&_tr:last-child]:border-0">
+                {table.getRowModel().rows.length ? (
+                  table.getRowModel().rows.map((row) => renderRow(row))
+                ) : (
+                  <tr>
+                    <td colSpan={allColumns.length} className="h-24 text-center text-muted-foreground">
+                      No results.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          {renderClientPagination()}
+        </>
+      ) : useWindowScroll ? (
+        <div className="overflow-x-auto rounded-md border" data-testid="window-scroll-container">
+          <table className="w-full caption-bottom text-sm" style={tableStyle}>
             {renderHeader()}
             <tbody className="[&_tr:last-child]:border-0">
               {rows.length ? (
@@ -396,7 +529,7 @@ export function DataTable<T>({
             aria-label="Data table with virtual scrolling"
             data-testid="virtual-scroll-container"
           >
-            <table className="w-full caption-bottom text-sm">
+            <table className="w-full caption-bottom text-sm" style={tableStyle}>
               {renderHeader()}
               <tbody className="[&_tr:last-child]:border-0">
                 {rows.length ? (
@@ -451,8 +584,8 @@ export function DataTable<T>({
         </div>
       ) : (
         <>
-          <div className="rounded-md border">
-            <table className="w-full caption-bottom text-sm">
+          <div className="overflow-x-auto rounded-md border">
+            <table className="w-full caption-bottom text-sm" style={tableStyle}>
               {renderHeader()}
               <tbody className="[&_tr:last-child]:border-0">
                 {table.getRowModel().rows.length ? (
@@ -468,34 +601,7 @@ export function DataTable<T>({
             </table>
           </div>
 
-          {isServerPaginated ? (
-            renderServerPagination()
-          ) : (
-            table.getPageCount() > 1 && (
-              <div className="flex items-center justify-between">
-                <p className="text-sm text-muted-foreground">
-                  Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()}
-                  {' '}({data.length} total)
-                </p>
-                <div className="flex items-center gap-2">
-                  <button
-                    className="inline-flex items-center justify-center rounded-md border border-input bg-background p-2 text-sm hover:bg-accent disabled:opacity-50"
-                    onClick={() => table.previousPage()}
-                    disabled={!table.getCanPreviousPage()}
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </button>
-                  <button
-                    className="inline-flex items-center justify-center rounded-md border border-input bg-background p-2 text-sm hover:bg-accent disabled:opacity-50"
-                    onClick={() => table.nextPage()}
-                    disabled={!table.getCanNextPage()}
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-            )
-          )}
+          {isServerPaginated ? renderServerPagination() : renderClientPagination()}
         </>
       )}
     </div>

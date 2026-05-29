@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { DataTable } from './data-table';
 import type { ColumnDef } from '@tanstack/react-table';
@@ -579,6 +579,92 @@ describe('DataTable', () => {
       fireEvent.click(label);
       expect(onSelectionChange).toHaveBeenCalledWith([data[0]]);
       expect(onRowClick).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('autoFit mode', () => {
+    let rectSpy: ReturnType<typeof vi.spyOn> | undefined;
+
+    const setViewport = (innerHeight: number, top: number) => {
+      Object.defineProperty(window, 'innerHeight', { value: innerHeight, configurable: true });
+      rectSpy = vi
+        .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+        .mockReturnValue({
+          top,
+          bottom: 0,
+          left: 0,
+          right: 0,
+          width: 0,
+          height: 0,
+          x: 0,
+          y: top,
+          toJSON: () => ({}),
+        } as DOMRect);
+    };
+
+    afterEach(() => {
+      rectSpy?.mockRestore();
+      rectSpy = undefined;
+      Object.defineProperty(window, 'innerHeight', { value: 768, configurable: true });
+    });
+
+    it('computes page size from the available viewport height', () => {
+      // available = 1000 - 200 - 40 - 56 - 24 = 680 → floor(680 / 48) = 14 rows/page
+      setViewport(1000, 200);
+      render(<DataTable columns={testColumns} data={makeRows(30)} autoFit />);
+      expect(screen.getByTestId('auto-fit-container')).toBeInTheDocument();
+      expect(screen.getByText('container-14')).toBeInTheDocument();
+      expect(screen.queryByText('container-15')).not.toBeInTheDocument();
+      expect(screen.getByText(/Page 1 of 3/)).toBeInTheDocument(); // ceil(30/14) = 3
+    });
+
+    it('paginates to the next page of rows', () => {
+      setViewport(1000, 200); // 14 rows/page
+      render(<DataTable columns={testColumns} data={makeRows(30)} autoFit />);
+      const buttons = screen.getAllByRole('button');
+      fireEvent.click(buttons[buttons.length - 1]); // next page
+      expect(screen.getByText('container-15')).toBeInTheDocument();
+      expect(screen.queryByText('container-14')).not.toBeInTheDocument();
+      expect(screen.getByText(/Page 2 of 3/)).toBeInTheDocument();
+    });
+
+    it('floors page size to a minimum of 5 rows on very short viewports', () => {
+      // available = 200 - 180 - 40 - 56 - 24 = -100 → max(5, floor(-100/48)) = 5
+      setViewport(200, 180);
+      render(<DataTable columns={testColumns} data={makeRows(12)} autoFit />);
+      expect(screen.getByText('container-5')).toBeInTheDocument();
+      expect(screen.queryByText('container-6')).not.toBeInTheDocument();
+      expect(screen.getByText(/Page 1 of 3/)).toBeInTheDocument(); // ceil(12/5) = 3
+    });
+
+    it('does not virtualize or window-scroll in autoFit mode', () => {
+      setViewport(1000, 200);
+      render(<DataTable columns={testColumns} data={makeRows(100)} autoFit />);
+      expect(screen.queryByTestId('virtual-scroll-container')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('window-scroll-container')).not.toBeInTheDocument();
+      expect(screen.getByTestId('auto-fit-container')).toBeInTheDocument();
+    });
+  });
+
+  describe('horizontal scroll (minTableWidth)', () => {
+    let rectSpy: ReturnType<typeof vi.spyOn> | undefined;
+
+    afterEach(() => {
+      rectSpy?.mockRestore();
+      rectSpy = undefined;
+      Object.defineProperty(window, 'innerHeight', { value: 768, configurable: true });
+    });
+
+    it('applies overflow-x-auto and a min-width on the table when minTableWidth is set', () => {
+      Object.defineProperty(window, 'innerHeight', { value: 1000, configurable: true });
+      rectSpy = vi
+        .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+        .mockReturnValue({ top: 100, toJSON: () => ({}) } as DOMRect);
+      render(<DataTable columns={testColumns} data={makeRows(5)} autoFit minTableWidth={860} />);
+      const container = screen.getByTestId('auto-fit-container');
+      expect(container.className).toContain('overflow-x-auto');
+      const table = container.querySelector('table');
+      expect(table?.style.minWidth).toBe('860px');
     });
   });
 
