@@ -97,3 +97,33 @@ describe('LlmSettingsSection — Test Connection token sanitisation', () => {
     expect(body.token).toBe('sk-real-token');
   });
 });
+
+describe('LlmSettingsSection — model use-case reference table (DataTable)', () => {
+  it('renders the model use-case table via the shared DataTable when expanded', () => {
+    render(
+      <LlmSettingsSection
+        values={baseValues}
+        originalValues={baseValues}
+        onChange={vi.fn()}
+        disabled={false}
+      />,
+      { wrapper: createWrapper() },
+    );
+
+    // Table is collapsed by default; the "All models" toggle reveals it.
+    fireEvent.click(screen.getByRole('button', { name: /all models/i }));
+
+    // Shared DataTable rendered (carries data-testid="data-table").
+    const table = screen.getByTestId('data-table');
+    expect(table).toBeInTheDocument();
+
+    // The "Label" / "Description" headers are unique to the table.
+    expect(screen.getByText('Label')).toBeInTheDocument();
+    expect(screen.getByText('Description')).toBeInTheDocument();
+
+    // Known reference rows render inside the table.
+    expect(screen.getByText('qwen3:32b')).toBeInTheDocument();
+    expect(screen.getByText('phi-4')).toBeInTheDocument();
+    expect(screen.getAllByText('Gold Standard').length).toBeGreaterThan(0);
+  });
+});
