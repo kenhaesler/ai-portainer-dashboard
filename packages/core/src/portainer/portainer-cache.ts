@@ -356,7 +356,11 @@ class HybridCache {
     const client = await this.ensureRedisClient();
     if (client) {
       try {
-        await client.del(this.getRedisKey(key));
+        // set() may store under either the plain key or the `:gz` compressed
+        // variant, so invalidation must delete both — otherwise a stale
+        // compressed entry survives invalidate-on-failure and re-poisons reads.
+        const redisKey = this.getRedisKey(key);
+        await client.del([redisKey, redisKey + ':gz']);
         this.resetRedisBackoff();
       } catch (err) {
         this.disableRedisTemporarily('redis-invalidate-failed', err);
@@ -810,7 +814,7 @@ export function cachedFetchSWR<T>(
             } catch {
               // Best-effort
             }
-            log.warn({ key, err }, 'SWR background revalidation failed');
+            log.warn({ key, err }, 'SWR L2 background revalidation failed');
           } finally {
             inFlight.delete(key);
           }

@@ -690,6 +690,219 @@ describe('stale-while-revalidate (cachedFetchSWR)', () => {
   });
 });
 
+describe('undefined / failed-fetch poisoning guard (#1270)', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  // ── 2a: a fetcher resolving undefined must NOT populate the cache ──────────
+
+  it('cachedFetch does not cache an undefined resolution (no poisoned entry)', async () => {
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({ ...baseConfig }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(),
+    }));
+
+    const { cachedFetch, cache } = await import('./portainer-cache.js');
+    const setSpy = vi.spyOn(cache, 'set');
+
+    const undefinedFetcher = vi.fn().mockResolvedValue(undefined);
+    const result = await cachedFetch('poison:cf', 30, undefinedFetcher);
+
+    // The undefined result is surfaced to the caller…
+    expect(result).toBeUndefined();
+    // …but never written to the cache.
+    expect(setSpy).not.toHaveBeenCalled();
+    // A direct read confirms no poisoned entry was persisted.
+    expect(await cache.get('poison:cf')).toBeUndefined();
+
+    // A second call re-invokes the fetcher (cache was not poisoned with undefined).
+    await cachedFetch('poison:cf', 30, undefinedFetcher);
+    expect(undefinedFetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it('cachedFetchSWR (blocking path) does not cache an undefined resolution', async () => {
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({ ...baseConfig }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(),
+    }));
+
+    const { cachedFetchSWR, cache } = await import('./portainer-cache.js');
+    const setSpy = vi.spyOn(cache, 'set');
+
+    // No L1/L2 data → SWR falls through to a blocking fetch.
+    const undefinedFetcher = vi.fn().mockResolvedValue(undefined);
+    const result = await cachedFetchSWR('poison:swr', 30, undefinedFetcher);
+
+    expect(result).toBeUndefined();
+    expect(setSpy).not.toHaveBeenCalled();
+    expect(await cache.get('poison:swr')).toBeUndefined();
+  });
+
+  it('cachedFetchSWR background revalidation does not overwrite good data with undefined', async () => {
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({ ...baseConfig }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(),
+    }));
+
+    const { cachedFetchSWR, cache } = await import('./portainer-cache.js');
+
+    // Seed a good value, then drive a background revalidation that returns undefined.
+    await cache.set('poison:swr-bg', 'good', 60);
+
+    const undefinedFetcher = vi.fn().mockResolvedValue(undefined);
+    // First call serves cached data (fresh → no refetch in this simple case).
+    const served = await cachedFetchSWR('poison:swr-bg', 60, undefinedFetcher);
+    expect(served).toBe('good');
+
+    // Allow any background task to settle, then confirm the good value survives.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(await cache.get('poison:swr-bg')).toBe('good');
+  });
+
+  // ── 2b: a failed (throwing) fetch surfaces the error and writes no garbage ──
+
+  it('cachedFetch surfaces the error and writes no garbage when the fetch throws', async () => {
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({ ...baseConfig }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(),
+    }));
+
+    const { cachedFetch, cache } = await import('./portainer-cache.js');
+    const setSpy = vi.spyOn(cache, 'set');
+
+    const boom = new Error('upstream 503');
+    const failingFetcher = vi.fn().mockRejectedValue(boom);
+
+    // Error is surfaced to the caller (not swallowed)…
+    await expect(cachedFetch('fail:cf', 30, failingFetcher)).rejects.toBe(boom);
+    // …no value (good or garbage) was written…
+    expect(setSpy).not.toHaveBeenCalled();
+    // …and nothing was persisted under the key.
+    expect(await cache.get('fail:cf')).toBeUndefined();
+  });
+
+  it('cachedFetch retains a previously-cached good value across a later failure (no garbage write)', async () => {
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({ ...baseConfig }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(),
+    }));
+
+    const { cachedFetch, cache } = await import('./portainer-cache.js');
+
+    // First fetch succeeds and is cached.
+    const goodFetcher = vi.fn().mockResolvedValue('good-value');
+    expect(await cachedFetch('retain:cf', 60, goodFetcher)).toBe('good-value');
+    expect(await cache.get('retain:cf')).toBe('good-value');
+
+    // A subsequent call with a failing fetcher still hits the cache (so the
+    // fetcher never runs) and returns the retained good value — it is not
+    // overwritten with garbage.
+    const failingFetcher = vi.fn().mockRejectedValue(new Error('boom'));
+    expect(await cachedFetch('retain:cf', 60, failingFetcher)).toBe('good-value');
+    expect(failingFetcher).not.toHaveBeenCalled();
+    expect(await cache.get('retain:cf')).toBe('good-value');
+  });
+
+  // ── 2c: cache.invalidate is invoked on fetch failure ────────────────────────
+
+  it('cachedFetch invalidates the key on fetch failure', async () => {
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({ ...baseConfig }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(),
+    }));
+
+    const { cachedFetch, cache } = await import('./portainer-cache.js');
+    const invalidateSpy = vi.spyOn(cache, 'invalidate');
+
+    const failingFetcher = vi.fn().mockRejectedValue(new Error('boom'));
+    await expect(cachedFetch('inval:cf', 30, failingFetcher)).rejects.toThrow('boom');
+
+    expect(invalidateSpy).toHaveBeenCalledWith('inval:cf');
+  });
+
+  it('cachedFetchSWR L2 background revalidation invalidates the key on failure', async () => {
+    const redisClient = createMockRedisClient();
+
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({
+        ...baseConfig,
+        REDIS_URL: 'redis://redis:6379',
+      }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(() => redisClient),
+    }));
+
+    const { cachedFetchSWR, cache } = await import('./portainer-cache.js');
+    const invalidateSpy = vi.spyOn(cache, 'invalidate');
+
+    // Pre-populate L2 only (L1 miss → L2 hit → background revalidation).
+    const redisKey = 'aidash:cache:swr:l2-fail';
+    await redisClient.connect.call(redisClient);
+    await redisClient.set(redisKey, JSON.stringify('l2-value'));
+
+    const failingFetcher = vi.fn().mockRejectedValue(new Error('revalidate boom'));
+
+    const result = await cachedFetchSWR('swr:l2-fail', 60, failingFetcher);
+    expect(result).toBe('l2-value');
+
+    // Let the background revalidation run and fail.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(failingFetcher).toHaveBeenCalledTimes(1);
+    expect(invalidateSpy).toHaveBeenCalledWith('swr:l2-fail');
+  });
+
+  // ── 5: invalidate must delete both the plain and the `:gz` compressed key ───
+
+  it('invalidate deletes both the plain key and the :gz compressed variant', async () => {
+    const redisClient = createMockRedisClient();
+
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({
+        ...baseConfig,
+        REDIS_URL: 'redis://redis:6379',
+      }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(() => redisClient),
+    }));
+
+    const { cache } = await import('./portainer-cache.js');
+
+    // Store a large value so it is compressed under the :gz key.
+    const largeData = { items: Array.from({ length: 500 }, (_, i) => ({ id: i, name: `c-${i}`, status: 'running' })) };
+    await cache.set('gz-inval', largeData, 60);
+    const gzKey = 'aidash:cache:gz-inval:gz';
+    expect(redisClient._store.has(gzKey)).toBe(true);
+
+    await cache.invalidate('gz-inval');
+
+    // The :gz variant must be gone after invalidation (not just the plain key).
+    expect(redisClient._store.has(gzKey)).toBe(false);
+    // And the del call must have targeted both keys.
+    const delCall = redisClient.del.mock.calls.find(
+      (args: unknown[]) =>
+        Array.isArray(args[0]) &&
+        args[0].includes('aidash:cache:gz-inval') &&
+        args[0].includes(gzKey),
+    );
+    expect(delCall).toBeDefined();
+  });
+});
+
 describe('TtlCache.getWithStaleInfo', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -807,11 +1020,23 @@ describe('compression (#382)', () => {
     // Plain key should have been deleted
     expect(redisClient._store.has('aidash:cache:large-key')).toBe(false);
 
-    // Clear L1 to force L2 read
-    await cache.invalidate('large-key');
+    // Force an L2 read by re-importing the module (fresh, empty L1) while
+    // reusing the same Redis mock so the compressed L2 entry survives.
+    // (cache.invalidate would now clear L2's :gz variant too — see #1270.)
+    vi.resetModules();
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({
+        ...baseConfig,
+        REDIS_URL: 'redis://redis:6379',
+      }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(() => redisClient),
+    }));
+    const { cache: freshCache } = await import('./portainer-cache.js');
 
-    // Read back — should decompress
-    const result = await cache.get<typeof largeData>('large-key');
+    // Read back — should decompress from L2
+    const result = await freshCache.get<typeof largeData>('large-key');
     expect(result).toEqual(largeData);
   });
 

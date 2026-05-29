@@ -23,12 +23,14 @@ export async function endpointsRoutes(fastify: FastifyInstance) {
     // bounce a logged-in user back to /login on every page load when the
     // dashboard's PORTAINER_API_KEY is missing or invalid.
     try {
-      const endpoints = await cachedFetch(
+      // Guard once at the source: a cache layer or upstream that resolves
+      // undefined (e.g. HTTP 204 / empty body) must not crash the .map() below.
+      const endpoints = (await cachedFetch(
         getCacheKey('endpoints'),
         TTL.ENDPOINTS,
         () => portainer.getEndpoints(),
-      );
-      const normalized = (endpoints || []).map(normalizeEndpoint);
+      )) ?? [];
+      const normalized = endpoints.map(normalizeEndpoint);
       // Fill in live container counts for Edge Standard endpoints whose
       // Portainer Snapshots[] never gets populated (issue #1249).
       return await enrichEdgeStandardWithLiveInfo(normalized);
@@ -50,13 +52,14 @@ export async function endpointsRoutes(fastify: FastifyInstance) {
   }, async (_request, reply) => {
     let endpoints;
     try {
-      endpoints = await portainer.getEndpoints();
+      // Guard once at the source so the .map() below cannot crash on undefined.
+      endpoints = (await portainer.getEndpoints()) ?? [];
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       log.error({ err }, 'Failed to fetch endpoints from Portainer (edge-status)');
       return reply.code(502).send({ error: 'Unable to connect to Portainer', details: msg });
     }
-    return (endpoints || []).map((ep) => {
+    return endpoints.map((ep) => {
       const normalized = normalizeEndpoint(ep);
       return {
         id: ep.Id,

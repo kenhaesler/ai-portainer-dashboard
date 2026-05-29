@@ -242,6 +242,34 @@ describe('security-audit service', () => {
     expect(entries.every((e) => e.endpointId === 2)).toBe(true);
   });
 
+  it('does not throw on the audit-all path when endpoints resolve undefined (#1270)', async () => {
+    // Regression: when endpointId is undefined ("audit all"), scopedEndpoints
+    // is assigned `endpoints` straight through. If the cache/upstream resolves
+    // undefined (e.g. HTTP 204 / empty body) the subsequent .filter()/iteration
+    // would throw TypeError. The source-level `?? []` guard must prevent this.
+    mockCachedFetch.mockImplementation((key: string, _ttl: number, fetcher: () => Promise<unknown>) => {
+      if (key === 'endpoints') {
+        return Promise.resolve(undefined);
+      }
+      return fetcher();
+    });
+
+    const entries = await getSecurityAudit();
+    expect(entries).toEqual([]);
+  });
+
+  it('does not throw on a scoped audit when endpoints resolve undefined (#1270)', async () => {
+    mockCachedFetch.mockImplementation((key: string, _ttl: number, fetcher: () => Promise<unknown>) => {
+      if (key === 'endpoints') {
+        return Promise.resolve(undefined);
+      }
+      return fetcher();
+    });
+
+    const entries = await getSecurityAudit(1);
+    expect(entries).toEqual([]);
+  });
+
   it('computes audit summary counts', () => {
     const summary = buildSecurityAuditSummary([
       {

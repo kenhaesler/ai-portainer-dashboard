@@ -116,13 +116,17 @@ const SECURITY_AUDIT_TTL = 300;
  */
 async function computeSecurityAudit(endpointId?: number): Promise<SecurityAuditEntry[]> {
   const ignorePatterns = await getSecurityAuditIgnoreList();
-  const endpoints = await cachedFetch(
+  // Guard once at the source: if a cache layer or upstream resolves undefined
+  // (e.g. HTTP 204 / empty body), default to [] so neither branch below — and
+  // critically the "audit all endpoints" (endpointId undefined) path that
+  // assigns `endpoints` straight through — can throw on .filter()/iteration.
+  const endpoints = (await cachedFetch(
     getCacheKey('endpoints'),
     TTL.ENDPOINTS,
     () => getEndpoints(),
-  );
+  )) ?? [];
   const scopedEndpoints = endpointId
-    ? (endpoints || []).filter((endpoint) => endpoint.Id === endpointId)
+    ? endpoints.filter((endpoint) => endpoint.Id === endpointId)
     : endpoints;
 
   const entries: SecurityAuditEntry[] = [];
