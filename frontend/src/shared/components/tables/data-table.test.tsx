@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent } from '@testing-library/react';
 import { DataTable } from './data-table';
 import type { ColumnDef } from '@tanstack/react-table';
 
@@ -643,6 +643,48 @@ describe('DataTable', () => {
       expect(screen.queryByTestId('virtual-scroll-container')).not.toBeInTheDocument();
       expect(screen.queryByTestId('window-scroll-container')).not.toBeInTheDocument();
       expect(screen.getByTestId('auto-fit-container')).toBeInTheDocument();
+    });
+
+    it('recomputes page size when the viewport is resized', () => {
+      // requestAnimationFrame → run synchronously so the resize handler flushes in-test
+      const rafSpy = vi
+        .spyOn(window, 'requestAnimationFrame')
+        .mockImplementation((cb: FrameRequestCallback) => {
+          cb(0);
+          return 0;
+        });
+      // initial: available = 1000 - 200 - 40 - 56 - 24 = 680 → floor(680/48)=14 → ceil(30/14)=3 pages
+      setViewport(1000, 200);
+      render(<DataTable columns={testColumns} data={makeRows(30)} autoFit />);
+      expect(screen.getByText(/Page 1 of 3/)).toBeInTheDocument();
+
+      // shrink viewport: available = 700 - 200 - 40 - 56 - 24 = 380 → floor(380/48)=7 → ceil(30/7)=5 pages
+      act(() => {
+        Object.defineProperty(window, 'innerHeight', { value: 700, configurable: true });
+        window.dispatchEvent(new Event('resize'));
+      });
+      expect(screen.getByText(/Page 1 of 5/)).toBeInTheDocument();
+
+      rafSpy.mockRestore();
+    });
+
+    it('clamps the page index back into range when data shrinks', () => {
+      setViewport(1000, 200); // 14 rows/page → 3 pages for 30 rows
+      const { rerender } = render(<DataTable columns={testColumns} data={makeRows(30)} autoFit />);
+
+      // navigate to the last page (3 of 3)
+      const next = () => {
+        const buttons = screen.getAllByRole('button');
+        fireEvent.click(buttons[buttons.length - 1]);
+      };
+      next(); // page 2
+      next(); // page 3
+      expect(screen.getByText(/Page 3 of 3/)).toBeInTheDocument();
+
+      // shrink data to a single page → clamp effect resets the index; single page hides the footer
+      rerender(<DataTable columns={testColumns} data={makeRows(5)} autoFit />);
+      expect(screen.getByText('container-5')).toBeInTheDocument();
+      expect(screen.queryByText(/Page \d+ of \d+/)).not.toBeInTheDocument();
     });
   });
 
