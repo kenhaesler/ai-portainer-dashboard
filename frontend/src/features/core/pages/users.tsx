@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type ColumnDef } from '@tanstack/react-table';
 import { Loader2, ShieldAlert, UserPlus, Users as UsersIcon, Trash2, UserCog } from 'lucide-react';
 import { useAuth } from '@/providers/auth-provider';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { ConfirmDialog } from '@/shared/components/feedback/confirm-dialog';
-import { useCreateUser, useDeleteUser, useUpdateUser, useUsers, type UserRole } from '@/features/core/hooks/use-users';
+import { DataTable } from '@/shared/components/tables/data-table';
+import { useCreateUser, useDeleteUser, useUpdateUser, useUsers, type UserRecord, type UserRole } from '@/features/core/hooks/use-users';
 import { cn, formatDate } from '@/shared/lib/utils';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 
@@ -86,7 +88,7 @@ export function UsersPanel() {
     }
   };
 
-  const startEdit = (user: { id: string; username: string; role: UserRole }) => {
+  const startEdit = useCallback((user: { id: string; username: string; role: UserRole }) => {
     setEditingId(user.id);
     setForm({ username: user.username, password: '', role: user.role });
     setErrorMessage(null);
@@ -99,15 +101,78 @@ export function UsersPanel() {
       setEditHighlight(true);
       highlightTimer.current = setTimeout(() => setEditHighlight(false), 1200);
     });
-  };
+  }, []);
 
-  const deactivateUser = (userId: string) => {
+  const deactivateUser = useCallback((userId: string) => {
     setConfirmAction({ type: 'deactivate', userId });
-  };
+  }, []);
 
-  const removeUser = (userId: string) => {
+  const removeUser = useCallback((userId: string) => {
     setConfirmAction({ type: 'delete', userId });
-  };
+  }, []);
+
+  const columns = useMemo<ColumnDef<UserRecord, unknown>[]>(() => [
+    {
+      accessorKey: 'username',
+      header: 'User',
+      cell: ({ getValue }) => <span className="font-medium">{getValue<string>()}</span>,
+    },
+    {
+      accessorKey: 'role',
+      header: 'Role',
+      cell: ({ getValue }) => <span className="capitalize">{getValue<string>()}</span>,
+    },
+    {
+      accessorKey: 'created_at',
+      header: 'Created',
+      cell: ({ getValue }) => (
+        <span className="text-xs text-muted-foreground">{formatDate(getValue<string>())}</span>
+      ),
+    },
+    {
+      accessorKey: 'updated_at',
+      header: 'Updated',
+      cell: ({ getValue }) => (
+        <span className="text-xs text-muted-foreground">{formatDate(getValue<string>())}</span>
+      ),
+    },
+    {
+      id: 'actions',
+      header: () => <span className="block text-right">Actions</span>,
+      enableSorting: false,
+      cell: ({ row }) => {
+        const user = row.original;
+        return (
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => startEdit(user)}
+              className="rounded-md border border-input bg-background px-2 py-1 text-xs font-medium hover:bg-accent"
+            >
+              Edit
+            </button>
+            {user.role !== 'viewer' && (
+              <button
+                type="button"
+                onClick={() => void deactivateUser(user.id)}
+                className="rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-300"
+              >
+                Deactivate
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => void removeUser(user.id)}
+              className="inline-flex items-center gap-1 rounded-md border border-red-300 bg-red-50 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-300"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Delete
+            </button>
+          </div>
+        );
+      },
+    },
+  ], [startEdit, deactivateUser, removeUser]);
 
   const handleConfirmAction = async () => {
     if (!confirmAction) return;
@@ -168,60 +233,12 @@ export function UsersPanel() {
               <div className="h-10 animate-pulse rounded bg-muted" />
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[700px] text-sm">
-                <thead>
-                  <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
-                    <th className="px-2 py-2.5 font-medium">User</th>
-                    <th className="px-2 py-2.5 font-medium">Role</th>
-                    <th className="px-2 py-2.5 font-medium">Created</th>
-                    <th className="px-2 py-2.5 font-medium">Updated</th>
-                    <th className="px-2 py-2.5 font-medium text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredUsers.map((user) => (
-                    <tr key={user.id} className="border-b last:border-0">
-                      <td className="px-2 py-2.5 font-medium">{user.username}</td>
-                      <td className="px-2 py-2.5 capitalize">{user.role}</td>
-                      <td className="px-2 py-2.5 text-xs text-muted-foreground">{formatDate(user.created_at)}</td>
-                      <td className="px-2 py-2.5 text-xs text-muted-foreground">{formatDate(user.updated_at)}</td>
-                      <td className="px-2 py-2.5">
-                        <div className="flex justify-end gap-2">
-                          <button
-                            type="button"
-                            onClick={() => startEdit(user)}
-                            className="rounded-md border border-input bg-background px-2 py-1 text-xs font-medium hover:bg-accent"
-                          >
-                            Edit
-                          </button>
-                          {user.role !== 'viewer' && (
-                            <button
-                              type="button"
-                              onClick={() => void deactivateUser(user.id)}
-                              className="rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-300"
-                            >
-                              Deactivate
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => void removeUser(user.id)}
-                            className="inline-flex items-center gap-1 rounded-md border border-red-300 bg-red-50 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-300"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                            Delete
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {filteredUsers.length === 0 && (
-                <p className="mt-2 text-xs text-muted-foreground">No users match the current filters.</p>
-              )}
-            </div>
+            <DataTable
+              columns={columns}
+              data={filteredUsers}
+              hideSearch
+              minTableWidth={700}
+            />
           )}
         </section>
         </SpotlightCard>
