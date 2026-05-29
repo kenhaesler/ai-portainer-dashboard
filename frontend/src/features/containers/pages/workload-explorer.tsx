@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { type ColumnDef, type RowSelectionState } from '@tanstack/react-table';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { AlertTriangle, Boxes, Download, Eye, GitCompareArrows, ScrollText, X } from 'lucide-react';
+import { AlertTriangle, Box, Boxes, Cog, Download, Eye, GitCompareArrows, ScrollText, X } from 'lucide-react';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { useContainers, type Container } from '@/features/containers/hooks/use-containers';
 import { useEndpoints } from '@/features/containers/hooks/use-endpoints';
@@ -370,18 +370,23 @@ export default function WorkloadExplorerPage() {
     {
       id: 'group',
       header: 'Group',
+      size: 72,
       cell: ({ row }) => {
         const label = getContainerGroupLabel(row.original);
         const isSystem = label === 'System';
+        const Icon = isSystem ? Cog : Box;
         return (
           <span
+            role="img"
+            title={label}
+            aria-label={label}
             className={
               isSystem
-                ? 'inline-flex items-center rounded-md bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900 dark:bg-amber-900/30 dark:text-amber-300'
-                : 'inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700 dark:bg-slate-900/30 dark:text-slate-300'
+                ? 'inline-flex items-center justify-center rounded-md bg-amber-100 p-1 text-amber-900 dark:bg-amber-900/30 dark:text-amber-300'
+                : 'inline-flex items-center justify-center rounded-md bg-slate-100 p-1 text-slate-700 dark:bg-slate-900/30 dark:text-slate-300'
             }
           >
-            {label}
+            <Icon className="h-3.5 w-3.5" aria-hidden="true" />
           </span>
         );
       },
@@ -563,7 +568,7 @@ export default function WorkloadExplorerPage() {
       ) : (
         // ── Original table / filter pane / selection-action-bar block ──
         <>
-          {/* Merged filter + table pane (#1313): dropdowns → chips → search → table */}
+          {/* Merged filter + table pane: search → dropdowns → chips → table */}
           {isLoading ? (
             <SkeletonChart size="lg" />
           ) : filteredContainers ? (
@@ -572,6 +577,14 @@ export default function WorkloadExplorerPage() {
               data-testid="workload-pane"
               className="rounded-lg border bg-card p-6 shadow-sm space-y-4"
             >
+              {/* Smart search */}
+              <WorkloadSmartSearch
+                containers={filteredContainers}
+                knownStackNames={knownStackNames}
+                onFiltered={setSearchFilteredContainers}
+                totalCount={filteredContainers.length}
+              />
+
               <div className="flex items-center gap-4 flex-wrap">
                 <div className="flex items-center gap-2">
                   <label htmlFor="endpoint-select" className="text-sm font-medium">
@@ -685,20 +698,12 @@ export default function WorkloadExplorerPage() {
                 </div>
               )}
 
-              {/* Smart search */}
-              <WorkloadSmartSearch
-                containers={filteredContainers}
-                knownStackNames={knownStackNames}
-                onFiltered={setSearchFilteredContainers}
-                totalCount={filteredContainers.length}
-              />
-
               <DataTable
                 columns={columns}
                 data={searchFilteredContainers ?? filteredContainers}
                 hideSearch
-                pageSize={15}
-                windowScroll
+                autoFit
+                minTableWidth={860}
                 enableRowSelection
                 maxSelection={MAX_COMPARE}
                 onSelectionChange={handleSelectionChange}

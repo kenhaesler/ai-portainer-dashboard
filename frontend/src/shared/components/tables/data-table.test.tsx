@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { act, render, screen, fireEvent } from '@testing-library/react';
 import { DataTable } from './data-table';
 import type { ColumnDef } from '@tanstack/react-table';
 
@@ -252,6 +252,38 @@ describe('DataTable', () => {
 
       // Table should still be rendered (sorting changes row order)
       expect(screen.getByText('container-1')).toBeInTheDocument();
+    });
+  });
+
+  describe('sort direction indicator', () => {
+    it('marks sortable headers aria-sort="none" before any sort', () => {
+      render(<DataTable columns={testColumns} data={makeRows(5)} />);
+      const nameHeader = screen.getByText('Name').closest('th');
+      expect(nameHeader).toHaveAttribute('aria-sort', 'none');
+    });
+
+    it('sets aria-sort ascending then descending when toggling a header', () => {
+      render(<DataTable columns={testColumns} data={makeRows(5)} />);
+      const nameHeader = screen.getByText('Name').closest('th')!;
+      fireEvent.click(nameHeader);
+      expect(nameHeader).toHaveAttribute('aria-sort', 'ascending');
+      fireEvent.click(nameHeader);
+      expect(nameHeader).toHaveAttribute('aria-sort', 'descending');
+    });
+
+    it('swaps the neutral icon for a directional arrow on the active column', () => {
+      render(<DataTable columns={testColumns} data={makeRows(5)} />);
+      const nameHeader = screen.getByText('Name').closest('th')!;
+      // inactive → neutral up/down icon
+      expect(nameHeader.querySelector('svg.lucide-arrow-up-down')).toBeInTheDocument();
+      fireEvent.click(nameHeader);
+      // ascending → arrow-up, neutral icon gone
+      expect(nameHeader.querySelector('svg.lucide-arrow-up')).toBeInTheDocument();
+      expect(nameHeader.querySelector('svg.lucide-arrow-up-down')).not.toBeInTheDocument();
+      // descending → arrow-down replaces arrow-up
+      fireEvent.click(nameHeader);
+      expect(nameHeader.querySelector('svg.lucide-arrow-down')).toBeInTheDocument();
+      expect(nameHeader.querySelector('svg.lucide-arrow-up')).not.toBeInTheDocument();
     });
   });
 
@@ -517,6 +549,186 @@ describe('DataTable', () => {
       render(<DataTable columns={testColumns} data={[]} windowScroll />);
       expect(screen.getByTestId('window-scroll-container')).toBeInTheDocument();
       expect(screen.getByText('No results.')).toBeInTheDocument();
+    });
+  });
+
+  describe('selection hit-box', () => {
+    it('wraps the row checkbox in a padded label to enlarge the click target', () => {
+      render(<DataTable columns={testColumns} data={makeRows(2)} enableRowSelection />);
+      const input = screen.getByTestId('row-checkbox-0');
+      const label = input.closest('label');
+      expect(label).not.toBeNull();
+      expect(label?.className).toContain('p-2.5');
+      expect(label?.className).toContain('cursor-pointer');
+    });
+
+    it('toggles selection when the padded label is clicked, without firing onRowClick', () => {
+      const onRowClick = vi.fn();
+      const onSelectionChange = vi.fn();
+      const data = makeRows(2);
+      render(
+        <DataTable
+          columns={testColumns}
+          data={data}
+          enableRowSelection
+          onRowClick={onRowClick}
+          onSelectionChange={onSelectionChange}
+        />,
+      );
+      const label = screen.getByTestId('row-checkbox-0').closest('label')!;
+      fireEvent.click(label);
+      expect(onSelectionChange).toHaveBeenCalledWith([data[0]]);
+      expect(onRowClick).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('autoFit mode', () => {
+    let rectSpy: ReturnType<typeof vi.spyOn> | undefined;
+
+    const setViewport = (innerHeight: number, top: number) => {
+      Object.defineProperty(window, 'innerHeight', { value: innerHeight, configurable: true });
+      rectSpy = vi
+        .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+        .mockReturnValue({
+          top,
+          bottom: 0,
+          left: 0,
+          right: 0,
+          width: 0,
+          height: 0,
+          x: 0,
+          y: top,
+          toJSON: () => ({}),
+        } as DOMRect);
+    };
+
+    afterEach(() => {
+      rectSpy?.mockRestore();
+      rectSpy = undefined;
+      Object.defineProperty(window, 'innerHeight', { value: 768, configurable: true });
+    });
+
+    it('computes page size from the available viewport height', () => {
+      // available = 1000 - 200 - 40 - 56 - 24 = 680 → floor(680 / 48) = 14 rows/page
+      setViewport(1000, 200);
+      render(<DataTable columns={testColumns} data={makeRows(30)} autoFit />);
+      expect(screen.getByTestId('auto-fit-container')).toBeInTheDocument();
+      expect(screen.getByText('container-14')).toBeInTheDocument();
+      expect(screen.queryByText('container-15')).not.toBeInTheDocument();
+      expect(screen.getByText(/Page 1 of 3/)).toBeInTheDocument(); // ceil(30/14) = 3
+    });
+
+    it('paginates to the next page of rows', () => {
+      setViewport(1000, 200); // 14 rows/page
+      render(<DataTable columns={testColumns} data={makeRows(30)} autoFit />);
+      const buttons = screen.getAllByRole('button');
+      fireEvent.click(buttons[buttons.length - 1]); // next page
+      expect(screen.getByText('container-15')).toBeInTheDocument();
+      expect(screen.queryByText('container-14')).not.toBeInTheDocument();
+      expect(screen.getByText(/Page 2 of 3/)).toBeInTheDocument();
+    });
+
+    it('floors page size to a minimum of 5 rows on very short viewports', () => {
+      // available = 200 - 180 - 40 - 56 - 24 = -100 → max(5, floor(-100/48)) = 5
+      setViewport(200, 180);
+      render(<DataTable columns={testColumns} data={makeRows(12)} autoFit />);
+      expect(screen.getByText('container-5')).toBeInTheDocument();
+      expect(screen.queryByText('container-6')).not.toBeInTheDocument();
+      expect(screen.getByText(/Page 1 of 3/)).toBeInTheDocument(); // ceil(12/5) = 3
+    });
+
+    it('does not virtualize or window-scroll in autoFit mode', () => {
+      setViewport(1000, 200);
+      render(<DataTable columns={testColumns} data={makeRows(100)} autoFit />);
+      expect(screen.queryByTestId('virtual-scroll-container')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('window-scroll-container')).not.toBeInTheDocument();
+      expect(screen.getByTestId('auto-fit-container')).toBeInTheDocument();
+    });
+
+    it('recomputes page size when the viewport is resized', () => {
+      // requestAnimationFrame → run synchronously so the resize handler flushes in-test
+      const rafSpy = vi
+        .spyOn(window, 'requestAnimationFrame')
+        .mockImplementation((cb: FrameRequestCallback) => {
+          cb(0);
+          return 0;
+        });
+      // initial: available = 1000 - 200 - 40 - 56 - 24 = 680 → floor(680/48)=14 → ceil(30/14)=3 pages
+      setViewport(1000, 200);
+      render(<DataTable columns={testColumns} data={makeRows(30)} autoFit />);
+      expect(screen.getByText(/Page 1 of 3/)).toBeInTheDocument();
+
+      // shrink viewport: available = 700 - 200 - 40 - 56 - 24 = 380 → floor(380/48)=7 → ceil(30/7)=5 pages
+      act(() => {
+        Object.defineProperty(window, 'innerHeight', { value: 700, configurable: true });
+        window.dispatchEvent(new Event('resize'));
+      });
+      expect(screen.getByText(/Page 1 of 5/)).toBeInTheDocument();
+
+      rafSpy.mockRestore();
+    });
+
+    it('clamps the page index back into range when data shrinks', () => {
+      setViewport(1000, 200); // 14 rows/page → 3 pages for 30 rows
+      const { rerender } = render(<DataTable columns={testColumns} data={makeRows(30)} autoFit />);
+
+      // navigate to the last page (3 of 3)
+      const next = () => {
+        const buttons = screen.getAllByRole('button');
+        fireEvent.click(buttons[buttons.length - 1]);
+      };
+      next(); // page 2
+      next(); // page 3
+      expect(screen.getByText(/Page 3 of 3/)).toBeInTheDocument();
+
+      // shrink data to a single page → clamp effect resets the index; single page hides the footer
+      rerender(<DataTable columns={testColumns} data={makeRows(5)} autoFit />);
+      expect(screen.getByText('container-5')).toBeInTheDocument();
+      expect(screen.queryByText(/Page \d+ of \d+/)).not.toBeInTheDocument();
+    });
+
+    it('renders selection checkboxes alongside pagination in autoFit mode', () => {
+      setViewport(1000, 200); // 14 rows/page → 3 pages for 30 rows
+      const onSelectionChange = vi.fn();
+      const data = makeRows(30);
+      render(
+        <DataTable
+          columns={testColumns}
+          data={data}
+          autoFit
+          enableRowSelection
+          onSelectionChange={onSelectionChange}
+        />,
+      );
+      const container = screen.getByTestId('auto-fit-container');
+      expect(container.querySelector('[data-testid="select-all-checkbox"]')).toBeInTheDocument();
+      expect(screen.getByTestId('row-checkbox-0')).toBeInTheDocument();
+      expect(screen.getByText(/Page 1 of 3/)).toBeInTheDocument();
+      // toggling a row checkbox selects that row
+      fireEvent.click(screen.getByTestId('row-checkbox-0'));
+      expect(onSelectionChange).toHaveBeenCalledWith([data[0]]);
+    });
+  });
+
+  describe('horizontal scroll (minTableWidth)', () => {
+    let rectSpy: ReturnType<typeof vi.spyOn> | undefined;
+
+    afterEach(() => {
+      rectSpy?.mockRestore();
+      rectSpy = undefined;
+      Object.defineProperty(window, 'innerHeight', { value: 768, configurable: true });
+    });
+
+    it('applies overflow-x-auto and a min-width on the table when minTableWidth is set', () => {
+      Object.defineProperty(window, 'innerHeight', { value: 1000, configurable: true });
+      rectSpy = vi
+        .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+        .mockReturnValue({ top: 100, toJSON: () => ({}) } as DOMRect);
+      render(<DataTable columns={testColumns} data={makeRows(5)} autoFit minTableWidth={860} />);
+      const container = screen.getByTestId('auto-fit-container');
+      expect(container.className).toContain('overflow-x-auto');
+      const table = container.querySelector('table');
+      expect(table?.style.minWidth).toBe('860px');
     });
   });
 

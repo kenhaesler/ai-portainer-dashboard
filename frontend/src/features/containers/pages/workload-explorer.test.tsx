@@ -123,7 +123,8 @@ vi.mock('@/shared/components/tables/data-table', () => ({
     onSelectionChange,
     selectedRowIds,
     onRowClick,
-    windowScroll,
+    autoFit,
+    minTableWidth,
   }: {
     columns?: any[];
     data: Array<{ name: string }>;
@@ -132,7 +133,8 @@ vi.mock('@/shared/components/tables/data-table', () => ({
     onSelectionChange?: (rows: Array<{ id: string; name: string; endpointId: number }>) => void;
     selectedRowIds?: Record<string, boolean>;
     onRowClick?: (row: { id: string; name: string; endpointId: number }) => void;
-    windowScroll?: boolean;
+    autoFit?: boolean;
+    minTableWidth?: number;
   }) => {
     mockOnSelectionChange = onSelectionChange;
     mockColumns = columns;
@@ -143,7 +145,8 @@ vi.mock('@/shared/components/tables/data-table', () => ({
         data-max-selection={maxSelection}
         data-selected-row-ids={selectedRowIds !== undefined ? JSON.stringify(selectedRowIds) : undefined}
         data-has-row-click={onRowClick ? 'true' : undefined}
-        data-window-scroll={windowScroll ? 'true' : undefined}
+        data-auto-fit={autoFit ? 'true' : undefined}
+        data-min-table-width={minTableWidth}
       >
         {data.map((container) => container.name).join(',')}
       </div>
@@ -401,6 +404,17 @@ describe('WorkloadExplorerPage', () => {
     mockQueryString = 'endpoint=1';
     render(<WorkloadExplorerPage />);
     expect(screen.queryByTestId('workload-status-summary')).not.toBeInTheDocument();
+  });
+
+  it('renders the search bar above the filter dropdowns', () => {
+    mockQueryString = 'endpoint=1';
+    render(<WorkloadExplorerPage />);
+    const search = screen.getByTestId('workload-smart-search');
+    const endpointSelect = screen.getByTestId('endpoint-select');
+    // endpoint dropdown follows the search bar in document order
+    expect(
+      search.compareDocumentPosition(endpointSelect) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it('merges filter dropdowns and table into a single pane (#1313)', () => {
@@ -951,9 +965,14 @@ describe('WorkloadExplorerPage — columns (#1288)', () => {
     expect(ids.has('age')).toBe(false);
   });
 
-  it('passes windowScroll to the DataTable', () => {
+  it('passes autoFit to the DataTable', () => {
     render(<WorkloadExplorerPage />);
-    expect(screen.getByTestId('workloads-table')).toHaveAttribute('data-window-scroll', 'true');
+    expect(screen.getByTestId('workloads-table')).toHaveAttribute('data-auto-fit', 'true');
+  });
+
+  it('passes minTableWidth to the DataTable for horizontal scrolling', () => {
+    render(<WorkloadExplorerPage />);
+    expect(screen.getByTestId('workloads-table')).toHaveAttribute('data-min-table-width', '860');
   });
 
   it('Imagename cell renders only the segment after the last "/" with the full path on title', () => {
@@ -999,5 +1018,28 @@ describe('WorkloadExplorerPage — columns (#1288)', () => {
     const tagButton = container.querySelector('button');
     expect(tagButton).not.toBeNull();
     expect(tagButton?.className).toContain('whitespace-nowrap');
+  });
+
+  it('renders the Group cell as a labelled icon (System=Cog, Workload=Box)', () => {
+    render(<WorkloadExplorerPage />);
+    const groupCol = mockColumns?.find((c) => c.id === 'group');
+    expect(groupCol).toBeDefined();
+
+    // System container (beyla → grafana/beyla image)
+    const systemCell = groupCol.cell({ row: { original: defaultContainersMock.data[1] } });
+    const { container: sysC } = render(systemCell);
+    const sysWrap = sysC.querySelector('span[aria-label="System"]');
+    expect(sysWrap).not.toBeNull();
+    expect(sysWrap).toHaveAttribute('role', 'img');
+    expect(sysWrap?.querySelector('svg.lucide-cog')).toBeInTheDocument();
+    expect(sysWrap?.className).toContain('bg-amber-100');
+
+    // Workload container (workers-api-1)
+    const workloadCell = groupCol.cell({ row: { original: defaultContainersMock.data[0] } });
+    const { container: wlC } = render(workloadCell);
+    const wlWrap = wlC.querySelector('span[aria-label="Workload"]');
+    expect(wlWrap).not.toBeNull();
+    expect(wlWrap?.querySelector('svg.lucide-box')).toBeInTheDocument();
+    expect(wlWrap?.className).toContain('bg-slate-100');
   });
 });
