@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { type ColumnDef } from '@tanstack/react-table';
 import { LlmLatencyBreakdown } from '@/features/ai-intelligence/components/llm-latency-breakdown';
 import { useLlmTraces, useLlmStats, type LlmTrace } from '@/features/ai-intelligence/hooks/use-llm-observability';
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
@@ -7,6 +8,7 @@ import { AutoRefreshToggle } from '@/shared/components/ui/auto-refresh-toggle';
 import { KpiCard } from '@/shared/components/data-display/kpi-card';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 import { TiltCard } from '@/shared/components/data-display/tilt-card';
+import { DataTable } from '@/shared/components/tables/data-table';
 import { SkeletonKpi, SkeletonList } from '@/shared/components/feedback/skeleton';
 import { EmptyState } from '@/shared/components/feedback/empty-state';
 import { cn, formatDate } from '@/shared/lib/utils';
@@ -19,6 +21,8 @@ import {
   Eye,
   EyeOff,
 } from 'lucide-react';
+
+type ModelBreakdownRow = { model: string; count: number; tokens: number };
 
 type TimeRange = 1 | 6 | 24 | 168;
 
@@ -46,6 +50,64 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 function TracesTable({ traces, isLoading, privacyMode }: { traces: LlmTrace[]; isLoading: boolean; privacyMode: boolean }) {
+  const columns = useMemo<ColumnDef<LlmTrace, unknown>[]>(() => [
+    {
+      accessorKey: 'created_at',
+      header: 'Time',
+      cell: ({ getValue }) => (
+        <span className="whitespace-nowrap text-muted-foreground">{formatDate(getValue<string>())}</span>
+      ),
+    },
+    {
+      accessorKey: 'model',
+      header: 'Model',
+      cell: ({ getValue }) => (
+        <span className="whitespace-nowrap font-mono text-xs">{getValue<string>()}</span>
+      ),
+    },
+    {
+      accessorKey: 'user_query',
+      header: 'Query',
+      cell: ({ row }) => {
+        const query = row.original.user_query;
+        return (
+          <span
+            className={cn(
+              'block max-w-[300px] truncate select-none',
+              privacyMode && 'blur-sm hover:blur-none transition-[filter] duration-200'
+            )}
+            title={privacyMode ? undefined : (query ?? undefined)}
+          >
+            {query || '—'}
+          </span>
+        );
+      },
+    },
+    {
+      accessorKey: 'total_tokens',
+      header: () => <span className="block w-full text-right">Tokens</span>,
+      cell: ({ getValue }) => (
+        <div className="text-right whitespace-nowrap font-mono">{getValue<number>().toLocaleString()}</div>
+      ),
+    },
+    {
+      accessorKey: 'latency_ms',
+      header: () => <span className="block w-full text-right">Latency</span>,
+      cell: ({ getValue }) => (
+        <div className="text-right whitespace-nowrap font-mono">{getValue<number>().toLocaleString()}ms</div>
+      ),
+    },
+    {
+      accessorKey: 'status',
+      header: () => <span className="block w-full text-center">Status</span>,
+      cell: ({ getValue }) => (
+        <div className="text-center">
+          <StatusBadge status={getValue<string>()} />
+        </div>
+      ),
+    },
+  ], [privacyMode]);
+
   if (isLoading) {
     return <SkeletonList rows={4} />;
   }
@@ -60,51 +122,66 @@ function TracesTable({ traces, isLoading, privacyMode }: { traces: LlmTrace[]; i
     );
   }
 
-  return (
-    <div className="rounded-lg border bg-card overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b bg-muted/50">
-              <th className="px-4 py-3 text-left font-medium text-muted-foreground">Time</th>
-              <th className="px-4 py-3 text-left font-medium text-muted-foreground">Model</th>
-              <th className="px-4 py-3 text-left font-medium text-muted-foreground">Query</th>
-              <th className="px-4 py-3 text-right font-medium text-muted-foreground">Tokens</th>
-              <th className="px-4 py-3 text-right font-medium text-muted-foreground">Latency</th>
-              <th className="px-4 py-3 text-center font-medium text-muted-foreground">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {traces.map((trace) => (
-              <tr key={trace.id} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
-                <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">
-                  {formatDate(trace.created_at)}
-                </td>
-                <td className="px-4 py-3 whitespace-nowrap font-mono text-xs">
-                  {trace.model}
-                </td>
-                <td className={cn(
-                  'px-4 py-3 max-w-[300px] truncate select-none',
-                  privacyMode && 'blur-sm hover:blur-none transition-[filter] duration-200'
-                )} title={privacyMode ? undefined : (trace.user_query ?? undefined)}>
-                  {trace.user_query || '—'}
-                </td>
-                <td className="px-4 py-3 text-right whitespace-nowrap font-mono">
-                  {trace.total_tokens.toLocaleString()}
-                </td>
-                <td className="px-4 py-3 text-right whitespace-nowrap font-mono">
-                  {trace.latency_ms.toLocaleString()}ms
-                </td>
-                <td className="px-4 py-3 text-center">
-                  <StatusBadge status={trace.status} />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
+  return <DataTable columns={columns} data={traces} hideSearch getRowId={(trace) => String(trace.id)} />;
+}
+
+function ModelBreakdownTable({
+  modelBreakdown,
+  totalModelQueries,
+  maxModelQueries,
+}: {
+  modelBreakdown: ModelBreakdownRow[];
+  totalModelQueries: number;
+  maxModelQueries: number;
+}) {
+  const columns = useMemo<ColumnDef<ModelBreakdownRow, unknown>[]>(() => [
+    {
+      accessorKey: 'model',
+      header: 'Model',
+      cell: ({ getValue }) => (
+        <span className="inline-flex rounded-md bg-muted/50 px-2 py-1 font-mono text-xs">
+          {getValue<string>()}
+        </span>
+      ),
+    },
+    {
+      accessorKey: 'count',
+      header: () => <span className="block w-full text-right">Queries</span>,
+      cell: ({ getValue }) => (
+        <div className="text-right font-medium">{getValue<number>().toLocaleString()}</div>
+      ),
+    },
+    {
+      accessorKey: 'tokens',
+      header: () => <span className="block w-full text-right">Tokens</span>,
+      cell: ({ getValue }) => (
+        <div className="text-right font-medium">{getValue<number>().toLocaleString()}</div>
+      ),
+    },
+    {
+      id: 'share',
+      header: 'Share',
+      enableSorting: false,
+      cell: ({ row }) => {
+        const model = row.original;
+        const queryShare = totalModelQueries > 0 ? Math.round((model.count / totalModelQueries) * 100) : 0;
+        const density = maxModelQueries > 0 ? Math.round((model.count / maxModelQueries) * 100) : 0;
+        return (
+          <div className="flex min-w-36 items-center gap-2">
+            <div className="h-2 w-24 overflow-hidden rounded-full bg-muted" aria-label={`${model.model} share`}>
+              <div
+                className="h-full rounded-full bg-primary"
+                style={{ width: `${Math.max(4, density)}%` }}
+              />
+            </div>
+            <span className="text-xs text-muted-foreground">{queryShare}%</span>
+          </div>
+        );
+      },
+    },
+  ], [totalModelQueries, maxModelQueries]);
+
+  return <DataTable columns={columns} data={modelBreakdown} hideSearch getRowId={(model) => model.model} />;
 }
 
 export default function LlmObservabilityPage() {
@@ -226,46 +303,11 @@ export default function LlmObservabilityPage() {
           {modelBreakdown.length === 0 ? (
             <p className="text-sm text-muted-foreground">No model data available.</p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b">
-                    <th className="px-3 pb-2 pt-1 text-left font-medium text-muted-foreground">Model</th>
-                    <th className="px-3 pb-2 pt-1 text-right font-medium text-muted-foreground">Queries</th>
-                    <th className="px-3 pb-2 pt-1 text-right font-medium text-muted-foreground">Tokens</th>
-                    <th className="px-3 pb-2 pt-1 text-left font-medium text-muted-foreground">Share</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {modelBreakdown.map((model) => {
-                    const queryShare = totalModelQueries > 0 ? Math.round((model.count / totalModelQueries) * 100) : 0;
-                    const density = maxModelQueries > 0 ? Math.round((model.count / maxModelQueries) * 100) : 0;
-                    return (
-                      <tr key={model.model} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
-                        <td className="px-3 py-2.5">
-                          <span className="inline-flex rounded-md bg-muted/50 px-2 py-1 font-mono text-xs">
-                            {model.model}
-                          </span>
-                        </td>
-                        <td className="px-3 py-2.5 text-right font-medium">{model.count.toLocaleString()}</td>
-                        <td className="px-3 py-2.5 text-right font-medium">{model.tokens.toLocaleString()}</td>
-                        <td className="px-3 py-2.5">
-                          <div className="flex min-w-36 items-center gap-2">
-                            <div className="h-2 w-24 overflow-hidden rounded-full bg-muted" aria-label={`${model.model} share`}>
-                              <div
-                                className="h-full rounded-full bg-primary"
-                                style={{ width: `${Math.max(4, density)}%` }}
-                              />
-                            </div>
-                            <span className="text-xs text-muted-foreground">{queryShare}%</span>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <ModelBreakdownTable
+              modelBreakdown={modelBreakdown}
+              totalModelQueries={totalModelQueries}
+              maxModelQueries={maxModelQueries}
+            />
           )}
         </div>
         </SpotlightCard>
