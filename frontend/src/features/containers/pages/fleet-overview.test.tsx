@@ -421,6 +421,18 @@ describe('InfrastructurePage — fleet section', () => {
     // DataTable search input should be present
     expect(screen.getByTestId('data-table-search')).toBeInTheDocument();
   });
+
+  it('fleet table view fits the viewport (autoFit)', () => {
+    useUiStore.setState({ pageViewModes: { fleet: 'table' } });
+    mockEndpoints([
+      makeEndpoint({ id: 1, name: 'alpha-env' }),
+      makeEndpoint({ id: 2, name: 'beta-env' }),
+    ]);
+
+    renderPage();
+
+    expect(screen.getByTestId('auto-fit-container')).toBeInTheDocument();
+  });
 });
 
 describe('InfrastructurePage — stack section', () => {
@@ -487,6 +499,18 @@ describe('InfrastructurePage — stack section', () => {
     // DataTable search input should be present (one for fleet which is empty, one for stacks)
     const searchInputs = screen.getAllByTestId('data-table-search');
     expect(searchInputs.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('stacks table view fits the viewport (autoFit)', () => {
+    useUiStore.setState({ pageViewModes: { stacks: 'table' } });
+    mockStacks([
+      makeStack({ id: 1, name: 'alpha-stack' }),
+      makeStack({ id: 2, name: 'beta-stack' }),
+    ]);
+
+    renderPageWithInitialParams('/infrastructure?tab=stacks');
+
+    expect(screen.getByTestId('auto-fit-container')).toBeInTheDocument();
   });
 });
 
