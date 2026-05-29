@@ -1,4 +1,5 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
+import { type ColumnDef } from '@tanstack/react-table';
 import {
   FileBarChart,
   Download,
@@ -26,6 +27,7 @@ import { useEndpoints } from '@/features/containers/hooks/use-endpoints';
 import { useContainers } from '@/features/containers/hooks/use-containers';
 import type { Container } from '@/features/containers/hooks/use-containers';
 import { MetricsLineChart } from '@/shared/components/charts/metrics-line-chart';
+import { DataTable } from '@/shared/components/tables/data-table';
 import { SkeletonKpi } from '@/shared/components/feedback/skeleton';
 import { EmptyState } from '@/shared/components/feedback/empty-state';
 import { cn } from '@/shared/lib/utils';
@@ -194,6 +196,77 @@ export function DienststellenOverview({
     [containers],
   );
 
+  const dienststelleColumns = useMemo<ColumnDef<ContainerWithStack, unknown>[]>(() => [
+    {
+      accessorKey: 'name',
+      enableSorting: false,
+      header: () => <span className="pl-8">Container</span>,
+      cell: ({ row }) => (
+        <span className="block pl-8 font-medium truncate max-w-[200px]" title={row.original.name}>
+          {row.original.name}
+        </span>
+      ),
+    },
+    {
+      id: 'stack',
+      header: 'Stack',
+      cell: ({ row }) => (
+        <span
+          className="block text-muted-foreground truncate max-w-[150px]"
+          title={row.original.parsedStack?.raw}
+        >
+          {row.original.parsedStack?.stackName ?? '—'}
+        </span>
+      ),
+    },
+    {
+      id: 'env',
+      header: 'Env',
+      cell: ({ row }) => {
+        const env = row.original.parsedStack?.environment;
+        if (!env) return null;
+        return (
+          <span className={cn(
+            'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
+            env === 'prod' && 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+            env === 'test' && 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+          )}>
+            {env}
+          </span>
+        );
+      },
+    },
+    {
+      accessorKey: 'image',
+      enableSorting: false,
+      header: 'Image',
+      cell: ({ row }) => (
+        <span className="block text-muted-foreground truncate max-w-[250px]" title={row.original.image}>
+          {row.original.image}
+        </span>
+      ),
+    },
+    {
+      accessorKey: 'state',
+      enableSorting: false,
+      header: 'State',
+      cell: ({ row }) => {
+        const state = row.original.state;
+        return (
+          <span className={cn(
+            'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
+            state === 'running' && 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+            state === 'stopped' && 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+            state === 'paused' && 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
+            state !== 'running' && state !== 'stopped' && state !== 'paused' && 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400',
+          )}>
+            {state}
+          </span>
+        );
+      },
+    },
+  ], []);
+
   const totalDienststellen = groups.filter((g) => g.dienststelle !== 'Standalone').length;
   const totalContainers = groups.reduce((sum, g) => sum + g.containers.length, 0);
   const uniqueDepartments = new Set(groups.flatMap((g) => g.departments));
@@ -293,57 +366,14 @@ export function DienststellenOverview({
                   </div>
                 </button>
                 {isExpanded && grpContainers.length > 0 && (
-                  <div className="border-t bg-muted/10">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b bg-muted/30 text-left">
-                          <th className="px-4 py-2 pl-12 font-medium">Container</th>
-                          <th className="px-4 py-2 font-medium">Stack</th>
-                          <th className="px-4 py-2 font-medium">Env</th>
-                          <th className="px-4 py-2 font-medium">Image</th>
-                          <th className="px-4 py-2 font-medium">State</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {grpContainers
-                          .sort((a, b) => a.name.localeCompare(b.name))
-                          .map((c) => (
-                            <tr key={c.id} className="border-b last:border-0 hover:bg-muted/20">
-                              <td className="px-4 py-2 pl-12 font-medium truncate max-w-[200px]" title={c.name}>
-                                {c.name}
-                              </td>
-                              <td className="px-4 py-2 text-muted-foreground truncate max-w-[150px]" title={c.parsedStack?.raw}>
-                                {c.parsedStack?.stackName ?? '—'}
-                              </td>
-                              <td className="px-4 py-2">
-                                {c.parsedStack?.environment && (
-                                  <span className={cn(
-                                    'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
-                                    c.parsedStack.environment === 'prod' && 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
-                                    c.parsedStack.environment === 'test' && 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
-                                  )}>
-                                    {c.parsedStack.environment}
-                                  </span>
-                                )}
-                              </td>
-                              <td className="px-4 py-2 text-muted-foreground truncate max-w-[250px]" title={c.image}>
-                                {c.image}
-                              </td>
-                              <td className="px-4 py-2">
-                                <span className={cn(
-                                  'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
-                                  c.state === 'running' && 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
-                                  c.state === 'stopped' && 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-                                  c.state === 'paused' && 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
-                                  c.state !== 'running' && c.state !== 'stopped' && c.state !== 'paused' && 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400',
-                                )}>
-                                  {c.state}
-                                </span>
-                              </td>
-                            </tr>
-                          ))}
-                      </tbody>
-                    </table>
+                  <div className="border-t bg-muted/10 p-2">
+                    <DataTable
+                      columns={dienststelleColumns}
+                      data={[...grpContainers].sort((a, b) => a.name.localeCompare(b.name))}
+                      hideSearch
+                      windowScroll
+                      getRowId={(c) => c.id}
+                    />
                   </div>
                 )}
                 {isExpanded && grpContainers.length === 0 && (
@@ -540,14 +570,16 @@ export default function ReportsPage() {
     }
   };
 
-  const handleSort = (field: typeof sortField) => {
-    if (sortField === field) {
-      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
-    } else {
-      setSortField(field);
+  const handleSort = useCallback((field: 'name' | 'cpu' | 'memory') => {
+    setSortField((prevField) => {
+      if (prevField === field) {
+        setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+        return prevField;
+      }
       setSortDir('asc');
-    }
-  };
+      return field;
+    });
+  }, []);
 
   const isLoading = reportLoading || trendsLoading;
   const isPdfLoading = pdfReportLoading || pdfTrendsLoading;
@@ -631,67 +663,125 @@ export default function ReportsPage() {
     setPdfReportTitle(selected.reportTitle as string);
   };
 
+  // Sorting is driven by the parent (`handleSort`) and shared across the
+  // Application/Infrastructure tables, so the columns disable DataTable's own
+  // sorting and instead render the existing arrow indicators + click handlers.
+  const sortIndicator = (field: 'name' | 'cpu' | 'memory') =>
+    sortField === field ? (sortDir === 'asc' ? ' ↑' : ' ↓') : '';
+
+  const containerColumns = useMemo<ColumnDef<ContainerReport, unknown>[]>(() => [
+    {
+      accessorKey: 'container_name',
+      enableSorting: false,
+      header: () => (
+        <span
+          className="cursor-pointer hover:text-foreground"
+          onClick={() => handleSort('name')}
+        >
+          Container{sortIndicator('name')}
+        </span>
+      ),
+      cell: ({ row }) => (
+        <span className="block font-medium truncate max-w-[200px]" title={row.original.container_name}>
+          {row.original.container_name}
+        </span>
+      ),
+    },
+    {
+      id: 'cpu_avg',
+      enableSorting: false,
+      header: () => (
+        <span
+          className="block w-full cursor-pointer text-right hover:text-foreground"
+          onClick={() => handleSort('cpu')}
+        >
+          CPU Avg{sortIndicator('cpu')}
+        </span>
+      ),
+      cell: ({ row }) => (
+        <span className={cn('block text-right', (row.original.cpu?.avg ?? 0) > 80 && 'text-red-500 font-medium')}>
+          {row.original.cpu ? `${row.original.cpu.avg.toFixed(1)}%` : '—'}
+        </span>
+      ),
+    },
+    {
+      id: 'cpu_p95',
+      enableSorting: false,
+      header: () => <span className="block w-full text-right">CPU p95</span>,
+      cell: ({ row }) => (
+        <span className="block text-right">
+          {row.original.cpu ? `${row.original.cpu.p95.toFixed(1)}%` : '—'}
+        </span>
+      ),
+    },
+    {
+      id: 'cpu_max',
+      enableSorting: false,
+      header: () => <span className="block w-full text-right">CPU Max</span>,
+      cell: ({ row }) => (
+        <span className="block text-right">
+          {row.original.cpu ? `${row.original.cpu.max.toFixed(1)}%` : '—'}
+        </span>
+      ),
+    },
+    {
+      id: 'mem_avg',
+      enableSorting: false,
+      header: () => (
+        <span
+          className="block w-full cursor-pointer text-right hover:text-foreground"
+          onClick={() => handleSort('memory')}
+        >
+          Mem Avg{sortIndicator('memory')}
+        </span>
+      ),
+      cell: ({ row }) => (
+        <span className={cn('block text-right', (row.original.memory?.avg ?? 0) > 85 && 'text-red-500 font-medium')}>
+          {row.original.memory ? `${row.original.memory.avg.toFixed(1)}%` : '—'}
+        </span>
+      ),
+    },
+    {
+      id: 'mem_p95',
+      enableSorting: false,
+      header: () => <span className="block w-full text-right">Mem p95</span>,
+      cell: ({ row }) => (
+        <span className="block text-right">
+          {row.original.memory ? `${row.original.memory.p95.toFixed(1)}%` : '—'}
+        </span>
+      ),
+    },
+    {
+      id: 'mem_max',
+      enableSorting: false,
+      header: () => <span className="block w-full text-right">Mem Max</span>,
+      cell: ({ row }) => (
+        <span className="block text-right">
+          {row.original.memory ? `${row.original.memory.max.toFixed(1)}%` : '—'}
+        </span>
+      ),
+    },
+    {
+      id: 'samples',
+      enableSorting: false,
+      header: () => <span className="block w-full text-right">Samples</span>,
+      cell: ({ row }) => (
+        <span className="block text-right text-muted-foreground">
+          {row.original.cpu?.samples ?? row.original.memory?.samples ?? 0}
+        </span>
+      ),
+    },
+  ], [handleSort, sortField, sortDir]);
+
   const renderContainerTable = (containers: ContainerReport[]) => (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b bg-muted/50 text-left">
-            <th
-              className="px-4 py-3 font-medium cursor-pointer hover:text-foreground"
-              onClick={() => handleSort('name')}
-            >
-              Container {sortField === 'name' && (sortDir === 'asc' ? '↑' : '↓')}
-            </th>
-            <th
-              className="px-4 py-3 font-medium cursor-pointer hover:text-foreground text-right"
-              onClick={() => handleSort('cpu')}
-            >
-              CPU Avg {sortField === 'cpu' && (sortDir === 'asc' ? '↑' : '↓')}
-            </th>
-            <th className="px-4 py-3 font-medium text-right">CPU p95</th>
-            <th className="px-4 py-3 font-medium text-right">CPU Max</th>
-            <th
-              className="px-4 py-3 font-medium cursor-pointer hover:text-foreground text-right"
-              onClick={() => handleSort('memory')}
-            >
-              Mem Avg {sortField === 'memory' && (sortDir === 'asc' ? '↑' : '↓')}
-            </th>
-            <th className="px-4 py-3 font-medium text-right">Mem p95</th>
-            <th className="px-4 py-3 font-medium text-right">Mem Max</th>
-            <th className="px-4 py-3 font-medium text-right">Samples</th>
-          </tr>
-        </thead>
-        <tbody>
-          {containers.map((container) => (
-            <tr key={container.container_id} className="border-b last:border-0 hover:bg-muted/30">
-              <td className="px-4 py-3 font-medium truncate max-w-[200px]" title={container.container_name}>
-                {container.container_name}
-              </td>
-              <td className={cn('px-4 py-3 text-right', (container.cpu?.avg ?? 0) > 80 && 'text-red-500 font-medium')}>
-                {container.cpu ? `${container.cpu.avg.toFixed(1)}%` : '—'}
-              </td>
-              <td className="px-4 py-3 text-right">
-                {container.cpu ? `${container.cpu.p95.toFixed(1)}%` : '—'}
-              </td>
-              <td className="px-4 py-3 text-right">
-                {container.cpu ? `${container.cpu.max.toFixed(1)}%` : '—'}
-              </td>
-              <td className={cn('px-4 py-3 text-right', (container.memory?.avg ?? 0) > 85 && 'text-red-500 font-medium')}>
-                {container.memory ? `${container.memory.avg.toFixed(1)}%` : '—'}
-              </td>
-              <td className="px-4 py-3 text-right">
-                {container.memory ? `${container.memory.p95.toFixed(1)}%` : '—'}
-              </td>
-              <td className="px-4 py-3 text-right">
-                {container.memory ? `${container.memory.max.toFixed(1)}%` : '—'}
-              </td>
-              <td className="px-4 py-3 text-right text-muted-foreground">
-                {container.cpu?.samples ?? container.memory?.samples ?? 0}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="p-2">
+      <DataTable
+        columns={containerColumns}
+        data={containers}
+        hideSearch
+        windowScroll
+        getRowId={(c) => c.container_id}
+      />
     </div>
   );
 
