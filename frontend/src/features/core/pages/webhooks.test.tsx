@@ -87,6 +87,16 @@ describe('WebhooksPanel', () => {
     expect(screen.getAllByText('insight.created').length).toBeGreaterThan(0);
   });
 
+  it('renders deliveries in a DataTable', () => {
+    render(<WebhooksPanel />);
+
+    expect(screen.getByTestId('data-table')).toBeInTheDocument();
+    // Delivery row content rendered by the DataTable
+    expect(screen.getByText('delivered')).toBeInTheDocument();
+    expect(screen.getByText('200')).toBeInTheDocument();
+    expect(screen.getByText('1/5')).toBeInTheDocument();
+  });
+
   it('creates a webhook from form input', async () => {
     render(<WebhooksPanel />);
 
