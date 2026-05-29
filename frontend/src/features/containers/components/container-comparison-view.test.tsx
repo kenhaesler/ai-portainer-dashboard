@@ -173,4 +173,98 @@ describe('ContainerComparisonView', () => {
     await userEvent.click(screen.getByRole('button', { name: '24h' }));
     expect(onTimeRangeChange).toHaveBeenCalledWith('24h');
   });
+
+  it('renders the summary matrix on the shared DataTable with one column per container', () => {
+    const containers = [
+      makeContainer({ id: 'c1', name: 'web-app', state: 'running', image: 'nginx:1.25' }),
+      makeContainer({ id: 'c2', name: 'api', state: 'exited', image: 'node:20' }),
+    ];
+
+    render(
+      wrap(
+        createElement(ContainerComparisonView, {
+          containers,
+          tab: 'summary',
+          onTabChange: vi.fn(),
+          timeRange: '1h',
+          onTimeRangeChange: vi.fn(),
+          onRemove: vi.fn(),
+        }),
+      ),
+    );
+
+    // The shared DataTable is in play, rendered as a window-scroll matrix.
+    expect(screen.getByTestId('data-table')).toBeInTheDocument();
+    expect(screen.getByTestId('window-scroll-container')).toBeInTheDocument();
+
+    // Leading row-label column header plus a dynamic header per container
+    // (the names appear both in the pills and as column headers).
+    expect(screen.getByRole('columnheader', { name: 'Attribute' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'web-app' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'api' })).toBeInTheDocument();
+
+    // Attribute rows transposed onto the matrix, with per-container values.
+    expect(screen.getByRole('cell', { name: 'State' })).toBeInTheDocument();
+    expect(screen.getByText('running')).toBeInTheDocument();
+    expect(screen.getByText('exited')).toBeInTheDocument();
+    expect(screen.getByText('nginx:1.25')).toBeInTheDocument();
+    expect(screen.getByText('node:20')).toBeInTheDocument();
+  });
+
+  it('renders the config matrix with a dynamic per-container column for each label key', () => {
+    const containers = [
+      makeContainer({ id: 'c1', name: 'web-app', labels: { 'com.docker.stack': 'prod', tier: 'frontend' } }),
+      makeContainer({ id: 'c2', name: 'api', labels: { 'com.docker.stack': 'prod', tier: 'backend' } }),
+    ];
+
+    render(
+      wrap(
+        createElement(ContainerComparisonView, {
+          containers,
+          tab: 'config',
+          onTabChange: vi.fn(),
+          timeRange: '1h',
+          onTimeRangeChange: vi.fn(),
+          onRemove: vi.fn(),
+        }),
+      ),
+    );
+
+    expect(screen.getByTestId('data-table')).toBeInTheDocument();
+
+    // Leading "Label" column + one header per compared container.
+    expect(screen.getByRole('columnheader', { name: 'Label' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'web-app' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'api' })).toBeInTheDocument();
+
+    // Each unique label key becomes a row; the differing values both render in
+    // their respective per-container columns.
+    expect(screen.getByRole('cell', { name: 'com.docker.stack' })).toBeInTheDocument();
+    expect(screen.getByRole('cell', { name: 'tier' })).toBeInTheDocument();
+    expect(screen.getByText('frontend')).toBeInTheDocument();
+    expect(screen.getByText('backend')).toBeInTheDocument();
+  });
+
+  it('shows the empty state when there are no labels to compare', () => {
+    const containers = [
+      makeContainer({ id: 'c1', name: 'web-app', labels: {} }),
+      makeContainer({ id: 'c2', name: 'api', labels: {} }),
+    ];
+
+    render(
+      wrap(
+        createElement(ContainerComparisonView, {
+          containers,
+          tab: 'config',
+          onTabChange: vi.fn(),
+          timeRange: '1h',
+          onTimeRangeChange: vi.fn(),
+          onRemove: vi.fn(),
+        }),
+      ),
+    );
+
+    expect(screen.getByText('No labels to compare')).toBeInTheDocument();
+    expect(screen.queryByTestId('data-table')).not.toBeInTheDocument();
+  });
 });
