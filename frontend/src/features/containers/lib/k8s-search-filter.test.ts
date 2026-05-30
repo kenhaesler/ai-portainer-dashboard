@@ -29,6 +29,10 @@ describe('parseK8sQuery', () => {
   it('ignores field tokens with an empty value', () => {
     expect(parseK8sQuery('namespace: nginx')).toEqual({ text: 'nginx' });
   });
+
+  it('uses the last value when a field token repeats (last-wins)', () => {
+    expect(parseK8sQuery('namespace:a namespace:b')).toEqual({ namespace: 'b' });
+  });
 });
 
 describe('filterK8sResources', () => {

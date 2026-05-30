@@ -1134,6 +1134,13 @@ describe('Infrastructure smart search — Fleet tab', () => {
     expect(screen.getByRole('button', { name: 'status:up' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'type:edge' })).toBeInTheDocument();
   });
+
+  it('seeds the endpoint search from the URL (endpointSearch param)', () => {
+    mockEndpoints([makeEndpoint({ id: 1, name: 'prod-1' }), makeEndpoint({ id: 2, name: 'web-2' })]);
+    mockStacks([]);
+    renderPageWithInitialParams('/infrastructure?tab=fleet&endpointSearch=prod');
+    expect((screen.getByRole('textbox', { name: 'Search endpoints' }) as HTMLInputElement).value).toBe('prod');
+  });
 });
 
 describe('Infrastructure smart search — Stacks tab', () => {
@@ -1205,5 +1212,10 @@ describe('Infrastructure smart search — Kubernetes tab', () => {
     await waitFor(() => {
       expect(screen.getByText(/no matching resources/i)).toBeInTheDocument();
     });
+  });
+
+  it('seeds the K8s search from the URL (k8sSearch param)', () => {
+    renderPageWithInitialParams('/infrastructure?tab=kubernetes&k8sSearch=nginx');
+    expect((screen.getByRole('textbox', { name: /search kubernetes resources/i }) as HTMLInputElement).value).toBe('nginx');
   });
 });

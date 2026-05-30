@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { type ColumnDef } from '@tanstack/react-table';
 import * as Tabs from '@radix-ui/react-tabs';
@@ -231,6 +231,13 @@ export default function InfrastructurePage() {
   const stackStatusFilter = searchParams.get('stackStatus') ?? ALL_FILTER;
   const stackEndpointFilterParam = searchParams.get('stackEndpoint') ?? ALL_FILTER;
 
+  const setSearchParam = useCallback((key: string, value: string) => {
+    const params = new URLSearchParams(searchParams);
+    if (value) params.set(key, value);
+    else params.delete(key);
+    setSearchParams(params, { replace: true });
+  }, [searchParams, setSearchParams]);
+
   const setFleetFilters = useCallback((
     epStatus: string,
     epType: string,
@@ -286,9 +293,14 @@ export default function InfrastructurePage() {
   const stacksViewMode = useUiStore((s) => s.pageViewModes['stacks'] ?? 'grid');
   const setStacksViewMode = (mode: 'grid' | 'table') => setPageViewMode('stacks', mode);
 
-  // Search state
-  const [endpointSearchQuery, setEndpointSearchQuery] = useState('');
-  const [stackSearchQuery, setStackSearchQuery] = useState('');
+  // URL-persisted search queries (derived from searchParams)
+  const endpointSearchQuery = searchParams.get('endpointSearch') ?? '';
+  const stackSearchQuery = searchParams.get('stackSearch') ?? '';
+  const k8sSearchQuery = searchParams.get('k8sSearch') ?? '';
+
+  // Autofocus gate: focus the Fleet search only on first mount, not on every re-entry
+  const fleetSearchAutoFocusedRef = useRef(false);
+  const markFleetSearchAutoFocused = useCallback(() => { fleetSearchAutoFocusedRef.current = true; }, []);
 
   // Shared data — single hook call each, no duplicate requests
   const {
@@ -328,7 +340,6 @@ export default function InfrastructurePage() {
     data: k8sNamespaces,
   } = useK8sNamespaces();
 
-  const [k8sSearchQuery, setK8sSearchQuery] = useState('');
   const filteredK8sPods = useMemo(
     () => filterK8sResources(k8sPods ?? [], k8sSearchQuery),
     [k8sPods, k8sSearchQuery],
@@ -499,9 +510,12 @@ export default function InfrastructurePage() {
   }, [filteredEndpoints, gridPage]);
 
   const handleEndpointSearch = useCallback((query: string) => {
-    setEndpointSearchQuery(query);
+    setSearchParam('endpointSearch', query);
     setGridPage(1);
-  }, []);
+  }, [setSearchParam]);
+
+  const handleStackSearch = useCallback((q: string) => setSearchParam('stackSearch', q), [setSearchParam]);
+  const handleK8sSearch = useCallback((q: string) => setSearchParam('k8sSearch', q), [setSearchParam]);
 
   const handleEndpointClick = (endpointId: number) => {
     navigate(`/workloads?endpoint=${endpointId}`);
@@ -924,9 +938,11 @@ export default function InfrastructurePage() {
                   placeholder="Search endpoints... (name:prod status:up type:edge)"
                   label="Search endpoints"
                   examples={['name:prod', 'status:up', 'type:edge']}
-                  // Focus the search when the Fleet tab (the default landing tab) mounts,
-                  // mirroring the Workload Explorer open-on-page autofocus.
-                  autoFocus
+                  // Focus the search when the Fleet tab first mounts; gate with ref
+                  // so re-mounting (tab switch) does not re-steal focus.
+                  autoFocus={!fleetSearchAutoFocusedRef.current}
+                  onAutoFocused={markFleetSearchAutoFocused}
+                  initialValue={endpointSearchQuery}
                   showCount={false}
                 />
               </div>
@@ -1097,12 +1113,13 @@ export default function InfrastructurePage() {
             {dropdownFilteredStacks.length > 0 && (
               <div className="lg:flex-1">
                 <FleetSearch
-                  onSearch={setStackSearchQuery}
+                  onSearch={handleStackSearch}
                   totalCount={dropdownFilteredStacks.length}
                   filteredCount={filteredStacks.length}
                   placeholder="Search stacks... (name:traefik status:active endpoint:prod)"
                   label="Search stacks"
                   examples={['name:traefik', 'status:active', 'endpoint:prod']}
+                  initialValue={stackSearchQuery}
                   showCount={false}
                 />
               </div>
@@ -1273,12 +1290,13 @@ export default function InfrastructurePage() {
         {/* K8s smart search */}
         {!k8sPodsLoading && !k8sDeploymentsLoading && !k8sServicesLoading && k8sTotalCount > 0 && (
           <FleetSearch
-            onSearch={setK8sSearchQuery}
+            onSearch={handleK8sSearch}
             totalCount={k8sTotalCount}
             filteredCount={k8sFilteredCount}
             placeholder="Search resources... (namespace:kube-system status:running nginx)"
             label="Search Kubernetes resources"
             examples={['namespace:kube-system', 'status:running', 'nginx']}
+            initialValue={k8sSearchQuery}
           />
         )}
 

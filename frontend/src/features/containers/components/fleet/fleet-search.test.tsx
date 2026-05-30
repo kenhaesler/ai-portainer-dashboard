@@ -162,6 +162,23 @@ describe('FleetSearch', () => {
     expect(document.activeElement).not.toBe(screen.getByRole('textbox'));
   });
 
+  it('seeds the input from initialValue', () => {
+    renderSearch({ initialValue: 'web' });
+    expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('web');
+  });
+
+  it('hides example chips when seeded with a non-empty initialValue', () => {
+    renderSearch({ initialValue: 'web', examples: ['name:prod'] });
+    expect(screen.queryByRole('button', { name: 'name:prod' })).not.toBeInTheDocument();
+  });
+
+  it('calls onAutoFocused after autoFocus moves focus into the input', () => {
+    const onAutoFocused = vi.fn();
+    renderSearch({ autoFocus: true, onAutoFocused });
+    expect(onAutoFocused).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).toBe(screen.getByRole('textbox'));
+  });
+
   it('Escape clears the query and blurs the input', () => {
     const { onSearch } = renderSearch();
     const input = screen.getByRole('textbox');

@@ -23,6 +23,7 @@ export function parseK8sQuery(query: string): ParsedK8sQuery {
 
   for (const token of query.trim().split(/\s+/).filter(Boolean)) {
     const match = /^(namespace|status):(.*)$/i.exec(token);
+    // A field token may appear once; a repeat overwrites (last value wins).
     if (match) {
       const value = match[2].toLowerCase();
       if (!value) continue;

@@ -14,6 +14,10 @@ export interface FleetSearchProps {
   autoFocus?: boolean;
   /** Show the filtered count badge when isFiltered. Defaults to true. */
   showCount?: boolean;
+  /** Seed the input value on mount (e.g. from a URL-persisted query). */
+  initialValue?: string;
+  /** Called once after autoFocus moves focus into the input. */
+  onAutoFocused?: () => void;
 }
 
 export function FleetSearch({
@@ -25,8 +29,10 @@ export function FleetSearch({
   examples,
   autoFocus = false,
   showCount = true,
+  initialValue,
+  onAutoFocused,
 }: FleetSearchProps) {
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(initialValue ?? '');
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -47,8 +53,11 @@ export function FleetSearch({
   }, []);
 
   useEffect(() => {
-    if (autoFocus) inputRef.current?.focus();
-  }, [autoFocus]);
+    if (autoFocus) {
+      inputRef.current?.focus();
+      onAutoFocused?.();
+    }
+  }, [autoFocus, onAutoFocused]);
 
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
