@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { type ColumnDef } from '@tanstack/react-table';
 import {
   Radio,
@@ -69,11 +69,20 @@ export default function PacketCapture() {
   const [duration, setDuration] = useState('60');
   const [maxPackets, setMaxPackets] = useState('');
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
+  const [historySearch, setHistorySearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(historySearch), 300);
+    return () => clearTimeout(t);
+  }, [historySearch]);
 
   const { data: endpoints } = useEndpoints();
   const { data: containers } = useContainers({ state: 'running' });
   const { data: stacks } = useStacks();
-  const { data: capturesData, refetch, isFetching } = useCaptures({ status: statusFilter });
+  const { data: capturesData, refetch, isFetching } = useCaptures({
+    status: statusFilter,
+    search: debouncedSearch || undefined,
+  });
   const [expandedAnalysis, setExpandedAnalysis] = useState<Set<string>>(new Set());
   const startCapture = useStartCapture();
   const stopCapture = useStopCapture();
@@ -86,6 +95,10 @@ export default function PacketCapture() {
   );
   const edgeAsyncEndpointIds = useMemo(
     () => new Set((endpoints ?? []).filter((e) => e.edgeMode === 'async').map((e) => e.id)),
+    [endpoints],
+  );
+  const endpointNameById = useMemo(
+    () => new Map((endpoints ?? []).map((e) => [e.id, e.name])),
     [endpoints],
   );
   const runningContainers = useMemo(
@@ -152,6 +165,15 @@ export default function PacketCapture() {
           </div>
         );
       },
+    },
+    {
+      accessorKey: 'endpoint_id',
+      header: 'Endpoint',
+      cell: ({ row }) => (
+        <span className="text-muted-foreground">
+          {endpointNameById.get(row.original.endpoint_id) ?? `#${row.original.endpoint_id}`}
+        </span>
+      ),
     },
     {
       accessorKey: 'status',
@@ -245,7 +267,7 @@ export default function PacketCapture() {
         );
       },
     },
-  ], [expandedAnalysis, toggleExpand, handleStop, handleDelete, handleDownload, handleAnalyze, analyzePending, analyzeVariables]);
+  ], [endpointNameById, expandedAnalysis, toggleExpand, handleStop, handleDelete, handleDownload, handleAnalyze, analyzePending, analyzeVariables]);
 
   const expandedCaptures = useMemo(
     () =>
@@ -364,21 +386,31 @@ export default function PacketCapture() {
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">Capture History</h2>
-          <div className="flex gap-1 rounded-md border p-0.5">
-            {STATUS_TABS.map((tab) => (
-              <button
-                key={tab.label}
-                onClick={() => setStatusFilter(tab.value)}
-                className={cn(
-                  'rounded px-3 py-1 text-xs font-medium transition-colors',
-                  statusFilter === tab.value
-                    ? 'bg-primary text-primary-foreground'
-                    : 'text-muted-foreground hover:text-foreground',
-                )}
-              >
-                {tab.label}
-              </button>
-            ))}
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={historySearch}
+              onChange={(e) => setHistorySearch(e.target.value)}
+              placeholder="Search history…"
+              aria-label="Search capture history"
+              className="rounded-md border bg-background px-3 py-1.5 text-xs"
+            />
+            <div className="flex gap-1 rounded-md border p-0.5">
+              {STATUS_TABS.map((tab) => (
+                <button
+                  key={tab.label}
+                  onClick={() => setStatusFilter(tab.value)}
+                  className={cn(
+                    'rounded px-3 py-1 text-xs font-medium transition-colors',
+                    statusFilter === tab.value
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 

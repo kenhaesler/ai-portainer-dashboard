@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { useCaptures, type Capture } from '@/features/security/hooks/use-pcap';
 
 vi.mock('@/features/containers/hooks/use-endpoints', () => ({
@@ -146,5 +146,22 @@ describe('PacketCapture', () => {
     // Download + delete actions available for a completed capture with a file
     expect(within(table).getByTitle('Download PCAP')).toBeInTheDocument();
     expect(within(table).getByTitle('Delete capture')).toBeInTheDocument();
+  });
+
+  it('passes the history search term to useCaptures', async () => {
+    render(<PacketCapture />);
+    fireEvent.change(screen.getByLabelText('Search capture history'), { target: { value: 'web' } });
+    await waitFor(() =>
+      expect(mockUseCaptures).toHaveBeenCalledWith(expect.objectContaining({ search: 'web' })),
+    );
+  });
+
+  it('shows the endpoint name in the history table', () => {
+    mockUseCaptures.mockReturnValue({
+      data: { captures: [makeCapture({ endpoint_id: 1, container_name: 'web-1' })] },
+      refetch: vi.fn(),
+    } as unknown as ReturnType<typeof useCaptures>);
+    render(<PacketCapture />);
+    expect(screen.getByText('local')).toBeInTheDocument();
   });
 });
