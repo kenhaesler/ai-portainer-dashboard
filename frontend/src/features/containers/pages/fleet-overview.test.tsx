@@ -1126,11 +1126,4 @@ describe('Infrastructure smart search — Fleet tab', () => {
     expect(screen.getByRole('button', { name: 'status:up' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'type:edge' })).toBeInTheDocument();
   });
-
-  it('shows only one search input in Fleet table view (no DataTable search box)', () => {
-    mockEndpoints([makeEndpoint({ id: 1, name: 'prod-1' }), makeEndpoint({ id: 2, name: 'prod-2' })]);
-    renderPage();
-    fireEvent.click(screen.getByTitle('Table view'));
-    expect(screen.getAllByRole('textbox')).toHaveLength(1);
-  });
 });

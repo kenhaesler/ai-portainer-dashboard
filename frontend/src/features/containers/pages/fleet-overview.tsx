@@ -894,19 +894,23 @@ export default function InfrastructurePage() {
         <Tabs.Content value="fleet" className="mt-4">
       <section aria-labelledby="fleet-heading" className="space-y-4">
         <h2 id="fleet-heading" className="sr-only">Fleet Overview</h2>
-        {!isLoading && endpoints && endpoints.length > 0 && (
+        {!isLoading && endpoints != null && (
           <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-3">
-            <div className="lg:flex-1">
-              <FleetSearch
-                onSearch={handleEndpointSearch}
-                totalCount={endpoints.length}
-                filteredCount={filteredEndpoints.length}
-                placeholder="Search endpoints... (name:prod status:up type:edge)"
-                label="Search endpoints"
-                examples={['name:prod', 'status:up', 'type:edge']}
-                autoFocus
-              />
-            </div>
+            {endpoints.length > 0 && (
+              <div className="lg:flex-1">
+                <FleetSearch
+                  onSearch={handleEndpointSearch}
+                  totalCount={endpoints.length}
+                  filteredCount={filteredEndpoints.length}
+                  placeholder="Search endpoints... (name:prod status:up type:edge)"
+                  label="Search endpoints"
+                  examples={['name:prod', 'status:up', 'type:edge']}
+                  // Focus the search when the Fleet tab (the default landing tab) mounts,
+                  // mirroring the Workload Explorer open-on-page autofocus.
+                  autoFocus
+                />
+              </div>
+            )}
             <div className="flex flex-wrap items-center gap-3">
               {/* Endpoint status filter */}
               {endpointStatusOptions.length > 2 && (
