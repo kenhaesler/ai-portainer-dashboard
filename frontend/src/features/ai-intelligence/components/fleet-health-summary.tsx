@@ -24,12 +24,14 @@ function HealthStatTile({
   value,
   percentage,
   variant = 'default',
+  onClick,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   value: number;
   percentage?: number;
   variant?: 'default' | 'success' | 'warning' | 'danger' | 'info';
+  onClick?: () => void;
 }) {
   const iconVariantClasses = {
     default: 'text-muted-foreground',
@@ -39,8 +41,8 @@ function HealthStatTile({
     info: 'text-blue-600 dark:text-blue-400',
   };
 
-  return (
-    <div className="flex items-center gap-3 rounded-md bg-muted/40 px-3 py-2">
+  const inner = (
+    <>
       <div className={`flex h-8 w-8 items-center justify-center rounded-md bg-background ${iconVariantClasses[variant]}`}>
         <Icon className="h-4 w-4" />
       </div>
@@ -53,6 +55,24 @@ function HealthStatTile({
         </div>
         <p className="text-xs text-muted-foreground mt-0.5 truncate">{label}</p>
       </div>
+    </>
+  );
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex w-full items-center gap-3 rounded-md bg-muted/40 px-3 py-2 text-left transition-colors hover:bg-muted/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer"
+      >
+        {inner}
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-3 rounded-md bg-muted/40 px-3 py-2">
+      {inner}
     </div>
   );
 }
@@ -69,10 +89,28 @@ export interface InsightStats {
   info: number;
 }
 
-export function FleetHealthSummary({ stats, isLoading, insightStats }: {
+/**
+ * Caller-supplied tile appended after the four container-status tiles (e.g.
+ * Stopped, Security Findings on the Home page). Rendered with the same
+ * `HealthStatTile`; an `onClick` turns it into a button.
+ */
+export interface ExtraTile {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: number;
+  percentage?: number;
+  variant?: 'default' | 'success' | 'warning' | 'danger' | 'info';
+  onClick?: () => void;
+}
+
+export function FleetHealthSummary({ stats, isLoading, insightStats, statusColumns = 4, extraTiles }: {
   stats: HealthStats | null;
   isLoading: boolean;
   insightStats?: InsightStats;
+  /** Column count for the container-status tile row (default 4). */
+  statusColumns?: 3 | 4;
+  /** Tiles appended after the four container-status tiles. */
+  extraTiles?: ExtraTile[];
 }) {
   if (isLoading || !stats) {
     return <SkeletonChart size="md" className="h-44" />;
@@ -90,7 +128,7 @@ export function FleetHealthSummary({ stats, isLoading, insightStats }: {
         {/* Compact status strip — container stats on row 1, insights stats on
             row 2 (when supplied). Two rows of 4 tiles inside the same hero. */}
         <div className="flex flex-col gap-2 lg:w-auto">
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div className={`grid grid-cols-2 gap-2 ${statusColumns === 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-4'}`}>
             <HealthStatTile
               icon={Activity}
               label="Running"
@@ -119,6 +157,17 @@ export function FleetHealthSummary({ stats, isLoading, insightStats }: {
               percentage={stats.total > 0 ? (stats.noHealthcheck / stats.total) * 100 : 0}
               variant={stats.noHealthcheck > 0 ? 'warning' : 'default'}
             />
+            {extraTiles?.map((tile) => (
+              <HealthStatTile
+                key={tile.label}
+                icon={tile.icon}
+                label={tile.label}
+                value={tile.value}
+                percentage={tile.percentage}
+                variant={tile.variant}
+                onClick={tile.onClick}
+              />
+            ))}
           </div>
           {insightStats && (
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">

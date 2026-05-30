@@ -1,21 +1,19 @@
 import { lazy, Suspense, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, Star, ShieldAlert } from 'lucide-react';
+import { AlertTriangle, Star, ShieldAlert, PackageOpen } from 'lucide-react';
 import { useDashboardFull } from '@/features/core/hooks/use-dashboard-full';
 import { useContainers, useFavoriteContainers } from '@/features/containers/hooks/use-containers';
 import { calculateHealthStats } from '@/shared/lib/health-score';
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
-import { KpiCard } from '@/shared/components/data-display/kpi-card';
 import { FleetHealthSummary } from '@/features/ai-intelligence/components/fleet-health-summary';
 import { StatusBadge } from '@/shared/components/feedback/status-badge';
 import { EmptyState } from '@/shared/components/feedback/empty-state';
-import { SkeletonKpi, SkeletonChart } from '@/shared/components/feedback/skeleton';
+import { SkeletonChart } from '@/shared/components/feedback/skeleton';
 import { RefreshControls } from '@/shared/components/ui/refresh-controls';
 import { useForceRefresh } from '@/shared/hooks/use-force-refresh';
 import { FavoriteButton } from '@/shared/components/ui/favorite-button';
 import { useFavoritesStore } from '@/stores/favorites-store';
 import { MotionPage, MotionReveal, MotionStagger } from '@/shared/components/layout/motion-page';
-import { TiltCard } from '@/shared/components/data-display/tilt-card';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 
 // Lazy-loaded chart components — lets KPI cards render first
@@ -117,12 +115,12 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* Overall Health Score (4 fr) + Security Findings (1 fr) — single hero
-          row that answers "is everything OK?" at a glance. The health pane
-          reuses FleetHealthSummary so Home shows the same score and inner stat
-          tiles as the Health & Monitoring page and the two can never drift. */}
-      <MotionStagger className="grid grid-cols-1 gap-8 lg:grid-cols-5" stagger={0.05}>
-        <MotionReveal className="h-full lg:col-span-4">
+      {/* Overall Health Score — full-width hero. Security Findings and Stopped
+          live INSIDE the pane as extra stat tiles (below the container-status
+          tiles), reusing FleetHealthSummary so Home and Health & Monitoring
+          never drift. */}
+      <MotionStagger stagger={0.05}>
+        <MotionReveal>
           {isContainersError ? (
             <EmptyState
               variant="error"
@@ -132,31 +130,31 @@ export default function HomePage() {
             />
           ) : (
             <SpotlightCard>
-              <FleetHealthSummary stats={healthStats} isLoading={isLoadingContainers} />
+              <FleetHealthSummary
+                stats={healthStats}
+                isLoading={isLoadingContainers}
+                statusColumns={3}
+                extraTiles={[
+                  {
+                    icon: PackageOpen,
+                    label: 'Stopped',
+                    value: healthStats?.stopped ?? 0,
+                    percentage:
+                      healthStats && healthStats.total > 0
+                        ? (healthStats.stopped / healthStats.total) * 100
+                        : undefined,
+                  },
+                  {
+                    icon: ShieldAlert,
+                    label: 'Security Findings',
+                    value: data?.security.flagged ?? 0,
+                    variant: (data?.security.flagged ?? 0) > 0 ? 'danger' : 'default',
+                    onClick: () => navigate('/security/audit'),
+                  },
+                ]}
+              />
             </SpotlightCard>
           )}
-        </MotionReveal>
-        <MotionReveal className="h-full lg:col-span-1">
-          {isLoading ? (
-            <SkeletonKpi className="h-full" />
-          ) : data ? (
-            <TiltCard>
-              <button
-                type="button"
-                onClick={() => navigate('/security/audit')}
-                className="block h-full w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-lg"
-              >
-                <KpiCard
-                  label="Security Findings"
-                  value={data.security.flagged}
-                  icon={<ShieldAlert className="h-5 w-5" />}
-                  trendValue={`${data.security.ignored} ignored`}
-                  trend={data.security.flagged > 0 ? 'down' : 'up'}
-                  className="cursor-pointer"
-                />
-              </button>
-            </TiltCard>
-          ) : null}
         </MotionReveal>
       </MotionStagger>
 

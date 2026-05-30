@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, within, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import HomePage from './home';
@@ -77,17 +77,12 @@ vi.mock('@/shared/components/charts/fleet-summary-card', () => ({
 vi.mock('@/shared/components/charts/resource-overview-card', () => ({
   ResourceOverviewCard: () => <div data-testid="mock-resource">Resource</div>,
 }));
-vi.mock('@/shared/components/data-display/kpi-card', () => ({
-  KpiCard: ({ label }: { label: string }) => <div data-testid="mock-kpi">{label}</div>,
-}));
-vi.mock('@/shared/components/data-display/tilt-card', () => ({
-  TiltCard: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-}));
 vi.mock('@/shared/components/data-display/spotlight-card', () => ({
   SpotlightCard: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 // Motion wrappers are mocked to plain divs, but they FORWARD className so the
-// 4:1 grid layout (grid-cols-5 / col-span-4 / col-span-1) stays assertable.
+// hero layout classes stay assertable (e.g. the absence of the old
+// col-span-4 / col-span-1 split now that the pane is full-width).
 vi.mock('@/shared/components/layout/motion-page', () => ({
   MotionPage: ({ children, className }: { children: React.ReactNode; className?: string }) => (
     <div className={className}>{children}</div>
@@ -216,9 +211,9 @@ describe('HomePage', () => {
     expect(within(hero).getByText('Healthy')).toBeInTheDocument();
     expect(within(hero).getByText('Unhealthy')).toBeInTheDocument();
     expect(within(hero).getByText('No Healthcheck')).toBeInTheDocument();
-
-    // Security Findings stays on Home...
-    expect(screen.getByText('Security Findings')).toBeInTheDocument();
+    // Security Findings and Stopped now live INSIDE the health pane.
+    expect(within(hero).getByText('Security Findings')).toBeInTheDocument();
+    expect(within(hero).getByText('Stopped')).toBeInTheDocument();
 
     // ...but the standalone Endpoints / Running / Stopped / Stacks KPI cards
     // are removed — those numbers now live inside the health pane.
@@ -228,7 +223,7 @@ describe('HomePage', () => {
     expect(screen.queryByText('Stacks')).not.toBeInTheDocument();
   });
 
-  it('lays out Overall Health and Security Findings in a 4:1 grid', () => {
+  it('renders the Overall Health pane full-width with Security Findings nested inside', () => {
     mockUseDashboardFull.mockReturnValue({
       data: makeDashboardData(),
       isLoading: false,
@@ -241,20 +236,29 @@ describe('HomePage', () => {
     renderPage();
 
     const hero = screen.getByTestId('fleet-health-hero');
-    // Both halves share one 5-column grid...
-    expect(hero.closest('[class*="grid-cols-5"]')).not.toBeNull();
-    // ...the health pane spans 4 columns...
-    const healthCol = hero.closest('[class*="col-span-4"]');
-    expect(healthCol).not.toBeNull();
-    // ...and Security Findings spans the remaining 1.
-    const securityCol = screen.getByText('Security Findings').closest('[class*="col-span-1"]');
-    expect(securityCol).not.toBeNull();
+    // No more 4:1 split: the hero is not inside a col-span-4 column...
+    expect(hero.closest('[class*="col-span-4"]')).toBeNull();
+    // ...and Security Findings is no longer a separate col-span-1 card.
+    const security = screen.getByText('Security Findings');
+    expect(security.closest('[class*="col-span-1"]')).toBeNull();
+    // Security Findings is nested inside the health hero.
+    expect(within(hero).getByText('Security Findings')).toBeInTheDocument();
+  });
 
-    // Equal-height guard (review finding #1): both columns carry h-full so the
-    // shorter Security card stretches to match the taller health pane and the
-    // 4:1 row reads as one deliberate band rather than two mismatched cards.
-    expect(healthCol?.className).toContain('h-full');
-    expect(securityCol?.className).toContain('h-full');
+  it('navigates to the security audit when the Security Findings tile is clicked', () => {
+    mockUseDashboardFull.mockReturnValue({
+      data: makeDashboardData(),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+      isFetching: false,
+    } as any);
+
+    renderPage();
+
+    fireEvent.click(screen.getByRole('button', { name: /Security Findings/i }));
+    expect(mockNavigate).toHaveBeenCalledWith('/security/audit');
   });
 
   it('does not render Recent Containers section (#801)', () => {
