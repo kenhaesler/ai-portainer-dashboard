@@ -431,6 +431,14 @@ describe('WorkloadExplorerPage', () => {
     expect(screen.getAllByTestId('workload-pane')).toHaveLength(1);
   });
 
+  it('uses compact pane padding so the header/filters/table fit without scrolling', () => {
+    mockQueryString = 'endpoint=1';
+    render(<WorkloadExplorerPage />);
+    // p-4 (not p-6) trims vertical chrome so the page fits within standard
+    // laptop viewport heights without forcing a scroll.
+    expect(screen.getByTestId('workload-pane')).toHaveClass('p-4');
+  });
+
   it('renders state filter dropdown', () => {
     mockQueryString = 'endpoint=1';
     render(<WorkloadExplorerPage />);
