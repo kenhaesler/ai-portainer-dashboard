@@ -107,6 +107,43 @@ describe('adaptive-anomaly-detector', () => {
       expect(result!.is_anomalous).toBe(true);
     });
 
+    // #1361 fix 3 — one-sided detection across the adaptive branches.
+    it('does NOT flag a drop (zscore method) under the default spike direction', async () => {
+      mockGetMovingAverage.mockResolvedValue({ mean: 50, std_dev: 5, sample_count: 15 });
+      // z-score = (25 - 50) / 5 = -5 (a drop). Default 'spike' → not anomalous.
+      const result = await detectAnomalyAdaptive('c1', 'web', 'cpu', 25, 'zscore', mockGetMovingAverage);
+      expect(result!.is_anomalous).toBe(false);
+      expect(result!.z_score).toBe(-5);
+    });
+
+    it('does NOT flag a value below the lower Bollinger band under default spike', async () => {
+      mockGetMovingAverage.mockResolvedValue({ mean: 50, std_dev: 5, sample_count: 15 });
+      // Lower band = 50 - 2*5 = 40. Value 35 < 40, but it is a drop → not flagged.
+      const result = await detectAnomalyAdaptive('c1', 'web', 'cpu', 35, 'bollinger', mockGetMovingAverage);
+      expect(result!.is_anomalous).toBe(false);
+    });
+
+    it('flags a drop (zscore method) when direction is "both"', async () => {
+      setConfigForTest({
+        ANOMALY_ZSCORE_THRESHOLD: 2.5,
+        ANOMALY_MOVING_AVERAGE_WINDOW: 30,
+        ANOMALY_MIN_SAMPLES: 10,
+        ANOMALY_DETECTION_METHOD: 'adaptive',
+        BOLLINGER_BANDS_ENABLED: true,
+        ANOMALY_DETECTION_DIRECTION: 'both',
+      });
+      mockGetMovingAverage.mockResolvedValue({ mean: 50, std_dev: 5, sample_count: 15 });
+      const result = await detectAnomalyAdaptive('c1', 'web', 'cpu', 25, 'zscore', mockGetMovingAverage);
+      expect(result!.is_anomalous).toBe(true);
+      expect(result!.z_score).toBe(-5);
+    });
+
+    it('still flags a spike (zscore method) under default spike', async () => {
+      mockGetMovingAverage.mockResolvedValue({ mean: 50, std_dev: 5, sample_count: 15 });
+      const result = await detectAnomalyAdaptive('c1', 'web', 'cpu', 75, 'zscore', mockGetMovingAverage); // z=+5
+      expect(result!.is_anomalous).toBe(true);
+    });
+
     it('handles zero standard deviation', async () => {
       mockGetMovingAverage.mockResolvedValue({ mean: 50, std_dev: 0, sample_count: 15 });
       const result = await detectAnomalyAdaptive('c1', 'web', 'cpu', 60, undefined, mockGetMovingAverage);

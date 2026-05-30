@@ -7,7 +7,7 @@ import {
   type GetMovingAverageByHourOfDayFn,
   type GetMovingAverageFn,
 } from './anomaly-detector.js';
-import { classifyCv, cvThresholdMultiplier } from './anomaly-stats.js';
+import { classifyCv, cvThresholdMultiplier, exceedsThreshold } from './anomaly-stats.js';
 
 const log = createChildLogger('adaptive-anomaly');
 
@@ -63,6 +63,7 @@ export async function detectAnomalyAdaptive(
   now: Date = new Date(),
 ): Promise<AnomalyDetection | null> {
   const config = getConfig();
+  const direction = config.ANOMALY_DETECTION_DIRECTION;
   const windowSize = config.ANOMALY_MOVING_AVERAGE_WINDOW;
   const minSamples = config.ANOMALY_MIN_SAMPLES;
   const lookbackDays = config.ANOMALY_HOUROFDAY_LOOKBACK_DAYS;
@@ -103,9 +104,15 @@ export async function detectAnomalyAdaptive(
   let zScore: number;
 
   if (selectedMethod === 'bollinger') {
-    // Bollinger bands: flag values outside the bands
+    // Bollinger bands: flag values outside the bands, honouring the configured
+    // direction (#1361 fix 3) — 'spike' only flags above the upper band.
     const bands = calculateBollingerBands(stats.mean, stats.std_dev, 2);
-    isAnomalous = currentValue > bands.upper || currentValue < bands.lower;
+    const aboveUpper = currentValue > bands.upper;
+    const belowLower = currentValue < bands.lower;
+    isAnomalous =
+      direction === 'spike' ? aboveUpper
+      : direction === 'drop' ? belowLower
+      : aboveUpper || belowLower;
     threshold = 2; // band multiplier
     zScore = stats.std_dev > 0 ? (currentValue - stats.mean) / stats.std_dev : 0;
   } else if (selectedMethod === 'adaptive') {
@@ -118,13 +125,13 @@ export async function detectAnomalyAdaptive(
     const adaptiveThreshold = config.ANOMALY_ZSCORE_THRESHOLD * cvThresholdMultiplier(regime);
 
     zScore = stats.std_dev > 0 ? (currentValue - stats.mean) / stats.std_dev : 0;
-    isAnomalous = Math.abs(zScore) > adaptiveThreshold;
+    isAnomalous = exceedsThreshold(zScore, adaptiveThreshold, direction);
     threshold = adaptiveThreshold;
   } else {
     // Standard z-score
     threshold = config.ANOMALY_ZSCORE_THRESHOLD;
     zScore = stats.std_dev > 0 ? (currentValue - stats.mean) / stats.std_dev : 0;
-    isAnomalous = Math.abs(zScore) > threshold;
+    isAnomalous = exceedsThreshold(zScore, threshold, direction);
   }
 
   // Handle zero std_dev
@@ -135,7 +142,7 @@ export async function detectAnomalyAdaptive(
       ? Math.max(absMean * 0.1, 0.01)
       : 0.01;
     const delta = currentValue - stats.mean;
-    isAnomalous = Math.abs(delta) > tolerance;
+    isAnomalous = exceedsThreshold(delta, tolerance, direction);
     zScore = isAnomalous ? delta / tolerance : 0;
   }
 

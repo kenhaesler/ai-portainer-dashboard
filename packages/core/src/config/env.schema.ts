@@ -90,6 +90,11 @@ export const envSchema = z.object({
   ANOMALY_MOVING_AVERAGE_WINDOW: z.coerce.number().int().min(5).default(60),
   ANOMALY_MIN_SAMPLES: z.coerce.number().int().min(3).default(10),
   ANOMALY_DETECTION_METHOD: z.enum(['zscore', 'bollinger', 'adaptive']).default('adaptive'),
+  // #1361 fix 3 — one-sided detection. Resource/latency metrics flag spikes
+  // only by default; a drop below baseline is rarely an incident and flagging
+  // it (two-sided) roughly doubled the false-positive rate. 'both' restores
+  // the legacy two-sided behaviour.
+  ANOMALY_DETECTION_DIRECTION: z.enum(['spike', 'drop', 'both']).default('spike'),
   ANOMALY_COOLDOWN_MINUTES: z.coerce.number().int().min(0).default(30),
   ANOMALY_THRESHOLD_PCT: z.coerce.number().min(50).max(100).default(85),
   ANOMALY_HARD_THRESHOLD_ENABLED: z.coerce.boolean().default(true),
