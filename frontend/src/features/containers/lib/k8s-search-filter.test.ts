@@ -11,6 +11,7 @@ const items = [
 describe('parseK8sQuery', () => {
   it('returns an empty object for a blank query', () => {
     expect(parseK8sQuery('   ')).toEqual({});
+    expect(parseK8sQuery('')).toEqual({});
   });
 
   it('extracts namespace and status tokens and free text', () => {
@@ -43,6 +44,11 @@ describe('filterK8sResources', () => {
   it('matches namespace exactly (case-insensitive)', () => {
     const r = filterK8sResources(items, 'namespace:DEFAULT');
     expect(r.map((i) => i.name)).toEqual(['nginx-abc', 'api-svc']);
+  });
+
+  it('does not match namespace as a substring', () => {
+    const r = filterK8sResources(items, 'namespace:kube');
+    expect(r).toHaveLength(0); // 'kube-system' is not an exact match for 'kube'
   });
 
   it('matches status as a case-insensitive substring', () => {
