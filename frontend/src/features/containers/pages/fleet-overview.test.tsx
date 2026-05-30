@@ -488,7 +488,7 @@ describe('InfrastructurePage — stack section', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/workloads?endpoint=1&stack=my-stack');
   });
 
-  it('stacks table view enables search', () => {
+  it('stacks table view enables search via the smart search bar', () => {
     useUiStore.setState({ pageViewModes: { stacks: 'table' } });
     mockStacks([
       makeStack({ id: 1, name: 'alpha-stack' }),
@@ -497,9 +497,9 @@ describe('InfrastructurePage — stack section', () => {
 
     renderPageWithInitialParams('/infrastructure?tab=stacks');
 
-    // DataTable search input should be present (one for fleet which is empty, one for stacks)
-    const searchInputs = screen.getAllByTestId('data-table-search');
-    expect(searchInputs.length).toBeGreaterThanOrEqual(1);
+    // Smart search bar present; DataTable built-in search is removed
+    expect(screen.getByRole('textbox', { name: 'Search stacks' })).toBeInTheDocument();
+    expect(screen.queryByTestId('data-table-search')).not.toBeInTheDocument();
   });
 
   it('stacks table view fits the viewport (autoFit)', () => {
@@ -1125,5 +1125,28 @@ describe('Infrastructure smart search — Fleet tab', () => {
     expect(screen.getByRole('button', { name: 'name:prod' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'status:up' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'type:edge' })).toBeInTheDocument();
+  });
+});
+
+describe('Infrastructure smart search — Stacks tab', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useUiStore.setState({ pageViewModes: {} });
+    mockEndpoints([makeEndpoint({ id: 1, name: 'prod-1' })]);
+    mockStacks([makeStack({ id: 1, name: 'traefik' }), makeStack({ id: 2, name: 'grafana' })]);
+  });
+
+  it('renders stack example chips inside the search bar', () => {
+    renderPageWithInitialParams('/infrastructure?tab=stacks');
+    expect(screen.getByRole('button', { name: 'name:traefik' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'status:active' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'endpoint:prod' })).toBeInTheDocument();
+  });
+
+  it('shows the smart search bar and no DataTable search in Stacks table view', () => {
+    useUiStore.setState({ pageViewModes: { stacks: 'table' } });
+    renderPageWithInitialParams('/infrastructure?tab=stacks');
+    expect(screen.getByRole('textbox', { name: 'Search stacks' })).toBeInTheDocument();
+    expect(screen.queryByTestId('data-table-search')).not.toBeInTheDocument();
   });
 });

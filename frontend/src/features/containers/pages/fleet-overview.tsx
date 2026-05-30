@@ -1057,23 +1057,35 @@ export default function InfrastructurePage() {
         <Tabs.Content value="stacks" className="mt-4">
       <section aria-labelledby="stacks-heading" className="space-y-4">
         <h2 id="stacks-heading" className="sr-only">Stack Overview</h2>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-2">
-            {stackEndpointFilterParam !== ALL_FILTER && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
-                {endpoints?.find(ep => ep.id === Number(stackEndpointFilterParam))?.name ?? `Endpoint ${stackEndpointFilterParam}`}
-                <button
-                  onClick={() => setStackEndpointFilter(ALL_FILTER)}
-                  className="ml-0.5 rounded-full hover:bg-primary/20"
-                  aria-label="Clear endpoint filter"
-                  data-testid="clear-stack-filter"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </span>
+        <div className="flex items-center gap-2">
+          {stackEndpointFilterParam !== ALL_FILTER && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
+              {endpoints?.find(ep => ep.id === Number(stackEndpointFilterParam))?.name ?? `Endpoint ${stackEndpointFilterParam}`}
+              <button
+                onClick={() => setStackEndpointFilter(ALL_FILTER)}
+                className="ml-0.5 rounded-full hover:bg-primary/20"
+                aria-label="Clear endpoint filter"
+                data-testid="clear-stack-filter"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          )}
+        </div>
+        {!isLoading && stacksWithEndpoints.length > 0 && (
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-3">
+            {dropdownFilteredStacks.length > 0 && (
+              <div className="lg:flex-1">
+                <FleetSearch
+                  onSearch={setStackSearchQuery}
+                  totalCount={dropdownFilteredStacks.length}
+                  filteredCount={filteredStacks.length}
+                  placeholder="Search stacks... (name:traefik status:active endpoint:prod)"
+                  label="Search stacks"
+                  examples={['name:traefik', 'status:active', 'endpoint:prod']}
+                />
+              </div>
             )}
-          </div>
-          {!isLoading && stacksWithEndpoints.length > 0 && (
             <div className="flex flex-wrap items-center gap-3">
               {/* Stack status filter */}
               {stackStatusOptions.length > 2 && (
@@ -1131,8 +1143,8 @@ export default function InfrastructurePage() {
                 </button>
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* Stack filter chips */}
         {!isLoading && hasActiveStackFilter && (
@@ -1140,17 +1152,6 @@ export default function InfrastructurePage() {
             filters={activeStackFilters}
             onRemove={handleRemoveStackFilter}
             onClearAll={handleClearAllStackFilters}
-          />
-        )}
-
-        {/* Stack search */}
-        {!isLoading && dropdownFilteredStacks.length > 0 && (
-          <FleetSearch
-            onSearch={setStackSearchQuery}
-            totalCount={dropdownFilteredStacks.length}
-            filteredCount={filteredStacks.length}
-            placeholder="Search stacks... (name:traefik status:active endpoint:prod)"
-            label="Search stacks"
           />
         )}
 
@@ -1209,8 +1210,7 @@ export default function InfrastructurePage() {
             <DataTable
               columns={stackColumns}
               data={filteredStacks}
-              searchKey="name"
-              searchPlaceholder="Search stacks..."
+              hideSearch
               autoFit
               onRowClick={handleStackClick}
             />
