@@ -119,7 +119,9 @@ export function useElkLayout({ nodes, edges, rootLayoutOptions }: ElkLayoutInput
   );
   const cacheKeyRef = useRef('');
 
-  const cacheKey = buildCacheKey(nodes, edges);
+  // Include rootLayoutOptions in the cache key so changing the root algorithm
+  // re-runs layout even when the node/edge structure is unchanged.
+  const cacheKey = `${buildCacheKey(nodes, edges)}|root:${JSON.stringify(rootLayoutOptions ?? '')}`;
 
   useEffect(() => {
     if (cacheKey === cacheKeyRef.current) return;
