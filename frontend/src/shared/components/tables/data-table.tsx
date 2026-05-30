@@ -268,7 +268,15 @@ export function DataTable<T>({
     const top = el.getBoundingClientRect().top;
     const available =
       getScrollableBottom(el) - top - AUTO_FIT_HEADER_PX - AUTO_FIT_FOOTER_PX - AUTO_FIT_MARGIN_PX;
-    const size = Math.max(MIN_AUTO_ROWS, Math.floor(available / ROW_HEIGHT));
+    // Divide by the *measured* body-row height, not the ROW_HEIGHT estimate.
+    // Cell padding + font metrics make real rows taller than the constant
+    // (~53px vs 48px); using the estimate fits too many rows and the page
+    // scrolls by ~(rows × overshoot)px. Falls back to ROW_HEIGHT before the
+    // first row paints (height 0).
+    const firstRow = el.querySelector('tbody tr');
+    const measured = firstRow?.getBoundingClientRect().height ?? 0;
+    const rowHeight = measured > 0 ? measured : ROW_HEIGHT;
+    const size = Math.max(MIN_AUTO_ROWS, Math.floor(available / rowHeight));
     setAutoPageSize((prev) => (prev === size ? prev : size));
   }, [useAutoFit]);
 
