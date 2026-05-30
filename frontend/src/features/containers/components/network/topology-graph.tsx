@@ -20,6 +20,7 @@ import {
 } from '@/features/containers/hooks/use-elk-layout';
 import { useUiStore } from '@/stores/ui-store';
 import { TopologyLegend } from './topology-legend';
+import type { HandleDirection } from './handle-visibility';
 
 export interface ContainerData {
   id: string;
@@ -211,7 +212,10 @@ export function sortStacks(
 
 // --- Handle helpers (pure functions, exported for testing) ---
 
-type HandleDirection = 'top' | 'right' | 'bottom' | 'left';
+// HandleDirection lives in ./handle-visibility (a leaf module the node
+// components import without pulling in this file). Re-exported here so existing
+// callers/tests can keep importing it from topology-graph.
+export type { HandleDirection };
 
 /** Map an angle (radians, 0 = right, counter-clockwise negative) to the closest handle direction. */
 export function getHandleForAngle(angle: number): HandleDirection {
@@ -239,6 +243,26 @@ export function getBestHandles(
     left: 'right',
   };
   return { sourceHandle, targetHandle: opposites[sourceHandle] };
+}
+
+/**
+ * Map each node id to the set of handle directions some edge attaches to
+ * (as source or target). Lets nodes render only their connected handles. Pure.
+ */
+export function collectUsedHandles(
+  edges: Array<{ source: string; target: string; sourceHandle?: string | null; targetHandle?: string | null }>,
+): Map<string, Set<HandleDirection>> {
+  const used = new Map<string, Set<HandleDirection>>();
+  const add = (nodeId: string, handle?: string | null) => {
+    if (!handle) return;
+    if (!used.has(nodeId)) used.set(nodeId, new Set());
+    used.get(nodeId)!.add(handle as HandleDirection);
+  };
+  for (const e of edges) {
+    add(e.source, e.sourceHandle);
+    add(e.target, e.targetHandle);
+  }
+  return used;
 }
 
 // --- End handle helpers ---
@@ -640,6 +664,12 @@ export function TopologyGraph({
           markerEnd: { type: 'arrowclosed' as never, color: stroke },
         });
       }
+    }
+
+    // Render only the handles edges actually attach to (prune orphan dots).
+    const usedHandles = collectUsedHandles(edges);
+    for (const node of nodes) {
+      (node.data as Record<string, unknown>).usedHandles = [...(usedHandles.get(node.id) ?? [])];
     }
 
     return { nodes, edges };
