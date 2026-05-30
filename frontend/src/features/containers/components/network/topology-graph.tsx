@@ -316,11 +316,71 @@ export function getEdgeStyle(
 }
 
 /** Simplified blueprint: stack metadata + sorted members (elkjs handles positioning). */
-interface StackBlueprint {
+export interface StackBlueprint {
   stackName: string;
   groupId: string;
   containers: ContainerData[];
   inlineNets: NetworkData[];
+}
+
+/**
+ * Build the compound ELK input from sorted stack blueprints + external networks.
+ * Each stack becomes an auto-sized compound group node containing its container and
+ * inline-network children, with intra-stack container→inline-net edges. External
+ * networks are emitted as root-level boxes. Cross-stack edges are intentionally
+ * omitted — the root packs with rectpacking (edgeless), and React Flow draws every
+ * edge itself in Phase 4. Pure; exported for testing.
+ */
+export function buildStackElkNodes(
+  blueprints: StackBlueprint[],
+  externalNets: NetworkData[],
+): ElkLayoutNode[] {
+  const elkNodes: ElkLayoutNode[] = [];
+
+  for (const bp of blueprints) {
+    const children: ElkLayoutNode[] = [];
+    const groupEdges: ElkLayoutEdge[] = [];
+
+    // Inline networks as group children
+    for (const net of bp.inlineNets) {
+      children.push({ id: `net-${net.id}`, width: NETWORK_W, height: NETWORK_H });
+    }
+
+    // Containers as group children
+    for (const container of bp.containers) {
+      children.push({ id: `container-${container.id}`, width: CONTAINER_W, height: CONTAINER_H });
+
+      for (const netName of container.networks) {
+        // Intra-group edge (container → inline net within same stack)
+        const inlineNet = bp.inlineNets.find((n) => n.name === netName);
+        if (inlineNet) {
+          groupEdges.push({
+            id: `e-${container.id}-${inlineNet.id}`,
+            source: `container-${container.id}`,
+            target: `net-${inlineNet.id}`,
+          });
+        }
+        // Cross-stack edges are intentionally NOT fed to ELK: the root uses
+        // rectpacking (edgeless box packing). React Flow draws them in Phase 4.
+      }
+    }
+
+    elkNodes.push({
+      id: bp.groupId,
+      width: 0,
+      height: 0,
+      children,
+      edges: groupEdges.length > 0 ? groupEdges : undefined,
+      layoutOptions: GROUP_LAYOUT_OPTIONS,
+    });
+  }
+
+  // External networks at root level (packed as boxes alongside the stacks)
+  for (const net of externalNets) {
+    elkNodes.push({ id: `net-${net.id}`, width: NETWORK_W, height: NETWORK_H });
+  }
+
+  return elkNodes;
 }
 
 export function TopologyGraph({
@@ -387,54 +447,10 @@ export function TopologyGraph({
   }, [containers, networks, networkRates]);
 
   // Phase 2: Build compound elkjs graph — groups with children + intra-stack edges
-  const { elkNodes } = useMemo(() => {
-    const elkNodes: ElkLayoutNode[] = [];
-
-    for (const bp of blueprints) {
-      const children: ElkLayoutNode[] = [];
-      const groupEdges: ElkLayoutEdge[] = [];
-
-      // Inline networks as group children
-      for (const net of bp.inlineNets) {
-        children.push({ id: `net-${net.id}`, width: NETWORK_W, height: NETWORK_H });
-      }
-
-      // Containers as group children
-      for (const container of bp.containers) {
-        children.push({ id: `container-${container.id}`, width: CONTAINER_W, height: CONTAINER_H });
-
-        for (const netName of container.networks) {
-          // Intra-group edge (container → inline net within same stack)
-          const inlineNet = bp.inlineNets.find((n) => n.name === netName);
-          if (inlineNet) {
-            groupEdges.push({
-              id: `e-${container.id}-${inlineNet.id}`,
-              source: `container-${container.id}`,
-              target: `net-${inlineNet.id}`,
-            });
-          }
-          // Cross-stack edges are intentionally NOT fed to ELK: the root uses
-          // rectpacking (edgeless box packing). React Flow draws them in Phase 4.
-        }
-      }
-
-      elkNodes.push({
-        id: bp.groupId,
-        width: 0,
-        height: 0,
-        children,
-        edges: groupEdges.length > 0 ? groupEdges : undefined,
-        layoutOptions: GROUP_LAYOUT_OPTIONS,
-      });
-    }
-
-    // External networks at root level (packed as boxes alongside the stacks)
-    for (const net of externalNets) {
-      elkNodes.push({ id: `net-${net.id}`, width: NETWORK_W, height: NETWORK_H });
-    }
-
-    return { elkNodes };
-  }, [blueprints, externalNets]);
+  const elkNodes = useMemo(
+    () => buildStackElkNodes(blueprints, externalNets),
+    [blueprints, externalNets],
+  );
 
   // Phase 3: Run elkjs compound layout (rectpacking root + per-stack interiors)
   const layoutPositions = useElkLayout({

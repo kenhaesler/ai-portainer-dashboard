@@ -17,8 +17,10 @@ import {
   FIT_VIEW_OPTIONS,
   MIN_ZOOM,
   MAX_ZOOM,
+  buildStackElkNodes,
   type ContainerData,
   type NetworkData,
+  type StackBlueprint,
 } from './topology-graph';
 
 describe('layout configuration', () => {
@@ -42,6 +44,90 @@ describe('viewport configuration', () => {
   it('does not over-zoom a sparse fit', () => {
     expect(FIT_VIEW_OPTIONS.maxZoom).toBeLessThanOrEqual(1);
     expect(FIT_VIEW_OPTIONS.padding).toBeGreaterThan(0);
+  });
+});
+
+describe('buildStackElkNodes', () => {
+  const mkContainer = (id: string, networks: string[]): ContainerData => ({
+    id,
+    name: id,
+    state: 'running',
+    image: 'img',
+    networks,
+    labels: {},
+  });
+  const mkNet = (id: string, name: string, containers: string[] = []): NetworkData => ({
+    id,
+    name,
+    containers,
+  });
+
+  it('emits one auto-sized compound group node per stack with container + inline-net children', () => {
+    const blueprints: StackBlueprint[] = [
+      {
+        stackName: 'web',
+        groupId: 'stack-web',
+        containers: [mkContainer('c1', ['frontend'])],
+        inlineNets: [mkNet('n1', 'frontend')],
+      },
+    ];
+    const nodes = buildStackElkNodes(blueprints, []);
+    const group = nodes.find((n) => n.id === 'stack-web');
+    expect(group).toBeDefined();
+    expect(group!.width).toBe(0); // compound node auto-sizes from children
+    expect(group!.height).toBe(0);
+    const childIds = (group!.children ?? []).map((c) => c.id);
+    expect(childIds).toContain('container-c1');
+    expect(childIds).toContain('net-n1');
+  });
+
+  it('builds intra-stack container→inline-net edges but NOT cross-stack edges', () => {
+    const blueprints: StackBlueprint[] = [
+      {
+        stackName: 'web',
+        groupId: 'stack-web',
+        // c1 is on an inline net (frontend) AND an external net (shared)
+        containers: [mkContainer('c1', ['frontend', 'shared'])],
+        inlineNets: [mkNet('n1', 'frontend')],
+      },
+    ];
+    const externalNets = [mkNet('ext', 'shared')];
+    const nodes = buildStackElkNodes(blueprints, externalNets);
+    const group = nodes.find((n) => n.id === 'stack-web');
+    // Only the intra-stack edge is fed to ELK; the container→external-net link is omitted.
+    expect(group!.edges).toEqual([
+      { id: 'e-c1-n1', source: 'container-c1', target: 'net-n1' },
+    ]);
+  });
+
+  it('places external networks as root-level leaf boxes, not inside any group', () => {
+    const blueprints: StackBlueprint[] = [
+      {
+        stackName: 'web',
+        groupId: 'stack-web',
+        containers: [mkContainer('c1', ['shared'])],
+        inlineNets: [],
+      },
+    ];
+    const nodes = buildStackElkNodes(blueprints, [mkNet('ext', 'shared')]);
+    const extBox = nodes.find((n) => n.id === 'net-ext');
+    expect(extBox).toBeDefined();
+    expect(extBox!.width).toBeGreaterThan(0); // leaf box has a fixed size
+    expect(extBox!.children).toBeUndefined();
+  });
+
+  it('omits the edges field for a stack with no intra-stack edges', () => {
+    const blueprints: StackBlueprint[] = [
+      {
+        stackName: 'solo',
+        groupId: 'stack-solo',
+        containers: [mkContainer('c1', [])],
+        inlineNets: [],
+      },
+    ];
+    const nodes = buildStackElkNodes(blueprints, []);
+    const group = nodes.find((n) => n.id === 'stack-solo');
+    expect(group!.edges).toBeUndefined();
   });
 });
 
