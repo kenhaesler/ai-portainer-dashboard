@@ -472,7 +472,7 @@ export default function WorkloadExplorerPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -590,7 +590,7 @@ export default function WorkloadExplorerPage() {
             <SpotlightCard>
             <div
               data-testid="workload-pane"
-              className="rounded-lg border bg-card p-6 shadow-sm space-y-4"
+              className="rounded-lg border bg-card p-4 shadow-sm space-y-4"
             >
               {/* Smart search */}
               <WorkloadSmartSearch
