@@ -438,10 +438,10 @@ git rm frontend/src/features/containers/hooks/use-force-simulation.ts frontend/s
 
 - [ ] **Step 2: Remove the import in `topology-graph.tsx`**
 
-Delete line 18:
+Delete the `useForceSimulation` import (uses the `@/` path alias):
 
 ```ts
-import { useForceSimulation } from '../../hooks/use-force-simulation';
+import { useForceSimulation } from '@/features/containers/hooks/use-force-simulation';
 ```
 
 - [ ] **Step 3: Remove all force-simulation wiring in `topology-graph.tsx`**
@@ -638,7 +638,7 @@ frontend manifest.
 
 **Files:**
 - Modify: `frontend/package.json`
-- Modify: `frontend/package-lock.json` (regenerated; gitignored — see note)
+- Modify: `package-lock.json` (root lockfile — tracked; `frontend/package-lock.json` is gitignored)
 
 - [ ] **Step 1: Confirm nothing imports d3-force**
 
@@ -671,17 +671,16 @@ Expected: typecheck clean, tests pass.
 
 - [ ] **Step 5: Commit**
 
+The root `package-lock.json` is tracked and will have changed; include it.
+(`frontend/package-lock.json` is gitignored — do not add it.)
+
 ```bash
-git add frontend/package.json
+git add frontend/package.json package-lock.json
 git commit -m "chore(topology): drop unused d3-force dependency
 
 The force simulation was removed with the static-canvas change; d3-force
 and its types are no longer imported anywhere."
 ```
-
-Note: `frontend/package-lock.json` is gitignored in this repo (see `.gitignore`),
-so it is not committed here; the root lockfile is what CI uses. If
-`git status` shows a tracked lockfile change, add it to this commit.
 
 ---
 
