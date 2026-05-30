@@ -76,6 +76,7 @@ export async function getCapture(id: string): Promise<Capture | undefined> {
 export interface GetCapturesOptions {
   status?: CaptureStatus;
   containerId?: string;
+  search?: string;
   limit?: number;
   offset?: number;
 }
@@ -92,6 +93,11 @@ export async function getCaptures(options: GetCapturesOptions = {}): Promise<Cap
   if (options.containerId) {
     conditions.push('container_id = ?');
     params.push(options.containerId);
+  }
+
+  if (options.search) {
+    conditions.push("(container_name ILIKE ? OR COALESCE(filter, '') ILIKE ?)");
+    params.push(`%${options.search}%`, `%${options.search}%`);
   }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';

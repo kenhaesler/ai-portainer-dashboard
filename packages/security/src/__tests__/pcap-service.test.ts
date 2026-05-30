@@ -38,6 +38,7 @@ const {
   getCaptureById,
   deleteCaptureById,
   cleanupOrphanedSidecars,
+  listCaptures,
 } = await import('../services/pcap-service.js');
 import * as portainer from '@dashboard/core/portainer/portainer-client.js';
 
@@ -496,6 +497,14 @@ describe('pcap-service', () => {
       const cleaned = await cleanupOrphanedSidecars([1]);
 
       expect(cleaned).toBe(0);
+    });
+  });
+
+  describe('listCaptures', () => {
+    it('passes search through to getCaptures', async () => {
+      mockGetCaptures.mockResolvedValue([]);
+      await listCaptures({ search: 'web' });
+      expect(mockGetCaptures).toHaveBeenCalledWith({ search: 'web' });
     });
   });
 });

@@ -393,6 +393,7 @@ export async function getCaptureById(id: string): Promise<Capture | undefined> {
 export async function listCaptures(options?: {
   status?: CaptureStatus;
   containerId?: string;
+  search?: string;
   limit?: number;
   offset?: number;
 }): Promise<Capture[]> {
