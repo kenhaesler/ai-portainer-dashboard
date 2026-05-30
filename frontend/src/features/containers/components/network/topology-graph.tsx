@@ -20,6 +20,7 @@ import {
 } from '@/features/containers/hooks/use-elk-layout';
 import { useUiStore } from '@/stores/ui-store';
 import { TopologyLegend } from './topology-legend';
+import type { HandleDirection } from './handle-visibility';
 
 export interface ContainerData {
   id: string;
@@ -211,7 +212,10 @@ export function sortStacks(
 
 // --- Handle helpers (pure functions, exported for testing) ---
 
-export type HandleDirection = 'top' | 'right' | 'bottom' | 'left';
+// HandleDirection lives in ./handle-visibility (a leaf module the node
+// components import without pulling in this file). Re-exported here so existing
+// callers/tests can keep importing it from topology-graph.
+export type { HandleDirection };
 
 /** Map an angle (radians, 0 = right, counter-clockwise negative) to the closest handle direction. */
 export function getHandleForAngle(angle: number): HandleDirection {
