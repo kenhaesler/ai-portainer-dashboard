@@ -87,6 +87,13 @@ export async function getMovingAverage(
 ): Promise<MovingAverageResult | null> {
   const db = await getMetricsDb();
 
+  // #1361 fix 2 — exclude the point under test from its own baseline.
+  // `OFFSET 1` skips the most recent sample so the rolling window ends BEFORE
+  // the value being evaluated. Without it the current sample is part of the
+  // AVG/STDDEV it is compared against: a spike inflates the std that hides it
+  // (self-masking) and a sustained regression poisons the baseline within one
+  // window. The window therefore covers the `windowSize` samples immediately
+  // preceding the latest one.
   const { rows } = await db.query(
     `SELECT
        AVG(value) as mean,
@@ -96,7 +103,7 @@ export async function getMovingAverage(
        SELECT value FROM metrics
        WHERE container_id = $1 AND metric_type = $2
        ORDER BY timestamp DESC
-       LIMIT $3
+       LIMIT $3 OFFSET 1
      ) sub`,
     [containerId, metricType, windowSize],
   );
