@@ -3,8 +3,7 @@ import { type ColumnDef } from '@tanstack/react-table';
 import { LlmLatencyBreakdown } from '@/features/ai-intelligence/components/llm-latency-breakdown';
 import { useLlmTraces, useLlmStats, type LlmTrace } from '@/features/ai-intelligence/hooks/use-llm-observability';
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
-import { RefreshButton } from '@/shared/components/ui/refresh-button';
-import { AutoRefreshToggle } from '@/shared/components/ui/auto-refresh-toggle';
+import { RefreshControls } from '@/shared/components/ui/refresh-controls';
 import { KpiCard } from '@/shared/components/data-display/kpi-card';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 import { TiltCard } from '@/shared/components/data-display/tilt-card';
@@ -247,8 +246,7 @@ export default function LlmObservabilityPage() {
             {privacyMode ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
             Privacy
           </button>
-          <AutoRefreshToggle interval={interval} onIntervalChange={setInterval} />
-          <RefreshButton onClick={handleRefresh} />
+          <RefreshControls interval={interval} onIntervalChange={setInterval} onRefresh={handleRefresh} />
         </div>
       </div>
 

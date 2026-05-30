@@ -10,8 +10,7 @@ import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
 import { useImageStaleness } from '@/features/containers/hooks/use-image-staleness';
 import { ImageTreemap } from '@/shared/components/charts/image-treemap';
 import { ImageSunburst } from '@/shared/components/charts/image-sunburst';
-import { AutoRefreshToggle } from '@/shared/components/ui/auto-refresh-toggle';
-import { RefreshButton } from '@/shared/components/ui/refresh-button';
+import { RefreshControls } from '@/shared/components/ui/refresh-controls';
 import { useForceRefresh } from '@/shared/hooks/use-force-refresh';
 import { SkeletonChart } from '@/shared/components/feedback/skeleton';
 import { DataTable } from '@/shared/components/tables/data-table';
@@ -217,8 +216,7 @@ export default function ImageFootprintPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <AutoRefreshToggle interval={interval} onIntervalChange={setInterval} />
-          <RefreshButton onClick={() => refetch()} onForceRefresh={forceRefresh} isLoading={isFetching || isForceRefreshing} />
+          <RefreshControls interval={interval} onIntervalChange={setInterval} onRefresh={() => refetch()} onForceRefresh={forceRefresh} isLoading={isFetching || isForceRefreshing} />
         </div>
       </div>
 

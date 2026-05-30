@@ -15,8 +15,7 @@ import { SensitivityControl } from '@/features/ai-intelligence/components/sensit
 import type { Severity } from '@/features/ai-intelligence/components/insight-card';
 import { useForceRefresh } from '@/shared/hooks/use-force-refresh';
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
-import { RefreshButton } from '@/shared/components/ui/refresh-button';
-import { AutoRefreshToggle } from '@/shared/components/ui/auto-refresh-toggle';
+import { RefreshControls } from '@/shared/components/ui/refresh-controls';
 import { EmptyState } from '@/shared/components/feedback/empty-state';
 import { SkeletonChart, SkeletonList } from '@/shared/components/feedback/skeleton';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
@@ -508,9 +507,10 @@ export default function AiMonitorPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <AutoRefreshToggle interval={interval} onIntervalChange={setInterval} />
-          <RefreshButton
-            onClick={() => { refetch(); containerRefetch(); }}
+          <RefreshControls
+            interval={interval}
+            onIntervalChange={setInterval}
+            onRefresh={() => { refetch(); containerRefetch(); }}
             onForceRefresh={forceRefresh}
             isLoading={containersFetching || isForceRefreshing}
           />

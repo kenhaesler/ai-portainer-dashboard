@@ -26,8 +26,7 @@ import {
 } from '@/features/operations/hooks/use-remediation';
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
 import { StatusBadge } from '@/shared/components/feedback/status-badge';
-import { AutoRefreshToggle } from '@/shared/components/ui/auto-refresh-toggle';
-import { RefreshButton } from '@/shared/components/ui/refresh-button';
+import { RefreshControls } from '@/shared/components/ui/refresh-controls';
 import { SkeletonChart } from '@/shared/components/feedback/skeleton';
 import { EmptyState } from '@/shared/components/feedback/empty-state';
 import { DataTable } from '@/shared/components/tables/data-table';
@@ -649,8 +648,7 @@ export default function RemediationPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <AutoRefreshToggle interval={interval} onIntervalChange={setInterval} />
-          <RefreshButton onClick={() => refetch()} isLoading={isFetching} />
+          <RefreshControls interval={interval} onIntervalChange={setInterval} onRefresh={() => refetch()} isLoading={isFetching} />
         </div>
       </div>
 

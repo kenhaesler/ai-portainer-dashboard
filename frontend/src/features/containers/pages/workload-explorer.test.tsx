@@ -158,12 +158,8 @@ vi.mock('@/shared/components/feedback/status-badge', () => ({
   StatusBadge: ({ status }: { status: string }) => <span>{status}</span>,
 }));
 
-vi.mock('@/shared/components/ui/auto-refresh-toggle', () => ({
-  AutoRefreshToggle: () => <div>Auto Refresh</div>,
-}));
-
-vi.mock('@/shared/components/ui/refresh-button', () => ({
-  RefreshButton: () => <button type="button">Refresh</button>,
+vi.mock('@/shared/components/ui/refresh-controls', () => ({
+  RefreshControls: () => <button type="button">Refresh</button>,
 }));
 
 vi.mock('@/shared/components/ui/favorite-button', () => ({
@@ -472,7 +468,21 @@ describe('WorkloadExplorerPage', () => {
     expect(Array.isArray(rows)).toBe(true);
     expect((rows as Array<Record<string, unknown>>).length).toBe(3);
     expect((rows as Array<Record<string, unknown>>).some((row) => row.group === 'System')).toBe(true);
-    expect(filename).toMatch(/^workload-explorer-endpoint-1-all-stacks-all-groups-\d{4}-\d{2}-\d{2}\.csv$/);
+    expect(filename).toMatch(/^workload-explorer-endpoint-1-all-stacks-all-groups-all-images-\d{4}-\d{2}-\d{2}\.csv$/);
+  });
+
+  it('includes the active image filter (sanitized) in the CSV filename scope', () => {
+    mockQueryString = 'endpoint=1&image=workers%3Alatest';
+    render(<WorkloadExplorerPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
+
+    expect(mockExportToCsv).toHaveBeenCalledTimes(1);
+    const [, filename] = mockExportToCsv.mock.calls[0];
+    // "workers:latest" → image-workers-latest (':' is not filename-safe)
+    expect(filename).toMatch(
+      /^workload-explorer-endpoint-1-all-stacks-all-groups-image-workers-latest-\d{4}-\d{2}-\d{2}\.csv$/,
+    );
   });
 
   it('passes enableRowSelection and maxSelection to DataTable', () => {
@@ -595,6 +605,122 @@ describe('WorkloadExplorerPage', () => {
     expect(params.get('stack')).toBe('workers');
     expect(params.get('group')).toBe('workload');
     expect(params.get('state')).toBe('running');
+  });
+
+  // -------------------------------------------------------------------------
+  // Clickable State / Endpoint / Group / Image column cells (filter-on-click,
+  // mirroring the Stack cell). Each preserves the other active filters.
+  // -------------------------------------------------------------------------
+
+  it('clicking the State cell filters by state, preserving other active filters', () => {
+    mockQueryString = 'endpoint=1&group=workload';
+    render(<WorkloadExplorerPage />);
+
+    const stateColumn = mockColumns?.find(
+      (col: { accessorKey?: string }) => col.accessorKey === 'state'
+    );
+    expect(stateColumn).toBeDefined();
+
+    const cellResult = stateColumn.cell({ getValue: () => 'running' });
+    const { container } = render(cellResult);
+    const stateButton = container.querySelector('button');
+    expect(stateButton).not.toBeNull();
+    fireEvent.click(stateButton!);
+
+    expect(mockSetSearchParams).toHaveBeenCalledTimes(1);
+    const params = mockSetSearchParams.mock.calls[0][0] as URLSearchParams;
+    expect(params.get('state')).toBe('running');
+    expect(params.get('endpoint')).toBe('1');
+    expect(params.get('group')).toBe('workload');
+  });
+
+  it('clicking the Endpoint cell filters by endpoint (clearing stack), preserving group/state', () => {
+    mockQueryString = 'endpoint=1&stack=workers&group=workload&state=running';
+    render(<WorkloadExplorerPage />);
+
+    const endpointColumn = mockColumns?.find(
+      (col: { accessorKey?: string }) => col.accessorKey === 'endpointName'
+    );
+    expect(endpointColumn).toBeDefined();
+
+    const cellResult = endpointColumn.cell({
+      row: { original: { endpointId: 2, endpointName: 'remote' } },
+    });
+    const { container } = render(cellResult);
+    const endpointButton = container.querySelector('button');
+    expect(endpointButton).not.toBeNull();
+    fireEvent.click(endpointButton!);
+
+    expect(mockSetSearchParams).toHaveBeenCalledTimes(1);
+    const params = mockSetSearchParams.mock.calls[0][0] as URLSearchParams;
+    expect(params.get('endpoint')).toBe('2');
+    // Switching endpoint clears the (endpoint-scoped) stack filter…
+    expect(params.get('stack')).toBeNull();
+    // …but keeps the cross-endpoint filters.
+    expect(params.get('group')).toBe('workload');
+    expect(params.get('state')).toBe('running');
+  });
+
+  it('clicking the Group cell filters by the container group, preserving other filters', () => {
+    mockQueryString = 'endpoint=1&state=running';
+    render(<WorkloadExplorerPage />);
+
+    const groupColumn = mockColumns?.find((col: { id?: string }) => col.id === 'group');
+    expect(groupColumn).toBeDefined();
+
+    const workloadContainer = {
+      id: 'c-workers',
+      name: 'workers-api-1',
+      image: 'workers:latest',
+      labels: { 'com.docker.compose.project': 'workers' },
+    };
+    const cellResult = groupColumn.cell({ row: { original: workloadContainer } });
+    const { container } = render(cellResult);
+    const groupButton = container.querySelector('button');
+    expect(groupButton).not.toBeNull();
+    fireEvent.click(groupButton!);
+
+    expect(mockSetSearchParams).toHaveBeenCalledTimes(1);
+    const params = mockSetSearchParams.mock.calls[0][0] as URLSearchParams;
+    expect(params.get('group')).toBe('workload');
+    expect(params.get('endpoint')).toBe('1');
+    expect(params.get('state')).toBe('running');
+  });
+
+  it('clicking the Image cell filters by image, preserving other filters', () => {
+    mockQueryString = 'endpoint=1&group=workload';
+    render(<WorkloadExplorerPage />);
+
+    const imageColumn = mockColumns?.find(
+      (col: { accessorKey?: string }) => col.accessorKey === 'image'
+    );
+    expect(imageColumn).toBeDefined();
+
+    const cellResult = imageColumn.cell({ getValue: () => 'nginx:1.25' });
+    const { container } = render(cellResult);
+    const imageButton = container.querySelector('button');
+    expect(imageButton).not.toBeNull();
+    fireEvent.click(imageButton!);
+
+    expect(mockSetSearchParams).toHaveBeenCalledTimes(1);
+    const params = mockSetSearchParams.mock.calls[0][0] as URLSearchParams;
+    expect(params.get('image')).toBe('nginx:1.25');
+    expect(params.get('endpoint')).toBe('1');
+    expect(params.get('group')).toBe('workload');
+  });
+
+  it('renders an Image filter chip when an image filter is active and removes it on dismiss', () => {
+    mockQueryString = 'endpoint=1&image=nginx%3A1.25';
+    render(<WorkloadExplorerPage />);
+
+    expect(screen.getByText('Image:')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Image filter' }));
+
+    expect(mockSetSearchParams).toHaveBeenCalledTimes(1);
+    const params = mockSetSearchParams.mock.calls[0][0] as URLSearchParams;
+    expect(params.get('image')).toBeNull();
+    expect(params.get('endpoint')).toBe('1');
   });
 
   // -------------------------------------------------------------------------
@@ -984,10 +1110,12 @@ describe('WorkloadExplorerPage — columns (#1288)', () => {
       getValue: () => 'registry.harbor.example.com/library/team-x/api-service:1.4.2',
     });
     const { container } = render(cellResult);
-    const span = container.querySelector('span');
-    expect(span?.textContent).toBe('api-service:1.4.2');
-    expect(span?.getAttribute('title')).toBe(
-      'registry.harbor.example.com/library/team-x/api-service:1.4.2',
+    // Now a clickable filter button (like the Stack cell): short name shown,
+    // full path retained in the "Filter by image: …" title.
+    const button = container.querySelector('button');
+    expect(button?.textContent).toBe('api-service:1.4.2');
+    expect(button?.getAttribute('title')).toBe(
+      'Filter by image: registry.harbor.example.com/library/team-x/api-service:1.4.2',
     );
   });
 
@@ -1020,7 +1148,7 @@ describe('WorkloadExplorerPage — columns (#1288)', () => {
     expect(tagButton?.className).toContain('whitespace-nowrap');
   });
 
-  it('renders the Group cell as a labelled icon (System=Cog, Workload=Box)', () => {
+  it('renders the Group cell as a labelled, clickable icon (System=Cog, Workload=Box)', () => {
     render(<WorkloadExplorerPage />);
     const groupCol = mockColumns?.find((c) => c.id === 'group');
     expect(groupCol).toBeDefined();
@@ -1028,16 +1156,15 @@ describe('WorkloadExplorerPage — columns (#1288)', () => {
     // System container (beyla → grafana/beyla image)
     const systemCell = groupCol.cell({ row: { original: defaultContainersMock.data[1] } });
     const { container: sysC } = render(systemCell);
-    const sysWrap = sysC.querySelector('span[aria-label="System"]');
+    const sysWrap = sysC.querySelector('button[aria-label="Filter by System"]');
     expect(sysWrap).not.toBeNull();
-    expect(sysWrap).toHaveAttribute('role', 'img');
     expect(sysWrap?.querySelector('svg.lucide-cog')).toBeInTheDocument();
     expect(sysWrap?.className).toContain('bg-amber-100');
 
     // Workload container (workers-api-1)
     const workloadCell = groupCol.cell({ row: { original: defaultContainersMock.data[0] } });
     const { container: wlC } = render(workloadCell);
-    const wlWrap = wlC.querySelector('span[aria-label="Workload"]');
+    const wlWrap = wlC.querySelector('button[aria-label="Filter by Workload"]');
     expect(wlWrap).not.toBeNull();
     expect(wlWrap?.querySelector('svg.lucide-box')).toBeInTheDocument();
     expect(wlWrap?.className).toContain('bg-slate-100');

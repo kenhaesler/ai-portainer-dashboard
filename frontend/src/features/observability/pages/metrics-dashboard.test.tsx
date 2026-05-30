@@ -145,11 +145,11 @@ vi.mock('@/features/ai-intelligence/components/metrics/correlation-insights-pane
   CorrelationInsightsPanel: () => <div data-testid="correlation-insights-panel" />,
 }));
 
-// Stub AutoRefreshToggle: its real implementation now renders a native <select>
+// Stub RefreshControls: its real implementation renders a native <select>
 // which would appear before the page's own endpoint/stack/container selects in
 // the combobox role-list and shift these tests' index-based selectors.
-vi.mock('@/shared/components/ui/auto-refresh-toggle', () => ({
-  AutoRefreshToggle: () => <div data-testid="mock-auto-refresh" />,
+vi.mock('@/shared/components/ui/refresh-controls', () => ({
+  RefreshControls: () => <div data-testid="mock-auto-refresh" />,
 }));
 
 import MetricsDashboardPage from './metrics-dashboard';

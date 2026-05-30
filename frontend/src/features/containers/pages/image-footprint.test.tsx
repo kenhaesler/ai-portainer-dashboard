@@ -85,12 +85,8 @@ vi.mock('@/shared/components/ui/themed-select', () => ({
   ThemedSelect: () => <div data-testid="themed-select" />,
 }));
 
-vi.mock('@/shared/components/ui/auto-refresh-toggle', () => ({
-  AutoRefreshToggle: () => <div data-testid="auto-refresh-toggle" />,
-}));
-
-vi.mock('@/shared/components/ui/refresh-button', () => ({
-  RefreshButton: () => <button type="button">Refresh</button>,
+vi.mock('@/shared/components/ui/refresh-controls', () => ({
+  RefreshControls: () => <button type="button">Refresh</button>,
 }));
 
 vi.mock('@/shared/components/feedback/skeleton', () => ({
