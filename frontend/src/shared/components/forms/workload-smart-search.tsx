@@ -128,6 +128,8 @@ export function WorkloadSmartSearch({
         handleAiSearch();
       } else if (e.key === 'Escape') {
         handleClear();
+        // Exit the field on Escape so keyboard users can leave the search.
+        inputRef.current?.blur();
       }
     },
     [handleAiSearch, handleClear],
@@ -234,7 +236,7 @@ export function WorkloadSmartSearch({
             }}
             className="absolute inset-y-0 left-11 right-3 flex items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           >
-            {FILTER_CHIPS.map((chip) => (
+            {FILTER_CHIPS.map((chip, i) => (
               <button
                 key={chip.label}
                 onClick={() => handleFilterChipClick(chip.label)}
@@ -242,6 +244,10 @@ export function WorkloadSmartSearch({
                   'inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md border border-border/60 bg-card/80 px-2 py-0.5 text-xs font-medium',
                   'text-muted-foreground backdrop-blur-sm transition-colors duration-200',
                   'hover:bg-primary/10 hover:text-primary hover:border-primary/30',
+                  // Right-align the chip row: ml-auto on the first chip absorbs
+                  // free space so chips sit at the right when they fit, and
+                  // collapses to a left-aligned scrollable row when they overflow.
+                  i === 0 && 'ml-auto',
                 )}
               >
                 {chip.label}

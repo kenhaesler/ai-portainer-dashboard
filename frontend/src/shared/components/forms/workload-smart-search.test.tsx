@@ -212,6 +212,25 @@ describe('WorkloadSmartSearch', () => {
     expect(lastCall).toHaveLength(3);
   });
 
+  it('Escape exits the field (blurs the input)', () => {
+    renderComponent();
+    const input = screen.getByRole('textbox');
+
+    input.focus();
+    expect(document.activeElement).toBe(input);
+
+    fireEvent.keyDown(input, { key: 'Escape' });
+
+    expect(document.activeElement).not.toBe(input);
+  });
+
+  it('right-aligns the example chips via ml-auto on the first chip', () => {
+    renderComponent();
+    // ml-auto on the leading chip pushes the row to the right when it fits and
+    // collapses to a left-aligned scrollable row when the chips overflow.
+    expect(screen.getByRole('button', { name: 'state:running' })).toHaveClass('ml-auto');
+  });
+
   it('clicking a filter chip sets query and filters', () => {
     const { onFiltered } = renderComponent();
     fireEvent.click(screen.getByRole('button', { name: 'state:running' }));
