@@ -1,99 +1,161 @@
 # AI & Anomaly Detection Techniques
 
-The monitoring pipeline runs a multi-phase analysis on every cycle (default: every 5 minutes). Each technique operates independently and degrades gracefully when its prerequisites are unavailable.
+The monitoring pipeline runs a multi-phase analysis on every cycle (cadence is configurable via `MONITORING_INTERVAL_MINUTES`). Each technique operates independently and degrades gracefully when its prerequisites are unavailable. Detector internals live in `packages/ai-intelligence/src/services/`; defaults are defined in `packages/core/src/config/env.schema.ts` and documented in the [configuration reference](configuration.md).
+
+> **Recent tuning (issues #1294–#1298).** The pipeline was reworked to cut false positives and add a human-in-the-loop feedback signal: a wider moving-average window, lower Isolation Forest contamination, an hour-of-day seasonal baseline, coefficient-of-variation (CV) threshold scaling, a per-user false-positive feedback loop, and per-user sensitivity presets. Each is described below.
 
 ## Statistical Anomaly Detection
 
-Three statistical methods detect anomalies on a per-container, per-metric basis using historical time-series data:
+Anomalies are detected per-container, per-metric from historical time-series. The **adaptive** detector (`adaptive-anomaly-detector.ts`) picks a method per series based on its coefficient of variation (CV = σ/μ):
 
-| Method | Algorithm | Best For |
-|--------|-----------|----------|
-| **Z-Score** | Deviation from rolling mean / std. dev. | Stable workloads with low variance |
-| **Bollinger Bands** | Price-channel approach (mean +/- k x sigma) | Workloads with natural oscillation |
-| **Adaptive** | Auto-selects best method per container | General-purpose (default) |
+| Method | Algorithm | Selected when |
+|--------|-----------|---------------|
+| **Bollinger Bands** | mean ± k·σ channel | very stable series (`CV < 0.1`) |
+| **Z-Score** | deviation from rolling mean/σ | moderate variance (`0.1 ≤ CV < 0.3`), or `< 20` samples |
+| **Adaptive (CV-scaled z-score)** | z-score with threshold scaled by CV regime | naturally noisy series (`CV ≥ 0.3`) |
 
-Configuration: `ANOMALY_DETECTION_METHOD` (default: `adaptive`), plus threshold and window settings in the [configuration reference](configuration.md#anomaly-detection).
+**CV threshold scaling** (`anomaly-stats.ts`) widens the effective z-threshold for noisy workloads and keeps it tight for stable ones:
+
+| CV regime | Range | Threshold multiplier |
+|-----------|-------|----------------------|
+| low | `CV < 0.1` | 1.0× |
+| medium | `0.1 ≤ CV < 0.3` | 1.2× |
+| high | `CV ≥ 0.3` | 1.5× |
+
+> Note (#1295): very stable services now use a **1.0×** multiplier (previously 1.2×). After upgrading, expect a one-time uptick in alerts on historically quiet, low-variance services — this is intentional and surfaces previously-suppressed anomalies.
+
+### Hour-of-day seasonal baseline (#1295)
+
+Instead of a single flat 24h baseline, the detector compares each observation against the baseline for the **same UTC hour** over a lookback window. This eliminates false positives during predictable diurnal ramps (morning traffic, nightly batch). When an hour bucket hasn't warmed up, it falls back to the flat baseline.
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `ANOMALY_HOUROFDAY_LOOKBACK_DAYS` | `14` | Days of history per hour-of-day bucket |
+| `ANOMALY_HOUROFDAY_MIN_SAMPLES` | `3` | Min samples in a bucket before it's used (else flat fallback) |
+
+### Core configuration
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `ANOMALY_DETECTION_METHOD` | `adaptive` | Detection strategy |
+| `ANOMALY_ZSCORE_THRESHOLD` | `3.5` | Base z-score threshold (before CV scaling) |
+| `ANOMALY_MOVING_AVERAGE_WINDOW` | `60` | Rolling window in samples (~1h at 60s cadence; raised from 20 in #1294) |
+| `ANOMALY_MIN_SAMPLES` | `10` | Warm-up minimum before detection activates |
+| `ANOMALY_COOLDOWN_MINUTES` | `30` | Per-container/metric cooldown to prevent alert spam |
+| `BOLLINGER_BANDS_ENABLED` | `true` | Enable the Bollinger method |
 
 ## Isolation Forest (ML)
 
-A from-scratch implementation of the Isolation Forest algorithm (zero external dependencies). Isolation Forest detects anomalies by recursively partitioning data — anomalous points require fewer splits to isolate and thus have shorter average path lengths.
+A from-scratch Isolation Forest (zero external dependencies) detects multivariate anomalies that per-metric methods miss. Anomalous points isolate with fewer random splits, yielding shorter average path lengths.
 
 **How it works:**
-1. Training data is built from 7 days of `[cpu, memory]` metric pairs per container (minimum 50 samples required)
-2. A forest of randomized isolation trees is constructed, each using a random subsample
-3. For each new data point, the anomaly score is computed as `2^(-E(h(x)) / c(n))` where `c(n)` is the expected path length of an unsuccessful BST search
-4. Points scoring above the contamination threshold are flagged as anomalous
+1. Training data is built from 7 days of `[cpu, memory]` pairs per container (**minimum 50 samples**).
+2. A forest of randomized isolation trees is built from random subsamples.
+3. Each point's anomaly score is `2^(-E(h(x)) / c(n))`, where `c(n)` is the expected path length of an unsuccessful BST search.
+4. Points above the contamination threshold are flagged.
 
-**Key properties:**
-- Multivariate: considers CPU and memory simultaneously, catching correlated anomalies that per-metric methods miss
-- Per-container model caching with configurable retrain interval (default: 6 hours)
-- Skips containers already flagged by statistical detection to avoid duplicates
-- Falls back silently when insufficient training data is available
+**Key properties:** considers CPU and memory simultaneously; per-container model caching with a configurable retrain interval; skips containers already flagged by statistical detection; falls back silently when data is insufficient.
 
-Configuration: `ISOLATION_FOREST_ENABLED`, `ISOLATION_FOREST_TREES`, `ISOLATION_FOREST_SAMPLE_SIZE`, `ISOLATION_FOREST_CONTAMINATION`, `ISOLATION_FOREST_RETRAIN_HOURS`.
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `ISOLATION_FOREST_ENABLED` | `true` | Feature toggle |
+| `ISOLATION_FOREST_TREES` | `100` | Trees per forest |
+| `ISOLATION_FOREST_SAMPLE_SIZE` | `256` | Subsample size per tree |
+| `ISOLATION_FOREST_CONTAMINATION` | `0.05` | Expected anomaly fraction (lowered from 0.15 in #1294) |
+| `ISOLATION_FOREST_RETRAIN_HOURS` | `6` | Model cache TTL / retrain interval |
+
+## Trace Anomaly Detection
+
+For services with distributed traces (Beyla/OTLP — see [eBPF Trace Ingestion](ebpf-trace-ingestion.md)), `trace-anomaly.ts` runs two parallel detectors per service using the same hour-of-day + CV-scaling machinery:
+
+- **Latency (p95):** CV-scaled z-score vs baseline; when σ is 0, a relative rule fires if `p95 > mean + max(0.5·mean, 50ms)`.
+- **Error rate (%):** absolute threshold + baseline comparison (fires at ≥ threshold and above baseline + 1pp).
+
+Same-minute anomalies for one service collapse into a **single multi-dimensional insight** (#1296). Severity is `critical` past 2× the effective threshold, else `warning`.
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `TRACES_ANOMALY_P95_ZSCORE` | `3.0` | p95 latency z-threshold (raised from 2.5 in #1294) |
+| `TRACES_ANOMALY_ERROR_RATE_PCT` | `5` | Error-rate threshold (%) |
+| `TRACES_ANOMALY_PER_SERVICE_MIN` | `5` | Per-service rate limit: max 1 anomaly / N min |
+| `TRACES_ANOMALY_MIN_SAMPLES` | `10` | Baseline warm-up before a service is eligible |
+
+A **10-minute per-dimension cooldown** sits on top of the per-service rate limit.
 
 ## Predictive Alerting
 
-Linear regression on recent metric trends forecasts when resource usage will hit critical thresholds. Generates predictive insights with severity based on time-to-threshold:
+Linear regression on recent metric trends forecasts time-to-threshold and emits predictive insights. Only fires for increasing trends with medium/high confidence.
 
-| Time to Threshold | Severity |
+| Time to threshold | Severity |
 |-------------------|----------|
 | < 6 hours | Critical |
-| 6-12 hours | Warning |
-| 12-24 hours | Info |
+| 6–12 hours | Warning |
+| 12–24 hours | Info |
 
-Only fires for increasing trends with medium or high confidence. Configuration: `PREDICTIVE_ALERTING_ENABLED`, `PREDICTIVE_ALERT_THRESHOLD_HOURS`.
+Configuration: `PREDICTIVE_ALERTING_ENABLED`, `PREDICTIVE_ALERT_THRESHOLD_HOURS`.
 
-## Anomaly Explanations (LLM)
+## Anomaly Explanations & NLP Log Analysis (LLM)
 
-When anomalies are detected and Ollama is available, the system sends anomaly context (metric values, container info, historical baseline) to the LLM for a plain-English explanation. The AI analysis is appended to the insight description.
+When an LLM endpoint is available, detected anomalies are sent (with metric values, container info, and baseline) for a plain-English explanation appended to the insight. Separately, recent container logs can be analyzed for error/warning patterns that metric detection misses, producing `log-analysis` insights. Both are skipped when the LLM is unavailable.
 
-Configuration: `ANOMALY_EXPLANATION_ENABLED`, `ANOMALY_EXPLANATION_MAX_PER_CYCLE`.
-
-## NLP Log Analysis (LLM)
-
-During each monitoring cycle, the system can analyze container logs using the LLM to detect error patterns, warnings, and concerning trends that metric-based detection would miss.
-
-**How it works:**
-1. Fetches the most recent log lines from running containers via the Portainer API
-2. Sends logs to the LLM with a structured prompt requesting JSON output: `{ severity, summary, errorPatterns[] }`
-3. Generates `log-analysis` category insights for containers with detected issues
-
-Processing is sequential to avoid overwhelming the LLM backend. Skipped entirely when Ollama is unavailable. Configuration: `NLP_LOG_ANALYSIS_ENABLED`, `NLP_LOG_ANALYSIS_MAX_PER_CYCLE`, `NLP_LOG_ANALYSIS_TAIL_LINES`.
+Configuration: `ANOMALY_EXPLANATION_ENABLED`, `ANOMALY_EXPLANATION_MAX_PER_CYCLE`, `NLP_LOG_ANALYSIS_ENABLED`, `NLP_LOG_ANALYSIS_MAX_PER_CYCLE`, `NLP_LOG_ANALYSIS_TAIL_LINES`.
 
 ## Root Cause Investigation (LLM)
 
-Triggered automatically when critical anomalies are detected. The investigation service collects comprehensive context (metrics, logs, container config) and sends it to the LLM for deep-dive root cause analysis. Results are stored as investigations linked to the triggering insight.
+Triggered automatically on critical anomalies. The investigation service gathers metrics, logs, and container config, sends them to the LLM for deep-dive analysis, and stores the result as an investigation linked to the triggering insight.
 
 Configuration: `INVESTIGATION_ENABLED`, `INVESTIGATION_COOLDOWN_MINUTES`, `INVESTIGATION_MAX_CONCURRENT`.
 
-## Smart Alert Grouping
+## Smart Alert Grouping (Incident Correlation)
 
-Alerts are correlated into incidents using three strategies:
+`incident-correlator.ts` correlates insights into incidents within a 5-minute window using strategies applied in order:
 
-| Strategy | Algorithm | Trigger |
-|----------|-----------|---------|
-| **Dedup** | Same container ID | Multiple anomalies on one container |
-| **Cascade** | Same endpoint, multiple containers | Host-level or network-level issue |
-| **Semantic** | Jaccard text similarity on alert titles/descriptions | Alerts with similar wording across containers |
+| Strategy | Trigger | Confidence |
+|----------|---------|------------|
+| **Dedup** | Same container + metric type | high |
+| **Cascade** | Same endpoint, multiple containers, ≥ 2 distinct anomaly types | high (3+) / medium |
+| **Temporal** | Any insights on the same endpoint in window | medium |
+| **Semantic** | Jaccard text similarity over titles/descriptions (union-find clustering) | medium |
 
-The semantic grouping pass uses union-find clustering with path compression. Insights with Jaccard similarity above the threshold are merged into incident groups.
+When the LLM is available and `INCIDENT_SUMMARY_ENABLED` is on, grouped incidents get an LLM-generated relationship summary; otherwise a rule-based summary is used.
 
-When Ollama is available and `INCIDENT_SUMMARY_ENABLED` is on, grouped incidents receive an LLM-generated summary explaining the likely relationship between the alerts. Otherwise, a rule-based summary is generated.
+Configuration: `SMART_GROUPING_ENABLED`, `SMART_GROUPING_SIMILARITY_THRESHOLD` (default `0.3`), `INCIDENT_SUMMARY_ENABLED`.
 
-Configuration: `SMART_GROUPING_ENABLED`, `SMART_GROUPING_SIMILARITY_THRESHOLD`, `INCIDENT_SUMMARY_ENABLED`.
+## Anomaly Feedback Loop (#1298)
+
+Any authenticated user can flag an anomaly as a false positive; the row is always scoped to the caller's `user_id` (no spoofing). Feedback is stored in `anomaly_feedback` with a unique `(anomaly_id, user_id)` constraint, so submissions are idempotent.
+
+- `POST /api/monitoring/anomaly-feedback` — body `{ anomalyId, disposition?, detector? }`. The `detector` field is restricted to an allowlist (`threshold`, `ml-anomaly`, `prediction`, `health-check`, `log-pattern`, `security-scan`, `correlated-zscore`, `isolation-forest`) so client input can't pollute the per-detector breakdown.
+- `GET /api/monitoring/anomaly-feedback/rates` — per-detector false-positive rates. Admins receive **fleet-wide** aggregates (counts per detector only, never individual user dispositions); `?scope=mine` returns caller-scoped data. Non-admins are always caller-scoped, even if they pass `?scope=fleet`.
+
+## Per-User Sensitivity Presets (#1297)
+
+Each user can tune how aggressively anomalies are surfaced **to them**, without affecting detection globally. The preset is stored in `user_settings` under `monitoring.sensitivity_preset` and applied as a post-filter on the caller's z-score.
+
+| Preset | Z-threshold multiplier | Effect |
+|--------|------------------------|--------|
+| `low` | 1.3× (stricter) | Fewer alerts — alert-fatigue reduction |
+| `default` | 1.0× | Baseline |
+| `high` | 0.85× (looser) | More alerts — higher sensitivity |
+
+- `GET /api/monitoring/sensitivity` → `{ preset }` (defaults to `default`)
+- `PUT /api/monitoring/sensitivity` ← `{ preset }`
+
+> **Contract caveat:** the post-filter extracts the z-score by parsing the detector's `z-score: X.YZ` string in the insight description. If that format changes, the filter silently degrades to pass-through (every insight shown). Keep the substring stable, or migrate to a typed column.
 
 ## Graceful Degradation
 
 All AI features degrade gracefully based on available infrastructure:
 
-| Feature | Ollama Down | Insufficient Data |
-|---------|-------------|-------------------|
-| Statistical detection | Works (no LLM needed) | Falls back to fewer methods |
+| Feature | LLM down | Insufficient data |
+|---------|----------|-------------------|
+| Statistical detection | Works (no LLM needed) | Falls back to fewer methods / flat baseline |
 | Isolation Forest | Works (no LLM needed) | Skipped (< 50 samples) |
+| Trace anomaly detection | Works (no LLM needed) | Skipped (< `TRACES_ANOMALY_MIN_SAMPLES`) |
 | Predictive alerting | Works (no LLM needed) | Skipped (low confidence) |
 | Anomaly explanations | Skipped | N/A |
 | NLP log analysis | Skipped entirely | Skipped (empty logs) |
 | Root cause investigation | Skipped | N/A |
 | Smart alert grouping | Text similarity still works | N/A |
 | Incident summaries | Rule-based fallback | N/A |
+| Anomaly feedback / sensitivity | Works (no LLM needed) | N/A |

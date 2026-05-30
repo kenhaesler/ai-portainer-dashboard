@@ -3,7 +3,10 @@
 This project's architecture documentation is maintained in [docs/ai-instructions/architecture.md](ai-instructions/architecture.md).
 
 For detailed diagrams and data flow, see:
-- [Architecture Overview](ai-instructions/architecture.md)
+- [Architecture Overview](ai-instructions/architecture.md) — monorepo structure, dependency graph, and key patterns
+- [Database Schema](ai-instructions/architecture.md#database-schema) — app (PostgreSQL) + metrics (TimescaleDB) tables
+- [Data Flows](ai-instructions/architecture.md#data-flows) — metrics, monitoring/anomaly, remediation, and LLM chat paths
+- [Background Scheduler](ai-instructions/architecture.md#background-scheduler) — interval jobs and cadences
 - [Security Checklist](ai-instructions/security-checklist.md)
 - [UI Design System](ai-instructions/ui-design-system.md)
 

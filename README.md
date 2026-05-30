@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/kenhaesler/ai-portainer-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/kenhaesler/ai-portainer-dashboard/actions/workflows/ci.yml)
 [![Node](https://img.shields.io/badge/node-%3E%3D22.0.0-brightgreen)](https://nodejs.org)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue)](https://www.typescriptlang.org)
+[![TypeScript](https://img.shields.io/badge/TypeScript-6.0-blue)](https://www.typescriptlang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 > **Observer-first** — This dashboard focuses on deep visibility into your container infrastructure. Some actions can be triggered through an explicit approval workflow (e.g., remediation execution).
@@ -34,9 +34,37 @@ A Redis-backed server cache sits between Portainer and the dashboard so backgrou
 This project follows a **Monorepo** structure with a **Client-Server (Full-stack)** architectural pattern:
 
 - **Frontend:** React 19 (Vite) + Tailwind CSS v4 + TanStack Query
-- **Backend:** Fastify 5 + Socket.IO + SQLite (WAL)
+- **Backend:** Fastify 5 + Socket.IO, modular monolith across 9 workspace packages
+- **Storage:** PostgreSQL (app state), TimescaleDB (time-series metrics), Redis (cache + sessions)
 - **Design Philosophy:** **Observer-First** — focuses on deep visibility; mutating actions are gated by a remediation approval workflow.
 - **AI Engine:** OpenAI-compatible LLM client (OpenAI, LM Studio, vLLM, LiteLLM, OpenWebUI, Anthropic via proxy) for insights and chat.
+
+### At a glance
+
+The backend is a modular monolith composed of 9 npm workspace packages under `packages/`, wired together at a single composition root:
+
+| Package | Responsibility |
+|---------|----------------|
+| `@dashboard/contracts` | Shared Zod schemas, service interfaces, typed events (zero impl) |
+| `@dashboard/core` | Kernel: DB, auth, config, Portainer client, caching, tracing, event bus |
+| `@dashboard/ai` | LLM client, prompt-injection guard, anomaly detection, MCP bridge |
+| `@dashboard/observability` | Metrics ingestion, forecasting, distributed tracing, Prometheus export |
+| `@dashboard/operations` | Remediation workflow, backups, webhooks, notifications |
+| `@dashboard/security` | Container scanning, PCAP, Harbor CVE sync, eBPF coverage |
+| `@dashboard/infrastructure` | Edge agents, Docker log collection, Elasticsearch forwarding |
+| `@dashboard/foundation` | Foundational routes (auth, containers, settings, etc.) coupled to Portainer |
+| `@dashboard/server` | Composition root: DI wiring, Fastify bootstrap, background scheduler |
+
+See [Architecture](docs/ai-instructions/architecture.md) for the dependency graph, database schema, data-flow diagrams, and the background scheduler.
+
+### Tech stack
+
+| Layer | Technologies |
+|-------|--------------|
+| Frontend | React 19.2 (+ React Compiler), Vite 8, TypeScript 6, Tailwind CSS 4, TanStack Query/Table/Virtual, Zustand, Radix UI, Recharts, Framer Motion, Socket.IO client |
+| Backend | Node ≥ 22, Fastify 5.8, Socket.IO 4.8, `jose` (JWT), `openid-client` v6 (OIDC/PKCE), `pg` 8 |
+| Storage | PostgreSQL (app), TimescaleDB (metrics hypertables + continuous aggregates), Redis (cache + sessions) |
+| Testing | Vitest 4 (unit/integration), Playwright 1.60 (E2E) |
 
 ---
 
@@ -52,7 +80,7 @@ This project follows a **Monorepo** structure with a **Client-Server (Full-stack
 ```bash
 git clone https://github.com/kenhaesler/ai-portainer-dashboard.git
 cd ai-portainer-dashboard
-cp .env.example .env
+cp docker/.env.example .env
 ```
 
 Edit `.env` with your Portainer credentials:
@@ -138,6 +166,15 @@ Do not expose Ollama on `0.0.0.0` without authentication.
 | Development | http://localhost:5273 |
 
 Default credentials: `admin` / `changeme123`
+
+### Troubleshooting
+
+| Symptom | Likely cause & fix |
+|---------|--------------------|
+| Dashboard loads but no containers/endpoints appear | Portainer API unreachable. Verify `PORTAINER_API_URL` and `PORTAINER_API_KEY`; from inside Docker use `host.docker.internal` (not `localhost`). Check `curl http://127.0.0.1:3051/health/ready`. |
+| AI chat / insights silent or "LLM unavailable" | LLM endpoint not reachable. Run **Settings → AI & LLM → Test Connection**, confirm `LLM_API_URL` (don't append `/v1/chat/completions` — it's added automatically), and that the endpoint isn't bound to an unauthenticated `0.0.0.0`. |
+| Backend exits on startup in production | `NODE_ENV=production` refuses to start when `JWT_SECRET` is the default or < 32 chars. Set a strong `JWT_SECRET` and the `POSTGRES_APP_PASSWORD` / `TIMESCALE_PASSWORD` vars. |
+| No metrics / charts stay empty | PostgreSQL or TimescaleDB connection refused, or metrics still warming up (collection runs every 60s; anomaly baselines need ~10 samples). Check the `postgres-app` and `timescaledb` containers are healthy. |
 
 ---
 
