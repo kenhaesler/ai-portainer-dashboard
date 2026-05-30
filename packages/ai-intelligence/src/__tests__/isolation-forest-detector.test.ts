@@ -97,4 +97,43 @@ describe('isolation-forest-detector', () => {
 
     expect(result).toBeNull();
   });
+
+  // #1361 — production determinism. NOTE: this test deliberately does NOT
+  // monkey-patch Math.random; reproducibility must come from a seed derived
+  // inside the detector, not from a test harness stubbing the global RNG.
+  it('produces a reproducible model across retrains in the same window', async () => {
+    // Identical training data for both trainings, so the ONLY variable is the
+    // forest's internal RNG.
+    const cpuData = generateMetrics(100, 50);
+    const memData = generateMetrics(100, 60);
+    mockGetMetrics
+      .mockResolvedValueOnce(cpuData).mockResolvedValueOnce(memData)
+      .mockResolvedValueOnce(cpuData).mockResolvedValueOnce(memData);
+
+    const m1 = await getOrTrainModel('container-1', mockGetMetrics);
+    const s1 = m1!.anomalyScore([50, 60]);
+
+    clearModelCache();
+
+    const m2 = await getOrTrainModel('container-1', mockGetMetrics);
+    const s2 = m2!.anomalyScore([50, 60]);
+
+    expect(s2).toBe(s1);
+  });
+
+  it('uses a different seed per container (models are not all identical)', async () => {
+    const cpuData = generateMetrics(100, 50);
+    const memData = generateMetrics(100, 60);
+    mockGetMetrics
+      .mockResolvedValueOnce(cpuData).mockResolvedValueOnce(memData)
+      .mockResolvedValueOnce(cpuData).mockResolvedValueOnce(memData);
+
+    const mA = await getOrTrainModel('container-A', mockGetMetrics);
+    const mB = await getOrTrainModel('container-B', mockGetMetrics);
+
+    // Same data, different container id → different seed → different partitions.
+    const probes = [[50, 60], [80, 90], [10, 20]];
+    const anyDifferent = probes.some((p) => mA!.anomalyScore(p) !== mB!.anomalyScore(p));
+    expect(anyDifferent).toBe(true);
+  });
 });

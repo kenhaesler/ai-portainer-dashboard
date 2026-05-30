@@ -16,6 +16,34 @@ const modelCache = new Map<string, CachedModel>();
 
 const MIN_TRAINING_SAMPLES = 50;
 
+/**
+ * Deterministic 32-bit seed from a container id (FNV-1a). Seeding per-container
+ * (and NOT per-time-window) makes the trained forest a pure function of the
+ * container + its training data: retrains on stable data reproduce the same
+ * model, so a point no longer flips anomalous↔normal between retrains (#1361).
+ * Mirrors scikit-learn's fixed `random_state` convention.
+ */
+function seedForContainer(containerId: string): number {
+  let h = 0x811c9dc5; // FNV offset basis
+  for (let i = 0; i < containerId.length; i++) {
+    h ^= containerId.charCodeAt(i);
+    h = Math.imul(h, 0x01000193); // FNV prime
+  }
+  return h >>> 0;
+}
+
+/** Mulberry32 seeded PRNG (see isolation-forest.test.ts for rationale). */
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return function () {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 type GetMetricsFn = (
   containerId: string,
   metricType: string,
@@ -71,6 +99,7 @@ export async function getOrTrainModel(
     config.ISOLATION_FOREST_TREES,
     config.ISOLATION_FOREST_SAMPLE_SIZE,
     config.ISOLATION_FOREST_CONTAMINATION,
+    mulberry32(seedForContainer(containerId)),
   );
   forest.fit(trainingData);
 
