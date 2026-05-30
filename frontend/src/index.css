@@ -668,6 +668,43 @@
   }
 }
 
+/* ====== NATIVE FORM CONTROL THEMING ======
+   Native controls (checked checkbox, <select> option popups) are painted by the
+   browser, not by our color tokens. `color-scheme` tells the browser which scheme
+   to paint them in — without it a checked checkbox renders as a near-black square
+   (invisible on dark pages) and <select> dropdowns open as white-background popups
+   with inherited light text (white-on-white). The light/dark split mirrors
+   `resolvedTheme()` in stores/theme-store.ts; `light`/`dark` cover the System theme. */
+.light,
+.apple-light,
+.nordic-frost,
+.sandstone-dusk,
+.retro-70s,
+.catppuccin-latte {
+  color-scheme: light;
+}
+.dark,
+.apple-dark,
+.obsidian-ink,
+.forest-night,
+.hyperpop-chaos,
+.retro-arcade,
+.retro-terminal,
+.retro-vaporwave,
+.catppuccin-frappe,
+.catppuccin-macchiato,
+.catppuccin-mocha {
+  color-scheme: dark;
+}
+
+/* Theme the native checkbox/radio fill so the checked state matches the active
+   theme's primary across all 16 themes (browser auto-contrasts the checkmark).
+   The themed <Checkbox> uses appearance-none, so this only affects raw inputs. */
+input[type='checkbox'],
+input[type='radio'] {
+  accent-color: var(--color-primary);
+}
+
 /* ============================================
    GLASSMORPHISM UI - FUTURISTIC DESIGN SYSTEM
    ============================================ */
