@@ -256,13 +256,31 @@ const CONTAINER_H = 90;
 const NETWORK_W = 140;
 const NETWORK_H = 90;
 
-// Layout options for within-group arrangement (elkjs compound graph)
-const GROUP_LAYOUT_OPTIONS: Record<string, string> = {
+// Layout options for within-group arrangement (each stack lays out its interior
+// with stress; bumped spacing gives container nodes room to breathe at scale).
+export const GROUP_LAYOUT_OPTIONS: Record<string, string> = {
   'elk.algorithm': 'stress',
-  'elk.stress.desiredEdgeLength': '200',
-  'elk.spacing.nodeNode': '100',
-  'elk.padding': '[top=50, left=40, bottom=30, right=40]',
+  'elk.stress.desiredEdgeLength': '220',
+  'elk.spacing.nodeNode': '160',
+  'elk.padding': '[top=50, left=40, bottom=40, right=40]',
 };
+
+// Root packs the (mostly-disconnected) stack boxes into a compact, deterministic
+// grid. rectpacking is ELK's algorithm for packing unconnected boxes;
+// SEPARATE_CHILDREN lets each stack run its own interior layout independently.
+export const ROOT_LAYOUT_OPTIONS: Record<string, string> = {
+  'elk.algorithm': 'rectpacking',
+  'elk.hierarchyHandling': 'SEPARATE_CHILDREN',
+  'elk.aspectRatio': '1.6',
+  'elk.rectpacking.widthApproximation.optimizationGoal': 'ASPECT_RATIO_DRIVEN',
+  'elk.expandNodes': 'true',
+  'elk.spacing.nodeNode': '60',
+  'elk.padding': '[top=24, left=24, bottom=24, right=24]',
+};
+
+// rectpacking ignores edges; React Flow still draws container↔network edges in
+// Phase 4, so we hand ELK an empty root edge set (stable reference).
+const EMPTY_ELK_EDGES: ElkLayoutEdge[] = [];
 
 export function getEdgeStyle(
   containerId: string,
@@ -363,10 +381,9 @@ export function TopologyGraph({
     return { blueprints, externalNets };
   }, [containers, networks, networkRates]);
 
-  // Phase 2: Build compound elkjs graph — groups with children + cross-hierarchy edges
-  const { elkNodes, elkEdges } = useMemo(() => {
+  // Phase 2: Build compound elkjs graph — groups with children + intra-stack edges
+  const { elkNodes } = useMemo(() => {
     const elkNodes: ElkLayoutNode[] = [];
-    const elkEdges: ElkLayoutEdge[] = [];
 
     for (const bp of blueprints) {
       const children: ElkLayoutNode[] = [];
@@ -390,18 +407,9 @@ export function TopologyGraph({
               source: `container-${container.id}`,
               target: `net-${inlineNet.id}`,
             });
-            continue;
           }
-
-          // Cross-hierarchy edge (container → external net)
-          const extNet = externalNets.find((n) => n.name === netName);
-          if (extNet) {
-            elkEdges.push({
-              id: `e-${container.id}-${extNet.id}`,
-              source: `container-${container.id}`,
-              target: `net-${extNet.id}`,
-            });
-          }
+          // Cross-stack edges are intentionally NOT fed to ELK: the root uses
+          // rectpacking (edgeless box packing). React Flow draws them in Phase 4.
         }
       }
 
@@ -415,16 +423,20 @@ export function TopologyGraph({
       });
     }
 
-    // External networks at root level
+    // External networks at root level (packed as boxes alongside the stacks)
     for (const net of externalNets) {
       elkNodes.push({ id: `net-${net.id}`, width: NETWORK_W, height: NETWORK_H });
     }
 
-    return { elkNodes, elkEdges };
+    return { elkNodes };
   }, [blueprints, externalNets]);
 
-  // Phase 3: Run elkjs compound layout (positions all nodes at all hierarchy levels)
-  const layoutPositions = useElkLayout({ nodes: elkNodes, edges: elkEdges });
+  // Phase 3: Run elkjs compound layout (rectpacking root + per-stack interiors)
+  const layoutPositions = useElkLayout({
+    nodes: elkNodes,
+    edges: EMPTY_ELK_EDGES,
+    rootLayoutOptions: ROOT_LAYOUT_OPTIONS,
+  });
 
   // Phase 4: Assemble React Flow nodes and edges using elkjs-computed positions
   const { nodes: initialNodes, edges: initialEdges } = useMemo(() => {

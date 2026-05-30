@@ -12,9 +12,23 @@ import {
   getHandleForAngle,
   getBestHandles,
   formatRate,
+  ROOT_LAYOUT_OPTIONS,
+  GROUP_LAYOUT_OPTIONS,
   type ContainerData,
   type NetworkData,
 } from './topology-graph';
+
+describe('layout configuration', () => {
+  it('packs stacks at the root with rectpacking + separate children', () => {
+    expect(ROOT_LAYOUT_OPTIONS['elk.algorithm']).toBe('rectpacking');
+    expect(ROOT_LAYOUT_OPTIONS['elk.hierarchyHandling']).toBe('SEPARATE_CHILDREN');
+  });
+
+  it('gives container nodes generous spacing inside each stack', () => {
+    expect(GROUP_LAYOUT_OPTIONS['elk.algorithm']).toBe('stress');
+    expect(Number(GROUP_LAYOUT_OPTIONS['elk.spacing.nodeNode'])).toBeGreaterThanOrEqual(160);
+  });
+});
 
 describe('getEdgeStyle', () => {
   it('returns gray/thin for stopped containers', () => {
