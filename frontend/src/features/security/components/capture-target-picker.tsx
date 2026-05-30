@@ -36,14 +36,19 @@ export function CaptureTargetPicker({
     () => filterContainers(containers, query, knownStackNames),
     [containers, query, knownStackNames],
   );
+  // Group by endpointId (stable + unique) rather than endpointName, so two
+  // endpoints that happen to share a display name don't merge into one group
+  // or collide on the React key. The name is kept for the group heading.
   const grouped = useMemo(() => {
-    const map = new Map<string, Container[]>();
+    const map = new Map<number, { name: string; containers: Container[] }>();
     for (const c of matches) {
-      const arr = map.get(c.endpointName) ?? [];
-      arr.push(c);
-      map.set(c.endpointName, arr);
+      const entry = map.get(c.endpointId) ?? { name: c.endpointName, containers: [] };
+      entry.containers.push(c);
+      map.set(c.endpointId, entry);
     }
-    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    return [...map.entries()]
+      .map(([endpointId, { name, containers: conts }]) => ({ endpointId, name, containers: conts }))
+      .sort((a, b) => a.name.localeCompare(b.name));
   }, [matches]);
   const matchingStacks = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -107,10 +112,10 @@ export function CaptureTargetPicker({
             </Command.Group>
           )}
 
-          {grouped.map(([endpointName, conts]) => (
+          {grouped.map(({ endpointId, name, containers: conts }) => (
             <Command.Group
-              key={endpointName}
-              heading={endpointName}
+              key={endpointId}
+              heading={name}
               className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:text-muted-foreground"
             >
               {conts.map((c) => {

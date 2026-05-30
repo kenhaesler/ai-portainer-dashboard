@@ -79,4 +79,28 @@ describe('CaptureTargetPicker', () => {
     const stageItem = screen.getByText('nginx-stage').closest('[data-disabled]') as HTMLElement;
     expect(stageItem).toBeTruthy();
   });
+
+  it('keeps endpoints with the same display name as distinct groups', () => {
+    const dupNameContainers = [
+      { id: 'd1', name: 'svc-a', image: 'x', state: 'running', status: 'Up', endpointId: 1, endpointName: 'edge', ports: [], created: 0, labels: {}, networks: [] },
+      { id: 'd2', name: 'svc-b', image: 'x', state: 'running', status: 'Up', endpointId: 2, endpointName: 'edge', ports: [], created: 0, labels: {}, networks: [] },
+    ] as unknown as Container[];
+    render(
+      <CaptureTargetPicker
+        containers={dupNameContainers}
+        stacks={[] as unknown as Stack[]}
+        edgeAsyncEndpointIds={new Set()}
+        value={null}
+        onChange={vi.fn()}
+      />,
+    );
+    const input = screen.getByLabelText('Search capture target container');
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: 'svc' } });
+    // Both containers from the two same-named endpoints are listed (not merged
+    // or dropped), and the heading appears once per endpoint group.
+    expect(screen.getByText('svc-a')).toBeInTheDocument();
+    expect(screen.getByText('svc-b')).toBeInTheDocument();
+    expect(screen.getAllByText('edge')).toHaveLength(2);
+  });
 });
