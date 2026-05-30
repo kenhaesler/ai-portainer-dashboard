@@ -18,11 +18,27 @@
  *   current-zscore   : two-sided z over a 60-sample window that INCLUDES the
  *                      point under test (mirrors getMovingAverage ORDER BY ts
  *                      DESC LIMIT 60 — anomaly-detector.ts). threshold 3.5.
- *   current-adaptive : same, but threshold CV-scaled 1.0/1.2/1.5x (the actual
- *                      production default — adaptive-anomaly-detector.ts).
+ *   current-adaptive : an APPROXIMATION of the production adaptive default
+ *                      (adaptive-anomaly-detector.ts) — it models the CV-scaled
+ *                      threshold (1.0/1.2/1.5x) but NOT the Bollinger sub-path
+ *                      or selectMethod() switching. Bollinger at 2σ on low-CV
+ *                      series would add more false positives, so this is a
+ *                      conservative (favourable-to-current) stand-in.
  *   robust-mad       : one-sided modified z = 0.6745*(x-median)/MAD over a
  *                      60-sample trailing window that EXCLUDES the point under
  *                      test (no leakage). threshold 3.5 (Iglewicz-Hoaglin).
+ *
+ * SCORING CAVEAT — point-wise, not range-aware
+ * --------------------------------------------
+ * This harness scores each sample independently (point-wise precision/recall/
+ * F1). The time-series anomaly-detection literature this work cites warns that
+ * point-wise scoring is a flawed proxy (see point-adjusted-F1 critique and
+ * affiliation metrics, arXiv:2206.13119). The numbers here are DIRECTIONAL —
+ * useful for relative comparison of detectors, not as rigorous quality scores.
+ * On zero-anomaly scenarios (clean_stable, benign_drops) F1 is degenerate
+ * (precision=recall=1 by convention with no positives), so the raw FP count is
+ * the meaningful metric there. The P3 evaluation rig (#1364) should adopt
+ * range/affiliation-based scoring on real labelled data.
  */
 
 const WINDOW = 60;          // ANOMALY_MOVING_AVERAGE_WINDOW default
@@ -116,7 +132,7 @@ function buildScenarios() {
     const N = 2000, values = [], labels = [];
     for (let i = 0; i < N; i++) {
       let v = gauss(rng, 50, 1.5);
-      const inDip = i % 240 >= 0 && i % 240 < 6 && i > 0; // 6-sample lull every 4h
+      const inDip = i > 0 && i % 240 < 6; // 6-sample lull every 4h
       if (inDip) v = gauss(rng, 30, 1.5); // idle period — not an incident
       values.push(v); labels.push(false); // dips are NORMAL
     }

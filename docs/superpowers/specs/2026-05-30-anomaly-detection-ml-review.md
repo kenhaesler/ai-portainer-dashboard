@@ -117,7 +117,7 @@ Hour-of-day buckets come from 1h buckets over 14 days → ≤14 samples per `(se
 The dev TimescaleDB `metrics` hypertable is **empty (0 rows)**, so a replay on real history is impossible. Instead `scripts/anomaly-mad-ab-benchmark.mjs` (dependency-free, deterministic, seed `0x9E3779B9`) generates **labelled** synthetic series reproducing the failure modes above, so we can compute real precision/recall/F1 — the evaluation rig the system lacks (gap D1). Four detectors are compared on identical evaluation points (window 60, z-threshold 3.5, MAD-threshold 3.5):
 
 - `current-zscore` — two-sided z over a window **including** the point under test (faithful to `getMovingAverage`).
-- `current-adaptive` — the production default (CV-scaled threshold).
+- `current-adaptive` — approximates the production adaptive default (CV-scaled threshold; omits the Bollinger sub-path / `selectMethod` switching, so it is conservative — favourable to the current system).
 - `robust-mad` — one-sided modified z (median+MAD) over a trailing window **excluding** the point.
 - `robust-mad+3of5` — the above plus M-of-N persistence (≥3 of last 5).
 
@@ -139,6 +139,8 @@ Three findings that shape the design — note these are honest, not cherry-picke
 3. **M-of-N persistence is what makes robust stats safe, but it trades away fast detection (¹).** Adding 3-of-5 collapses heavy_tailed 129→10 FP and makes outlier_masking precision 100%, but it misses 1–2-sample spikes (`true_spikes` recall 100%→33%). **This is exactly why a long persistence window must be paired with a short high-burn-rate window (Google SRE multi-window).** The benchmark motivates that pairing rather than assuming it.
 
 Reproduce: `node scripts/anomaly-mad-ab-benchmark.mjs`. The harness is the seed of the P3 evaluation rig — swap synthetic scenarios for replayed real series once metric retention is in place.
+
+> **Scoring caveat:** these are *point-wise* precision/recall/F1. The literature cited above (point-adjusted-F1 critique; affiliation metrics, arXiv:2206.13119) warns that point-wise scoring is a flawed proxy for time-series anomaly detection — so treat the numbers as **directional** (relative detector comparison), not rigorous quality scores. On zero-anomaly scenarios F1 is degenerate, so the raw FP count is the meaningful metric there. P3 (#1364) should adopt range/affiliation scoring on real labelled data.
 
 ## 7. What "proper" looks like — target architecture (research synthesis)
 
