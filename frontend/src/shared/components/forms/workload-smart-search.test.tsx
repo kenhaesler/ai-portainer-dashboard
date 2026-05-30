@@ -74,6 +74,16 @@ describe('WorkloadSmartSearch', () => {
     expect(screen.getByPlaceholderText(/filter by name/i)).toBeInTheDocument();
   });
 
+  it('focuses the search input on mount when autoFocus is set', () => {
+    renderComponent({ autoFocus: true });
+    expect(document.activeElement).toBe(screen.getByRole('textbox'));
+  });
+
+  it('does not focus the search input on mount by default', () => {
+    renderComponent();
+    expect(document.activeElement).not.toBe(screen.getByRole('textbox'));
+  });
+
   it('renders with custom placeholder', () => {
     renderComponent({ placeholder: 'Custom placeholder' });
     expect(screen.getByPlaceholderText('Custom placeholder')).toBeInTheDocument();
