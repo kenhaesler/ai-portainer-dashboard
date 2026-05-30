@@ -1057,8 +1057,8 @@ export default function InfrastructurePage() {
         <Tabs.Content value="stacks" className="mt-4">
       <section aria-labelledby="stacks-heading" className="space-y-4">
         <h2 id="stacks-heading" className="sr-only">Stack Overview</h2>
-        <div className="flex items-center gap-2">
-          {stackEndpointFilterParam !== ALL_FILTER && (
+        {stackEndpointFilterParam !== ALL_FILTER && (
+          <div className="flex items-center gap-2">
             <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
               {endpoints?.find(ep => ep.id === Number(stackEndpointFilterParam))?.name ?? `Endpoint ${stackEndpointFilterParam}`}
               <button
@@ -1070,8 +1070,8 @@ export default function InfrastructurePage() {
                 <X className="h-3 w-3" />
               </button>
             </span>
-          )}
-        </div>
+          </div>
+        )}
         {!isLoading && stacksWithEndpoints.length > 0 && (
           <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-3">
             {dropdownFilteredStacks.length > 0 && (
