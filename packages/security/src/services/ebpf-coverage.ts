@@ -1,0 +1,846 @@
+import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
+import {
+  getEndpoints,
+  getContainers,
+  getEndpoint,
+  pullImage,
+  createContainer,
+  startContainer,
+  stopContainer,
+  removeContainer,
+  waitForEdgeTunnel,
+  getDockerInfo,
+} from '@dashboard/core/portainer/portainer-client.js';
+import { cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
+import { createChildLogger } from '@dashboard/core/utils/logger.js';
+
+const log = createChildLogger('ebpf-coverage');
+
+function db() { return getDbForDomain('ebpf'); }
+
+export type CoverageStatus = 'planned' | 'deployed' | 'excluded' | 'failed' | 'unknown' | 'not_deployed' | 'unreachable' | 'incompatible';
+
+/** Portainer endpoint types compatible with Beyla eBPF tracing (Docker Standalone=1, Swarm=2, Edge Agent Standard=4, Edge Agent Async=7) */
+export const BEYLA_COMPATIBLE_TYPES = new Set([1, 2, 4, 7]);
+
+/**
+ * Minimum Linux kernel version required by Beyla for eBPF auto-instrumentation
+ * (CO-RE + BTF features). Deploys below this floor crashloop with
+ * "kernel version X.Y not supported. Minimum required version is 5.8" — we
+ * pre-flight to fail fast with an actionable error instead.
+ * Tracks https://grafana.com/docs/beyla/latest/setup/requirements/.
+ */
+export const BEYLA_MIN_KERNEL = { major: 5, minor: 8 } as const;
+
+/**
+ * Parse a Docker /info KernelVersion string (e.g. "5.15.0-25-generic",
+ * "4.18.0-553.el8.x86_64", "6.1.0-rc1+") into a major/minor pair.
+ * Returns null for unrecognised strings so callers can fall back to
+ * best-effort behaviour rather than blocking deploys on parsing edge cases.
+ */
+export function parseKernelVersion(version: string | undefined): { major: number; minor: number } | null {
+  if (!version) return null;
+  const match = version.match(/^(\d+)\.(\d+)/);
+  if (!match) return null;
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  if (!Number.isFinite(major) || !Number.isFinite(minor)) return null;
+  return { major, minor };
+}
+
+/** Compare two version pairs; returns true when `actual` >= `floor`. */
+function kernelMeetsFloor(
+  actual: { major: number; minor: number },
+  floor: { major: number; minor: number },
+): boolean {
+  if (actual.major !== floor.major) return actual.major > floor.major;
+  return actual.minor >= floor.minor;
+}
+
+/**
+ * Thrown by `deployBeyla` when the target host's kernel is below
+ * BEYLA_MIN_KERNEL. Identified by class (not message string) so the catch
+ * arm in `deployBeyla` can re-throw it reliably even if the human-readable
+ * wording changes in the future.
+ */
+export class BeylaKernelTooOldError extends Error {
+  readonly code = 'BEYLA_KERNEL_TOO_OLD' as const;
+  constructor(message: string) {
+    super(message);
+    this.name = 'BeylaKernelTooOldError';
+  }
+}
+
+/** Detection result from checking a single endpoint for Beyla */
+export type DetectionResult = 'deployed' | 'failed' | 'not_found' | 'unreachable' | 'incompatible';
+
+export interface CoverageRecord {
+  endpoint_id: number;
+  endpoint_name: string;
+  status: CoverageStatus;
+  beyla_enabled: boolean;
+  beyla_container_id: string | null;
+  beyla_managed: boolean;
+  otlp_endpoint_override: string | null;
+  drifted: boolean;
+  exclusion_reason: string | null;
+  deployment_profile: string | null;
+  last_trace_at: string | null;
+  last_verified_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface CoverageRow extends Omit<CoverageRecord, 'drifted'> {}
+
+interface DeployBeylaOptions {
+  otlpEndpoint: string;
+  tracesApiKey: string;
+  openPorts?: string;
+  recreateExisting?: boolean;
+}
+
+interface BulkDeployOptions {
+  tracesApiKey: string;
+  openPorts?: string;
+  resolveOtlpEndpoint: (endpointId: number) => Promise<string>;
+}
+
+interface BeylaActionResult {
+  endpointId: number;
+  endpointName: string;
+  containerId: string;
+  status: 'deployed' | 'enabled' | 'disabled' | 'removed' | 'already_deployed' | 'already_disabled';
+}
+
+interface BulkActionItemResult {
+  endpointId: number;
+  success: boolean;
+  message: string;
+}
+
+const DASHBOARD_MANAGED_BY = 'ai-portainer-dashboard';
+const BEYLA_COMPONENT_LABEL = 'beyla-ebpf';
+const BEYLA_IMAGE = 'grafana/beyla:latest';
+const DEFAULT_BEYLA_OPEN_PORTS = '80,443,3000-9999';
+
+function isNotFoundError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase();
+  return message.includes('not found') || message.includes('404');
+}
+
+export interface CoverageSummary {
+  total: number;
+  deployed: number;
+  planned: number;
+  excluded: number;
+  failed: number;
+  unknown: number;
+  not_deployed: number;
+  unreachable: number;
+  incompatible: number;
+  coveragePercent: number;
+}
+
+/**
+ * Returns coverage status for all endpoints by reading the ebpf_coverage table.
+ */
+export async function getEndpointCoverage(): Promise<CoverageRecord[]> {
+  const rows = await db().query<CoverageRow>(
+    'SELECT * FROM ebpf_coverage ORDER BY endpoint_name ASC',
+  );
+
+  return rows.map((row) => ({
+    ...row,
+    drifted:
+      Boolean(row.beyla_enabled) &&
+      row.status !== 'deployed' &&
+      row.status !== 'excluded' &&
+      row.status !== 'incompatible',
+  }));
+}
+
+/**
+ * Update an endpoint's eBPF coverage status.
+ */
+export async function updateCoverageStatus(
+  endpointId: number,
+  status: CoverageStatus,
+  reason?: string,
+): Promise<void> {
+  await db().execute(`
+    UPDATE ebpf_coverage
+    SET status = ?, exclusion_reason = ?, updated_at = NOW()
+    WHERE endpoint_id = ?
+  `, [status, reason ?? null, endpointId]);
+
+  log.info({ endpointId, status, reason }, 'Coverage status updated');
+}
+
+/**
+ * Delete an endpoint coverage record by endpoint id.
+ * Returns true when a row was deleted, false when no record exists.
+ */
+export async function deleteCoverageRecord(endpointId: number): Promise<boolean> {
+  const result = await db().execute(`
+    DELETE FROM ebpf_coverage
+    WHERE endpoint_id = ?
+  `, [endpointId]);
+
+  return result.changes > 0;
+}
+
+export async function getEndpointOtlpOverride(endpointId: number): Promise<string | null> {
+  const row = await db().queryOne<{ otlp_endpoint_override: string | null }>(`
+    SELECT otlp_endpoint_override
+    FROM ebpf_coverage
+    WHERE endpoint_id = ?
+  `, [endpointId]);
+  return row?.otlp_endpoint_override ?? null;
+}
+
+export async function setEndpointOtlpOverride(endpointId: number, value: string | null): Promise<void> {
+  await db().execute(`
+    UPDATE ebpf_coverage
+    SET otlp_endpoint_override = ?, updated_at = NOW()
+    WHERE endpoint_id = ?
+  `, [value, endpointId]);
+}
+
+function isBeylaContainer(container: { Image: string; Labels?: Record<string, string> }): boolean {
+  const image = container.Image.toLowerCase();
+  const labels = container.Labels ?? {};
+  return (
+    image.includes('grafana/beyla') ||
+    image.includes('/beyla') ||
+    labels.component === BEYLA_COMPONENT_LABEL
+  );
+}
+
+/**
+ * Look up the Beyla container on an endpoint.
+ *
+ * For read paths (status, detection) we use SWR caching to keep the coverage
+ * page snappy. For *write* paths (deploy, enable, disable, remove) we need
+ * authoritative state — a stale cache can make us miss an orphaned container
+ * from a prior failed deploy and then hit a 409 Conflict on createContainer.
+ */
+async function findBeylaContainer(
+  endpointId: number,
+  options: { forceFresh?: boolean } = {},
+): Promise<{
+  containerId: string;
+  running: boolean;
+  managed: boolean;
+} | null> {
+  const containers = options.forceFresh
+    ? await getContainers(endpointId, true)
+    : await cachedFetchSWR(
+      getCacheKey('containers', endpointId),
+      TTL.CONTAINERS,
+      () => getContainers(endpointId, true),
+    );
+  const beyla = containers.find(isBeylaContainer);
+
+  if (!beyla) {
+    return null;
+  }
+
+  return {
+    containerId: beyla.Id,
+    running: beyla.State === 'running',
+    managed: beyla.Labels?.['managed-by'] === DASHBOARD_MANAGED_BY,
+  };
+}
+
+function isConflictError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase();
+  return message.includes('409') || message.includes('conflict');
+}
+
+async function updateLifecycleCoverage(
+  endpointId: number,
+  endpointName: string,
+  status: CoverageStatus,
+  values: {
+    beylaEnabled: boolean;
+    containerId: string | null;
+    managed: boolean;
+  },
+): Promise<void> {
+  await db().execute(`
+    INSERT INTO ebpf_coverage (endpoint_id, endpoint_name, status, beyla_enabled, beyla_container_id, beyla_managed)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(endpoint_id) DO UPDATE SET
+      endpoint_name = excluded.endpoint_name,
+      status = excluded.status,
+      beyla_enabled = excluded.beyla_enabled,
+      beyla_container_id = excluded.beyla_container_id,
+      beyla_managed = excluded.beyla_managed,
+      exclusion_reason = NULL,
+      updated_at = NOW()
+  `, [
+    endpointId,
+    endpointName,
+    status,
+    values.beylaEnabled ? 1 : 0,
+    values.containerId,
+    values.managed ? 1 : 0,
+  ]);
+}
+
+/**
+ * Detect Beyla status on a single endpoint by checking its containers.
+ * Returns distinct statuses to differentiate failure modes:
+ * - 'deployed': Beyla container running
+ * - 'failed': Beyla container found but not running
+ * - 'not_found': Endpoint reachable, no Beyla container present
+ * - 'unreachable': Network/API error when querying endpoint
+ * - 'incompatible': Wrong endpoint type (Edge Agent, etc.)
+ */
+export async function detectBeylaOnEndpoint(endpointId: number, endpointType?: number): Promise<DetectionResult> {
+  if (endpointType !== undefined && !BEYLA_COMPATIBLE_TYPES.has(endpointType)) {
+    return 'incompatible';
+  }
+  try {
+    const containers = await cachedFetchSWR(
+      getCacheKey('containers', endpointId),
+      TTL.CONTAINERS,
+      () => getContainers(endpointId, true),
+    );
+    const beyla = containers.find((c) =>
+      c.Image.toLowerCase().includes('grafana/beyla') ||
+      c.Image.toLowerCase().includes('beyla'),
+    );
+    if (!beyla) return 'not_found';
+    return beyla.State === 'running' ? 'deployed' : 'failed';
+  } catch {
+    return 'unreachable';
+  }
+}
+
+/** Map detection results to coverage statuses stored in DB */
+function detectionToCoverageStatus(result: DetectionResult): CoverageStatus {
+  switch (result) {
+    case 'deployed': return 'deployed';
+    case 'failed': return 'failed';
+    case 'not_found': return 'not_deployed';
+    case 'unreachable': return 'unreachable';
+    case 'incompatible': return 'incompatible';
+  }
+}
+
+export async function deployBeyla(endpointId: number, options: DeployBeylaOptions): Promise<BeylaActionResult> {
+  const endpoint = await getEndpoint(endpointId);
+
+  // Edge Agent Standard (type 4) uses a reverse tunnel that's only opened on demand.
+  // Pre-flight the tunnel so subsequent Docker calls don't fail with
+  // "Unable to get the active tunnel" while the agent is still polling.
+  if (endpoint.Type === 4) {
+    const checkInIntervalSec = endpoint.EdgeCheckinInterval && endpoint.EdgeCheckinInterval > 0
+      ? endpoint.EdgeCheckinInterval
+      : 30; // Portainer default
+    const lastCheckInSec = endpoint.LastCheckInDate ?? 0;
+    const ageSec = lastCheckInSec > 0 ? (Date.now() / 1000) - lastCheckInSec : Infinity;
+
+    // If the agent hasn't checked in within 3× its interval, the tunnel signal
+    // won't be picked up — fail fast with a specific message instead of waiting.
+    if (ageSec > checkInIntervalSec * 3 && lastCheckInSec > 0) {
+      throw new Error(
+        `Edge Agent '${endpoint.Name}' has not checked in for ${Math.round(ageSec)}s (interval ${checkInIntervalSec}s). The agent appears offline — verify it is running and can reach Portainer.`,
+      );
+    }
+    if (lastCheckInSec === 0) {
+      throw new Error(
+        `Edge Agent '${endpoint.Name}' has never checked in. Verify the agent is deployed, running, and configured with the correct Portainer URL and EDGE_KEY.`,
+      );
+    }
+
+    // Wait budget: enough time for the agent to receive the tunnel-open signal
+    // on its next poll plus headroom. Capped at 5 minutes to bound user wait.
+    const budgetMs = Math.min(checkInIntervalSec * 2 * 1000 + 15000, 5 * 60 * 1000);
+    const pollIntervalMs = Math.min(Math.max(checkInIntervalSec * 1000 / 4, 1000), 10000);
+
+    log.info({
+      endpointId,
+      endpointName: endpoint.Name,
+      checkInIntervalSec,
+      lastCheckInAgeSec: Math.round(ageSec),
+      budgetMs,
+    }, 'Pre-flighting Edge Agent tunnel before deploy');
+
+    const tunnelUp = await waitForEdgeTunnel(endpointId, { timeoutMs: budgetMs, pollIntervalMs });
+    if (!tunnelUp) {
+      throw new Error(
+        `Edge Agent tunnel for '${endpoint.Name}' did not open within ${Math.round(budgetMs / 1000)}s (agent check-in interval: ${checkInIntervalSec}s). The agent may be offline or the interval is too long — try again, or shorten the Edge poll interval in Portainer's Edge Compute settings.`,
+      );
+    }
+    log.info({ endpointId, endpointName: endpoint.Name }, 'Edge Agent tunnel is up; proceeding with deploy');
+  }
+
+  // Kernel-version pre-flight. Beyla needs Linux >= 5.8 for its eBPF probes;
+  // deploying on older kernels (e.g. 4.18 / RHEL 7-era hosts) yields a 1-minute
+  // crashloop with `can't start Beyla: kernel version X.Y not supported`.
+  // Block here so the operator sees an actionable error instead of having to
+  // chase the container logs. Best-effort: if /info is missing KernelVersion
+  // or returns an unrecognised format, we proceed rather than block a
+  // working-but-weird daemon.
+  try {
+    const info = await getDockerInfo(endpointId);
+    const parsed = parseKernelVersion(info.KernelVersion);
+    if (parsed && !kernelMeetsFloor(parsed, BEYLA_MIN_KERNEL)) {
+      // Defence-in-depth: cap OperatingSystem in case a hostile/buggy daemon
+      // returns a megabyte-long string that ends up in the operator's UI.
+      const osDisplay = info.OperatingSystem?.slice(0, 200);
+      const osPart = osDisplay ? `${osDisplay} (${info.KernelVersion})` : info.KernelVersion;
+      throw new BeylaKernelTooOldError(
+        `Host '${endpoint.Name}' runs ${osPart} — Beyla requires Linux kernel ${BEYLA_MIN_KERNEL.major}.${BEYLA_MIN_KERNEL.minor} or newer for eBPF auto-instrumentation. Upgrade the kernel or exclude this host from eBPF coverage.`,
+      );
+    }
+    if (!parsed) {
+      log.warn(
+        { endpointId, endpointName: endpoint.Name, kernelVersion: info.KernelVersion },
+        'Could not parse kernel version from /docker/info; proceeding with deploy (best-effort)',
+      );
+    }
+  } catch (err) {
+    // Re-throw the actionable error (identified by class — survives wording
+    // changes). Tolerate /info fetch failures so a transient daemon hiccup
+    // doesn't masquerade as an incompatibility.
+    if (err instanceof BeylaKernelTooOldError) throw err;
+    log.warn(
+      { endpointId, endpointName: endpoint.Name, err: err instanceof Error ? err.message : String(err) },
+      'Kernel pre-flight failed to query /docker/info; proceeding with deploy (best-effort)',
+    );
+  }
+
+  // Deploy is a write path — read authoritative container state so we don't
+  // miss an orphan from a prior failed deploy and hit a 409 on createContainer.
+  const existing = await findBeylaContainer(endpointId, { forceFresh: true });
+  const shouldRecreate = options.recreateExisting === true;
+
+  if (existing && shouldRecreate) {
+    if (existing.running) {
+      try {
+        await stopContainer(endpointId, existing.containerId);
+      } catch (err) {
+        if (!isNotFoundError(err)) throw err;
+      }
+    }
+    try {
+      await removeContainer(endpointId, existing.containerId, true);
+    } catch (err) {
+      if (!isNotFoundError(err)) throw err;
+    }
+  }
+
+  if (!shouldRecreate && existing?.running) {
+    await updateLifecycleCoverage(endpointId, endpoint.Name, 'deployed', {
+      beylaEnabled: true,
+      containerId: existing.containerId,
+      managed: existing.managed,
+    });
+    return {
+      endpointId,
+      endpointName: endpoint.Name,
+      containerId: existing.containerId,
+      status: 'already_deployed',
+    };
+  }
+
+  if (!shouldRecreate && existing && !existing.running) {
+    try {
+      await startContainer(endpointId, existing.containerId);
+    } catch (err) {
+      if (!isNotFoundError(err)) throw err;
+      const postCheck = await detectBeylaOnEndpoint(endpointId, endpoint.Type);
+      if (postCheck !== 'deployed') throw err;
+    }
+    await updateLifecycleCoverage(endpointId, endpoint.Name, 'deployed', {
+      beylaEnabled: true,
+      containerId: existing.containerId,
+      managed: existing.managed,
+    });
+    return {
+      endpointId,
+      endpointName: endpoint.Name,
+      containerId: existing.containerId,
+      status: 'enabled',
+    };
+  }
+
+  const [imageName, imageTag = 'latest'] = BEYLA_IMAGE.split(':');
+  await pullImage(endpointId, imageName, imageTag);
+
+  const env = [
+    `BEYLA_OPEN_PORT=${options.openPorts || DEFAULT_BEYLA_OPEN_PORTS}`,
+    `BEYLA_SERVICE_NAMESPACE=${endpoint.Name}`,
+    `OTEL_EXPORTER_OTLP_ENDPOINT=${options.otlpEndpoint}`,
+    'OTEL_EXPORTER_OTLP_PROTOCOL=http/json',
+    'OTEL_METRICS_EXPORTER=none',
+    'BEYLA_TRACE_PRINTER=disabled',
+  ];
+
+  if (options.tracesApiKey) {
+    env.push(`OTEL_EXPORTER_OTLP_HEADERS=X-API-Key=${options.tracesApiKey}`);
+  }
+
+  const containerPayload = {
+    Image: BEYLA_IMAGE,
+    Env: env,
+    Labels: {
+      'managed-by': DASHBOARD_MANAGED_BY,
+      component: BEYLA_COMPONENT_LABEL,
+    },
+    HostConfig: {
+      Privileged: true,
+      PidMode: 'host',
+      // Docker refuses Privileged=true on --userns-remap daemons unless
+      // the container opts out via UsernsMode=host. No-op without remap.
+      UsernsMode: 'host',
+      Init: true,
+      Binds: [
+        '/sys/fs/cgroup:/sys/fs/cgroup',
+        '/sys/kernel/security:/sys/kernel/security',
+      ],
+      RestartPolicy: { Name: 'unless-stopped' },
+    },
+  };
+
+  let created: { Id: string };
+  try {
+    created = await createContainer(endpointId, containerPayload, `beyla-${endpointId}`);
+  } catch (err) {
+    // 409 means a container with the target name already exists — usually an
+    // orphan from a previous failed deploy that our fresh container list
+    // somehow missed (race, filtered out, etc.). Recover by removing it and
+    // retrying once.
+    if (!isConflictError(err)) throw err;
+    log.warn({ endpointId, err: err instanceof Error ? err.message : String(err) },
+      'createContainer returned 409; reconciling orphan and retrying');
+    const orphan = await findBeylaContainer(endpointId, { forceFresh: true });
+    if (orphan) {
+      if (orphan.running) {
+        try { await stopContainer(endpointId, orphan.containerId); }
+        catch (e) { if (!isNotFoundError(e)) throw e; }
+      }
+      try { await removeContainer(endpointId, orphan.containerId, true); }
+      catch (e) { if (!isNotFoundError(e)) throw e; }
+    }
+    created = await createContainer(endpointId, containerPayload, `beyla-${endpointId}`);
+  }
+
+  try {
+    await startContainer(endpointId, created.Id);
+  } catch (err) {
+    if (!isNotFoundError(err)) {
+      // Roll back the just-created container so the next deploy doesn't 409.
+      log.warn({ endpointId, containerId: created.Id, err: err instanceof Error ? err.message : String(err) },
+        'startContainer failed; removing just-created container to avoid orphan');
+      try { await removeContainer(endpointId, created.Id, true); } catch { /* best-effort */ }
+      throw err;
+    }
+    const postCheck = await detectBeylaOnEndpoint(endpointId, endpoint.Type);
+    if (postCheck !== 'deployed') throw err;
+  }
+
+  await updateLifecycleCoverage(endpointId, endpoint.Name, 'deployed', {
+    beylaEnabled: true,
+    containerId: created.Id,
+    managed: true,
+  });
+
+  return {
+    endpointId,
+    endpointName: endpoint.Name,
+    containerId: created.Id,
+    status: 'deployed',
+  };
+}
+
+export async function disableBeyla(endpointId: number): Promise<BeylaActionResult> {
+  const endpoint = await getEndpoint(endpointId);
+  const existing = await findBeylaContainer(endpointId);
+  if (!existing) {
+    throw new Error('No Beyla container found on this endpoint');
+  }
+
+  if (!existing.running) {
+    await updateLifecycleCoverage(endpointId, endpoint.Name, 'failed', {
+      beylaEnabled: false,
+      containerId: existing.containerId,
+      managed: existing.managed,
+    });
+    return {
+      endpointId,
+      endpointName: endpoint.Name,
+      containerId: existing.containerId,
+      status: 'already_disabled',
+    };
+  }
+
+  await stopContainer(endpointId, existing.containerId);
+
+  await updateLifecycleCoverage(endpointId, endpoint.Name, 'failed', {
+    beylaEnabled: false,
+    containerId: existing.containerId,
+    managed: existing.managed,
+  });
+
+  return {
+    endpointId,
+    endpointName: endpoint.Name,
+    containerId: existing.containerId,
+    status: 'disabled',
+  };
+}
+
+export async function enableBeyla(endpointId: number): Promise<BeylaActionResult> {
+  const endpoint = await getEndpoint(endpointId);
+  const existing = await findBeylaContainer(endpointId);
+  if (!existing) {
+    throw new Error('No Beyla container found on this endpoint');
+  }
+
+  await startContainer(endpointId, existing.containerId);
+
+  await updateLifecycleCoverage(endpointId, endpoint.Name, 'deployed', {
+    beylaEnabled: true,
+    containerId: existing.containerId,
+    managed: existing.managed,
+  });
+
+  return {
+    endpointId,
+    endpointName: endpoint.Name,
+    containerId: existing.containerId,
+    status: 'enabled',
+  };
+}
+
+export async function removeBeylaFromEndpoint(endpointId: number, force = false): Promise<BeylaActionResult> {
+  const endpoint = await getEndpoint(endpointId);
+  const existing = await findBeylaContainer(endpointId);
+  if (!existing) {
+    throw new Error('No Beyla container found on this endpoint');
+  }
+
+  if (existing.running) {
+    try {
+      await stopContainer(endpointId, existing.containerId);
+    } catch (err) {
+      if (!force && !isNotFoundError(err)) {
+        throw err;
+      }
+    }
+  }
+
+  try {
+    await removeContainer(endpointId, existing.containerId, force);
+  } catch (err) {
+    if (!isNotFoundError(err)) throw err;
+    const postCheck = await detectBeylaOnEndpoint(endpointId, endpoint.Type);
+    if (postCheck !== 'not_found') throw err;
+  }
+
+  await updateLifecycleCoverage(endpointId, endpoint.Name, 'not_deployed', {
+    beylaEnabled: false,
+    containerId: null,
+    managed: false,
+  });
+
+  return {
+    endpointId,
+    endpointName: endpoint.Name,
+    containerId: existing.containerId,
+    status: 'removed',
+  };
+}
+
+export async function deployBeylaBulk(endpointIds: number[], options: BulkDeployOptions): Promise<BulkActionItemResult[]> {
+  const results = await Promise.all(
+    endpointIds.map(async (endpointId) => {
+      try {
+        const endpointSpecificOtlp = await options.resolveOtlpEndpoint(endpointId);
+        const result = await deployBeyla(endpointId, {
+          otlpEndpoint: endpointSpecificOtlp,
+          tracesApiKey: options.tracesApiKey,
+          openPorts: options.openPorts,
+        });
+        return { endpointId, success: true, message: result.status };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Unknown deployment failure';
+        return { endpointId, success: false, message };
+      }
+    }),
+  );
+  return results;
+}
+
+export async function removeBeylaBulk(endpointIds: number[], force = false): Promise<BulkActionItemResult[]> {
+  const results = await Promise.all(
+    endpointIds.map(async (endpointId) => {
+      try {
+        const result = await removeBeylaFromEndpoint(endpointId, force);
+        return { endpointId, success: true, message: result.status };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Unknown remove failure';
+        return { endpointId, success: false, message };
+      }
+    }),
+  );
+  return results;
+}
+
+/**
+ * Sync coverage table with current endpoint inventory.
+ * Adds new endpoints and auto-detects Beyla deployment status by
+ * checking for grafana/beyla containers on each endpoint.
+ * Preserves manually set 'excluded' and 'planned' states.
+ * Returns the number of new endpoints added.
+ */
+export async function syncEndpointCoverage(): Promise<number> {
+  const endpoints = await getEndpoints();
+  let added = 0;
+
+  const upEndpoints = endpoints.filter((ep) => ep.Status === 1);
+
+  const detectionResults = await Promise.allSettled(
+    upEndpoints.map(async (ep) => ({
+      id: ep.Id,
+      detected: await detectBeylaOnEndpoint(ep.Id, ep.Type),
+    })),
+  );
+
+  const detectedMap = new Map<number, CoverageStatus>();
+  for (const result of detectionResults) {
+    if (result.status === 'fulfilled') {
+      detectedMap.set(result.value.id, detectionToCoverageStatus(result.value.detected));
+    }
+  }
+
+  for (const ep of endpoints) {
+    if (!detectedMap.has(ep.Id)) {
+      if (!BEYLA_COMPATIBLE_TYPES.has(ep.Type)) {
+        detectedMap.set(ep.Id, 'incompatible');
+      } else if (ep.Status !== 1) {
+        detectedMap.set(ep.Id, 'unreachable');
+      }
+    }
+  }
+
+  const insertSql = `
+    INSERT INTO ebpf_coverage (endpoint_id, endpoint_name, status)
+    VALUES (?, ?, ?)
+    ON CONFLICT DO NOTHING
+  `;
+
+  const updateNameSql = `
+    UPDATE ebpf_coverage SET endpoint_name = ?, updated_at = NOW()
+    WHERE endpoint_id = ? AND endpoint_name != ?
+  `;
+
+  const autoUpdateSql = `
+    UPDATE ebpf_coverage
+    SET status = ?, updated_at = NOW()
+    WHERE endpoint_id = ? AND status IN ('unknown', 'deployed', 'failed', 'not_deployed', 'unreachable', 'incompatible')
+  `;
+
+  await db().transaction(async (txDb) => {
+    for (const ep of endpoints) {
+      const detected = detectedMap.get(ep.Id) ?? 'unknown';
+      const result = await txDb.execute(insertSql, [ep.Id, ep.Name, detected]);
+      if (result.changes > 0) {
+        added++;
+      } else {
+        await txDb.execute(updateNameSql, [ep.Name, ep.Id, ep.Name]);
+        if (detectedMap.has(ep.Id)) {
+          await txDb.execute(autoUpdateSql, [detected, ep.Id]);
+        }
+      }
+    }
+  });
+
+  log.info({ total: endpoints.length, added, detected: detectedMap.size }, 'Endpoint coverage synced');
+  return added;
+}
+
+/**
+ * Verify coverage for an endpoint by checking:
+ * 1. Whether a Beyla container is running (live container check)
+ * 2. Whether eBPF traces have been received recently (span query)
+ * Updates status automatically based on findings.
+ */
+export async function verifyCoverage(endpointId: number): Promise<{ verified: boolean; lastTraceAt: string | null; beylaRunning: boolean }> {
+  const beylaDetection = await detectBeylaOnEndpoint(endpointId);
+  const beylaRunning = beylaDetection === 'deployed';
+
+  let lastTraceAt: string | null = null;
+
+  try {
+    const tracesDb = getDbForDomain('traces');
+    const recentSpan = await tracesDb.queryOne<{ start_time: string }>(`
+      SELECT start_time FROM spans
+      WHERE trace_source = 'ebpf'
+        AND start_time > NOW() - INTERVAL '10 minutes'
+      ORDER BY start_time DESC
+      LIMIT 1
+    `);
+    lastTraceAt = recentSpan?.start_time ?? null;
+  } catch {
+    // spans table may not exist yet; treat as no traces
+  }
+
+  const newStatus = detectionToCoverageStatus(beylaDetection);
+  const verified = beylaRunning || lastTraceAt !== null;
+
+  // Keep coverage status in sync with the latest detection result on every verify call.
+  await db().execute(`
+    UPDATE ebpf_coverage
+    SET status = CASE WHEN status IN ('unknown', 'deployed', 'failed', 'not_deployed', 'unreachable', 'incompatible') THEN ? ELSE status END,
+        last_trace_at = COALESCE(?, last_trace_at),
+        last_verified_at = NOW(),
+        updated_at = NOW()
+    WHERE endpoint_id = ?
+  `, [newStatus, lastTraceAt, endpointId]);
+
+  log.debug({ endpointId, verified, beylaRunning, lastTraceAt }, 'Coverage verified');
+  return { verified, lastTraceAt, beylaRunning };
+}
+
+/**
+ * Return aggregate coverage stats.
+ */
+export async function getCoverageSummary(): Promise<CoverageSummary> {
+  const rows = await db().query<{ status: CoverageStatus; count: number }>(`
+    SELECT status, COUNT(*)::integer as count
+    FROM ebpf_coverage
+    GROUP BY status
+  `);
+
+  const counts: Record<CoverageStatus, number> = {
+    planned: 0,
+    deployed: 0,
+    excluded: 0,
+    failed: 0,
+    unknown: 0,
+    not_deployed: 0,
+    unreachable: 0,
+    incompatible: 0,
+  };
+
+  for (const row of rows) {
+    counts[row.status] = row.count;
+  }
+
+  const total = Object.values(counts).reduce((a, b) => a + b, 0);
+  const coveragePercent = total > 0
+    ? Math.round((counts.deployed / total) * 100)
+    : 0;
+
+  return {
+    total,
+    ...counts,
+    coveragePercent,
+  };
+}

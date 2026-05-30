@@ -27,7 +27,7 @@ vi.mock('@/stores/ui-store', () => ({
   useUiStore: (selector: (state: { potatoMode: boolean }) => boolean) => mockUseUiStore(selector),
 }));
 
-vi.mock('@/lib/socket', () => ({
+vi.mock('@/shared/lib/socket', () => ({
   getNamespaceSocket: (namespace: string, token: string) => mockGetNamespaceSocket(namespace, token),
   disconnectAll: () => mockDisconnectAll(),
 }));

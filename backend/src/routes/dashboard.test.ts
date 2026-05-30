@@ -1,22 +1,27 @@
 import { beforeEach, afterEach, afterAll, describe, expect, it, vi } from 'vitest';
 import Fastify from 'fastify';
 import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
-import { dashboardRoutes } from './dashboard.js';
+import { dashboardRoutes } from '@dashboard/foundation';
 
 const mockGetKpiHistory = vi.fn();
 const mockGetSecurityAudit = vi.fn();
 const mockGetLatestMetricsBatch = vi.fn();
 
-// Kept: kpi-store mock — avoids real DB lookup
-vi.mock('../services/kpi-store.js', () => ({
-  getKpiHistory: (...args: unknown[]) => mockGetKpiHistory(...args),
-}));
+// Kept: kpi-store + metrics-store mock — avoids real DB lookup
+vi.mock('@dashboard/observability', async (importOriginal) => {
+  const orig = await importOriginal() as Record<string, unknown>;
+  return {
+    ...orig,
+    getKpiHistory: (...args: unknown[]) => mockGetKpiHistory(...args),
+    getLatestMetricsBatch: (...args: unknown[]) => mockGetLatestMetricsBatch(...args),
+  };
+});
 
 // Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
-vi.mock('../services/portainer-client.js', async (importOriginal) => await importOriginal());
+vi.mock('@dashboard/core/portainer/portainer-client.js', async (importOriginal) => await importOriginal());
 
-import * as portainerClient from '../services/portainer-client.js';
-import { cache, waitForInFlight } from '../services/portainer-cache.js';
+import * as portainerClient from '@dashboard/core/portainer/portainer-client.js';
+import { cache, waitForInFlight } from '@dashboard/core/portainer/portainer-cache.js';
 import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
 
 let mockGetEndpoints: any;
@@ -31,14 +36,12 @@ afterAll(async () => {
 });
 
 
-vi.mock('../services/security-audit.js', () => ({
+vi.mock('@dashboard/security', () => ({
   getSecurityAudit: (...args: unknown[]) => mockGetSecurityAudit(...args),
   buildSecurityAuditSummary: () => ({ totalAudited: 0, flagged: 0, ignored: 0 }),
 }));
 
-vi.mock('../services/metrics-store.js', () => ({
-  getLatestMetricsBatch: (...args: unknown[]) => mockGetLatestMetricsBatch(...args),
-}));
+// getLatestMetricsBatch mocked inside @dashboard/observability mock above
 
 function makeEndpoint(id: number, name: string, status: 'up' | 'down' = 'up'): any {
   return {

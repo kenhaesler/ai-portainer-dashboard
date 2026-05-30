@@ -1,0 +1,353 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import Fastify from 'fastify';
+import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
+import type { LLMInterface } from '@dashboard/contracts';
+import {
+  forecastRoutes,
+  buildForecastPrompt,
+  clearNarrativeCache,
+  getNarrativeCacheSize,
+  setCachedNarrative,
+  MAX_NARRATIVE_CACHE,
+  _sweepExpiredEntries,
+} from '../routes/forecasts.js';
+
+const mockGetCapacityForecasts = vi.fn();
+const mockGenerateForecast = vi.fn();
+const mockLookupContainerName = vi.fn();
+
+// Kept: capacity-forecaster mock — no TimescaleDB in CI
+vi.mock('../services/capacity-forecaster.js', () => ({
+  getCapacityForecasts: (...args: unknown[]) => mockGetCapacityForecasts(...args),
+  generateForecast: (...args: unknown[]) => mockGenerateForecast(...args),
+  lookupContainerName: (...args: unknown[]) => mockLookupContainerName(...args),
+}));
+
+// Mock LLM passed via opts — replaces ai-intelligence module mocks
+const mockChatStream = vi.fn();
+const mockGetEffectivePrompt = vi.fn().mockResolvedValue('You are a concise infrastructure analyst.');
+
+const mockLlm: LLMInterface = {
+  isAvailable: vi.fn().mockResolvedValue(true),
+  chatStream: mockChatStream,
+  getEffectivePrompt: mockGetEffectivePrompt,
+  buildInfrastructureContext: vi.fn().mockReturnValue('context'),
+};
+
+describe('Forecast Routes', () => {
+  let app: ReturnType<typeof Fastify>;
+
+  beforeEach(async () => {
+    vi.restoreAllMocks();
+    clearNarrativeCache();
+    app = Fastify();
+    app.setValidatorCompiler(validatorCompiler);
+    app.setSerializerCompiler(serializerCompiler);
+    app.decorate('authenticate', async () => undefined);
+    await app.register(forecastRoutes, { llm: mockLlm });
+    await app.ready();
+  });
+
+  it('GET /api/forecasts returns forecast list', async () => {
+    mockGetCapacityForecasts.mockResolvedValue([
+      {
+        containerId: 'abc123',
+        containerName: 'web-server',
+        metricType: 'cpu',
+        currentValue: 75,
+        trend: 'increasing',
+        slope: 2.5,
+        r_squared: 0.85,
+        forecast: [],
+        timeToThreshold: 6,
+        confidence: 'high',
+      },
+    ]);
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/forecasts',
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body).toHaveLength(1);
+    expect(body[0].trend).toBe('increasing');
+    expect(body[0].timeToThreshold).toBe(6);
+  });
+
+  it('clamps overview limit to safe maximum', async () => {
+    mockGetCapacityForecasts.mockResolvedValue([]);
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/forecasts?limit=999',
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(mockGetCapacityForecasts).toHaveBeenCalledWith(50);
+  });
+
+  it('GET /api/forecasts/:containerId returns single forecast', async () => {
+    mockGenerateForecast.mockResolvedValue({
+      containerId: 'abc123',
+      containerName: 'web',
+      metricType: 'cpu',
+      currentValue: 60,
+      trend: 'stable',
+      slope: 0.01,
+      r_squared: 0.2,
+      forecast: [],
+      timeToThreshold: null,
+      confidence: 'low',
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/forecasts/abc123?metric=cpu',
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.trend).toBe('stable');
+  });
+
+  it('looks up container name for per-container forecast', async () => {
+    mockLookupContainerName.mockResolvedValue('my-container');
+    mockGenerateForecast.mockResolvedValue({
+      containerId: 'abc123',
+      containerName: 'my-container',
+      metricType: 'cpu',
+      currentValue: 60,
+      trend: 'stable',
+      slope: 0.01,
+      r_squared: 0.2,
+      forecast: [],
+      timeToThreshold: null,
+      confidence: 'low',
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/forecasts/abc123?metric=cpu',
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(mockLookupContainerName).toHaveBeenCalledWith('abc123');
+    expect(mockGenerateForecast).toHaveBeenCalledWith(
+      'abc123',
+      'my-container',
+      'cpu',
+      90,
+      24,
+      24,
+    );
+  });
+
+  it('returns error when insufficient data', async () => {
+    mockGenerateForecast.mockResolvedValue(null);
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/forecasts/nodata',
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.error).toBe('Insufficient data for forecast');
+  });
+
+  describe('GET /api/forecasts/:containerId/narrative', () => {
+    const mockForecast = {
+      containerId: 'abc123',
+      containerName: 'web-server',
+      metricType: 'cpu',
+      currentValue: 75,
+      trend: 'increasing',
+      slope: 2.5,
+      r_squared: 0.85,
+      forecast: [],
+      timeToThreshold: 6,
+      confidence: 'high',
+    };
+
+    it('returns AI-generated narrative for a forecast', async () => {
+      mockLookupContainerName.mockResolvedValue('web-server');
+      mockGenerateForecast.mockResolvedValue(mockForecast);
+      mockChatStream.mockResolvedValue('CPU is rising steadily. Consider scaling soon.');
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/forecasts/abc123/narrative?metricType=cpu',
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.narrative).toBe('CPU is rising steadily. Consider scaling soon.');
+      expect(mockChatStream).toHaveBeenCalledTimes(1);
+    });
+
+    it('returns null narrative when forecast data is insufficient', async () => {
+      mockLookupContainerName.mockResolvedValue('web-server');
+      mockGenerateForecast.mockResolvedValue(null);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/forecasts/abc123/narrative?metricType=cpu',
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ narrative: null });
+      expect(mockChatStream).not.toHaveBeenCalled();
+    });
+
+    it('returns null narrative when LLM fails', async () => {
+      mockLookupContainerName.mockResolvedValue('web-server');
+      mockGenerateForecast.mockResolvedValue(mockForecast);
+      mockChatStream.mockRejectedValue(new Error('Ollama down'));
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/forecasts/abc123/narrative?metricType=cpu',
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ narrative: null });
+    });
+
+    it('defaults metricType to cpu', async () => {
+      mockLookupContainerName.mockResolvedValue('web-server');
+      mockGenerateForecast.mockResolvedValue(mockForecast);
+      mockChatStream.mockResolvedValue('All good.');
+
+      await app.inject({
+        method: 'GET',
+        url: '/api/forecasts/abc123/narrative',
+      });
+
+      expect(mockGenerateForecast).toHaveBeenCalledWith(
+        'abc123', 'web-server', 'cpu', 90, 24, 24,
+      );
+    });
+  });
+});
+
+describe('buildForecastPrompt', () => {
+  it('includes all forecast fields in the prompt', () => {
+    const prompt = buildForecastPrompt({
+      containerName: 'api-server',
+      metricType: 'memory',
+      currentValue: 82.5,
+      trend: 'increasing',
+      slope: 1.2,
+      r_squared: 0.91,
+      timeToThreshold: 4,
+      confidence: 'high',
+    });
+
+    expect(prompt).toContain('api-server');
+    expect(prompt).toContain('memory');
+    expect(prompt).toContain('82.5%');
+    expect(prompt).toContain('increasing');
+    expect(prompt).toContain('1.20%/hour');
+    expect(prompt).toContain('0.910');
+    expect(prompt).toContain('~4 hours');
+    expect(prompt).toContain('high');
+  });
+
+  it('handles null timeToThreshold', () => {
+    const prompt = buildForecastPrompt({
+      containerName: 'worker',
+      metricType: 'cpu',
+      currentValue: 10,
+      trend: 'stable',
+      slope: 0.01,
+      r_squared: 0.15,
+      timeToThreshold: null,
+      confidence: 'low',
+    });
+
+    expect(prompt).toContain('not predicted to breach 90%');
+    expect(prompt).not.toContain('~null');
+  });
+});
+
+describe('Narrative cache max-size cap', () => {
+  it('keeps cache size at or below MAX_NARRATIVE_CACHE after overflow inserts', () => {
+    clearNarrativeCache();
+    const insertCount = MAX_NARRATIVE_CACHE + 100;
+    for (let i = 0; i < insertCount; i++) {
+      setCachedNarrative(`key-${i}`, `narrative-${i}`);
+    }
+    expect(getNarrativeCacheSize()).toBeLessThanOrEqual(MAX_NARRATIVE_CACHE);
+  });
+
+  it('evicts the oldest entry when cache exceeds max size', () => {
+    clearNarrativeCache();
+    for (let i = 0; i < MAX_NARRATIVE_CACHE; i++) {
+      setCachedNarrative(`fill-${i}`, `narrative-${i}`);
+    }
+    expect(getNarrativeCacheSize()).toBe(MAX_NARRATIVE_CACHE);
+
+    // Insert one more — should evict the oldest and stay at max
+    setCachedNarrative('overflow-key', 'new narrative');
+    expect(getNarrativeCacheSize()).toBe(MAX_NARRATIVE_CACHE);
+  });
+
+  it('still returns cached entries within TTL', () => {
+    clearNarrativeCache();
+    setCachedNarrative('recent-key', 'test narrative');
+    expect(getNarrativeCacheSize()).toBe(1);
+  });
+});
+
+describe('Periodic TTL sweep (narrative cache)', () => {
+  beforeEach(() => {
+    clearNarrativeCache();
+  });
+
+  it('removes expired narrative cache entries', () => {
+    setCachedNarrative('narrative-1', 'CPU is rising.');
+    setCachedNarrative('narrative-2', 'Memory is stable.');
+    expect(getNarrativeCacheSize()).toBe(2);
+
+    // Advance time past the 5-min TTL
+    const realNow = Date.now;
+    Date.now = () => realNow() + 6 * 60 * 1_000;
+    try {
+      _sweepExpiredEntries();
+      expect(getNarrativeCacheSize()).toBe(0);
+    } finally {
+      Date.now = realNow;
+    }
+  });
+
+  it('keeps entries that have not yet expired', () => {
+    setCachedNarrative('still-valid', 'All good.');
+    _sweepExpiredEntries();
+    expect(getNarrativeCacheSize()).toBe(1);
+  });
+
+  it('only removes expired entries, leaving valid ones untouched', () => {
+    setCachedNarrative('will-expire', 'old entry');
+    expect(getNarrativeCacheSize()).toBe(1);
+
+    const realNow = Date.now;
+    const threeMinLater = realNow() + 3 * 60 * 1_000;
+    Date.now = () => threeMinLater;
+
+    // Insert a fresh entry at the "new" time
+    setCachedNarrative('inserted-later', 'new entry');
+    expect(getNarrativeCacheSize()).toBe(2);
+
+    // Jump to 6 minutes from original time — the first entry expires,
+    // but 'inserted-later' was created at +3min so it expires at +8min.
+    Date.now = () => realNow() + 6 * 60 * 1_000;
+    try {
+      _sweepExpiredEntries();
+      expect(getNarrativeCacheSize()).toBe(1);
+    } finally {
+      Date.now = realNow;
+    }
+  });
+});

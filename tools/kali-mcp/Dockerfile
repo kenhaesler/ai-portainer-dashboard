@@ -1,5 +1,7 @@
 FROM kalilinux/kali-rolling
 
+ARG TARGETARCH
+
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Core utilities + Python + Go + Node.js
@@ -45,7 +47,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Container security tools (install scripts for trivy/grype, binary for hadolint)
 RUN curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin \
     && curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin \
-    && curl -L https://github.com/hadolint/hadolint/releases/latest/download/hadolint-Linux-arm64 -o /usr/local/bin/hadolint && chmod +x /usr/local/bin/hadolint
+    && HADOLINT_ARCH=$(case "${TARGETARCH:-arm64}" in amd64) echo "x86_64";; arm64) echo "arm64";; *) echo "x86_64";; esac) \
+    && curl -sL "https://github.com/hadolint/hadolint/releases/download/v2.12.0/hadolint-Linux-${HADOLINT_ARCH}" -o /usr/local/bin/hadolint \
+    && chmod +x /usr/local/bin/hadolint
 
 # Go-based tools (nuclei, dive, gitleaks)
 ENV GOPATH=/opt/go
@@ -65,6 +69,9 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY server.py /app/server.py
 
+RUN useradd -r -s /bin/false -d /nonexistent appuser
+
 EXPOSE 8000
+USER appuser
 ENTRYPOINT ["tini", "--"]
 CMD ["python", "/app/server.py"]

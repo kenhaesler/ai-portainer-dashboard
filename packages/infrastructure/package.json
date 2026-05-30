@@ -1,0 +1,43 @@
+{
+  "name": "@dashboard/infrastructure",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Edge agent capabilities, async log collection, Docker frame decoding, and Elasticsearch log forwarding",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./routes/index.js": {
+      "import": "./dist/routes/index.js",
+      "types": "./dist/routes/index.d.ts"
+    },
+    "./services/*.js": {
+      "import": "./dist/services/*.js",
+      "types": "./dist/services/*.d.ts"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@dashboard/contracts": "*",
+    "@dashboard/core": "*",
+    "fastify": "^5.8.5",
+    "fastify-type-provider-zod": "^6.1.0",
+    "undici": "^8.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "@vitest/coverage-v8": "^4.1.7",
+    "typescript": "^6.0.3",
+    "vitest": "^4.0.18"
+  }
+}

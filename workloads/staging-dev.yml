@@ -1,35 +1,73 @@
 # Stack: staging-dev — Staging + development environments + monitoring
 # 4 services: staging-web, staging-api, dev-web, monitoring-prometheus
+# Networks: staging-dev-net (default)
 
 services:
   staging-web:
     image: nginx:alpine
     container_name: staging-web
+    mem_limit: 128m
+    cpus: 0.5
     labels:
       app.tier: "web"
       app.env: "staging"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     restart: unless-stopped
 
   staging-api:
     image: httpd:alpine
     container_name: staging-api
+    mem_limit: 128m
+    cpus: 0.5
     labels:
       app.tier: "api"
       app.env: "staging"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     restart: unless-stopped
 
   dev-web:
     image: nginx:alpine
     container_name: dev-web
+    mem_limit: 128m
+    cpus: 0.5
     labels:
       app.tier: "web"
       app.env: "development"
-    restart: "no"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
 
   monitoring-prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v3.10.0
     container_name: monitoring-prometheus
+    mem_limit: 512m
+    cpus: 1.0
+    volumes:
+      - prometheus-data:/prometheus
     labels:
       app.tier: "monitoring"
       app.env: "infrastructure"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:9090/-/healthy || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     restart: unless-stopped
+
+volumes:
+  prometheus-data:
+
+networks:
+  default:
+    name: staging-dev-net

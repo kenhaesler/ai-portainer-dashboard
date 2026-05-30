@@ -17,8 +17,11 @@ COPY --from=builder /opt/venv /opt/venv
 
 ENV PATH="/opt/venv/bin:$PATH"
 
+RUN useradd -r -s /bin/false appuser
+
 WORKDIR /app
 COPY server.py .
 
+USER appuser
 EXPOSE 8000
 CMD ["python", "server.py"]

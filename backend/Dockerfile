@@ -8,10 +8,32 @@ RUN apk add --no-cache python3 make g++
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY backend/package.json ./backend/
-RUN --mount=type=cache,target=/root/.npm npm ci -w backend
+COPY packages/contracts/package.json ./packages/contracts/
+COPY packages/core/package.json ./packages/core/
+COPY packages/infrastructure/package.json ./packages/infrastructure/
+COPY packages/security/package.json ./packages/security/
+COPY packages/observability/package.json ./packages/observability/
+COPY packages/operations/package.json ./packages/operations/
+COPY packages/ai-intelligence/package.json ./packages/ai-intelligence/
+COPY packages/foundation/package.json ./packages/foundation/
+COPY packages/server/package.json ./packages/server/
+RUN --mount=type=cache,target=/root/.npm npm ci -w backend -w @dashboard/contracts -w @dashboard/core -w @dashboard/infrastructure -w @dashboard/security -w @dashboard/observability -w @dashboard/operations -w @dashboard/ai -w @dashboard/foundation -w @dashboard/server
+COPY packages/contracts/ ./packages/contracts/
+COPY packages/core/ ./packages/core/
+COPY packages/infrastructure/ ./packages/infrastructure/
+COPY packages/security/ ./packages/security/
+COPY packages/observability/ ./packages/observability/
+COPY packages/operations/ ./packages/operations/
+COPY packages/ai-intelligence/ ./packages/ai-intelligence/
+RUN npm run build -w @dashboard/contracts && npm run build -w @dashboard/core && npm run build -w @dashboard/infrastructure && npm run build -w @dashboard/security && npm run build -w @dashboard/observability && npm run build -w @dashboard/operations && npm run build -w @dashboard/ai
+COPY packages/foundation/ ./packages/foundation/
+RUN npm run build -w @dashboard/foundation
 COPY backend/tsconfig.json ./backend/
+COPY backend/tsconfig.build.json ./backend/
 COPY backend/src/ backend/src/
 RUN npm run build -w backend
+COPY packages/server/ ./packages/server/
+RUN npm run build -w @dashboard/server
 
 # Separate stage to build production dependencies with native bindings
 FROM dhi.io/node:24-alpine3.23-dev AS prod-deps
@@ -22,7 +44,16 @@ RUN apk add --no-cache python3 make g++
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY backend/package.json ./backend/
-RUN --mount=type=cache,target=/root/.npm npm ci -w backend --omit=dev
+COPY packages/contracts/package.json ./packages/contracts/
+COPY packages/core/package.json ./packages/core/
+COPY packages/infrastructure/package.json ./packages/infrastructure/
+COPY packages/security/package.json ./packages/security/
+COPY packages/observability/package.json ./packages/observability/
+COPY packages/operations/package.json ./packages/operations/
+COPY packages/ai-intelligence/package.json ./packages/ai-intelligence/
+COPY packages/foundation/package.json ./packages/foundation/
+COPY packages/server/package.json ./packages/server/
+RUN --mount=type=cache,target=/root/.npm npm ci -w backend -w @dashboard/contracts -w @dashboard/core -w @dashboard/infrastructure -w @dashboard/security -w @dashboard/observability -w @dashboard/operations -w @dashboard/ai -w @dashboard/foundation -w @dashboard/server --omit=dev
 
 # Utility stage — install runtime tools and prepare filesystem
 FROM dhi.io/node:24-alpine3.23-dev AS tools
@@ -48,14 +79,35 @@ COPY --from=tools /usr/lib/libssl* /usr/lib/
 COPY --from=tools --chown=node:node /opt/app/data /app/data
 
 WORKDIR /app
-COPY --chown=node:node --from=builder /app/backend/package.json ./
+# Use @dashboard/server package.json as the root — if backend/package.json were used here,
+# Node ESM would treat /app/ as the "backend" package and self-referencing imports like
+# `import 'backend/routes/health.js'` from dist/app.js would resolve to /app/dist/routes/health.js
+# (via the exports map) instead of /app/node_modules/backend/dist/routes/health.js.
+COPY --chown=node:node --from=builder /app/packages/server/package.json ./
 # Copy production node_modules (hoisted to root by npm workspaces)
 COPY --chown=node:node --from=prod-deps /app/node_modules ./node_modules
 # Merge any backend-workspace-local packages not hoisted to root (e.g. fastify-type-provider-zod)
 COPY --chown=node:node --from=prod-deps /app/backend/node_modules ./node_modules
-COPY --chown=node:node --from=builder /app/backend/dist/ dist/
-COPY --chown=node:node --from=builder /app/backend/src/db/postgres-migrations/ dist/db/postgres-migrations/
-COPY --chown=node:node --from=builder /app/backend/src/db/timescale-migrations/ dist/db/timescale-migrations/
+# Copy built workspace packages so backend can resolve them at runtime
+COPY --chown=node:node --from=builder /app/packages/contracts/dist/ ./node_modules/@dashboard/contracts/dist/
+COPY --chown=node:node --from=builder /app/packages/contracts/package.json ./node_modules/@dashboard/contracts/package.json
+COPY --chown=node:node --from=builder /app/packages/core/dist/ ./node_modules/@dashboard/core/dist/
+COPY --chown=node:node --from=builder /app/packages/core/package.json ./node_modules/@dashboard/core/package.json
+COPY --chown=node:node --from=builder /app/packages/infrastructure/dist/ ./node_modules/@dashboard/infrastructure/dist/
+COPY --chown=node:node --from=builder /app/packages/infrastructure/package.json ./node_modules/@dashboard/infrastructure/package.json
+COPY --chown=node:node --from=builder /app/packages/security/dist/ ./node_modules/@dashboard/security/dist/
+COPY --chown=node:node --from=builder /app/packages/security/package.json ./node_modules/@dashboard/security/package.json
+COPY --chown=node:node --from=builder /app/packages/observability/dist/ ./node_modules/@dashboard/observability/dist/
+COPY --chown=node:node --from=builder /app/packages/observability/package.json ./node_modules/@dashboard/observability/package.json
+COPY --chown=node:node --from=builder /app/packages/operations/dist/ ./node_modules/@dashboard/operations/dist/
+COPY --chown=node:node --from=builder /app/packages/operations/package.json ./node_modules/@dashboard/operations/package.json
+COPY --chown=node:node --from=builder /app/packages/ai-intelligence/dist/ ./node_modules/@dashboard/ai/dist/
+COPY --chown=node:node --from=builder /app/packages/ai-intelligence/package.json ./node_modules/@dashboard/ai/package.json
+# @dashboard/foundation routes (extracted from backend, used by @dashboard/server)
+COPY --chown=node:node --from=builder /app/packages/foundation/dist/ ./node_modules/@dashboard/foundation/dist/
+COPY --chown=node:node --from=builder /app/packages/foundation/package.json ./node_modules/@dashboard/foundation/package.json
+# @dashboard/server is the application entry point
+COPY --chown=node:node --from=builder /app/packages/server/dist/ dist/
 
 USER node
 

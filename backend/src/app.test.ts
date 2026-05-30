@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { z } from 'zod';
+import { z } from 'zod/v4';
 
 // Test just the HTTP/2-related schema fields in isolation
 const http2Schema = z.object({

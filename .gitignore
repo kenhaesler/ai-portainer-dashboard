@@ -57,3 +57,18 @@ __pycache__/
 
 # Claude Code
 .claude/
+
+# TypeScript build artifacts emitted into source dirs by accidental `tsc --build` runs.
+# Vite resolves vite.config.js BEFORE vite.config.ts, so a stale .js silently shadows
+# the .ts and live config edits stop taking effect — see commit 781248e6 lessons.
+frontend/vite.config.js
+frontend/vite.config.d.ts
+
+# Editor scratch (Obsidian workspace state, Playwright MCP page/console traces)
+.obsidian/
+.playwright-mcp/
+
+# Screenshots dropped at the repo root — developer scratch, not assets.
+# `/` anchors to repo root only, leaving frontend/public/*.png tracked.
+/*.png
+.superpowers/

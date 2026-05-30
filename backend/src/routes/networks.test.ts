@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import Fastify from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
-import { networksRoutes } from './networks.js';
+import { networksRoutes } from '@dashboard/foundation';
 
 // Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
-vi.mock('../services/portainer-client.js', async (importOriginal) => await importOriginal());
+vi.mock('@dashboard/core/portainer/portainer-client.js', async (importOriginal) => await importOriginal());
 
-import * as portainerClient from '../services/portainer-client.js';
-import { cache, waitForInFlight } from '../services/portainer-cache.js';
+import * as portainerClient from '@dashboard/core/portainer/portainer-client.js';
+import { cache, waitForInFlight } from '@dashboard/core/portainer/portainer-cache.js';
 import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
 
 let mockGetEndpoints: any;

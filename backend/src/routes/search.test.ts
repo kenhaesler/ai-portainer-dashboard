@@ -1,18 +1,18 @@
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest';
 import Fastify, { FastifyInstance } from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
-import { searchRoutes } from './search.js';
+import { searchRoutes } from '@dashboard/foundation';
 
 // Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
-vi.mock('../services/portainer-client.js', async (importOriginal) => await importOriginal());
+vi.mock('@dashboard/core/portainer/portainer-client.js', async (importOriginal) => await importOriginal());
 
-// Kept: edge-capability-guard mock — avoids real edge device checks
-vi.mock('../services/edge-capability-guard.js', () => ({
+// Kept: infrastructure module mock — avoids real edge device checks
+vi.mock('@dashboard/infrastructure', () => ({
   supportsLiveFeatures: vi.fn(async () => true),
 }));
 
-import * as portainerClient from '../services/portainer-client.js';
-import { cache, waitForInFlight } from '../services/portainer-cache.js';
+import * as portainerClient from '@dashboard/core/portainer/portainer-client.js';
+import { cache, waitForInFlight } from '@dashboard/core/portainer/portainer-cache.js';
 import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
 
 let mockGetEndpoints: any;
@@ -23,7 +23,7 @@ let mockGetContainerLogs: any;
 
 function seedPortainerMocks() {
   mockGetEndpoints.mockResolvedValue([
-    { Id: 1, Name: 'prod', Status: 1 },
+    { Id: 1, Name: 'prod', Type: 1, Status: 1 },
   ] as any);
 
   mockGetContainers.mockResolvedValue([
@@ -149,8 +149,8 @@ describe('Search Routes', () => {
   it('fetches containers and images in parallel across multiple endpoints', async () => {
     // Two endpoints — verify containers and images are fetched for both
     mockGetEndpoints.mockResolvedValue([
-      { Id: 1, Name: 'prod', Status: 1 },
-      { Id: 2, Name: 'staging', Status: 1 },
+      { Id: 1, Name: 'prod', Type: 1, Status: 1 },
+      { Id: 2, Name: 'staging', Type: 1, Status: 1 },
     ] as any);
 
     mockGetContainers.mockResolvedValue([
@@ -187,8 +187,8 @@ describe('Search Routes', () => {
 
   it('returns partial results when one endpoint fails', async () => {
     mockGetEndpoints.mockResolvedValue([
-      { Id: 1, Name: 'prod', Status: 1 },
-      { Id: 2, Name: 'broken', Status: 1 },
+      { Id: 1, Name: 'prod', Type: 1, Status: 1 },
+      { Id: 2, Name: 'broken', Type: 1, Status: 1 },
     ] as any);
 
     mockGetContainers

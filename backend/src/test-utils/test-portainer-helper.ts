@@ -1,17 +1,20 @@
 /**
  * Test helper — checks Portainer connectivity and fetches real data for assertions.
  */
-import { getConfig } from '../config/index.js';
+import { getConfig } from '@dashboard/core/config/index.js';
 
 /**
- * Check if Portainer API is reachable.
+ * Check if Portainer API is reachable AND the configured API key is valid.
+ * Using /api/endpoints (requires auth) rather than /api/status (no auth) so
+ * integration tests are skipped when Portainer is running but the key is a
+ * placeholder — otherwise tests run and fail with 502 instead of being skipped.
  */
 export async function isPortainerAvailable(): Promise<boolean> {
   try {
     const config = getConfig();
     const url = config.PORTAINER_API_URL;
     if (!url) return false;
-    const res = await fetch(`${url}/api/status`, {
+    const res = await fetch(`${url}/api/endpoints`, {
       headers: { 'X-API-Key': config.PORTAINER_API_KEY },
     });
     return res.ok;

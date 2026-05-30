@@ -8,6 +8,13 @@ services:
       - "127.0.0.1:3051:3051"
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    # Hardening (#1118): backend runs as non-root `node` user on port 3051 (>1024)
+    # and never escalates privileges. All Linux capabilities are dropped, and
+    # no-new-privileges blocks any future setuid binary from gaining privs.
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     environment:
       - LOG_LEVEL=debug
       - NODE_ENV=production
@@ -20,10 +27,9 @@ services:
       - PORTAINER_API_URL=${PORTAINER_API_URL:-http://host.docker.internal:9000}
       - PORTAINER_API_KEY=${PORTAINER_API_KEY:-}
       - PORTAINER_VERIFY_SSL=${PORTAINER_VERIFY_SSL:-false}
-      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.1:8b}
-      - LLM_OPENAI_ENDPOINT=${LLM_OPENAI_ENDPOINT:-}
-      - LLM_BEARER_TOKEN=${LLM_BEARER_TOKEN:-}
+      - LLM_API_URL=${LLM_API_URL:-}
+      - LLM_API_TOKEN=${LLM_API_TOKEN:-}
+      - LLM_MODEL=${LLM_MODEL:-gpt-4o-mini}
       - LLM_VERIFY_SSL=${LLM_VERIFY_SSL:-true}
       # Custom CA certificate for internal TLS verification (preferred over *_VERIFY_SSL=false)
       - NODE_EXTRA_CA_CERTS=${NODE_EXTRA_CA_CERTS:-}
@@ -97,11 +103,18 @@ services:
       traefik.http.routers.beyla-otlp.service: beyla-backend
       # Service: backend Fastify on port 3051
       traefik.http.services.beyla-backend.loadbalancer.server.port: "3051"
-      # Middleware: restrict to Beyla source networks (replace CIDRs with your actual ranges)
-      traefik.http.middlewares.beyla-ip-allow.ipallowlist.sourcerange: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
-      # Middleware: rate limit — 100 req/s average, burst up to 200
-      traefik.http.middlewares.beyla-rate-limit.ratelimit.average: "100"
-      traefik.http.middlewares.beyla-rate-limit.ratelimit.burst: "200"
+      # Middleware: restrict to Beyla source networks.
+      # Defaults to RFC1918 private ranges. Override with BEYLA_ALLOWED_SOURCE_CIDRS
+      # (comma-separated CIDRs) when edge endpoints reach the dashboard from public
+      # IPs, behind a known NAT, or via a VPN with non-private ranges. Traefik sees
+      # the source IP of the immediate upstream — if a CDN sits in front of Traefik,
+      # add that CDN's egress ranges here.
+      traefik.http.middlewares.beyla-ip-allow.ipallowlist.sourcerange: "${BEYLA_ALLOWED_SOURCE_CIDRS:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}"
+      # Middleware: rate limit — defaults to 100 req/s average, burst up to 200.
+      # Beyla batches roughly every 16s so this is generous for most fleets; tune via
+      # BEYLA_RATE_LIMIT_AVERAGE / BEYLA_RATE_LIMIT_BURST when scaling out.
+      traefik.http.middlewares.beyla-rate-limit.ratelimit.average: "${BEYLA_RATE_LIMIT_AVERAGE:-100}"
+      traefik.http.middlewares.beyla-rate-limit.ratelimit.burst: "${BEYLA_RATE_LIMIT_BURST:-200}"
     deploy:
       resources:
         limits:
@@ -115,7 +128,18 @@ services:
       context: ..
       dockerfile: frontend/Dockerfile
     ports:
-      - "8080:8080"
+      # Localhost-only: external clients should reach the dashboard via a
+      # host-level reverse proxy (Traefik/nginx). LAN-direct deployments
+      # without a fronting proxy can override via docker-compose.override.yml.
+      - "127.0.0.1:8080:8080"
+    # Hardening (#1118): nginx runs as the DHI nonroot user on port 8080 (>1024).
+    # No bind to privileged ports → no caps required. If a future nginx config
+    # change demands setuid (e.g. binding 80/443 directly), revisit by adding
+    # the conservative set [CHOWN, SETUID, SETGID].
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
       test: ["CMD", "/usr/bin/wget", "--spider", "--quiet", "http://127.0.0.1:8080/"]
       interval: 30s
@@ -177,8 +201,18 @@ services:
   postgres-app:
     image: postgres:17-alpine
     restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
+    # Hardening (#1104): mirror the timescaledb pattern. The PostgreSQL entrypoint
+    # requires a root → postgres privilege transition via `gosu`, which is
+    # incompatible with `no-new-privileges:true`. Instead, drop ALL capabilities
+    # and add back only the minimum set needed for entrypoint init + runtime.
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN        # chown data directory to postgres
+      - DAC_OVERRIDE # access files during init regardless of perms
+      - FOWNER       # set ownership on data files
+      - SETUID       # gosu: switch from root to postgres
+      - SETGID       # gosu: switch group
     environment:
       POSTGRES_DB: portainer_dashboard
       POSTGRES_USER: app_user
@@ -205,11 +239,11 @@ services:
     # Pinned version — avoid :latest for reproducible builds (see #554)
     image: timescale/timescaledb:2.25.0-pg17
     restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
-    # PostgreSQL entrypoint requires root → postgres privilege transition (gosu)
-    # so no-new-privileges is NOT compatible. Instead, drop all caps and add
-    # back only the minimum set needed for entrypoint init + runtime.
+    # Hardening (#1100): the PostgreSQL entrypoint requires a root → postgres
+    # privilege transition via `gosu`, which is BLOCKED by `no-new-privileges:true`.
+    # Setting both directives is contradictory and would prevent the container
+    # from starting. We intentionally OMIT no-new-privileges here and instead
+    # rely on the strict cap_drop/cap_add allowlist below to bound privileges.
     cap_drop:
       - ALL
     cap_add:
@@ -277,7 +311,10 @@ services:
     build:
       context: ../tools/kali-mcp
       dockerfile: Dockerfile
+    profiles: ["pentest"]
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     cap_add:
       - NET_RAW
       - NET_ADMIN

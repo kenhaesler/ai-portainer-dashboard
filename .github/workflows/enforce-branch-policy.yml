@@ -11,8 +11,10 @@ jobs:
     steps:
       - name: Verify PR source is dev
         if: github.head_ref != 'dev'
+        env:
+          HEAD_REF: ${{ github.head_ref }}
         run: |
-          echo "::error::PRs to main must come from the dev branch. Got: ${{ github.head_ref }}"
+          echo "::error::PRs to main must come from the dev branch. Got: $HEAD_REF"
           exit 1
       - name: Source branch OK
         if: github.head_ref == 'dev'

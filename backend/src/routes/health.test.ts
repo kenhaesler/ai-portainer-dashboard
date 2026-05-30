@@ -1,21 +1,21 @@
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import Fastify, { FastifyInstance } from 'fastify';
-import { setConfigForTest, resetConfig } from '../config/index.js';
+import { setConfigForTest, resetConfig } from '@dashboard/core/config/index.js';
 import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
-import { healthRoutes } from './health.js';
+import { healthRoutes } from '@dashboard/foundation';
 
 // Kept: timescale mock — no TimescaleDB in CI
-vi.mock('../db/timescale.js', () => ({ isMetricsDbHealthy: vi.fn(), isMetricsDbReady: vi.fn() }));
+vi.mock('@dashboard/core/db/timescale.js', () => ({ isMetricsDbHealthy: vi.fn(), isMetricsDbReady: vi.fn() }));
 // Kept: postgres mock — no PostgreSQL in CI
-vi.mock('../db/postgres.js', () => ({ isAppDbHealthy: vi.fn(), isAppDbReady: vi.fn() }));
+vi.mock('@dashboard/core/db/postgres.js', () => ({ isAppDbHealthy: vi.fn(), isAppDbReady: vi.fn() }));
 // Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
-vi.mock('../services/portainer-client.js', async (importOriginal) => await importOriginal());
-vi.mock('../services/portainer-cache.js', async (importOriginal) => await importOriginal());
+vi.mock('@dashboard/core/portainer/portainer-client.js', async (importOriginal) => await importOriginal());
+vi.mock('@dashboard/core/portainer/portainer-cache.js', async (importOriginal) => await importOriginal());
 
-import { isMetricsDbHealthy, isMetricsDbReady } from '../db/timescale.js';
-import { isAppDbHealthy, isAppDbReady } from '../db/postgres.js';
-import * as portainerCache from '../services/portainer-cache.js';
-import * as portainerClient from '../services/portainer-client.js';
+import { isMetricsDbHealthy, isMetricsDbReady } from '@dashboard/core/db/timescale.js';
+import { isAppDbHealthy, isAppDbReady } from '@dashboard/core/db/postgres.js';
+import * as portainerCache from '@dashboard/core/portainer/portainer-cache.js';
+import * as portainerClient from '@dashboard/core/portainer/portainer-client.js';
 import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
 const { cache, waitForInFlight } = portainerCache;
 const mockIsMetricsDbHealthy = vi.mocked(isMetricsDbHealthy);
@@ -55,7 +55,7 @@ describe('Health Routes', () => {
     mockCheckPortainer = vi.spyOn(portainerClient, 'checkPortainerReachable');
     mockCacheGetBackoffState = vi.spyOn(cache, 'getBackoffState');
     mockCachePing = vi.spyOn(cache, 'ping');
-    setConfigForTest({ OLLAMA_BASE_URL: 'http://localhost:11434' });
+    setConfigForTest({ LLM_API_URL: 'http://localhost:11434' });
     // Default: migrations applied, Redis not configured
     mockIsAppDbHealthy.mockResolvedValue(true);
     mockIsAppDbReady.mockReturnValue(true);
@@ -92,7 +92,7 @@ describe('Health Routes', () => {
       expect(b.checks.appDb.status).toBe('healthy');
       expect(b.checks.metricsDb.status).toBe('healthy');
       expect(b.checks.portainer.status).toBe('healthy');
-      expect(b.checks.ollama.status).toBe('healthy');
+      expect(b.checks.llm.status).toBe('healthy');
     });
     it('should NOT include URLs in redacted response', async () => {
       mockIsMetricsDbHealthy.mockResolvedValue(true);
@@ -100,7 +100,7 @@ describe('Health Routes', () => {
       const r = await app.inject({ method: 'GET', url: '/health/ready' });
       const b = JSON.parse(r.body);
       expect(b.checks.portainer.url).toBeUndefined();
-      expect(b.checks.ollama.url).toBeUndefined();
+      expect(b.checks.llm.url).toBeUndefined();
     });
     it('should NOT include error details in redacted response', async () => {
       mockIsAppDbHealthy.mockResolvedValue(false);
@@ -112,7 +112,7 @@ describe('Health Routes', () => {
       expect(b.checks.appDb.error).toBeUndefined();
       expect(b.checks.metricsDb.error).toBeUndefined();
       expect(b.checks.portainer.error).toBeUndefined();
-      expect(b.checks.ollama.error).toBeUndefined();
+      expect(b.checks.llm.error).toBeUndefined();
     });
     it('should return unhealthy when appDb fails', async () => {
       mockIsAppDbHealthy.mockResolvedValue(false);
@@ -141,13 +141,13 @@ describe('Health Routes', () => {
       expect(b.status).toBe('unhealthy');
       expect(b.checks.portainer.status).toBe('unhealthy');
     });
-    it('should return unhealthy when Ollama connection fails', async () => {
+    it('should return unhealthy when LLM connection fails', async () => {
       mockIsMetricsDbHealthy.mockResolvedValue(true);
-      mockFetch.mockRejectedValue(new Error('Ollama not running'));
+      mockFetch.mockRejectedValue(new Error('LLM not running'));
       const r = await app.inject({ method: 'GET', url: '/health/ready' });
       const b = JSON.parse(r.body);
       expect(b.status).toBe('unhealthy');
-      expect(b.checks.ollama.status).toBe('unhealthy');
+      expect(b.checks.llm.status).toBe('unhealthy');
     });
     it('should include timestamp', async () => {
       mockIsMetricsDbHealthy.mockResolvedValue(true);
@@ -177,7 +177,7 @@ describe('Health Routes', () => {
       expect(b.checks.appDb.status).toBe('unhealthy');
       expect(b.checks.metricsDb.status).toBe('unhealthy');
       expect(b.checks.portainer.status).toBe('unhealthy');
-      expect(b.checks.ollama.status).toBe('unhealthy');
+      expect(b.checks.llm.status).toBe('unhealthy');
     });
     it('should only contain status field per check', async () => {
       mockIsMetricsDbHealthy.mockResolvedValue(true);
@@ -222,7 +222,7 @@ describe('Health Routes', () => {
       mockFetch.mockResolvedValue({ ok: true });
       await app.inject({ method: 'GET', url: '/health/ready' });
       expect(mockCachedFetch).toHaveBeenCalledWith('health:portainer', 30, expect.any(Function));
-      expect(mockCachedFetch).toHaveBeenCalledWith('health:ollama', 30, expect.any(Function));
+      expect(mockCachedFetch).toHaveBeenCalledWith('health:llm', 30, expect.any(Function));
     });
     it('should use checkPortainerReachable instead of raw fetch for Portainer', async () => {
       mockIsMetricsDbHealthy.mockResolvedValue(true);
@@ -241,7 +241,7 @@ describe('Health Routes', () => {
       const b = JSON.parse(r.body);
       expect(b.status).toBe('healthy');
       expect(b.checks.portainer.url).toBe('http://localhost:9000');
-      expect(b.checks.ollama.url).toBe('http://localhost:11434');
+      expect(b.checks.llm.url).toBe('http://localhost:11434/v1/models');
     });
     it('should return error details when services fail', async () => {
       mockIsAppDbHealthy.mockResolvedValue(false);
@@ -255,8 +255,8 @@ describe('Health Routes', () => {
       expect(b.checks.metricsDb.error).toBe('TimescaleDB query failed');
       expect(b.checks.portainer.error).toBe('Connection failed');
       expect(b.checks.portainer.url).toBe('http://localhost:9000');
-      expect(b.checks.ollama.error).toBe('Connection refused');
-      expect(b.checks.ollama.url).toBe('http://localhost:11434');
+      expect(b.checks.llm.error).toBe('Connection refused');
+      expect(b.checks.llm.url).toBe('http://localhost:11434/v1/models');
     });
     it('should include all dependency checks', async () => {
       mockIsMetricsDbHealthy.mockResolvedValue(true);
@@ -266,7 +266,7 @@ describe('Health Routes', () => {
       expect(b.checks).toHaveProperty('appDb');
       expect(b.checks).toHaveProperty('metricsDb');
       expect(b.checks).toHaveProperty('portainer');
-      expect(b.checks).toHaveProperty('ollama');
+      expect(b.checks).toHaveProperty('llm');
       expect(b.checks).not.toHaveProperty('database');
       expect(b.timestamp).toBeDefined();
     });

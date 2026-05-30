@@ -1,0 +1,43 @@
+{
+  "name": "@dashboard/foundation",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Foundational routes — cross-domain routes tightly coupled to the Portainer API and core services",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./routes/*.js": {
+      "import": "./dist/routes/*.js",
+      "types": "./dist/routes/*.d.ts"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@dashboard/contracts": "*",
+    "@dashboard/core": "*",
+    "@dashboard/ai": "*",
+    "@dashboard/observability": "*",
+    "@dashboard/security": "*",
+    "fastify": "^5.8.5",
+    "fastify-type-provider-zod": "^6.1.0",
+    "p-limit": "^7.3.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "@vitest/coverage-v8": "^4.1.7",
+    "typescript": "^6.0.3",
+    "vitest": "^4.0.18"
+  }
+}

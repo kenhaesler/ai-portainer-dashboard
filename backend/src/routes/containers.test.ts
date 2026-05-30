@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
 import Fastify from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
-import { containersRoutes } from './containers.js';
+import { containersRoutes } from '@dashboard/foundation';
 // Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
-vi.mock('../services/portainer-client.js', async (importOriginal) => await importOriginal());
-import * as portainerClient from '../services/portainer-client.js';
+vi.mock('@dashboard/core/portainer/portainer-client.js', async (importOriginal) => await importOriginal());
+import * as portainerClient from '@dashboard/core/portainer/portainer-client.js';
 import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
 import { checkPortainerAvailable } from '../test-utils/integration-setup.js';
-import { cache, waitForInFlight } from '../services/portainer-cache.js';
+import { cache, waitForInFlight } from '@dashboard/core/portainer/portainer-cache.js';
 
 let portainerUp: boolean;
 
@@ -34,6 +34,7 @@ function buildApp() {
 const fakeEndpoint = (id: number, name: string, status = 1) => ({
   Id: id,
   Name: name,
+  Type: 1, // Docker local
   Status: status,
   Snapshots: [],
 });
@@ -385,13 +386,17 @@ describe('favorites endpoint (#544)', () => {
   });
 
   it('returns only requested containers', async () => {
-    // Kept: vi.spyOn for controlled container data
+    // New implementation fetches individual containers via getContainer()
     vi.spyOn(portainerClient, 'getEndpoints').mockResolvedValue([fakeEndpoint(1, 'prod')] as any);
-    vi.spyOn(portainerClient, 'getContainers').mockResolvedValue([
-      fakeContainer('abc', 'web'),
-      fakeContainer('def', 'api'),
-      fakeContainer('ghi', 'db'),
-    ] as any);
+    vi.spyOn(portainerClient, 'getContainer').mockImplementation(async (_epId: number, cId: string) => {
+      const containers: Record<string, ReturnType<typeof fakeContainer>> = {
+        abc: fakeContainer('abc', 'web'),
+        ghi: fakeContainer('ghi', 'db'),
+      };
+      const c = containers[cId];
+      if (!c) throw new Error(`Container ${cId} not found`);
+      return c as any;
+    });
 
     const app = buildApp();
     const res = await app.inject({
@@ -418,11 +423,9 @@ describe('favorites endpoint (#544)', () => {
   });
 
   it('returns empty when no containers match', async () => {
-    // Kept: vi.spyOn for controlled container data
+    // New implementation fetches individual containers — 404 results are filtered out
     vi.spyOn(portainerClient, 'getEndpoints').mockResolvedValue([fakeEndpoint(1, 'prod')] as any);
-    vi.spyOn(portainerClient, 'getContainers').mockResolvedValue([
-      fakeContainer('abc', 'web'),
-    ] as any);
+    vi.spyOn(portainerClient, 'getContainer').mockRejectedValue(new Error('Not found'));
 
     const app = buildApp();
     const res = await app.inject({

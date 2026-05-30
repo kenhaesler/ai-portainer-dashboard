@@ -7,18 +7,32 @@ services:
     image: alpine:latest
     container_name: worker-1
     command: sh -c "while true; do echo 'Worker 1 processing...'; sleep 10; done"
+    mem_limit: 128m
+    cpus: 0.5
     labels:
       app.tier: "worker"
       app.env: "production"
+    healthcheck:
+      test: ["CMD-SHELL", "ps aux | grep -v grep | grep -q 'sleep'"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     restart: unless-stopped
 
   worker-2:
     image: alpine:latest
     container_name: worker-2
     command: sh -c "while true; do echo 'Worker 2 processing...'; sleep 15; done"
+    mem_limit: 128m
+    cpus: 0.5
     labels:
       app.tier: "worker"
       app.env: "production"
+    healthcheck:
+      test: ["CMD-SHELL", "ps aux | grep -v grep | grep -q 'sleep'"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     restart: unless-stopped
 
   # API server that queries Redis and Postgres every 10s
@@ -37,6 +51,8 @@ services:
         nc -z -w2 db-postgres 5432 && echo '  postgres: OK' || echo '  postgres: FAIL';
         sleep 10;
       done"
+    mem_limit: 256m
+    cpus: 0.5
     networks:
       - default
       - app-backend-net
@@ -44,6 +60,11 @@ services:
       app.tier: "api"
       app.env: "production"
       app.role: "backend"
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -h db-redis -a \"$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     restart: unless-stopped
 
   # Worker that polls RabbitMQ every 15s
@@ -57,6 +78,8 @@ services:
         nc -z -w2 mq-rabbitmq 5672 && echo '  rabbitmq: OK' || echo '  rabbitmq: FAIL';
         sleep 15;
       done"
+    mem_limit: 128m
+    cpus: 0.5
     networks:
       - default
       - app-backend-net
@@ -64,6 +87,11 @@ services:
       app.tier: "worker"
       app.env: "production"
       app.role: "consumer"
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z -w2 mq-rabbitmq 5672"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     restart: unless-stopped
 
 networks:

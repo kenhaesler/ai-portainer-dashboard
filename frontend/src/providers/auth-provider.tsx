@@ -1,7 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import { api } from '@/lib/api';
-
-const AUTH_TOKEN_KEY = 'auth_token';
+import { api } from '@/shared/lib/api';
+import { AUTH_TOKEN_KEY } from '@/shared/lib/auth-constants';
 const AUTH_USERNAME_KEY = 'auth_username';
 const AUTH_ROLE_KEY = 'auth_role';
 
@@ -31,7 +30,7 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
   }
 }
 
-function isTokenValid(token: string | null): token is string {
+export function isTokenValid(token: string | null): token is string {
   if (!token) return false;
   const payload = decodeJwtPayload(token);
   if (!payload) return false;
@@ -120,6 +119,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     setToken(null);
     setUsername(null);
+    setRole('viewer');
     clearStoredAuth();
     api.setToken(null);
   }, []);
@@ -141,28 +141,67 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     api.setToken(token);
   }, [token]);
 
-  // Token refresh timer
+  // Token refresh timer — schedules itself based on the JWT `exp` claim so the
+  // refresh cadence tracks the configured `JWT_TOKEN_EXPIRY_MINUTES` server-side
+  // without requiring a separate config endpoint. Re-arms after each refresh
+  // by recomputing the next firing time from the new token's `exp`.
   useEffect(() => {
     if (!token || !username) return;
-    // Refresh at 50 minutes of 60 minute expiry
-    const timer = setInterval(async () => {
-      try {
-        const data = await api.post<{ token: string }>('/api/auth/refresh');
-        const refreshedRole = parseRoleFromToken(data.token);
-        setToken(data.token);
-        setRole(refreshedRole);
-        storeAuth(data.token, username, refreshedRole);
-        api.setToken(data.token);
-      } catch {
-        setToken(null);
-        setUsername(null);
-        setRole('viewer');
-        clearStoredAuth();
-        api.setToken(null);
-      }
-    }, 50 * 60 * 1000);
 
-    return () => clearInterval(timer);
+    let cancelled = false;
+    let timerId: ReturnType<typeof setTimeout> | null = null;
+
+    const computeRefreshDelayMs = (jwt: string): number => {
+      const payload = decodeJwtPayload(jwt);
+      const expSec = typeof payload?.exp === 'number' ? payload.exp : 0;
+      if (!expSec) {
+        // Decoding failed or missing exp — fall back to legacy 50-min cadence.
+        return 50 * 60_000;
+      }
+      const nowSec = Math.floor(Date.now() / 1000);
+      const remainingMs = (expSec - nowSec) * 1000;
+      // Refresh 10 min before expiry, OR at half-life if the lifetime is short
+      // enough that exp-10min falls before the half-life mark. Math.max picks
+      // whichever target is LATER (i.e., we wait as long as safely possible).
+      const earlyMs = remainingMs - 10 * 60_000;
+      const halfLifeMs = Math.floor(remainingMs / 2);
+      const targetMs = Math.max(earlyMs, halfLifeMs);
+      // If we're already past (or within 30s of) the target, refresh immediately.
+      if (targetMs < 30_000) return 0;
+      return targetMs;
+    };
+
+    const scheduleNext = (currentToken: string) => {
+      if (cancelled) return;
+      const delay = computeRefreshDelayMs(currentToken);
+      timerId = setTimeout(async () => {
+        if (cancelled) return;
+        try {
+          const data = await api.post<{ token: string }>('/api/auth/refresh');
+          if (cancelled) return;
+          const refreshedRole = parseRoleFromToken(data.token);
+          setToken(data.token);
+          setRole(refreshedRole);
+          storeAuth(data.token, username, refreshedRole);
+          api.setToken(data.token);
+          scheduleNext(data.token);
+        } catch {
+          if (cancelled) return;
+          setToken(null);
+          setUsername(null);
+          setRole('viewer');
+          clearStoredAuth();
+          api.setToken(null);
+        }
+      }, delay);
+    };
+
+    scheduleNext(token);
+
+    return () => {
+      cancelled = true;
+      if (timerId !== null) clearTimeout(timerId);
+    };
   }, [token, username]);
 
   return (

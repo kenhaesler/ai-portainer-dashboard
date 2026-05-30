@@ -10,6 +10,23 @@ global.ResizeObserver = class ResizeObserver {
   disconnect() {}
 };
 
+// Mock matchMedia for components using prefers-reduced-motion (e.g. KpiCard).
+// We return matches:true for the reduce-motion query so animated counters
+// (useCountUp) skip the rAF tween and render their target value immediately.
+Object.defineProperty(window, 'matchMedia', {
+  writable: true,
+  value: (query: string) => ({
+    matches: query.includes('prefers-reduced-motion'),
+    media: query,
+    onchange: null,
+    addListener: () => {},
+    removeListener: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: () => false,
+  }),
+});
+
 // Mock scrollIntoView for jsdom (used by cmdk)
 Element.prototype.scrollIntoView = function () {};
 

@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import Fastify from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
-import { userRoutes } from './users.js';
+import { userRoutes } from '@dashboard/foundation';
 
 // Kept: user-store mock — no PostgreSQL in CI
-vi.mock('../services/user-store.js', () => ({
+vi.mock('@dashboard/core/services/user-store.js', () => ({
   listUsers: vi.fn(),
   createUser: vi.fn(),
   updateUser: vi.fn(),
@@ -15,11 +15,11 @@ vi.mock('../services/user-store.js', () => ({
 }));
 
 // Kept: audit-logger mock — side-effect isolation
-vi.mock('../services/audit-logger.js', () => ({
+vi.mock('@dashboard/core/services/audit-logger.js', () => ({
   writeAuditLog: vi.fn(),
 }));
 
-import { listUsers, createUser, updateUser, deleteUser } from '../services/user-store.js';
+import { listUsers, createUser, updateUser, deleteUser } from '@dashboard/core/services/user-store.js';
 
 const mockListUsers = vi.mocked(listUsers);
 const mockCreateUser = vi.mocked(createUser);

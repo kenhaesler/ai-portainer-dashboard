@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { AppIconId } from '@/components/icons/icon-sets';
+import type { AppIconId } from '@/shared/components/icons/icon-sets';
 
 export type Theme =
   | 'system'

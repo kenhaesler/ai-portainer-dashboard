@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vites
 import Fastify, { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
 import { testAdminOnly } from '../test-utils/rbac-test-helper.js';
-import { settingsRoutes } from './settings.js';
+import { settingsRoutes } from '@dashboard/foundation';
 
 const mockQueryOneUserDefaultLandingPage = vi.fn();
 const mockSetUserDefaultLandingPage = vi.fn();
@@ -10,13 +10,13 @@ const mockQuery = vi.fn().mockResolvedValue([]);
 const mockQueryOne = vi.fn().mockResolvedValue(null);
 const mockExecute = vi.fn().mockResolvedValue({ changes: 1 });
 
-vi.mock('../services/user-store.js', () => ({
+vi.mock('@dashboard/core/services/user-store.js', () => ({
   getUserDefaultLandingPage: (...args: unknown[]) => mockQueryOneUserDefaultLandingPage(...args),
   setUserDefaultLandingPage: (...args: unknown[]) => mockSetUserDefaultLandingPage(...args),
 }));
 
 // Kept: complex multi-service mock interaction (user-store, prompt-store, audit-logger)
-vi.mock('../db/app-db-router.js', () => ({
+vi.mock('@dashboard/core/db/app-db-router.js', () => ({
   getDbForDomain: () => ({
     query: (...args: unknown[]) => mockQuery(...args),
     queryOne: (...args: unknown[]) => mockQueryOne(...args),
@@ -30,34 +30,33 @@ vi.mock('../db/app-db-router.js', () => ({
   }),
 }));
 
-vi.mock('../services/audit-logger.js', () => ({
+vi.mock('@dashboard/core/services/audit-logger.js', () => ({
   writeAuditLog: vi.fn(),
 }));
 
-vi.mock('../services/prompt-store.js', () => {
+const mockCreatePromptVersion = vi.fn().mockResolvedValue({ id: 1, version: 1 });
+const mockGetPromptHistory = vi.fn().mockResolvedValue([]);
+const mockGetPromptVersionById = vi.fn().mockResolvedValue(null);
+
+vi.mock('@dashboard/ai', async (importOriginal) => {
+  const orig = await importOriginal() as Record<string, unknown>;
   const defaults: Record<string, string> = {
     chat_assistant: 'You are a helpful assistant.',
     anomaly_explainer: 'You are an anomaly explainer.',
   };
   return {
+    ...orig,
     PROMPT_FEATURES: [
       { key: 'chat_assistant', label: 'Chat Assistant', description: 'Main AI chat' },
       { key: 'anomaly_explainer', label: 'Anomaly Explainer', description: 'Explains anomalies' },
     ],
     DEFAULT_PROMPTS: defaults,
     getEffectivePrompt: (feature: string) => defaults[feature] ?? '',
+    createPromptVersion: (...args: unknown[]) => mockCreatePromptVersion(...args),
+    getPromptHistory: (...args: unknown[]) => mockGetPromptHistory(...args),
+    getPromptVersionById: (...args: unknown[]) => mockGetPromptVersionById(...args),
   };
 });
-
-const mockCreatePromptVersion = vi.fn().mockResolvedValue({ id: 1, version: 1 });
-const mockGetPromptHistory = vi.fn().mockResolvedValue([]);
-const mockGetPromptVersionById = vi.fn().mockResolvedValue(null);
-
-vi.mock('../services/prompt-version-store.js', () => ({
-  createPromptVersion: (...args: unknown[]) => mockCreatePromptVersion(...args),
-  getPromptHistory: (...args: unknown[]) => mockGetPromptHistory(...args),
-  getPromptVersionById: (...args: unknown[]) => mockGetPromptVersionById(...args),
-}));
 
 describe('settings preference routes', () => {
   let app: FastifyInstance;
@@ -86,7 +85,7 @@ describe('settings preference routes', () => {
   });
 
   it('gets current user landing page preference', async () => {
-    mockQueryOneUserDefaultLandingPage.mockReturnValue('/ai-monitor');
+    mockQueryOneUserDefaultLandingPage.mockReturnValue('/health');
 
     const response = await app.inject({
       method: 'GET',
@@ -95,7 +94,7 @@ describe('settings preference routes', () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({ defaultLandingPage: '/ai-monitor' });
+    expect(response.json()).toEqual({ defaultLandingPage: '/health' });
     expect(mockQueryOneUserDefaultLandingPage).toHaveBeenCalledWith('u1');
   });
 
@@ -257,6 +256,7 @@ describe('settings security', () => {
   });
 
   testAdminOnly(() => secApp, (r) => { currentRole = r; }, 'GET', '/api/settings');
+  testAdminOnly(() => secApp, (r) => { currentRole = r; }, 'GET', '/api/settings/audit-log');
 
   it('redacts sensitive values for admin on GET /api/settings', async () => {
     mockQuery.mockResolvedValueOnce([
@@ -299,14 +299,14 @@ describe('settings security', () => {
 
     const response = await app.inject({
       method: 'PUT',
-      url: '/api/settings/llm.ollama_url',
+      url: '/api/settings/llm.api_url',
       headers: { authorization: 'Bearer test' },
       payload: { value: 'file:///etc/passwd', category: 'llm' },
     });
 
     expect(response.statusCode).toBe(400);
     expect(response.json()).toEqual({
-      error: 'llm.ollama_url must use http:// or https://',
+      error: 'llm.api_url must use http:// or https://',
     });
     expect(mockExecute).not.toHaveBeenCalled();
 

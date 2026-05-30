@@ -1,0 +1,809 @@
+import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useMonitoring } from '@/features/ai-intelligence/hooks/use-monitoring';
+import { useInvestigations } from '@/features/ai-intelligence/hooks/use-investigations';
+import { useCorrelatedAnomalies, type CorrelatedAnomaly } from '@/features/observability/hooks/use-correlated-anomalies';
+import {
+  useMarkFalsePositive,
+  useAnomalyFeedbackRates,
+  deriveCorrelatedAnomalyId,
+} from '@/features/ai-intelligence/hooks/use-anomaly-feedback';
+import { useContainers } from '@/features/containers/hooks/use-containers';
+import { FleetHealthSummary, calculateHealthStats } from '@/features/ai-intelligence/components/fleet-health-summary';
+import { IncidentGroupsView } from '@/features/ai-intelligence/components/incident-groups-view';
+import { InsightCard } from '@/features/ai-intelligence/components/insight-card';
+import { SensitivityControl } from '@/features/ai-intelligence/components/sensitivity-control';
+import type { Severity } from '@/features/ai-intelligence/components/insight-card';
+import { useForceRefresh } from '@/shared/hooks/use-force-refresh';
+import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
+import { RefreshControls } from '@/shared/components/ui/refresh-controls';
+import { EmptyState } from '@/shared/components/feedback/empty-state';
+import { SkeletonChart, SkeletonList } from '@/shared/components/feedback/skeleton';
+import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
+import { cn } from '@/shared/lib/utils';
+import {
+  AlertTriangle,
+  Info,
+  AlertCircle,
+  Activity,
+  Box,
+  Filter,
+  Search,
+  XCircle,
+  Clock,
+  Brain,
+  Layers,
+  Zap,
+  ThumbsDown,
+} from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
+
+function CorrelatedAnomalyCard({
+  anomaly,
+  onMarkFalsePositive,
+  isPending,
+}: {
+  anomaly: CorrelatedAnomaly;
+  onMarkFalsePositive: (anomaly: CorrelatedAnomaly) => void;
+  isPending: boolean;
+}) {
+  const patternDescription = anomaly.pattern?.includes(':')
+    ? anomaly.pattern.split(':').slice(1).join(':').trim()
+    : null;
+
+  return (
+    <SpotlightCard className="h-full">
+      <div className="h-full rounded-lg border bg-card p-6 shadow-sm transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 hover:border-primary/20">
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <Box className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+            <span className="font-mono text-sm font-medium truncate">{anomaly.containerName}</span>
+          </div>
+          <span className="text-lg font-bold tabular-nums flex-shrink-0" title="Composite score">
+            {anomaly.compositeScore.toFixed(2)}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap mb-3">
+          <CorrelationSeverityBadge severity={anomaly.severity} />
+          {anomaly.pattern && <PatternBadge pattern={anomaly.pattern} />}
+        </div>
+
+        {/* Per-metric z-score bars */}
+        <div className="space-y-1.5" data-testid="zscore-bars">
+          {anomaly.metrics.map((m) => {
+            const absZ = Math.abs(m.zScore);
+            const widthPct = Math.min((absZ / 5) * 100, 100);
+            const barColor = absZ >= 3 ? 'bg-red-500' : absZ >= 2 ? 'bg-amber-500' : 'bg-blue-500';
+
+            return (
+              <div key={m.type} className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground w-20 truncate font-mono">{m.type}</span>
+                <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+                  <div
+                    className={cn('h-full rounded-full transition-all', barColor)}
+                    style={{ width: `${widthPct}%` }}
+                  />
+                </div>
+                <span className="text-xs tabular-nums text-muted-foreground w-10 text-right">
+                  {m.zScore.toFixed(1)}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+
+        {patternDescription && (
+          <p className="mt-2 text-xs text-muted-foreground">{patternDescription}</p>
+        )}
+
+        {/* False-positive feedback affordance (#1298). Optimistic dismissal
+            is owned by the parent so multiple cards don't fight over the
+            same set. We disable the button while the mutation is in flight
+            so a rapid double-click doesn't trigger two requests. */}
+        <div className="mt-3 flex justify-end">
+          <button
+            type="button"
+            onClick={() => onMarkFalsePositive(anomaly)}
+            disabled={isPending}
+            aria-label={`Mark anomaly for ${anomaly.containerName} as false positive`}
+            data-testid="mark-false-positive"
+            className={cn(
+              'inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors',
+              'hover:bg-muted hover:text-foreground',
+              'disabled:cursor-not-allowed disabled:opacity-50',
+            )}
+          >
+            <ThumbsDown className="h-3 w-3" />
+            Mark as false positive
+          </button>
+        </div>
+      </div>
+    </SpotlightCard>
+  );
+}
+
+function HealthIssueCard({ container }: { container: { id: string; name: string; image: string; state: string; healthStatus?: string; endpointId: number } }) {
+  const isUnhealthy = container.healthStatus === 'unhealthy';
+  return (
+    <div
+      className={cn(
+        'rounded-lg border bg-card p-4 transition-all',
+        isUnhealthy
+          ? 'border-red-500/40 bg-red-50/30 dark:bg-red-900/10'
+          : 'border-orange-500/40 bg-orange-50/30 dark:bg-orange-900/10',
+      )}
+      data-testid="health-issue-card"
+    >
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <Link
+          to={`/containers/${container.endpointId}/${container.id}`}
+          className="flex items-center gap-2 min-w-0 hover:text-foreground transition-colors"
+          title={`Open ${container.name}`}
+        >
+          <Box className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+          <span className="font-mono text-sm font-medium truncate">{container.name}</span>
+        </Link>
+        {isUnhealthy ? (
+          <XCircle className="h-5 w-5 text-red-500 flex-shrink-0" />
+        ) : (
+          <AlertCircle className="h-5 w-5 text-orange-500 flex-shrink-0" />
+        )}
+      </div>
+      <div className="flex items-center gap-2 flex-wrap mb-2">
+        <span className={cn(
+          'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
+          isUnhealthy
+            ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+            : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+        )}>
+          {isUnhealthy ? 'Unhealthy' : 'Stopped'}
+        </span>
+      </div>
+      <p className="text-xs text-muted-foreground font-mono truncate" title={container.image}>
+        {container.image}
+      </p>
+    </div>
+  );
+}
+
+function CorrelationTypeBadge({ type }: { type: string }) {
+  const config: Record<string, { icon: typeof Clock; label: string; className: string }> = {
+    temporal: {
+      icon: Clock,
+      label: 'Temporal',
+      className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+    },
+    cascade: {
+      icon: Layers,
+      label: 'Cascade',
+      className: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+    },
+    dedup: {
+      icon: Filter,
+      label: 'Dedup',
+      className: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
+    },
+    semantic: {
+      icon: Brain,
+      label: 'Semantic',
+      className: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400',
+    },
+  };
+
+  const entry = config[type] ?? config.temporal;
+  const Icon = entry.icon;
+
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium',
+        entry.className,
+      )}
+    >
+      <Icon className="h-3 w-3" />
+      {entry.label}
+    </span>
+  );
+}
+
+function ConfidenceBadge({ confidence }: { confidence: 'high' | 'medium' | 'low' }) {
+  const config = {
+    high: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+    medium: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+    low: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
+  }[confidence];
+
+  return (
+    <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize', config)}>
+      {confidence} confidence
+    </span>
+  );
+}
+
+function CorrelationSeverityBadge({ severity }: { severity: 'low' | 'medium' | 'high' | 'critical' }) {
+  const config = {
+    critical: {
+      icon: AlertTriangle,
+      label: 'Critical',
+      className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+    },
+    high: {
+      icon: AlertCircle,
+      label: 'High',
+      className: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+    },
+    medium: {
+      icon: AlertCircle,
+      label: 'Medium',
+      className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+    },
+    low: {
+      icon: Info,
+      label: 'Low',
+      className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+    },
+  }[severity];
+
+  const Icon = config.icon;
+
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium',
+        config.className,
+      )}
+    >
+      <Icon className="h-3 w-3" />
+      {config.label}
+    </span>
+  );
+}
+
+function PatternBadge({ pattern }: { pattern: string }) {
+  const shortLabel = pattern.includes(':') ? pattern.split(':')[0].trim() : pattern;
+
+  const colorMap: Record<string, string> = {
+    'Resource Exhaustion': 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+    'Memory Leak Suspected': 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+    'CPU Spike': 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+  };
+
+  const colorClass = colorMap[shortLabel] ?? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400';
+
+  return (
+    <span className={cn('inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium', colorClass)}>
+      <Zap className="h-3 w-3" />
+      {shortLabel}
+    </span>
+  );
+}
+
+export default function AiMonitorPage() {
+  const [severityFilter, setSeverityFilter] = useState<'all' | Severity>('all');
+  const [acknowledgementFilter, setAcknowledgementFilter] = useState<'all' | 'unacknowledged'>('all');
+  const { interval, setInterval } = useAutoRefresh(30);
+
+  // URL-synced controls so reloads, deep links, and back-navigation preserve
+  // the operator's filter context. Trade-off: each control change invalidates
+  // a render but the page already re-renders on every refetch so this isn't
+  // load-bearing.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchInput, setSearchInput] = useState(searchParams.get('q') ?? '');
+  const [searchQuery, setSearchQuery] = useState(searchParams.get('q') ?? '');
+
+  // Debounce search input → query (~150ms) so each keystroke doesn't refilter
+  // the full list. URL-sync happens on the debounced value.
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setSearchQuery(searchInput);
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        if (searchInput) next.set('q', searchInput);
+        else next.delete('q');
+        return next;
+      }, { replace: true });
+    }, 150);
+    return () => window.clearTimeout(timer);
+  }, [searchInput, setSearchParams]);
+
+  // Sync local input state from URL when the URL changes from outside this
+  // component (browser back/forward, deep link). Without this, navigating
+  // back to a state with `?q=foo` leaves the input field empty even though
+  // the filter is active.
+  const urlQuery = searchParams.get('q') ?? '';
+  useEffect(() => {
+    setSearchInput((current) => (current === urlQuery ? current : urlQuery));
+    setSearchQuery((current) => (current === urlQuery ? current : urlQuery));
+  }, [urlQuery]);
+
+  const {
+    insights,
+    isLoading,
+    error,
+    acknowledgeInsight,
+    acknowledgeError,
+    acknowledgingInsightId,
+    refetch,
+  } = useMonitoring();
+
+  const { getInvestigationForInsight } = useInvestigations();
+  const { data: correlatedAnomalies, isLoading: correlatedLoading } = useCorrelatedAnomalies();
+
+  // ── False-positive feedback (#1298) ────────────────────────────
+  // Locally dismissed anomaly IDs are kept in component state. The
+  // optimistic update hides the card immediately; if the network
+  // request fails we revert the dismissal via the hook's
+  // onRevertDismiss callback. We don't persist this set to URL or
+  // localStorage — dismissals are remembered server-side as soon as
+  // the mutation succeeds, and refetching the correlated-anomalies
+  // query will exclude the marked anomaly via the rate badge.
+  const [dismissedAnomalyIds, setDismissedAnomalyIds] = useState<Set<string>>(new Set());
+
+  const markFalsePositive = useMarkFalsePositive({
+    onOptimisticDismiss: (anomalyId) => {
+      setDismissedAnomalyIds((prev) => {
+        const next = new Set(prev);
+        next.add(anomalyId);
+        return next;
+      });
+    },
+    onRevertDismiss: (anomalyId) => {
+      setDismissedAnomalyIds((prev) => {
+        const next = new Set(prev);
+        next.delete(anomalyId);
+        return next;
+      });
+    },
+  });
+
+  // Per-detector false-positive rate, rendered as a badge row in the
+  // Health & Monitoring header. Defaults to caller scope; admins
+  // automatically receive fleet-wide data from the backend.
+  const { data: feedbackRates } = useAnomalyFeedbackRates();
+
+  const handleMarkFalsePositive = useCallback(
+    (anomaly: CorrelatedAnomaly) => {
+      // Correlated anomalies have no persisted id — derive a stable
+      // one from (containerId, timestamp). The detector tag is
+      // 'correlated-zscore' to match how the service surfaces them
+      // (multivariate composite of per-metric z-scores).
+      const anomalyId = deriveCorrelatedAnomalyId({
+        containerId: anomaly.containerId,
+        timestamp: anomaly.timestamp,
+      });
+      markFalsePositive.mutate({ anomalyId, detector: 'correlated-zscore' });
+    },
+    [markFalsePositive],
+  );
+
+  // Fleet health data
+  const { data: containers, isLoading: containersLoading, refetch: containerRefetch, isFetching: containersFetching } = useContainers();
+  const { forceRefresh, isForceRefreshing } = useForceRefresh('containers', containerRefetch);
+
+  // Wire the auto-refresh dropdown to actual refetches. The hook only owns
+  // the interval state; without this effect, switching the dropdown to "30s"
+  // would advertise a behaviour that never happens. We refetch the page's
+  // two operator-controlled queries (insights + containers); incidents and
+  // correlated anomalies have their own internal refetch cadences set in
+  // their respective hooks.
+  useEffect(() => {
+    if (interval <= 0) return;
+    const tick = () => {
+      refetch();
+      containerRefetch();
+    };
+    const id = window.setInterval(tick, interval * 1000);
+    return () => window.clearInterval(id);
+  }, [interval, refetch, containerRefetch]);
+
+  const healthStats = useMemo(() => {
+    if (!containers) return null;
+    return calculateHealthStats(containers);
+  }, [containers]);
+
+  // Containers with a simple health issue (unhealthy or stopped) — surfaced in Correlated Anomalies (AC-4)
+  const healthIssues = useMemo(() => {
+    if (!containers) return [];
+    return containers.filter(
+      (c) => c.healthStatus === 'unhealthy' || c.state === 'exited',
+    );
+  }, [containers]);
+
+  // Lowercased query for case-insensitive substring matching.
+  const searchLower = searchQuery.trim().toLowerCase();
+  const matchesSearch = (haystack: Array<string | null | undefined>) =>
+    !searchLower ||
+    haystack.some((s) => typeof s === 'string' && s.toLowerCase().includes(searchLower));
+
+  // Filter insights by severity, acknowledgement, and search query.
+  const filteredInsights = useMemo(() => {
+    const bySeverity = severityFilter === 'all'
+      ? insights
+      : insights.filter((i) => i.severity === severityFilter);
+
+    const bySearch = !searchLower
+      ? bySeverity
+      : bySeverity.filter((i) =>
+          matchesSearch([i.title, i.description, i.container_name, i.endpoint_name, i.category]),
+        );
+
+    if (acknowledgementFilter === 'unacknowledged') {
+      return bySearch.filter((i) => !i.is_acknowledged);
+    }
+
+    return bySearch;
+  }, [acknowledgementFilter, insights, severityFilter, searchLower]);
+
+  // Apply search to anomalies + health issues so the search box covers every
+  // list on the page consistently. Dismissed anomalies are hidden via the
+  // optimistic-update set; we filter them here so all downstream renders
+  // (count, grid) agree.
+  const filteredCorrelatedAnomalies = useMemo(() => {
+    if (!correlatedAnomalies) return correlatedAnomalies;
+    const visible = correlatedAnomalies.filter((a) => {
+      const id = deriveCorrelatedAnomalyId({
+        containerId: a.containerId,
+        timestamp: a.timestamp,
+      });
+      return !dismissedAnomalyIds.has(id);
+    });
+    if (!searchLower) return visible;
+    return visible.filter((a) =>
+      matchesSearch([a.containerName, a.pattern, ...a.metrics.map((m) => m.type)]),
+    );
+  }, [correlatedAnomalies, searchLower, dismissedAnomalyIds]);
+
+  const filteredHealthIssues = useMemo(() => {
+    if (!searchLower) return healthIssues;
+    return healthIssues.filter((c) => matchesSearch([c.name, c.image, c.healthStatus]));
+  }, [healthIssues, searchLower]);
+
+  // Stats
+  const stats = useMemo(() => {
+    const result = { total: 0, critical: 0, warning: 0, info: 0 };
+    for (const i of insights) {
+      result.total++;
+      if (i.severity === 'critical') result.critical++;
+      else if (i.severity === 'warning') result.warning++;
+      else if (i.severity === 'info') result.info++;
+    }
+    return result;
+  }, [insights]);
+
+  // Error state
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Health & Monitoring</h1>
+          <p className="text-muted-foreground">
+            Fleet health analysis and real-time AI-powered insights
+          </p>
+        </div>
+        <EmptyState
+          variant="error"
+          icon={AlertTriangle}
+          title="Failed to load insights"
+          description={error instanceof Error ? error.message : 'An unexpected error occurred'}
+        />
+        <button
+          onClick={() => refetch()}
+          className="mt-4 inline-flex items-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent"
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6 pb-12">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Health & Monitoring</h1>
+          <p className="text-muted-foreground">
+            Fleet health analysis and real-time AI-powered insights
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <RefreshControls
+            interval={interval}
+            onIntervalChange={setInterval}
+            onRefresh={() => { refetch(); containerRefetch(); }}
+            onForceRefresh={forceRefresh}
+            isLoading={containersFetching || isForceRefreshing}
+          />
+        </div>
+      </div>
+
+      {/* Per-detector false-positive rate badges (#1298). Rendered in
+          the Health & Monitoring header (location decision: header
+          rather than Settings — operators making feedback decisions
+          benefit from seeing the rate next to the anomalies they're
+          rating, not buried in a settings panel they rarely open).
+          Hidden when no detectors have data yet so we don't render an
+          empty row of placeholders. */}
+      {feedbackRates && feedbackRates.rates.length > 0 && (
+        <div
+          className="flex flex-wrap items-center gap-2"
+          data-testid="anomaly-feedback-rate-row"
+          aria-label={`Per-detector false-positive rates (${feedbackRates.scope === 'fleet' ? 'fleet-wide' : 'your feedback only'})`}
+        >
+          <span className="text-xs text-muted-foreground">
+            False-positive rate ({feedbackRates.scope === 'fleet' ? 'fleet' : 'mine'}):
+          </span>
+          {feedbackRates.rates.map((r) => {
+            // Empty state ("no feedback yet") collapses to "—" so the
+            // badge is still visible but doesn't imply 0% confidence.
+            const noData = r.anomalies === 0;
+            const pct = noData ? null : Math.round(r.rate * 100);
+            const tone =
+              noData
+                ? 'bg-muted text-muted-foreground'
+                : r.rate >= 0.5
+                  ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                  : r.rate >= 0.2
+                    ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                    : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400';
+            return (
+              <span
+                key={r.detector}
+                className={cn(
+                  'inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium',
+                  tone,
+                )}
+                title={
+                  noData
+                    ? `${r.detector}: no anomalies recorded yet`
+                    : `${r.detector}: ${r.falsePositives} of ${r.anomalies} marked false positive`
+                }
+                data-testid={`anomaly-feedback-rate-${r.detector}`}
+              >
+                <span className="font-mono">{r.detector}</span>
+                <span className="tabular-nums">{pct === null ? '—' : `${pct}%`}</span>
+              </span>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Fleet Health Summary — includes insight counts (Total / Critical /
+          Warning / Info) as a second row of stat tiles inside the same hero. */}
+      <SpotlightCard>
+        <FleetHealthSummary
+          stats={healthStats}
+          isLoading={containersLoading}
+          insightStats={stats}
+        />
+      </SpotlightCard>
+
+      {/* Search + filter pane — search input on top, severity / status tabs below.
+          Single pane so the filter context lives next to the query that
+          drives it; removes the visual gap between the two controls. */}
+      <SpotlightCard>
+        <div className="rounded-lg border bg-card p-6 shadow-sm space-y-3">
+          {/* Search */}
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+            <input
+              type="search"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Search by container, image, title, or endpoint…"
+              aria-label="Search incidents and insights"
+              className="h-10 w-full rounded-md border border-input bg-background pl-10 pr-3 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+            />
+            {searchInput && (
+              <button
+                type="button"
+                onClick={() => setSearchInput('')}
+                aria-label="Clear search"
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-muted-foreground hover:bg-muted"
+              >
+                <XCircle className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+          {/* Severity + acknowledgement filter tabs */}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => setSeverityFilter('all')}
+              className={cn(
+                'flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors whitespace-nowrap',
+                severityFilter === 'all'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+              )}
+            >
+              <Filter className="h-4 w-4" />
+              All
+              <span
+                className={cn(
+                  'rounded-full px-1.5 py-0.5 text-xs',
+                  severityFilter === 'all'
+                    ? 'bg-primary-foreground/20'
+                    : 'bg-muted-foreground/20'
+                )}
+              >
+                {stats.total}
+              </span>
+            </button>
+            {(['critical', 'warning', 'info'] as const).map((severity) => {
+              const config = {
+                critical: { icon: AlertTriangle, label: 'Critical', count: stats.critical },
+                warning: { icon: AlertCircle, label: 'Warnings', count: stats.warning },
+                info: { icon: Info, label: 'Info', count: stats.info },
+              }[severity];
+
+              const Icon = config.icon;
+
+              return (
+                <button
+                  key={severity}
+                  onClick={() => setSeverityFilter(severity)}
+                  className={cn(
+                    'flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors whitespace-nowrap',
+                    severityFilter === severity
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                  )}
+                >
+                  <Icon className="h-4 w-4" />
+                  {config.label}
+                  <span
+                    className={cn(
+                      'rounded-full px-1.5 py-0.5 text-xs',
+                      severityFilter === severity
+                        ? 'bg-primary-foreground/20'
+                        : 'bg-muted-foreground/20'
+                    )}
+                  >
+                    {config.count}
+                  </span>
+                </button>
+              );
+            })}
+            <div className="mx-1 hidden h-6 w-px bg-border sm:block" />
+            <button
+              onClick={() => setAcknowledgementFilter('all')}
+              className={cn(
+                'rounded-md px-3 py-2 text-sm font-medium transition-colors whitespace-nowrap',
+                acknowledgementFilter === 'all'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+              )}
+            >
+              All Statuses
+            </button>
+            <button
+              onClick={() => setAcknowledgementFilter('unacknowledged')}
+              className={cn(
+                'rounded-md px-3 py-2 text-sm font-medium transition-colors whitespace-nowrap',
+                acknowledgementFilter === 'unacknowledged'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+              )}
+            >
+              Unacknowledged
+            </button>
+            {/* Per-user Sensitivity preset (#1297) — adjusts the anomaly
+                post-filter without altering anything in the DB. Pushed to
+                the right of the severity/acknowledgement controls. */}
+            <div className="ml-auto">
+              <SensitivityControl />
+            </div>
+          </div>
+        </div>
+      </SpotlightCard>
+
+      {/* ML-Detected Anomalies */}
+      {(correlatedLoading || (filteredCorrelatedAnomalies && filteredCorrelatedAnomalies.length > 0)) && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Brain className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+            <h2 className="text-lg font-semibold">
+              ML-Detected Anomalies
+              {!correlatedLoading && (
+                <span className="ml-2 text-sm font-normal text-muted-foreground">
+                  ({filteredCorrelatedAnomalies?.length ?? 0})
+                </span>
+              )}
+            </h2>
+          </div>
+          {correlatedLoading ? (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              <SkeletonChart size="md" />
+              <SkeletonChart size="md" />
+              <SkeletonChart size="md" />
+            </div>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {(filteredCorrelatedAnomalies ?? []).map((anomaly) => {
+                const anomalyId = deriveCorrelatedAnomalyId({
+                  containerId: anomaly.containerId,
+                  timestamp: anomaly.timestamp,
+                });
+                // Each card knows whether _it_ is the one being marked
+                // by comparing the in-flight mutation's variables —
+                // simple per-card pending state without a per-row map.
+                const isPending =
+                  markFalsePositive.isPending &&
+                  markFalsePositive.variables?.anomalyId === anomalyId;
+                return (
+                  <CorrelatedAnomalyCard
+                    key={anomaly.containerId}
+                    anomaly={anomaly}
+                    onMarkFalsePositive={handleMarkFalsePositive}
+                    isPending={isPending}
+                  />
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Container Health (state-based: unhealthy / stopped) */}
+      {filteredHealthIssues.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Activity className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+            <h2 className="text-lg font-semibold">
+              Container Health
+              <span className="ml-2 text-sm font-normal text-muted-foreground">
+                ({filteredHealthIssues.length})
+              </span>
+            </h2>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            {filteredHealthIssues.map((container) => (
+              <HealthIssueCard key={container.id} container={container} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Active Incidents (rollup view) */}
+      <SpotlightCard>
+        <div className="rounded-lg border bg-card p-6 shadow-sm">
+          <IncidentGroupsView search={searchInput} />
+        </div>
+      </SpotlightCard>
+
+      {/* Insights Feed */}
+      <SpotlightCard>
+        <div className="rounded-lg border bg-card p-6 shadow-sm">
+        {isLoading ? (
+          <SkeletonList rows={6} />
+        ) : filteredInsights.length === 0 ? (
+          <EmptyState
+            icon={Activity}
+            title="No insights"
+            description={
+              acknowledgementFilter === 'unacknowledged'
+                ? 'No unacknowledged insights match the current filters.'
+                : severityFilter === 'all'
+                  ? 'AI monitoring has not generated any insights yet. Check back soon.'
+                  : `No ${severityFilter} insights found. Try a different filter.`
+            }
+          />
+        ) : (
+          <div className="space-y-3">
+            {filteredInsights.map((insight) => (
+              <InsightCard
+                key={insight.id}
+                insight={insight}
+                investigation={getInvestigationForInsight(insight.id)}
+                onAcknowledge={acknowledgeInsight}
+                isAcknowledging={acknowledgingInsightId === insight.id}
+                acknowledgeErrorMessage={acknowledgeError instanceof Error ? acknowledgeError.message : undefined}
+              />
+            ))}
+          </div>
+        )}
+        </div>
+      </SpotlightCard>
+    </div>
+  );
+}

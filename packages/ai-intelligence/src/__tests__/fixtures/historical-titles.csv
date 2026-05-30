@@ -1,0 +1,8 @@
+title,category,metric_type,detection_method
+"Anomalous cpu usage on ""docker-postgres-app-1"" (ML-detected)",anomaly,cpu,ml-anomaly
+"Anomalous memory usage on ""docker-postgres-app-1""",anomaly,memory,threshold
+"Predicted memory exhaustion on ""docker-postgres-app-1"" ~24h",predictive,memory,prediction
+"Predicted cpu exhaustion on ""docker-timescale-backup-1"" ~6h",predictive,cpu,prediction
+"High cpu usage on ""portainer-portainer-1""",anomaly,cpu,threshold
+"Container ""nginx"" has no health check configured",,,
+"Container ""custom"" using host network mode",,,

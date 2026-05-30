@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useThemeStore } from '@/stores/theme-store';
-import { useFaviconSync } from '@/components/icons/favicon-manager';
+import { useFaviconSync } from '@/shared/components/icons/favicon-manager';
 
 const ALL_THEME_CLASSES = [
   'light',

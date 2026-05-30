@@ -5,15 +5,26 @@
   "description": "AI-powered Portainer container operations platform",
   "workspaces": [
     "backend",
-    "frontend"
+    "frontend",
+    "packages/contracts",
+    "packages/core",
+    "packages/infrastructure",
+    "packages/security",
+    "packages/observability",
+    "packages/operations",
+    "packages/ai-intelligence",
+    "packages/foundation",
+    "packages/server"
   ],
   "scripts": {
-    "dev": "concurrently \"npm run dev -w backend\" \"npm run dev -w frontend\"",
-    "build": "npm run build -w backend && npm run build -w frontend",
+    "dev": "concurrently \"npm run dev -w @dashboard/server\" \"npm run dev -w frontend\"",
+    "build": "npm run build -w @dashboard/contracts && npm run build -w @dashboard/core && npm run build -w @dashboard/infrastructure && npm run build -w @dashboard/security && npm run build -w @dashboard/observability && npm run build -w @dashboard/operations && npm run build -w @dashboard/ai && npm run build -w @dashboard/foundation && npm run build -w backend && npm run build -w @dashboard/server && npm run build -w frontend",
+    "build:tsc": "tsc --build tsconfig.build.json",
+    "build:watch": "tsc --build tsconfig.build.json --watch",
     "lint": "npm run lint:bash && npm run lint -w backend && npm run lint -w frontend",
     "lint:bash": "bash scripts/lint-bash.sh",
-    "typecheck": "npm run typecheck -w backend && npm run typecheck -w frontend",
-    "test": "npm run test -w backend && npm run test -w frontend",
+    "typecheck": "tsc --build tsconfig.build.json && npm run typecheck -w frontend",
+    "test": "npm run test -w @dashboard/contracts && npm run test -w @dashboard/core && npm run test -w @dashboard/infrastructure && npm run test -w @dashboard/security && npm run test -w @dashboard/observability && npm run test -w @dashboard/operations && npm run test -w @dashboard/ai && npm run test -w @dashboard/foundation && npm run test -w backend && npm run test -w @dashboard/server && npm run test -w frontend",
     "loadtest:build": "docker compose -f docker/docker-compose.loadtest.yml build",
     "loadtest:rest": "docker compose -f docker/docker-compose.loadtest.yml run --rm rest",
     "loadtest:socketio": "docker compose -f docker/docker-compose.loadtest.yml run --rm socketio",
@@ -27,15 +38,20 @@
     "prepare": "husky || true"
   },
   "devDependencies": {
-    "@playwright/test": "^1.58.2",
+    "@playwright/test": "^1.60.0",
+    "@testing-library/user-event": "^14.6.1",
+    "@vitest/coverage-v8": "^4.1.7",
     "concurrently": "^9.1.0",
-    "husky": "^9.1.7"
+    "eslint": "^10.4.0",
+    "husky": "^9.1.7",
+    "jsdom": "^29.1.1",
+    "vitest": "^4.1.0"
   },
   "dependencies": {
-    "zod": "^3.25.0"
+    "zod": "^4.3.6"
   },
   "overrides": {
-    "zod": "^3.25.0"
+    "zod": "^4.3.6"
   },
   "engines": {
     "node": ">=22.0.0"

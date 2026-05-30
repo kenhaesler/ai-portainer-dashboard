@@ -16,7 +16,7 @@ test.describe('Sidebar Navigation', () => {
   test('navigates to major pages via sidebar links', async ({ page }) => {
     const routes = [
       { label: /workload explorer/i, urlPattern: /\/workloads/ },
-      { label: /container health/i, urlPattern: /\/health/ },
+      { label: /health & monitoring/i, urlPattern: /\/health/ },
       { label: /metrics dashboard/i, urlPattern: /\/metrics/ },
       { label: /settings/i, urlPattern: /\/settings/ },
     ];
@@ -64,6 +64,11 @@ test.describe('Sidebar Navigation', () => {
       '[data-testid="header"] nav[aria-label="Breadcrumb"]',
     );
     await expect(breadcrumb).toContainText('Settings');
+  });
+
+  test('/ai-monitor redirects to /health', async ({ page }) => {
+    await page.goto('/ai-monitor');
+    await expect(page).toHaveURL(/\/health/);
   });
 
   test('unknown routes redirect to home', async ({ page }) => {

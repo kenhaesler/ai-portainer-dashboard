@@ -668,6 +668,43 @@
   }
 }
 
+/* ====== NATIVE FORM CONTROL THEMING ======
+   Native controls (checked checkbox, <select> option popups) are painted by the
+   browser, not by our color tokens. `color-scheme` tells the browser which scheme
+   to paint them in — without it a checked checkbox renders as a near-black square
+   (invisible on dark pages) and <select> dropdowns open as white-background popups
+   with inherited light text (white-on-white). The light/dark split mirrors
+   `resolvedTheme()` in stores/theme-store.ts; `light`/`dark` cover the System theme. */
+.light,
+.apple-light,
+.nordic-frost,
+.sandstone-dusk,
+.retro-70s,
+.catppuccin-latte {
+  color-scheme: light;
+}
+.dark,
+.apple-dark,
+.obsidian-ink,
+.forest-night,
+.hyperpop-chaos,
+.retro-arcade,
+.retro-terminal,
+.retro-vaporwave,
+.catppuccin-frappe,
+.catppuccin-macchiato,
+.catppuccin-mocha {
+  color-scheme: dark;
+}
+
+/* Theme the native checkbox/radio fill so the checked state matches the active
+   theme's primary across all 16 themes (browser auto-contrasts the checkmark).
+   The themed <Checkbox> uses appearance-none, so this only affects raw inputs. */
+input[type='checkbox'],
+input[type='radio'] {
+  accent-color: var(--color-primary);
+}
+
 /* ============================================
    GLASSMORPHISM UI - FUTURISTIC DESIGN SYSTEM
    ============================================ */
@@ -842,6 +879,60 @@ aside[data-animated-bg] nav {
 
 [data-animated-bg] .bg-background {
   background: color-mix(in srgb, var(--color-background) 40%, transparent) !important;
+}
+
+/* ====== GLOBAL THEMED SCROLLBAR ======
+ * Applies to the page (html/body) and any nested overflow container that opts
+ * in via the .scrollbar-themed utility. Reads theme tokens so it adapts
+ * automatically across all 16 themes via color-mix on --color-foreground.
+ *
+ * Cascade note: this block intentionally sits BEFORE the `aside nav` rule
+ * below so the sidebar's transparent-on-idle hover-reveal scrollbar still
+ * wins (same-specificity rules — later one wins).
+ * WARNING: must precede the `aside nav` block below (lines ~898-904) — if
+ * moved after, the sidebar's transparent idle thumb would be overridden by
+ * the global rule.
+ */
+html,
+body,
+.scrollbar-themed {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--color-foreground) 25%, transparent) transparent;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+.scrollbar-themed::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+html::-webkit-scrollbar-track,
+body::-webkit-scrollbar-track,
+.scrollbar-themed::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+html::-webkit-scrollbar-thumb,
+body::-webkit-scrollbar-thumb,
+.scrollbar-themed::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--color-foreground) 25%, transparent);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+html::-webkit-scrollbar-thumb:hover,
+body::-webkit-scrollbar-thumb:hover,
+.scrollbar-themed::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--color-foreground) 40%, transparent);
+  background-clip: padding-box;
+}
+
+html::-webkit-scrollbar-corner,
+body::-webkit-scrollbar-corner,
+.scrollbar-themed::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 aside nav {
@@ -1087,41 +1178,14 @@ input.input-solid-bg:focus {
   background: rgba(129, 140, 248, 0.35);
 }
 
-/* ====== SCROLLBAR STYLING ====== */
-
-.apple-light {
-  &::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-  }
-  &::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  &::-webkit-scrollbar-thumb {
-    background: rgba(99, 102, 241, 0.3);
-    border-radius: 4px;
-  }
-  &::-webkit-scrollbar-thumb:hover {
-    background: rgba(99, 102, 241, 0.5);
-  }
-}
-
-.apple-dark {
-  &::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-  }
-  &::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  &::-webkit-scrollbar-thumb {
-    background: rgba(129, 140, 248, 0.3);
-    border-radius: 4px;
-  }
-  &::-webkit-scrollbar-thumb:hover {
-    background: rgba(129, 140, 248, 0.5);
-  }
-}
+/* ====== SCROLLBAR STYLING ======
+ * Per-theme scrollbar blocks (Apple Light/Dark) used to live here and have
+ * been removed in favor of the global themed scrollbar declared earlier in
+ * this file (see "GLOBAL THEMED SCROLLBAR"). The global rule reads
+ * --color-foreground via color-mix, which produces visually equivalent
+ * indigo styling on the Apple themes while also covering the remaining
+ * 14 themes that previously fell back to the OS default.
+ */
 
 /* ====== HEADER GLASS EFFECT ====== */
 
@@ -1946,11 +2010,13 @@ html[data-potato-mode] body {
 
 /* ====== SPOTLIGHT CARD (mouse-follow radial glow) ====== */
 .spotlight-card {
+  /* Note: do NOT add `transform` here. A transformed ancestor creates a
+     containing block for `position: fixed` descendants, which breaks Radix
+     popover/select portal placement (dropdowns rendered at viewport 0,0).
+     See #1310. */
   position: relative;
   border-radius: var(--radius-lg);
   overflow: hidden;
-  transform: translateZ(0);
-  -webkit-transform: translateZ(0);
   clip-path: inset(0 round var(--radius-lg));
 }
 

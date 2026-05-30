@@ -26,5 +26,8 @@ ENV PATH="/opt/venv/bin:$PATH"
 WORKDIR /app
 COPY server.py .
 
+RUN useradd -r -s /bin/false -d /nonexistent appuser
+
 EXPOSE 8000
+USER appuser
 CMD ["python", "server.py"]

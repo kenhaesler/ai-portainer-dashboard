@@ -53,10 +53,12 @@ Auto-instrument applications running on Portainer-managed containers using kerne
 
 | Requirement | Detail |
 |---|---|
-| Linux kernel | 5.8+ with BTF support |
+| Linux kernel | 5.8+ with BTF support (enforced — deploys on older kernels are rejected pre-flight with an actionable error) |
 | Docker privileges | `--privileged` or `SYS_ADMIN` + `SYS_PTRACE` capabilities |
 | macOS/Windows | Works inside Docker Desktop's Linux VM but cannot instrument host processes |
 | Dashboard env | `TRACES_INGESTION_ENABLED=true` and `TRACES_INGESTION_API_KEY` set |
+
+> **User-namespace remap:** Beyla is deployed with `UsernsMode=host` (and `userns_mode: "host"` in the compose overlays). Required on daemons running with `--userns-remap` — Docker otherwise rejects `Privileged: true` with HTTP 400. Side-effect: the Beyla container runs as real root on the host, even when the daemon remaps other workloads. This matches the existing reality of `Privileged: true` + `PidMode: host` (the userns mapping was never effective for those containers) and is by design.
 
 ## Quick Start
 
@@ -332,37 +334,80 @@ This instruments services visible from the dashboard's Docker network.
 
 ### Option C: Production via Traefik on HTTPS 443
 
-Use this when endpoint firewalls allow only `443` and direct access to backend `:3051` is blocked.
+Use this when endpoint firewalls allow only `443` and direct access to backend `:3051` is blocked, or when you want a single uniform ingest path across local and remote endpoints. Two variants are supported.
 
-1. Set required env vars:
+#### C1: Existing Traefik with Docker label discovery (recommended)
 
-```env
-DASHBOARD_EXTERNAL_URL=https://dashboard.example.com
-TRACES_INGESTION_ENABLED=true
-TRACES_INGESTION_API_KEY=your-secret-api-key-here
-```
+Use this when you already run Traefik on the host with the Docker provider — e.g. Traefik already fronts the dashboard frontend on 443. The backend container ships with Traefik labels (`docker/docker-compose.yml` ~lines 139–159) that add a dedicated POST-only route for `/api/traces/otlp` directly to the backend on `:3051`, bypassing the frontend nginx for OTLP payloads. No file-provider config and no second Traefik instance are needed.
 
-2. Start dashboard with the Traefik OTLP overlay:
+1. Set required env vars in `.env`:
 
-```bash
-docker compose -f docker/docker-compose.yml -f docker/docker-compose.traefik-otlp.yml up -d
-```
+   ```env
+   # Origin Beyla uses to reach the dashboard (no trailing slash, no /api/...)
+   DASHBOARD_EXTERNAL_URL=https://dashboard.example.com
+   # Hostname the Traefik router rule matches on the backend
+   DASHBOARD_DOMAIN=dashboard.example.com
+   # Ingest auth
+   TRACES_INGESTION_ENABLED=true
+   TRACES_INGESTION_API_KEY=your-secret-api-key-here
+   # Optional: tune the IP allowlist and rate limit baked into the labels
+   # BEYLA_ALLOWED_SOURCE_CIDRS=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+   # BEYLA_RATE_LIMIT_AVERAGE=100
+   # BEYLA_RATE_LIMIT_BURST=200
+   ```
 
-3. Set Beyla exporter endpoint on each remote endpoint:
+2. Make sure your existing Traefik can see the backend:
+   - Attach the Traefik container to the `dashboard-net` network created by `docker-compose.yml` (`docker network connect ai-portainer-dashboard_dashboard-net <traefik-container>` if running outside this compose project), so it can route to `backend:3051`.
+   - Confirm Traefik runs with `--providers.docker=true` and a `websecure` entrypoint on `:443` with TLS configured for `DASHBOARD_DOMAIN`.
 
-```env
-OTEL_EXPORTER_OTLP_ENDPOINT=https://dashboard.example.com/api/traces/otlp
-OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
-OTEL_EXPORTER_OTLP_HEADERS=X-API-Key=your-secret-api-key-here
-```
+3. Start the dashboard stack as usual:
 
-Repository assets for this mode:
+   ```bash
+   docker compose -f docker/docker-compose.yml up -d
+   ```
+
+   Verify the route was published:
+
+   ```bash
+   curl -X POST https://dashboard.example.com/api/traces/otlp \
+     -H "Content-Type: application/json" \
+     -H "X-API-Key: your-secret-api-key-here" \
+     -d '{"resourceSpans":[]}'
+   # → {"accepted":0}
+   ```
+
+4. Deploy Beyla to your Portainer endpoints from the dashboard:
+   - Open **eBPF Coverage** in the dashboard sidebar.
+   - Click **Sync Endpoints** to pull the latest list from Portainer.
+   - For each endpoint, click **Deploy**. The backend resolves the OTLP endpoint from `DASHBOARD_EXTERNAL_URL` and creates a privileged `grafana/beyla:latest` container on the target endpoint via the Portainer API, pointing at `https://dashboard.example.com/api/traces/otlp`.
+
+#### C2: Dedicated OTLP-only Traefik (no existing Traefik on host)
+
+Use this when nothing else owns port 443 on the host and you want a self-contained Traefik just for OTLP. This variant uses a file provider config that mirrors the Docker labels — pick one, not both.
+
+1. Set the same env vars as C1 (plus `DASHBOARD_DOMAIN` is not used here; the rule is in the file provider).
+
+2. Start with the Traefik OTLP overlay:
+
+   ```bash
+   docker compose -f docker/docker-compose.yml -f docker/docker-compose.traefik-otlp.yml up -d
+   ```
+
+3. Configure each Beyla exporter:
+
+   ```env
+   OTEL_EXPORTER_OTLP_ENDPOINT=https://dashboard.example.com/api/traces/otlp
+   OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+   OTEL_EXPORTER_OTLP_HEADERS=X-API-Key=your-secret-api-key-here
+   ```
+
+Repository assets for this variant:
 - `docker/docker-compose.traefik-otlp.yml`
 - `docker/traefik/dynamic/beyla-otlp.yml`
 
-Important:
+Before you start:
 - Replace `dashboard.example.com` in `docker/traefik/dynamic/beyla-otlp.yml`.
-- Replace default IP allow-list CIDRs with your real Beyla source networks.
+- Replace the default IP allow-list CIDRs with your real Beyla source networks.
 - Mount valid TLS certs at `docker/traefik/certs/fullchain.pem` and `docker/traefik/certs/privkey.pem`.
 
 ## Multi-Endpoint Deployment
@@ -673,6 +718,82 @@ OTEL_EXPORTER_HEADERS={"DD-API-KEY":"your-datadog-api-key"}
 ### Zero Overhead When Disabled
 
 When `OTEL_EXPORTER_ENABLED=false` (the default), the exporter singleton is never initialized. `queueSpanForExport()` is a no-op — no buffer allocation, no timers, no network calls.
+
+## Read API
+
+The trace store is exposed through the following authenticated endpoints:
+
+| Endpoint | Auth | Purpose |
+|---|---|---|
+| `GET /api/traces` | user | List recent traces (root spans only) with extensive filter support. |
+| `GET /api/traces/:traceId` | user | Fetch all spans for a single trace. |
+| `GET /api/traces/service-map` | user | Service-dependency graph derived from parent/child spans. |
+| `GET /api/traces/summary` | user | Headline counters: total traces, avg duration, error rate, sources. |
+| `GET /api/traces/red` | user | RED metrics (rate / errors / p50-p95-p99 duration) bucketed by service, route, container, or namespace. Backs the "Calls", "Topology RPC overlay", and "Workloads" page integrations. |
+| `GET /api/traces/ingest-stats` | **admin** | Cumulative sampler counters (accepted / dropped totals + per-source breakdown). |
+
+### Consumer pages
+
+The following frontend pages consume the Read API. Each renders a shared
+`NoTraceDataCallout` (with a CTA to `/ebpf-coverage`) whenever its query
+returns no rows, so an un-instrumented endpoint always shows a clear next
+step instead of a blank panel.
+
+| Page | Endpoint(s) used | What it shows |
+|---|---|---|
+| **Network Topology** (`/topology`, #1233) | `GET /api/traces/service-map` (last 24h) | "Observed traffic" overlay: directional RPC edges between container nodes. Edge thickness scales with `log1p(callCount)`; colour is bucketed by errorRate (green < 1% < amber < 5% < red). Cap of 100 edges sorted by callCount. Header toggle defaults on when the service-map returns any edges. |
+| **Container Detail → Calls tab** (`/containers/:endpointId/:containerId?tab=calls`, #1235) | `GET /api/traces/red` (1h + 1m windows), `GET /api/traces?containerName=…` | Four panels: RED summary (rate, error rate, p50/p95/p99), Top outgoing calls, Top incoming calls, and a Recharts p50/p95-and-error-rate timeline (1m bucket). Each trace row deep-links to `/traces?trace=<id>`. |
+| **Workload Explorer** (`/workloads`, #1237) | `GET /api/traces/red?groupBy=service` (5m bucket) | Three sortable columns — Rate (/s), Errors, p95 — keyed by `service_name`. Performance: ONE batched fetch per page render, not N. Empty cell renders `–`; an explicit 0-traffic row renders `0.00`. Each cell deep-links to `/traces?service=…&from=…&to=…`. |
+| **Trace-driven anomaly detection** (background, #1236) | `computeRed({ bucket: '1m' })` + `computeRed({ bucket: '1h' })` per service, called from the monitoring cycle in `@dashboard/ai`'s `runTraceAnomalyCycle` (DI-injected from `wiring.ts` to keep the AI package free of `@dashboard/observability` imports) | Flags two kinds of regression per service: latency p95 (z-score vs 24h baseline > `TRACES_ANOMALY_P95_ZSCORE`, default 2.5; falls back to a relative rule when baseline std=0) and error-rate spikes (recent rate ≥ `TRACES_ANOMALY_ERROR_RATE_PCT` AND clearly above baseline mean). Written into the existing `insights` table with `metric_type` `latency_p95` / `error_rate`, so they propagate through correlation, notifications, and investigations like any other anomaly. Log lines throttled to ≤ 1 per series per minute. |
+| **Log Viewer trace correlation** (`/logs`, #1238) | URL params `trace`, `containerId`, `from`, `to` populated by the Trace Explorer's "View logs for this span" link | Pre-populates a "Trace ID" filter input and seeds the container selection. While a filter is active, an info banner explains the constraint and offers a "Disable filter" button that clears both state and the URL params. Substring-matching is done by the new pure `filterLines()` helper in `lib/log-viewer.ts`. |
+| **LLM Latency Breakdown** (`/llm-observability`, #1239) | `GET /api/traces?netPeerName=<host>` (one parallel call per peer) | Stacked Recharts bar per upstream LLM provider splitting average network roundtrip from estimated model latency, plus a p50/p95/p99 table. The backend `llm-client.ts` now sets an outbound `x-trace-correlation-id` header (`crypto.randomUUID`) and reuses it as the `llm_traces.trace_id` so a Beyla span and the LLM trace row can be joined. Peer hostnames come from the new `LLM_PEER_HOSTNAMES` env var (default `api.anthropic.com,api.openai.com,api.mistral.ai,api.deepseek.com,api.groq.com`). |
+| **Security Audit → Observed Destinations** (`/security/audit`, #1240) | `GET /api/security/observed-destinations` (admin-only) | Lists outbound destinations captured by Beyla over the last 24h and classifies each against the new `security_destination_rules` table (CIDR or hostname-suffix rules with allow/warn/deny verdicts; default verdict for unmatched peers is `warn`). Renders a Peer / Port / Calls / First seen / Last seen / Verdict table below the existing findings list. Empty state via the shared `NoTraceDataCallout`. |
+
+## Sampling & rate-limit
+
+The ingest path runs two pure-CPU stages between OTLP transform and DB insert:
+
+1. **Head sampling** — deterministic on `trace_id` (uses the trailing 16 bits
+   of the trace id as a hash). Either every span of a trace is kept or none is,
+   so distributed traces remain whole. Configured via `TRACES_SAMPLE_RATE`
+   (default `1.0` = keep all).
+2. **Per-source token bucket** — refill rate `TRACES_INGEST_MAX_SPANS_PER_SEC`
+   tokens/sec, keyed by `service_namespace || service_name`. Default `0` =
+   unbounded. A noisy source drains its own bucket without affecting quiet
+   sources.
+
+When the sampler drops spans, it emits a `warn`-level log once per minute per
+source (cumulative drop count) so flooding sources are visible without flooding
+the logs themselves.
+
+Counters are exposed at `GET /api/traces/ingest-stats` (admin-only). Response:
+
+```json
+{
+  "acceptedTotal": 12345,
+  "droppedTotal": 678,
+  "perSource": [
+    { "source": "payments", "accepted": 12000, "dropped": 0 },
+    { "source": "spam-bot", "accepted": 345, "dropped": 678 }
+  ]
+}
+```
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `TRACES_SAMPLE_RATE` | `1.0` | Head sample rate, 0..1. |
+| `TRACES_INGEST_MAX_SPANS_PER_SEC` | `0` | Per-source rate limit. `0` = unbounded. |
+
+## Retention
+
+Spans are retained for `TRACES_RETENTION_DAYS` (default `7`). A daily cleanup
+job (in the existing `runCleanup()` scheduler block) calls `cleanOldSpans()`,
+which deletes rows in 10,000-row batches to keep DELETE locks short. The job
+logs the number of deleted rows when non-zero.
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `TRACES_RETENTION_DAYS` | `7` | Number of days of `spans` data to keep before cleanup. |
 
 ## Test Coverage
 
