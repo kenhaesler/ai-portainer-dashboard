@@ -662,6 +662,12 @@ export function TopologyGraph({
       }
     }
 
+    // Render only the handles edges actually attach to (prune orphan dots).
+    const usedHandles = collectUsedHandles(edges);
+    for (const node of nodes) {
+      (node.data as Record<string, unknown>).usedHandles = [...(usedHandles.get(node.id) ?? [])];
+    }
+
     return { nodes, edges };
   }, [blueprints, externalNets, layoutPositions, containers, networks, networkRates, relatedSet, selectedNodeId, potatoMode, showObservedTraffic, observedEdges]);
 
