@@ -213,15 +213,22 @@ export default function InfrastructurePage() {
   const handleTabChange = useCallback((newTab: string) => {
     const resolved = resolveTab(newTab);
     const params: Record<string, string> = { tab: resolved };
-    // Preserve existing filter params when switching tabs
+    // Preserve existing filter + per-tab search params when switching tabs, so
+    // each tab's search text survives a round-trip just like its dropdown filters.
     const endpointStatus = searchParams.get('endpointStatus');
     const endpointType = searchParams.get('endpointType');
     const stackStatus = searchParams.get('stackStatus');
     const stackEndpoint = searchParams.get('stackEndpoint');
+    const endpointSearch = searchParams.get('endpointSearch');
+    const stackSearch = searchParams.get('stackSearch');
+    const k8sSearch = searchParams.get('k8sSearch');
     if (endpointStatus) params.endpointStatus = endpointStatus;
     if (endpointType) params.endpointType = endpointType;
     if (stackStatus) params.stackStatus = stackStatus;
     if (stackEndpoint) params.stackEndpoint = stackEndpoint;
+    if (endpointSearch) params.endpointSearch = endpointSearch;
+    if (stackSearch) params.stackSearch = stackSearch;
+    if (k8sSearch) params.k8sSearch = k8sSearch;
     setSearchParams(params, { replace: true });
   }, [searchParams, setSearchParams]);
 
