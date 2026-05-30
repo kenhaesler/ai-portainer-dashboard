@@ -43,13 +43,14 @@ interface CapturesResponse {
   captures: Capture[];
 }
 
-export function useCaptures(filters?: { status?: string; containerId?: string }) {
+export function useCaptures(filters?: { status?: string; containerId?: string; search?: string }) {
   const query = useQuery<CapturesResponse>({
     queryKey: ['pcap', 'captures', filters],
     queryFn: () => {
       const params: Record<string, string | undefined> = {
         status: filters?.status,
         containerId: filters?.containerId,
+        search: filters?.search,
       };
       return api.get<CapturesResponse>('/api/pcap/captures', { params });
     },
@@ -66,6 +67,7 @@ export function useCaptures(filters?: { status?: string; containerId?: string })
       const params: Record<string, string | undefined> = {
         status: filters?.status,
         containerId: filters?.containerId,
+        search: filters?.search,
       };
       return api.get<CapturesResponse>('/api/pcap/captures', { params });
     },

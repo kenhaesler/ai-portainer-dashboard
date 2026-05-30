@@ -71,6 +71,13 @@ describe('use-pcap', () => {
         params: { status: 'complete', containerId: undefined },
       });
     });
+
+    it('useCaptures forwards search in the request params', async () => {
+      const getSpy = vi.spyOn(api, 'get').mockResolvedValue({ captures: [] });
+      renderHook(() => useCaptures({ search: 'web' }), { wrapper: createWrapper() });
+      await waitFor(() => expect(getSpy).toHaveBeenCalled());
+      expect(getSpy).toHaveBeenCalledWith('/api/pcap/captures', { params: expect.objectContaining({ search: 'web' }) });
+    });
   });
 
   describe('useCapture', () => {
