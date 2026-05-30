@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { type ColumnDef } from '@tanstack/react-table';
 import {
   Radio,
@@ -7,7 +7,6 @@ import {
   Download,
   Trash2,
   Clock,
-  Filter,
   Brain,
   ChevronDown,
   ChevronRight,
@@ -20,7 +19,7 @@ import {
 import { StatusBadge } from '@/shared/components/feedback/status-badge';
 import { DataTable } from '@/shared/components/tables/data-table';
 import { RefreshButton } from '@/shared/components/ui/refresh-button';
-import { useEndpoints, useEndpointCapabilities } from '@/features/containers/hooks/use-endpoints';
+import { useEndpoints } from '@/features/containers/hooks/use-endpoints';
 import { useContainers } from '@/features/containers/hooks/use-containers';
 import { useStacks } from '@/features/containers/hooks/use-stacks';
 import {
@@ -34,10 +33,11 @@ import {
   type PcapAnalysisResult,
   type PcapFinding,
 } from '@/features/security/hooks/use-pcap';
+import { CaptureTargetPicker, type CaptureTarget } from '@/features/security/components/capture-target-picker';
+import { CaptureBrowseFallback } from '@/features/security/components/capture-browse-fallback';
+import { BpfFilterInput } from '@/features/security/components/bpf-filter-input';
 import { api } from '@/shared/lib/api';
 import { cn } from '@/shared/lib/utils';
-import { ThemedSelect } from '@/shared/components/ui/themed-select';
-import { buildStackGroupedContainerOptions, NO_STACK_LABEL, resolveContainerStackName } from '@/features/containers/lib/container-stack-grouping';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 
 function formatBytes(bytes: number): string {
@@ -65,74 +65,59 @@ const STATUS_TABS = [
 ] as const;
 
 export default function PacketCapture() {
-  const [selectedEndpoint, setSelectedEndpoint] = useState<number | undefined>();
-  const [selectedStack, setSelectedStack] = useState<string | undefined>();
-  const [selectedContainer, setSelectedContainer] = useState('');
-  const [selectedContainerName, setSelectedContainerName] = useState('');
+  const [target, setTarget] = useState<CaptureTarget | null>(null);
   const [bpfFilter, setBpfFilter] = useState('');
   const [duration, setDuration] = useState('60');
   const [maxPackets, setMaxPackets] = useState('');
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
+  const [historySearch, setHistorySearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(historySearch), 300);
+    return () => clearTimeout(t);
+  }, [historySearch]);
 
   const { data: endpoints } = useEndpoints();
-  const { data: containers } = useContainers(selectedEndpoint !== undefined ? { endpointId: selectedEndpoint } : undefined);
+  const { data: containers } = useContainers({ state: 'running' });
   const { data: stacks } = useStacks();
-  const { data: capturesData, refetch, isFetching } = useCaptures({ status: statusFilter });
+  const { data: capturesData, refetch, isFetching } = useCaptures({
+    status: statusFilter,
+    search: debouncedSearch || undefined,
+  });
   const [expandedAnalysis, setExpandedAnalysis] = useState<Set<string>>(new Set());
   const startCapture = useStartCapture();
   const stopCapture = useStopCapture();
   const deleteCapture = useDeleteCapture();
   const analyzeMutation = useAnalyzeCapture();
 
-  const { isEdgeAsync } = useEndpointCapabilities(selectedEndpoint);
   const captures = capturesData?.captures ?? [];
   const activeCaptures = captures.filter(
     (c) => c.status === 'capturing' || c.status === 'pending' || c.status === 'processing',
   );
-  const runningContainers = containers?.filter((c) => c.state === 'running') ?? [];
-  const stackNamesForEndpoint = useMemo(() => {
-    if (!selectedEndpoint || !stacks) return [];
-    return stacks
-      .filter((stack) => stack.endpointId === selectedEndpoint)
-      .map((stack) => stack.name);
-  }, [selectedEndpoint, stacks]);
-  const stackOptions = useMemo(() => {
-    const stackSet = new Set<string>(stackNamesForEndpoint);
-    for (const container of runningContainers) {
-      const resolvedStack = resolveContainerStackName(container, stackNamesForEndpoint) ?? NO_STACK_LABEL;
-      stackSet.add(resolvedStack);
-    }
-    return [...stackSet].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true }));
-  }, [runningContainers, stackNamesForEndpoint]);
-  const filteredRunningContainers = useMemo(() => {
-    if (!selectedStack) return runningContainers;
-    return runningContainers.filter((container) => {
-      const resolvedStack = resolveContainerStackName(container, stackNamesForEndpoint) ?? NO_STACK_LABEL;
-      return resolvedStack === selectedStack;
-    });
-  }, [runningContainers, selectedStack, stackNamesForEndpoint]);
-  const groupedContainerOptions = useMemo(
-    () => buildStackGroupedContainerOptions(filteredRunningContainers, stackNamesForEndpoint),
-    [filteredRunningContainers, stackNamesForEndpoint],
+  const edgeAsyncEndpointIds = useMemo(
+    () => new Set((endpoints ?? []).filter((e) => e.edgeMode === 'async').map((e) => e.id)),
+    [endpoints],
   );
+  const endpointNameById = useMemo(
+    () => new Map((endpoints ?? []).map((e) => [e.id, e.name])),
+    [endpoints],
+  );
+  // useContainers({ state: 'running' }) already filters server-side, so this is
+  // just a stable [] fallback for the picker/fallback props.
+  const runningContainers = containers ?? [];
+  const targetIsEdgeAsync = target ? edgeAsyncEndpointIds.has(target.endpointId) : false;
 
   const handleStartCapture = () => {
-    if (!selectedEndpoint || !selectedContainer) return;
+    if (!target || targetIsEdgeAsync) return;
 
     startCapture.mutate({
-      endpointId: selectedEndpoint,
-      containerId: selectedContainer,
-      containerName: selectedContainerName,
+      endpointId: target.endpointId,
+      containerId: target.containerId,
+      containerName: target.containerName,
       filter: bpfFilter || undefined,
       durationSeconds: duration ? parseInt(duration, 10) : undefined,
       maxPackets: maxPackets ? parseInt(maxPackets, 10) : undefined,
     });
-  };
-
-  const handleContainerChange = (value: string) => {
-    setSelectedContainer(value);
-    const container = filteredRunningContainers.find((c) => c.id === value);
-    setSelectedContainerName(container?.name ?? '');
   };
 
   const stopMutate = stopCapture.mutate;
@@ -180,6 +165,15 @@ export default function PacketCapture() {
           </div>
         );
       },
+    },
+    {
+      accessorKey: 'endpoint_id',
+      header: 'Endpoint',
+      cell: ({ row }) => (
+        <span className="text-muted-foreground">
+          {endpointNameById.get(row.original.endpoint_id) ?? `#${row.original.endpoint_id}`}
+        </span>
+      ),
     },
     {
       accessorKey: 'status',
@@ -273,7 +267,7 @@ export default function PacketCapture() {
         );
       },
     },
-  ], [expandedAnalysis, toggleExpand, handleStop, handleDelete, handleDownload, handleAnalyze, analyzePending, analyzeVariables]);
+  ], [endpointNameById, expandedAnalysis, toggleExpand, handleStop, handleDelete, handleDownload, handleAnalyze, analyzePending, analyzeVariables]);
 
   const expandedCaptures = useMemo(
     () =>
@@ -300,97 +294,38 @@ export default function PacketCapture() {
         <RefreshButton onClick={() => refetch()} isLoading={isFetching} />
       </div>
 
-      {/* Edge Async warning */}
-      {isEdgeAsync && (
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 flex items-center gap-3">
-          <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0" />
-          <div>
-            <p className="text-sm font-medium text-amber-700 dark:text-amber-400">
-              Edge Async Agent — Packet capture unavailable
-            </p>
-            <p className="text-xs text-muted-foreground">
-              This endpoint uses asynchronous communication without a persistent tunnel. Docker exec operations (required for tcpdump) are not supported.
-            </p>
-          </div>
-        </div>
-      )}
-
       {/* New Capture Form */}
       <SpotlightCard>
       <div className="rounded-lg border bg-card p-6 shadow-sm">
         <h2 className="mb-4 text-lg font-semibold">New Capture</h2>
+
+        {/* Target container */}
+        <div className="mb-4">
+          <label className="mb-1 block text-sm font-medium">Target container</label>
+          <CaptureTargetPicker
+            containers={runningContainers}
+            stacks={stacks ?? []}
+            edgeAsyncEndpointIds={edgeAsyncEndpointIds}
+            value={target}
+            onChange={setTarget}
+          />
+          {targetIsEdgeAsync && (
+            <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+              This container&apos;s endpoint is Edge Async — packet capture requires docker exec and is unavailable.
+            </p>
+          )}
+          <CaptureBrowseFallback
+            containers={runningContainers}
+            stacks={stacks ?? []}
+            endpoints={endpoints ?? []}
+            edgeAsyncEndpointIds={edgeAsyncEndpointIds}
+            onChange={setTarget}
+          />
+        </div>
+
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {/* Endpoint */}
-          <div>
-            <label className="mb-1 block text-sm font-medium">Endpoint</label>
-            <ThemedSelect
-              value={selectedEndpoint != null ? String(selectedEndpoint) : '__all__'}
-              onValueChange={(val) => {
-                const resolved = val === '__all__' ? undefined : Number(val);
-                setSelectedEndpoint(resolved);
-                setSelectedStack(undefined);
-                setSelectedContainer('');
-                setSelectedContainerName('');
-              }}
-              placeholder="Select endpoint..."
-              options={[
-                { value: '__all__', label: 'Select endpoint...' },
-                ...(endpoints?.map((ep) => ({ value: String(ep.id), label: ep.name })) ?? []),
-              ]}
-              className="w-full text-sm"
-            />
-          </div>
-
-          {/* Stack */}
-          <div>
-            <label className="mb-1 block text-sm font-medium">Stack</label>
-            <ThemedSelect
-              value={selectedStack ?? '__all__'}
-              onValueChange={(val) => {
-                setSelectedStack(val === '__all__' ? undefined : val);
-                setSelectedContainer('');
-                setSelectedContainerName('');
-              }}
-              disabled={!selectedEndpoint}
-              placeholder="All stacks"
-              options={[
-                { value: '__all__', label: 'All stacks' },
-                ...stackOptions.map((stackName) => ({ value: stackName, label: stackName })),
-              ]}
-              className="w-full text-sm"
-            />
-          </div>
-
-          {/* Container */}
-          <div>
-            <label className="mb-1 block text-sm font-medium">Container</label>
-            <ThemedSelect
-              value={selectedContainer || '__all__'}
-              onValueChange={(val) => handleContainerChange(val === '__all__' ? '' : val)}
-              disabled={!selectedEndpoint}
-              placeholder="Select container..."
-              options={[
-                { value: '__all__', label: 'Select container...' },
-                ...groupedContainerOptions,
-              ]}
-              className="w-full text-sm"
-            />
-          </div>
-
           {/* BPF Filter */}
-          <div>
-            <label className="mb-1 block text-sm font-medium">
-              <Filter className="mr-1 inline h-3.5 w-3.5" />
-              BPF Filter
-            </label>
-            <input
-              type="text"
-              value={bpfFilter}
-              onChange={(e) => setBpfFilter(e.target.value)}
-              placeholder="e.g. port 80 or tcp"
-              className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-            />
-          </div>
+          <BpfFilterInput value={bpfFilter} onChange={setBpfFilter} />
 
           {/* Duration */}
           <div>
@@ -426,7 +361,7 @@ export default function PacketCapture() {
           <div className="flex items-end">
             <button
               onClick={handleStartCapture}
-              disabled={!selectedEndpoint || !selectedContainer || startCapture.isPending || isEdgeAsync}
+              disabled={!target || targetIsEdgeAsync || startCapture.isPending}
               className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             >
               <Play className="h-4 w-4" />
@@ -458,21 +393,31 @@ export default function PacketCapture() {
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">Capture History</h2>
-          <div className="flex gap-1 rounded-md border p-0.5">
-            {STATUS_TABS.map((tab) => (
-              <button
-                key={tab.label}
-                onClick={() => setStatusFilter(tab.value)}
-                className={cn(
-                  'rounded px-3 py-1 text-xs font-medium transition-colors',
-                  statusFilter === tab.value
-                    ? 'bg-primary text-primary-foreground'
-                    : 'text-muted-foreground hover:text-foreground',
-                )}
-              >
-                {tab.label}
-              </button>
-            ))}
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={historySearch}
+              onChange={(e) => setHistorySearch(e.target.value)}
+              placeholder="Search history…"
+              aria-label="Search capture history"
+              className="rounded-md border bg-background px-3 py-1.5 text-xs"
+            />
+            <div className="flex gap-1 rounded-md border p-0.5">
+              {STATUS_TABS.map((tab) => (
+                <button
+                  key={tab.label}
+                  onClick={() => setStatusFilter(tab.value)}
+                  className={cn(
+                    'rounded px-3 py-1 text-xs font-medium transition-colors',
+                    statusFilter === tab.value
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 

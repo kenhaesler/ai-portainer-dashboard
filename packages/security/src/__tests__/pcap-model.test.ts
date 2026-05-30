@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { StartCaptureRequestSchema } from '../models/pcap.js';
+import { StartCaptureRequestSchema, CaptureListQuerySchema } from '../models/pcap.js';
 
 describe('StartCaptureRequestSchema filter validation', () => {
   const basePayload = {
@@ -33,5 +33,17 @@ describe('StartCaptureRequestSchema filter validation', () => {
     });
 
     expect(result.success).toBe(false);
+  });
+});
+
+describe('CaptureListQuerySchema search', () => {
+  it('accepts an optional search string', () => {
+    expect(CaptureListQuerySchema.parse({ search: 'web' }).search).toBe('web');
+  });
+  it('defaults search to undefined when absent', () => {
+    expect(CaptureListQuerySchema.parse({}).search).toBeUndefined();
+  });
+  it('rejects an over-long search string', () => {
+    expect(() => CaptureListQuerySchema.parse({ search: 'x'.repeat(201) })).toThrow();
   });
 });

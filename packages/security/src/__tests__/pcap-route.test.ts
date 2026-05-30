@@ -236,6 +236,13 @@ describe('PCAP Routes', () => {
       );
     });
 
+    it('passes search from the query string to listCaptures', async () => {
+      mockListCaptures.mockResolvedValue([]);
+      const res = await app.inject({ method: 'GET', url: '/api/pcap/captures?search=web' });
+      expect(res.statusCode).toBe(200);
+      expect(mockListCaptures).toHaveBeenCalledWith(expect.objectContaining({ search: 'web' }));
+    });
+
     testAdminOnly(() => app, (r) => { currentRole = r; }, 'GET', '/api/pcap/captures');
   });
 

@@ -76,8 +76,19 @@ export async function getCapture(id: string): Promise<Capture | undefined> {
 export interface GetCapturesOptions {
   status?: CaptureStatus;
   containerId?: string;
+  search?: string;
   limit?: number;
   offset?: number;
+}
+
+/**
+ * Escape LIKE/ILIKE wildcard metacharacters so a user's search term is matched
+ * literally. PostgreSQL's default LIKE escape character is backslash, so a
+ * backslash-prefixed `%`, `_`, or `\` is treated as the literal character.
+ * Without this, typing `%` would match every row and `_` any single character.
+ */
+export function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, '\\$&');
 }
 
 export async function getCaptures(options: GetCapturesOptions = {}): Promise<Capture[]> {
@@ -92,6 +103,12 @@ export async function getCaptures(options: GetCapturesOptions = {}): Promise<Cap
   if (options.containerId) {
     conditions.push('container_id = ?');
     params.push(options.containerId);
+  }
+
+  if (options.search) {
+    const pattern = `%${escapeLikePattern(options.search)}%`;
+    conditions.push("(container_name ILIKE ? OR COALESCE(filter, '') ILIKE ?)");
+    params.push(pattern, pattern);
   }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
