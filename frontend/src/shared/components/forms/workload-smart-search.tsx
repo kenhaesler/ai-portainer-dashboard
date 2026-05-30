@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Sparkles, Loader2, ArrowRight, AlertCircle, X, Filter } from 'lucide-react';
 import { useNlQuery, type NlQueryResult } from '@/features/ai-intelligence/hooks/use-nl-query';
@@ -43,6 +43,7 @@ export function WorkloadSmartSearch({
   placeholder = 'Filter by name, image, state, stack... or press Enter for AI search',
 }: WorkloadSmartSearchProps) {
   const navigate = useNavigate();
+  const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState('');
   const [mode, setMode] = useState<SearchMode>('filter');
   const [aiResult, setAiResult] = useState<NlQueryResult | null>(null);
@@ -160,6 +161,10 @@ export function WorkloadSmartSearch({
 
   const isAiMode = mode === 'ai';
   const isAiFilterActive = isAiMode && aiResult?.action === 'filter' && aiFilteredCount !== null;
+  // Example chips overlay the field while it is empty and idle. They stay
+  // mounted on focus (rather than unmounting) so a keyboard user can Tab from
+  // the input onto them; the first keystroke fills the field and removes them.
+  const showExamples = !query && !nlQuery.isPending;
 
   return (
     <div className="space-y-3">
@@ -175,6 +180,7 @@ export function WorkloadSmartSearch({
           )}
         </div>
         <input
+          ref={inputRef}
           type="text"
           value={query}
           onChange={handleChange}
@@ -185,6 +191,9 @@ export function WorkloadSmartSearch({
             'placeholder:text-muted-foreground/50',
             'focus:outline-none transition-all duration-200',
             'text-[16px] sm:text-sm',
+            // While example chips overlay the empty field, hide the placeholder
+            // text (kept in the DOM for a11y/tests) so the two don't collide.
+            showExamples && 'placeholder:text-transparent',
             isAiMode
               ? 'ring-2 ring-purple-500/40 border-purple-500/50 focus:ring-2 focus:ring-purple-500/40 focus:border-purple-500/50'
               : 'focus:ring-2 focus:ring-primary/30 focus:border-primary/50',
@@ -207,42 +216,54 @@ export function WorkloadSmartSearch({
             </button>
           )}
         </div>
+        {/* Example searches — overlaid inside the empty field; click fills the
+            search. Kept mounted whenever the field is empty (incl. while
+            focused) so they stay keyboard-reachable; the first keystroke removes
+            them, so typed text is never obscured. Long AI prompts scroll. */}
+        {showExamples && (
+          <div
+            role="group"
+            aria-label="Example searches"
+            onClick={(e) => {
+              // A click on the empty strip (not a chip) focuses the input so the
+              // user can start typing. Using onClick (not onMouseDown) leaves
+              // drag-to-scroll of overflowing chips intact.
+              if (e.target === e.currentTarget) {
+                inputRef.current?.focus();
+              }
+            }}
+            className="absolute inset-y-0 left-11 right-3 flex items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
+            {FILTER_CHIPS.map((chip) => (
+              <button
+                key={chip.label}
+                onClick={() => handleFilterChipClick(chip.label)}
+                className={cn(
+                  'inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md border border-border/60 bg-card/80 px-2 py-0.5 text-xs font-medium',
+                  'text-muted-foreground backdrop-blur-sm transition-colors duration-200',
+                  'hover:bg-primary/10 hover:text-primary hover:border-primary/30',
+                )}
+              >
+                {chip.label}
+              </button>
+            ))}
+            {AI_CHIPS.map((chip) => (
+              <button
+                key={chip.label}
+                onClick={() => handleAiChipClick(chip.label)}
+                className={cn(
+                  'inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md border border-border/60 bg-card/80 px-2 py-0.5 text-xs font-medium',
+                  'text-muted-foreground backdrop-blur-sm transition-colors duration-200',
+                  'hover:bg-purple-500/10 hover:text-purple-600 hover:border-purple-500/30',
+                )}
+              >
+                <Sparkles className="h-3 w-3" />
+                {chip.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
-
-      {/* Example chips — shown when input is empty */}
-      {!query && !nlQuery.isPending && (
-        <div className="flex flex-wrap gap-2">
-          {FILTER_CHIPS.map((chip) => (
-            <button
-              key={chip.label}
-              onClick={() => handleFilterChipClick(chip.label)}
-              className={cn(
-                'inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-card/60 px-3 py-1.5 text-xs font-medium',
-                'text-muted-foreground backdrop-blur-sm transition-all duration-200',
-                'hover:bg-primary/10 hover:text-primary hover:border-primary/30',
-                'min-h-[36px] sm:min-h-0',
-              )}
-            >
-              {chip.label}
-            </button>
-          ))}
-          {AI_CHIPS.map((chip) => (
-            <button
-              key={chip.label}
-              onClick={() => handleAiChipClick(chip.label)}
-              className={cn(
-                'inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-card/60 px-3 py-1.5 text-xs font-medium',
-                'text-muted-foreground backdrop-blur-sm transition-all duration-200',
-                'hover:bg-purple-500/10 hover:text-purple-600 hover:border-purple-500/30',
-                'min-h-[36px] sm:min-h-0',
-              )}
-            >
-              <Sparkles className="h-3 w-3" />
-              {chip.label}
-            </button>
-          ))}
-        </div>
-      )}
 
       {/* Hint text — filter mode with query */}
       {query && mode === 'filter' && !aiResult && !nlQuery.isPending && (
