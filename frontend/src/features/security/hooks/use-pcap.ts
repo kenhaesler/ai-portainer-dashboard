@@ -44,23 +44,6 @@ interface CapturesResponse {
 }
 
 export function useCaptures(filters?: { status?: string; containerId?: string; search?: string }) {
-  const query = useQuery<CapturesResponse>({
-    queryKey: ['pcap', 'captures', filters],
-    queryFn: () => {
-      const params: Record<string, string | undefined> = {
-        status: filters?.status,
-        containerId: filters?.containerId,
-        search: filters?.search,
-      };
-      return api.get<CapturesResponse>('/api/pcap/captures', { params });
-    },
-  });
-
-  // Auto-refetch when there are active captures
-  const hasActive = query.data?.captures.some(
-    (c) => c.status === 'capturing' || c.status === 'pending' || c.status === 'processing',
-  );
-
   return useQuery<CapturesResponse>({
     queryKey: ['pcap', 'captures', filters],
     queryFn: () => {
@@ -71,24 +54,26 @@ export function useCaptures(filters?: { status?: string; containerId?: string; s
       };
       return api.get<CapturesResponse>('/api/pcap/captures', { params });
     },
-    refetchInterval: hasActive ? 2000 : false,
+    // Poll while any capture is still in flight; stop once they all settle.
+    refetchInterval: (query) =>
+      query.state.data?.captures.some(
+        (c) => c.status === 'capturing' || c.status === 'pending' || c.status === 'processing',
+      )
+        ? 2000
+        : false,
   });
 }
 
 export function useCapture(id: string | undefined) {
-  const result = useQuery<Capture>({
-    queryKey: ['pcap', 'capture', id],
-    queryFn: () => api.get<Capture>(`/api/pcap/captures/${id}`),
-    enabled: !!id,
-  });
-
-  const isActive = result.data?.status === 'capturing' || result.data?.status === 'processing';
-
   return useQuery<Capture>({
     queryKey: ['pcap', 'capture', id],
     queryFn: () => api.get<Capture>(`/api/pcap/captures/${id}`),
     enabled: !!id,
-    refetchInterval: isActive ? 2000 : false,
+    // Poll while this capture is still running.
+    refetchInterval: (query) =>
+      query.state.data?.status === 'capturing' || query.state.data?.status === 'processing'
+        ? 2000
+        : false,
   });
 }
 

@@ -31,6 +31,10 @@ export function CaptureTargetPicker({
   const [open, setOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Stack names span every endpoint on purpose — this picker searches across
+  // all endpoints, so a `stack:` token should match by name fleet-wide. (A name
+  // shared by stacks on different endpoints is treated as one label here; the
+  // browse-by-endpoint fallback scopes stacks per endpoint instead.)
   const knownStackNames = useMemo(() => stacks.map((s) => s.name), [stacks]);
   const matches = useMemo(
     () => filterContainers(containers, query, knownStackNames),

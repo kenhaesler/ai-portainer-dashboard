@@ -102,10 +102,9 @@ export default function PacketCapture() {
     () => new Map((endpoints ?? []).map((e) => [e.id, e.name])),
     [endpoints],
   );
-  const runningContainers = useMemo(
-    () => (containers ?? []).filter((c) => c.state === 'running'),
-    [containers],
-  );
+  // useContainers({ state: 'running' }) already filters server-side, so this is
+  // just a stable [] fallback for the picker/fallback props.
+  const runningContainers = containers ?? [];
   const targetIsEdgeAsync = target ? edgeAsyncEndpointIds.has(target.endpointId) : false;
 
   const handleStartCapture = () => {
