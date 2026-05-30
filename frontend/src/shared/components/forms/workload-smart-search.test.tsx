@@ -128,6 +128,21 @@ describe('WorkloadSmartSearch', () => {
     expect(screen.queryByRole('button', { name: /state:running/i })).not.toBeInTheDocument();
   });
 
+  it('hides the in-field example chips on focus and restores them on blur', () => {
+    renderComponent();
+    const input = screen.getByRole('textbox');
+    // Visible while the empty field is unfocused…
+    expect(screen.getByRole('button', { name: 'state:running' })).toBeInTheDocument();
+
+    // …hidden once the field is focused so the user can type…
+    fireEvent.focus(input);
+    expect(screen.queryByRole('button', { name: 'state:running' })).not.toBeInTheDocument();
+
+    // …and restored on blur (still empty).
+    fireEvent.blur(input);
+    expect(screen.getByRole('button', { name: 'state:running' })).toBeInTheDocument();
+  });
+
   it('pressing Enter calls mutate (AI mode) and shows AI badge', async () => {
     renderComponent();
     const input = screen.getByRole('textbox');
