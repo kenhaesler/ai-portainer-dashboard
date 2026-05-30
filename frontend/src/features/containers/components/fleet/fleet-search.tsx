@@ -111,6 +111,8 @@ export function FleetSearch({
           aria-label={label}
         />
         {showExamples && (
+          // Chips stay mounted while the field is empty (including while it is
+          // focused) so they remain keyboard-reachable, mirroring WorkloadSmartSearch.
           <div
             role="group"
             aria-label="Example searches"
@@ -144,6 +146,7 @@ export function FleetSearch({
         )}
         {query && (
           <button
+            type="button"
             onClick={handleClear}
             className="absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground hover:text-foreground"
             aria-label="Clear search"

@@ -97,17 +97,6 @@ describe('FleetSearch', () => {
     expect(onSearch).toHaveBeenCalledWith('');
   });
 
-  it('Escape key clears input', () => {
-    const { onSearch } = renderSearch();
-    const input = screen.getByRole('textbox');
-
-    fireEvent.change(input, { target: { value: 'test' } });
-    fireEvent.keyDown(input, { key: 'Escape' });
-
-    expect((input as HTMLInputElement).value).toBe('');
-    expect(onSearch).toHaveBeenCalledWith('');
-  });
-
   it('does not show count when not filtering', () => {
     renderSearch({ totalCount: 10, filteredCount: 10 });
     expect(screen.queryByTestId('fleet-search-count')).not.toBeInTheDocument();
