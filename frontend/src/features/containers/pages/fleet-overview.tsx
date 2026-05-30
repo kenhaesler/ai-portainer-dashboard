@@ -1269,7 +1269,7 @@ export default function InfrastructurePage() {
         </SpotlightCard>
 
         {/* K8s smart search */}
-        {!k8sPodsLoading && k8sTotalCount > 0 && (
+        {!k8sPodsLoading && !k8sDeploymentsLoading && !k8sServicesLoading && k8sTotalCount > 0 && (
           <FleetSearch
             onSearch={setK8sSearchQuery}
             totalCount={k8sTotalCount}

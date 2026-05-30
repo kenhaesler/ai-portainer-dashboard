@@ -1181,6 +1181,7 @@ describe('Infrastructure smart search — Kubernetes tab', () => {
     expect(screen.getByRole('button', { name: 'namespace:kube-system' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'status:running' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'nginx' })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: /search kubernetes resources/i })).not.toHaveFocus();
   });
 
   it('filters the pods table by the search query', async () => {
