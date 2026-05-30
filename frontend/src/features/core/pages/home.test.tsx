@@ -77,17 +77,12 @@ vi.mock('@/shared/components/charts/fleet-summary-card', () => ({
 vi.mock('@/shared/components/charts/resource-overview-card', () => ({
   ResourceOverviewCard: () => <div data-testid="mock-resource">Resource</div>,
 }));
-vi.mock('@/shared/components/data-display/kpi-card', () => ({
-  KpiCard: ({ label }: { label: string }) => <div data-testid="mock-kpi">{label}</div>,
-}));
-vi.mock('@/shared/components/data-display/tilt-card', () => ({
-  TiltCard: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-}));
 vi.mock('@/shared/components/data-display/spotlight-card', () => ({
   SpotlightCard: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 // Motion wrappers are mocked to plain divs, but they FORWARD className so the
-// 4:1 grid layout (grid-cols-5 / col-span-4 / col-span-1) stays assertable.
+// hero layout classes stay assertable (e.g. the absence of the old
+// col-span-4 / col-span-1 split now that the pane is full-width).
 vi.mock('@/shared/components/layout/motion-page', () => ({
   MotionPage: ({ children, className }: { children: React.ReactNode; className?: string }) => (
     <div className={className}>{children}</div>

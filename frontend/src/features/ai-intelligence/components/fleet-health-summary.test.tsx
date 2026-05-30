@@ -47,6 +47,9 @@ describe('FleetHealthSummary', () => {
     expect(within(hero).getByText('Stopped')).toBeInTheDocument();
     expect(within(hero).getByText('Security Findings')).toBeInTheDocument();
     expect(within(hero).getByText('4')).toBeInTheDocument();
+    // Non-clickable extra tiles must NOT be buttons (only onClick tiles are).
+    expect(within(hero).queryByRole('button', { name: /Stopped/i })).not.toBeInTheDocument();
+    expect(within(hero).queryByRole('button', { name: /Security Findings/i })).not.toBeInTheDocument();
   });
 
   it('renders an extraTile with onClick as a button and fires the handler', () => {
