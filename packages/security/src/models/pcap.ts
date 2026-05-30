@@ -88,6 +88,7 @@ export type StartCaptureRequest = z.infer<typeof StartCaptureRequestSchema>;
 export const CaptureListQuerySchema = z.object({
   status: CaptureStatusSchema.optional(),
   containerId: z.string().optional(),
+  search: z.string().max(200).optional(),
   limit: z.coerce.number().int().min(1).max(200).default(50),
   offset: z.coerce.number().int().min(0).default(0),
 });
