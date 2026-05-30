@@ -598,6 +598,7 @@ export default function WorkloadExplorerPage() {
                 knownStackNames={knownStackNames}
                 onFiltered={setSearchFilteredContainers}
                 totalCount={filteredContainers.length}
+                autoFocus
               />
 
               <div className="flex items-center gap-4 flex-wrap">

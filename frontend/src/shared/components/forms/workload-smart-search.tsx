@@ -26,6 +26,8 @@ export interface WorkloadSmartSearchProps {
   onFiltered: (containers: Container[]) => void;
   totalCount: number;
   placeholder?: string;
+  /** Focus the search input on mount (e.g. when the page first opens). */
+  autoFocus?: boolean;
 }
 
 /** Apply AI filter results by matching containerNames against the containers list (case-insensitive). */
@@ -41,6 +43,7 @@ export function WorkloadSmartSearch({
   onFiltered,
   totalCount,
   placeholder = 'Filter by name, image, state, stack... or press Enter for AI search',
+  autoFocus = false,
 }: WorkloadSmartSearchProps) {
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -72,6 +75,12 @@ export function WorkloadSmartSearch({
     },
     [containers, onFiltered],
   );
+
+  // Focus the input on mount when requested, so opening the page drops the
+  // caret straight into the search bar.
+  useEffect(() => {
+    if (autoFocus) inputRef.current?.focus();
+  }, [autoFocus]);
 
   // Re-apply filter when upstream containers change (dropdown filter changed)
   useEffect(() => {
