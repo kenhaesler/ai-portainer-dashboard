@@ -240,6 +240,9 @@ export default function WorkloadExplorerPage() {
       selectedEndpoint !== undefined ? `endpoint-${selectedEndpoint}` : 'all-endpoints',
       selectedStack ?? 'all-stacks',
       selectedGroup ?? 'all-groups',
+      selectedImage
+        ? `image-${getImageShortName(selectedImage).replace(/[^a-zA-Z0-9._-]+/g, '-')}`
+        : 'all-images',
     ].join('-');
     const date = new Date().toISOString().slice(0, 10);
     exportToCsv(exportRows, `workload-explorer-${scope}-${date}.csv`);

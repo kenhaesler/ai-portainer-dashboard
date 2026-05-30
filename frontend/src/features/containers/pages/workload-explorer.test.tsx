@@ -468,7 +468,21 @@ describe('WorkloadExplorerPage', () => {
     expect(Array.isArray(rows)).toBe(true);
     expect((rows as Array<Record<string, unknown>>).length).toBe(3);
     expect((rows as Array<Record<string, unknown>>).some((row) => row.group === 'System')).toBe(true);
-    expect(filename).toMatch(/^workload-explorer-endpoint-1-all-stacks-all-groups-\d{4}-\d{2}-\d{2}\.csv$/);
+    expect(filename).toMatch(/^workload-explorer-endpoint-1-all-stacks-all-groups-all-images-\d{4}-\d{2}-\d{2}\.csv$/);
+  });
+
+  it('includes the active image filter (sanitized) in the CSV filename scope', () => {
+    mockQueryString = 'endpoint=1&image=workers%3Alatest';
+    render(<WorkloadExplorerPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
+
+    expect(mockExportToCsv).toHaveBeenCalledTimes(1);
+    const [, filename] = mockExportToCsv.mock.calls[0];
+    // "workers:latest" → image-workers-latest (':' is not filename-safe)
+    expect(filename).toMatch(
+      /^workload-explorer-endpoint-1-all-stacks-all-groups-image-workers-latest-\d{4}-\d{2}-\d{2}\.csv$/,
+    );
   });
 
   it('passes enableRowSelection and maxSelection to DataTable', () => {

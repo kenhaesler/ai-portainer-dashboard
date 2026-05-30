@@ -1,7 +1,7 @@
 import { ChevronDown, RefreshCw, Timer, TimerOff } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
 import { cn } from '@/shared/lib/utils';
 import { type RefreshInterval } from '@/shared/hooks/use-auto-refresh';
+import { useMinimumSpin } from '@/shared/hooks/use-minimum-spin';
 
 const INTERVALS: { label: string; value: RefreshInterval }[] = [
   { label: 'Off', value: 0 },
@@ -42,46 +42,10 @@ export function RefreshControls({
   const isActive = interval > 0;
   const selected = INTERVALS.find((opt) => opt.value === interval) ?? INTERVALS[0];
 
-  // ── Manual refresh spin (ported from RefreshButton) ──
-  const MIN_SPIN_MS = 1500;
-  const [showSpin, setShowSpin] = useState(Boolean(isLoading));
-  const spinStartedAtRef = useRef(0);
-  const stopTimerRef = useRef<number | null>(null);
+  const showSpin = useMinimumSpin(isLoading);
   // An explicit click is a foreground signal that the user wants the freshest
   // data, so prefer the cache-bypassing path when the page wires one up.
   const handleRefreshClick = () => (onForceRefresh ?? onRefresh)();
-
-  useEffect(() => {
-    if (stopTimerRef.current !== null) {
-      window.clearTimeout(stopTimerRef.current);
-      stopTimerRef.current = null;
-    }
-
-    if (isLoading) {
-      spinStartedAtRef.current = Date.now();
-      setShowSpin(true);
-      return;
-    }
-
-    if (!showSpin) {
-      return;
-    }
-
-    const elapsed = Date.now() - spinStartedAtRef.current;
-    const remaining = Math.max(0, MIN_SPIN_MS - elapsed);
-    stopTimerRef.current = window.setTimeout(() => {
-      setShowSpin(false);
-      stopTimerRef.current = null;
-    }, remaining);
-  }, [isLoading, showSpin]);
-
-  useEffect(() => {
-    return () => {
-      if (stopTimerRef.current !== null) {
-        window.clearTimeout(stopTimerRef.current);
-      }
-    };
-  }, []);
 
   return (
     <div
