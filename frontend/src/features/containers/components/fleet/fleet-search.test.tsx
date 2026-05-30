@@ -97,19 +97,14 @@ describe('FleetSearch', () => {
     expect(onSearch).toHaveBeenCalledWith('');
   });
 
-  it('Escape key clears input', () => {
-    const { onSearch } = renderSearch();
-    const input = screen.getByRole('textbox');
-
-    fireEvent.change(input, { target: { value: 'test' } });
-    fireEvent.keyDown(input, { key: 'Escape' });
-
-    expect((input as HTMLInputElement).value).toBe('');
-    expect(onSearch).toHaveBeenCalledWith('');
-  });
-
   it('does not show count when not filtering', () => {
     renderSearch({ totalCount: 10, filteredCount: 10 });
+    expect(screen.queryByTestId('fleet-search-count')).not.toBeInTheDocument();
+  });
+
+  it('hides the count badge when showCount is false', () => {
+    renderSearch({ totalCount: 10, filteredCount: 3, showCount: false });
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'prod' } });
     expect(screen.queryByTestId('fleet-search-count')).not.toBeInTheDocument();
   });
 
@@ -129,5 +124,69 @@ describe('FleetSearch', () => {
   it('uses custom placeholder', () => {
     renderSearch({ placeholder: 'Custom placeholder' });
     expect(screen.getByPlaceholderText('Custom placeholder')).toBeInTheDocument();
+  });
+
+  it('renders example chips when examples provided and field is empty', () => {
+    renderSearch({ examples: ['name:prod', 'status:up'] });
+    expect(screen.getByRole('group', { name: /example searches/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'name:prod' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'status:up' })).toBeInTheDocument();
+  });
+
+  it('hides example chips once a query is typed', () => {
+    renderSearch({ examples: ['name:prod'] });
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'x' } });
+    expect(screen.queryByRole('button', { name: 'name:prod' })).not.toBeInTheDocument();
+  });
+
+  it('does not render the example group when no examples are given', () => {
+    renderSearch();
+    expect(screen.queryByRole('group', { name: /example searches/i })).not.toBeInTheDocument();
+  });
+
+  it('clicking an example chip fills the query and calls onSearch immediately', () => {
+    const { onSearch } = renderSearch({ examples: ['status:up'] });
+    fireEvent.click(screen.getByRole('button', { name: 'status:up' }));
+    expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('status:up');
+    // Immediate (not debounced): assert before advancing timers.
+    expect(onSearch).toHaveBeenCalledWith('status:up');
+  });
+
+  it('focuses the input on mount when autoFocus is set', () => {
+    renderSearch({ autoFocus: true });
+    expect(document.activeElement).toBe(screen.getByRole('textbox'));
+  });
+
+  it('does not focus the input on mount by default', () => {
+    renderSearch();
+    expect(document.activeElement).not.toBe(screen.getByRole('textbox'));
+  });
+
+  it('seeds the input from initialValue', () => {
+    renderSearch({ initialValue: 'web' });
+    expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('web');
+  });
+
+  it('hides example chips when seeded with a non-empty initialValue', () => {
+    renderSearch({ initialValue: 'web', examples: ['name:prod'] });
+    expect(screen.queryByRole('button', { name: 'name:prod' })).not.toBeInTheDocument();
+  });
+
+  it('calls onAutoFocused after autoFocus moves focus into the input', () => {
+    const onAutoFocused = vi.fn();
+    renderSearch({ autoFocus: true, onAutoFocused });
+    expect(onAutoFocused).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).toBe(screen.getByRole('textbox'));
+  });
+
+  it('Escape clears the query and blurs the input', () => {
+    const { onSearch } = renderSearch();
+    const input = screen.getByRole('textbox');
+    input.focus();
+    fireEvent.change(input, { target: { value: 'test' } });
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect((input as HTMLInputElement).value).toBe('');
+    expect(onSearch).toHaveBeenCalledWith('');
+    expect(document.activeElement).not.toBe(input);
   });
 });

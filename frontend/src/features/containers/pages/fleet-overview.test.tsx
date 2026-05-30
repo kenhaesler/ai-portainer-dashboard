@@ -18,6 +18,13 @@ vi.mock('@/features/containers/hooks/use-stacks', () => ({
   useStacks: vi.fn(),
 }));
 
+vi.mock('@/features/kubernetes/hooks/use-kubernetes', () => ({
+  useK8sPods: vi.fn(() => ({ data: [], isLoading: false, refetch: vi.fn(), isFetching: false })),
+  useK8sDeployments: vi.fn(() => ({ data: [], isLoading: false })),
+  useK8sServices: vi.fn(() => ({ data: [], isLoading: false })),
+  useK8sNamespaces: vi.fn(() => ({ data: [] })),
+}));
+
 vi.mock('@/shared/hooks/use-auto-refresh', () => ({
   useAutoRefresh: () => ({ interval: 30, setInterval: vi.fn() }),
 }));
@@ -36,6 +43,7 @@ vi.mock('sonner', () => ({
 import { toast } from 'sonner';
 import { useEndpoints } from '@/features/containers/hooks/use-endpoints';
 import { useStacks } from '@/features/containers/hooks/use-stacks';
+import { useK8sPods } from '@/features/kubernetes/hooks/use-kubernetes';
 import type { Endpoint } from '@/features/containers/hooks/use-endpoints';
 import type { Stack } from '@/features/containers/hooks/use-stacks';
 import { useUiStore } from '@/stores/ui-store';
@@ -375,7 +383,7 @@ describe('InfrastructurePage — fleet section', () => {
     renderPage();
 
     expect(screen.queryByTestId('grid-pagination')).not.toBeInTheDocument();
-    expect(screen.getByTestId('data-table-search')).toBeInTheDocument();
+    expect(screen.getByTestId('auto-fit-container')).toBeInTheDocument();
   });
 
   it('paginates grid view with 30 items per page', () => {
@@ -409,7 +417,7 @@ describe('InfrastructurePage — fleet section', () => {
     expect(screen.queryByText('env-1')).not.toBeInTheDocument();
   });
 
-  it('fleet table view enables search', () => {
+  it('fleet table view shows the smart search bar (not DataTable search)', () => {
     useUiStore.setState({ pageViewModes: { fleet: 'table' } });
     mockEndpoints([
       makeEndpoint({ id: 1, name: 'alpha-env' }),
@@ -418,8 +426,9 @@ describe('InfrastructurePage — fleet section', () => {
 
     renderPage();
 
-    // DataTable search input should be present
-    expect(screen.getByTestId('data-table-search')).toBeInTheDocument();
+    // FleetSearch input should be present; DataTable search should be hidden
+    expect(screen.getByRole('textbox', { name: 'Search endpoints' })).toBeInTheDocument();
+    expect(screen.queryByTestId('data-table-search')).not.toBeInTheDocument();
   });
 
   it('fleet table view fits the viewport (autoFit)', () => {
@@ -487,7 +496,7 @@ describe('InfrastructurePage — stack section', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/workloads?endpoint=1&stack=my-stack');
   });
 
-  it('stacks table view enables search', () => {
+  it('stacks table view enables search via the smart search bar', () => {
     useUiStore.setState({ pageViewModes: { stacks: 'table' } });
     mockStacks([
       makeStack({ id: 1, name: 'alpha-stack' }),
@@ -496,9 +505,9 @@ describe('InfrastructurePage — stack section', () => {
 
     renderPageWithInitialParams('/infrastructure?tab=stacks');
 
-    // DataTable search input should be present (one for fleet which is empty, one for stacks)
-    const searchInputs = screen.getAllByTestId('data-table-search');
-    expect(searchInputs.length).toBeGreaterThanOrEqual(1);
+    // Smart search bar present; DataTable built-in search is removed
+    expect(screen.getByRole('textbox', { name: 'Search stacks' })).toBeInTheDocument();
+    expect(screen.queryByTestId('data-table-search')).not.toBeInTheDocument();
   });
 
   it('stacks table view fits the viewport (autoFit)', () => {
@@ -1110,5 +1119,103 @@ describe('InfrastructurePage — stack filter chips', () => {
     expect(screen.queryByTestId('filter-chip-stackStatus')).not.toBeInTheDocument();
     expect(screen.getByText('active-s')).toBeInTheDocument();
     expect(screen.getByText('inactive-s')).toBeInTheDocument();
+  });
+});
+
+describe('Infrastructure smart search — Fleet tab', () => {
+  beforeEach(() => {
+    mockStacks([]);
+  });
+
+  it('renders endpoint example chips inside the search bar', () => {
+    mockEndpoints([makeEndpoint({ id: 1, name: 'prod-1' }), makeEndpoint({ id: 2, name: 'prod-2', status: 'down' })]);
+    renderPage();
+    expect(screen.getByRole('button', { name: 'name:prod' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'status:up' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'type:edge' })).toBeInTheDocument();
+  });
+
+  it('seeds the endpoint search from the URL (endpointSearch param)', () => {
+    mockEndpoints([makeEndpoint({ id: 1, name: 'prod-1' }), makeEndpoint({ id: 2, name: 'web-2' })]);
+    mockStacks([]);
+    renderPageWithInitialParams('/infrastructure?tab=fleet&endpointSearch=prod');
+    expect((screen.getByRole('textbox', { name: 'Search endpoints' }) as HTMLInputElement).value).toBe('prod');
+  });
+});
+
+describe('Infrastructure smart search — Stacks tab', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useUiStore.setState({ pageViewModes: {} });
+    mockEndpoints([makeEndpoint({ id: 1, name: 'prod-1' })]);
+    mockStacks([makeStack({ id: 1, name: 'traefik' }), makeStack({ id: 2, name: 'grafana' })]);
+  });
+
+  it('renders stack example chips inside the search bar', () => {
+    renderPageWithInitialParams('/infrastructure?tab=stacks');
+    expect(screen.getByRole('button', { name: 'name:traefik' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'status:active' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'endpoint:prod' })).toBeInTheDocument();
+  });
+
+  it('shows the smart search bar and no DataTable search in Stacks table view', () => {
+    useUiStore.setState({ pageViewModes: { stacks: 'table' } });
+    renderPageWithInitialParams('/infrastructure?tab=stacks');
+    expect(screen.getByRole('textbox', { name: 'Search stacks' })).toBeInTheDocument();
+    expect(screen.queryByTestId('data-table-search')).not.toBeInTheDocument();
+  });
+});
+
+describe('Infrastructure smart search — Kubernetes tab', () => {
+  const pod = (name: string, namespace: string, status: string) => ({
+    id: `${namespace}/${name}`, name, namespace, images: [], state: 'running',
+    status, restarts: 0, created: 0, endpointId: 1, endpointName: 'prod-1',
+    labels: {}, containers: [], resourceType: 'pod',
+  });
+
+  beforeEach(() => {
+    mockEndpoints([makeEndpoint({ id: 1, name: 'prod-1' })]);
+    mockStacks([]);
+    vi.mocked(useK8sPods).mockReturnValue({
+      data: [pod('nginx-1', 'default', 'Running'), pod('redis-1', 'cache', 'Pending')],
+      isLoading: false, refetch: vi.fn(), isFetching: false,
+    } as any);
+  });
+
+  it('renders a Kubernetes search bar with example chips', () => {
+    renderPageWithInitialParams('/infrastructure?tab=kubernetes');
+    expect(screen.getByRole('textbox', { name: /search kubernetes resources/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'namespace:kube-system' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'status:running' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'nginx' })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: /search kubernetes resources/i })).not.toHaveFocus();
+  });
+
+  it('filters the pods table by the search query', async () => {
+    renderPageWithInitialParams('/infrastructure?tab=kubernetes');
+    expect(screen.getByText('nginx-1')).toBeInTheDocument();
+    expect(screen.getByText('redis-1')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'nginx' }));
+
+    await waitFor(() => {
+      expect(screen.queryByText('redis-1')).not.toBeInTheDocument();
+    });
+    expect(screen.getByText('nginx-1')).toBeInTheDocument();
+  });
+
+  it('shows an empty state when the K8s search matches nothing', async () => {
+    renderPageWithInitialParams('/infrastructure?tab=kubernetes');
+    fireEvent.change(screen.getByRole('textbox', { name: /search kubernetes resources/i }), {
+      target: { value: 'zzz-no-match' },
+    });
+    await waitFor(() => {
+      expect(screen.getByText(/no matching resources/i)).toBeInTheDocument();
+    });
+  });
+
+  it('seeds the K8s search from the URL (k8sSearch param)', () => {
+    renderPageWithInitialParams('/infrastructure?tab=kubernetes&k8sSearch=nginx');
+    expect((screen.getByRole('textbox', { name: /search kubernetes resources/i }) as HTMLInputElement).value).toBe('nginx');
   });
 });

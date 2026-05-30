@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { type ColumnDef } from '@tanstack/react-table';
 import * as Tabs from '@radix-ui/react-tabs';
@@ -26,6 +26,7 @@ import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 import { FleetStatusSummary } from '@/features/containers/components/fleet/fleet-status-summary';
 import { FleetSearch } from '@/features/containers/components/fleet/fleet-search';
 import { filterEndpoints, filterStacks, type StackWithEndpoint } from '@/features/containers/lib/fleet-search-filter';
+import { filterK8sResources } from '@/features/containers/lib/k8s-search-filter';
 import { useK8sPods, useK8sDeployments, useK8sServices, useK8sNamespaces, type K8sPod, type K8sDeployment, type K8sService } from '@/features/kubernetes/hooks/use-kubernetes';
 
 const FLEET_GRID_PAGE_SIZE = 30;
@@ -212,15 +213,22 @@ export default function InfrastructurePage() {
   const handleTabChange = useCallback((newTab: string) => {
     const resolved = resolveTab(newTab);
     const params: Record<string, string> = { tab: resolved };
-    // Preserve existing filter params when switching tabs
+    // Preserve existing filter + per-tab search params when switching tabs, so
+    // each tab's search text survives a round-trip just like its dropdown filters.
     const endpointStatus = searchParams.get('endpointStatus');
     const endpointType = searchParams.get('endpointType');
     const stackStatus = searchParams.get('stackStatus');
     const stackEndpoint = searchParams.get('stackEndpoint');
+    const endpointSearch = searchParams.get('endpointSearch');
+    const stackSearch = searchParams.get('stackSearch');
+    const k8sSearch = searchParams.get('k8sSearch');
     if (endpointStatus) params.endpointStatus = endpointStatus;
     if (endpointType) params.endpointType = endpointType;
     if (stackStatus) params.stackStatus = stackStatus;
     if (stackEndpoint) params.stackEndpoint = stackEndpoint;
+    if (endpointSearch) params.endpointSearch = endpointSearch;
+    if (stackSearch) params.stackSearch = stackSearch;
+    if (k8sSearch) params.k8sSearch = k8sSearch;
     setSearchParams(params, { replace: true });
   }, [searchParams, setSearchParams]);
 
@@ -229,6 +237,13 @@ export default function InfrastructurePage() {
   const endpointTypeFilter = searchParams.get('endpointType') ?? ALL_FILTER;
   const stackStatusFilter = searchParams.get('stackStatus') ?? ALL_FILTER;
   const stackEndpointFilterParam = searchParams.get('stackEndpoint') ?? ALL_FILTER;
+
+  const setSearchParam = useCallback((key: string, value: string) => {
+    const params = new URLSearchParams(searchParams);
+    if (value) params.set(key, value);
+    else params.delete(key);
+    setSearchParams(params, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   const setFleetFilters = useCallback((
     epStatus: string,
@@ -285,9 +300,14 @@ export default function InfrastructurePage() {
   const stacksViewMode = useUiStore((s) => s.pageViewModes['stacks'] ?? 'grid');
   const setStacksViewMode = (mode: 'grid' | 'table') => setPageViewMode('stacks', mode);
 
-  // Search state
-  const [endpointSearchQuery, setEndpointSearchQuery] = useState('');
-  const [stackSearchQuery, setStackSearchQuery] = useState('');
+  // URL-persisted search queries (derived from searchParams)
+  const endpointSearchQuery = searchParams.get('endpointSearch') ?? '';
+  const stackSearchQuery = searchParams.get('stackSearch') ?? '';
+  const k8sSearchQuery = searchParams.get('k8sSearch') ?? '';
+
+  // Autofocus gate: focus the Fleet search only on first mount, not on every re-entry
+  const fleetSearchAutoFocusedRef = useRef(false);
+  const markFleetSearchAutoFocused = useCallback(() => { fleetSearchAutoFocusedRef.current = true; }, []);
 
   // Shared data — single hook call each, no duplicate requests
   const {
@@ -326,6 +346,23 @@ export default function InfrastructurePage() {
   const {
     data: k8sNamespaces,
   } = useK8sNamespaces();
+
+  const filteredK8sPods = useMemo(
+    () => filterK8sResources(k8sPods ?? [], k8sSearchQuery),
+    [k8sPods, k8sSearchQuery],
+  );
+  const filteredK8sDeployments = useMemo(
+    () => filterK8sResources(k8sDeployments ?? [], k8sSearchQuery),
+    [k8sDeployments, k8sSearchQuery],
+  );
+  const filteredK8sServices = useMemo(
+    () => filterK8sResources(k8sServices ?? [], k8sSearchQuery),
+    [k8sServices, k8sSearchQuery],
+  );
+  const k8sTotalCount =
+    (k8sPods?.length ?? 0) + (k8sDeployments?.length ?? 0) + (k8sServices?.length ?? 0);
+  const k8sFilteredCount =
+    filteredK8sPods.length + filteredK8sDeployments.length + filteredK8sServices.length;
 
   const isLoading = endpointsLoading || stacksLoading;
   const isFetching = endpointsFetching || stacksFetching;
@@ -480,9 +517,12 @@ export default function InfrastructurePage() {
   }, [filteredEndpoints, gridPage]);
 
   const handleEndpointSearch = useCallback((query: string) => {
-    setEndpointSearchQuery(query);
+    setSearchParam('endpointSearch', query);
     setGridPage(1);
-  }, []);
+  }, [setSearchParam]);
+
+  const handleStackSearch = useCallback((q: string) => setSearchParam('stackSearch', q), [setSearchParam]);
+  const handleK8sSearch = useCallback((q: string) => setSearchParam('k8sSearch', q), [setSearchParam]);
 
   const handleEndpointClick = (endpointId: number) => {
     navigate(`/workloads?endpoint=${endpointId}`);
@@ -894,8 +934,26 @@ export default function InfrastructurePage() {
         <Tabs.Content value="fleet" className="mt-4">
       <section aria-labelledby="fleet-heading" className="space-y-4">
         <h2 id="fleet-heading" className="sr-only">Fleet Overview</h2>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          {!isLoading && endpoints && (
+        {!isLoading && endpoints != null && (
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-3">
+            {endpoints.length > 0 && (
+              <div className="lg:flex-1">
+                <FleetSearch
+                  onSearch={handleEndpointSearch}
+                  totalCount={endpoints.length}
+                  filteredCount={filteredEndpoints.length}
+                  placeholder="Search endpoints... (name:prod status:up type:edge)"
+                  label="Search endpoints"
+                  examples={['name:prod', 'status:up', 'type:edge']}
+                  // Focus the search when the Fleet tab first mounts; gate with ref
+                  // so re-mounting (tab switch) does not re-steal focus.
+                  autoFocus={!fleetSearchAutoFocusedRef.current}
+                  onAutoFocused={markFleetSearchAutoFocused}
+                  initialValue={endpointSearchQuery}
+                  showCount={false}
+                />
+              </div>
+            )}
             <div className="flex flex-wrap items-center gap-3">
               {/* Endpoint status filter */}
               {endpointStatusOptions.length > 2 && (
@@ -953,8 +1011,8 @@ export default function InfrastructurePage() {
                 </button>
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* Endpoint filter chips */}
         {!isLoading && hasActiveEndpointFilter && (
@@ -962,17 +1020,6 @@ export default function InfrastructurePage() {
             filters={activeEndpointFilters}
             onRemove={handleRemoveEndpointFilter}
             onClearAll={handleClearAllEndpointFilters}
-          />
-        )}
-
-        {/* Endpoint search */}
-        {!isLoading && endpoints && endpoints.length > 0 && (
-          <FleetSearch
-            onSearch={handleEndpointSearch}
-            totalCount={endpoints.length}
-            filteredCount={filteredEndpoints.length}
-            placeholder="Search endpoints... (name:prod status:up type:edge)"
-            label="Search endpoints"
           />
         )}
 
@@ -1040,8 +1087,7 @@ export default function InfrastructurePage() {
             <DataTable
               columns={endpointColumns}
               data={filteredEndpoints}
-              searchKey="name"
-              searchPlaceholder="Search endpoints..."
+              hideSearch
               autoFit
               onRowClick={(row) => handleEndpointClick(row.id)}
             />
@@ -1054,23 +1100,37 @@ export default function InfrastructurePage() {
         <Tabs.Content value="stacks" className="mt-4">
       <section aria-labelledby="stacks-heading" className="space-y-4">
         <h2 id="stacks-heading" className="sr-only">Stack Overview</h2>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        {stackEndpointFilterParam !== ALL_FILTER && (
           <div className="flex items-center gap-2">
-            {stackEndpointFilterParam !== ALL_FILTER && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
-                {endpoints?.find(ep => ep.id === Number(stackEndpointFilterParam))?.name ?? `Endpoint ${stackEndpointFilterParam}`}
-                <button
-                  onClick={() => setStackEndpointFilter(ALL_FILTER)}
-                  className="ml-0.5 rounded-full hover:bg-primary/20"
-                  aria-label="Clear endpoint filter"
-                  data-testid="clear-stack-filter"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </span>
-            )}
+            <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
+              {endpoints?.find(ep => ep.id === Number(stackEndpointFilterParam))?.name ?? `Endpoint ${stackEndpointFilterParam}`}
+              <button
+                onClick={() => setStackEndpointFilter(ALL_FILTER)}
+                className="ml-0.5 rounded-full hover:bg-primary/20"
+                aria-label="Clear endpoint filter"
+                data-testid="clear-stack-filter"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
           </div>
-          {!isLoading && stacksWithEndpoints.length > 0 && (
+        )}
+        {!isLoading && stacksWithEndpoints.length > 0 && (
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-3">
+            {dropdownFilteredStacks.length > 0 && (
+              <div className="lg:flex-1">
+                <FleetSearch
+                  onSearch={handleStackSearch}
+                  totalCount={dropdownFilteredStacks.length}
+                  filteredCount={filteredStacks.length}
+                  placeholder="Search stacks... (name:traefik status:active endpoint:prod)"
+                  label="Search stacks"
+                  examples={['name:traefik', 'status:active', 'endpoint:prod']}
+                  initialValue={stackSearchQuery}
+                  showCount={false}
+                />
+              </div>
+            )}
             <div className="flex flex-wrap items-center gap-3">
               {/* Stack status filter */}
               {stackStatusOptions.length > 2 && (
@@ -1128,8 +1188,8 @@ export default function InfrastructurePage() {
                 </button>
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* Stack filter chips */}
         {!isLoading && hasActiveStackFilter && (
@@ -1137,17 +1197,6 @@ export default function InfrastructurePage() {
             filters={activeStackFilters}
             onRemove={handleRemoveStackFilter}
             onClearAll={handleClearAllStackFilters}
-          />
-        )}
-
-        {/* Stack search */}
-        {!isLoading && dropdownFilteredStacks.length > 0 && (
-          <FleetSearch
-            onSearch={setStackSearchQuery}
-            totalCount={dropdownFilteredStacks.length}
-            filteredCount={filteredStacks.length}
-            placeholder="Search stacks... (name:traefik status:active endpoint:prod)"
-            label="Search stacks"
           />
         )}
 
@@ -1206,8 +1255,7 @@ export default function InfrastructurePage() {
             <DataTable
               columns={stackColumns}
               data={filteredStacks}
-              searchKey="name"
-              searchPlaceholder="Search stacks..."
+              hideSearch
               autoFit
               onRowClick={handleStackClick}
             />
@@ -1246,58 +1294,78 @@ export default function InfrastructurePage() {
         </div>
         </SpotlightCard>
 
-        {/* Pods table */}
-        {k8sPodsLoading ? (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <SkeletonChart key={i} size="md" />
-            ))}
-          </div>
+        {/* K8s smart search */}
+        {!k8sPodsLoading && !k8sDeploymentsLoading && !k8sServicesLoading && k8sTotalCount > 0 && (
+          <FleetSearch
+            onSearch={handleK8sSearch}
+            totalCount={k8sTotalCount}
+            filteredCount={k8sFilteredCount}
+            placeholder="Search resources... (namespace:kube-system status:running nginx)"
+            label="Search Kubernetes resources"
+            examples={['namespace:kube-system', 'status:running', 'nginx']}
+            initialValue={k8sSearchQuery}
+          />
+        )}
+
+        {k8sSearchQuery && k8sFilteredCount === 0 ? (
+          <EmptyState
+            icon={Search}
+            title="No matching resources"
+            description="Try a different query or clear the search."
+          />
         ) : (
-          <SpotlightCard>
-          <div className="rounded-lg border bg-card p-6 shadow-sm">
-            <h3 className="mb-4 text-sm font-semibold">Pods</h3>
-            <DataTable
-              columns={k8sPodColumns}
-              data={k8sPods ?? []}
-              searchKey="name"
-              searchPlaceholder="Search pods..."
-              pageSize={15}
-            />
-          </div>
-          </SpotlightCard>
-        )}
+          <>
+            {/* Pods table */}
+            {k8sPodsLoading ? (
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <SkeletonChart key={i} size="md" />
+                ))}
+              </div>
+            ) : (
+              <SpotlightCard>
+              <div className="rounded-lg border bg-card p-6 shadow-sm">
+                <h3 className="mb-4 text-sm font-semibold">Pods</h3>
+                <DataTable
+                  columns={k8sPodColumns}
+                  data={filteredK8sPods}
+                  hideSearch
+                  pageSize={15}
+                />
+              </div>
+              </SpotlightCard>
+            )}
 
-        {/* Deployments table */}
-        {!k8sDeploymentsLoading && k8sDeployments && k8sDeployments.length > 0 && (
-          <SpotlightCard>
-          <div className="rounded-lg border bg-card p-6 shadow-sm">
-            <h3 className="mb-4 text-sm font-semibold">Deployments</h3>
-            <DataTable
-              columns={k8sDeploymentColumns}
-              data={k8sDeployments}
-              searchKey="name"
-              searchPlaceholder="Search deployments..."
-              pageSize={15}
-            />
-          </div>
-          </SpotlightCard>
-        )}
+            {/* Deployments table */}
+            {!k8sDeploymentsLoading && k8sDeployments && k8sDeployments.length > 0 && (
+              <SpotlightCard>
+              <div className="rounded-lg border bg-card p-6 shadow-sm">
+                <h3 className="mb-4 text-sm font-semibold">Deployments</h3>
+                <DataTable
+                  columns={k8sDeploymentColumns}
+                  data={filteredK8sDeployments}
+                  hideSearch
+                  pageSize={15}
+                />
+              </div>
+              </SpotlightCard>
+            )}
 
-        {/* Services table */}
-        {!k8sServicesLoading && k8sServices && k8sServices.length > 0 && (
-          <SpotlightCard>
-          <div className="rounded-lg border bg-card p-6 shadow-sm">
-            <h3 className="mb-4 text-sm font-semibold">Services</h3>
-            <DataTable
-              columns={k8sServiceColumns}
-              data={k8sServices}
-              searchKey="name"
-              searchPlaceholder="Search services..."
-              pageSize={15}
-            />
-          </div>
-          </SpotlightCard>
+            {/* Services table */}
+            {!k8sServicesLoading && k8sServices && k8sServices.length > 0 && (
+              <SpotlightCard>
+              <div className="rounded-lg border bg-card p-6 shadow-sm">
+                <h3 className="mb-4 text-sm font-semibold">Services</h3>
+                <DataTable
+                  columns={k8sServiceColumns}
+                  data={filteredK8sServices}
+                  hideSearch
+                  pageSize={15}
+                />
+              </div>
+              </SpotlightCard>
+            )}
+          </>
         )}
       </section>
         </Tabs.Content>
