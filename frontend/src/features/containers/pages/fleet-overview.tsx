@@ -894,8 +894,19 @@ export default function InfrastructurePage() {
         <Tabs.Content value="fleet" className="mt-4">
       <section aria-labelledby="fleet-heading" className="space-y-4">
         <h2 id="fleet-heading" className="sr-only">Fleet Overview</h2>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          {!isLoading && endpoints && (
+        {!isLoading && endpoints && endpoints.length > 0 && (
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-3">
+            <div className="lg:flex-1">
+              <FleetSearch
+                onSearch={handleEndpointSearch}
+                totalCount={endpoints.length}
+                filteredCount={filteredEndpoints.length}
+                placeholder="Search endpoints... (name:prod status:up type:edge)"
+                label="Search endpoints"
+                examples={['name:prod', 'status:up', 'type:edge']}
+                autoFocus
+              />
+            </div>
             <div className="flex flex-wrap items-center gap-3">
               {/* Endpoint status filter */}
               {endpointStatusOptions.length > 2 && (
@@ -953,8 +964,8 @@ export default function InfrastructurePage() {
                 </button>
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* Endpoint filter chips */}
         {!isLoading && hasActiveEndpointFilter && (
@@ -962,17 +973,6 @@ export default function InfrastructurePage() {
             filters={activeEndpointFilters}
             onRemove={handleRemoveEndpointFilter}
             onClearAll={handleClearAllEndpointFilters}
-          />
-        )}
-
-        {/* Endpoint search */}
-        {!isLoading && endpoints && endpoints.length > 0 && (
-          <FleetSearch
-            onSearch={handleEndpointSearch}
-            totalCount={endpoints.length}
-            filteredCount={filteredEndpoints.length}
-            placeholder="Search endpoints... (name:prod status:up type:edge)"
-            label="Search endpoints"
           />
         )}
 
@@ -1040,8 +1040,7 @@ export default function InfrastructurePage() {
             <DataTable
               columns={endpointColumns}
               data={filteredEndpoints}
-              searchKey="name"
-              searchPlaceholder="Search endpoints..."
+              hideSearch
               autoFit
               onRowClick={(row) => handleEndpointClick(row.id)}
             />

@@ -375,7 +375,7 @@ describe('InfrastructurePage — fleet section', () => {
     renderPage();
 
     expect(screen.queryByTestId('grid-pagination')).not.toBeInTheDocument();
-    expect(screen.getByTestId('data-table-search')).toBeInTheDocument();
+    expect(screen.getByTestId('auto-fit-container')).toBeInTheDocument();
   });
 
   it('paginates grid view with 30 items per page', () => {
@@ -409,7 +409,7 @@ describe('InfrastructurePage — fleet section', () => {
     expect(screen.queryByText('env-1')).not.toBeInTheDocument();
   });
 
-  it('fleet table view enables search', () => {
+  it('fleet table view shows the smart search bar (not DataTable search)', () => {
     useUiStore.setState({ pageViewModes: { fleet: 'table' } });
     mockEndpoints([
       makeEndpoint({ id: 1, name: 'alpha-env' }),
@@ -418,8 +418,9 @@ describe('InfrastructurePage — fleet section', () => {
 
     renderPage();
 
-    // DataTable search input should be present
-    expect(screen.getByTestId('data-table-search')).toBeInTheDocument();
+    // FleetSearch input should be present; DataTable search should be hidden
+    expect(screen.getByRole('textbox', { name: 'Search endpoints' })).toBeInTheDocument();
+    expect(screen.queryByTestId('data-table-search')).not.toBeInTheDocument();
   });
 
   it('fleet table view fits the viewport (autoFit)', () => {
@@ -1110,5 +1111,26 @@ describe('InfrastructurePage — stack filter chips', () => {
     expect(screen.queryByTestId('filter-chip-stackStatus')).not.toBeInTheDocument();
     expect(screen.getByText('active-s')).toBeInTheDocument();
     expect(screen.getByText('inactive-s')).toBeInTheDocument();
+  });
+});
+
+describe('Infrastructure smart search — Fleet tab', () => {
+  beforeEach(() => {
+    mockStacks([]);
+  });
+
+  it('renders endpoint example chips inside the search bar', () => {
+    mockEndpoints([makeEndpoint({ id: 1, name: 'prod-1' }), makeEndpoint({ id: 2, name: 'prod-2', status: 'down' })]);
+    renderPage();
+    expect(screen.getByRole('button', { name: 'name:prod' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'status:up' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'type:edge' })).toBeInTheDocument();
+  });
+
+  it('shows only one search input in Fleet table view (no DataTable search box)', () => {
+    mockEndpoints([makeEndpoint({ id: 1, name: 'prod-1' }), makeEndpoint({ id: 2, name: 'prod-2' })]);
+    renderPage();
+    fireEvent.click(screen.getByTitle('Table view'));
+    expect(screen.getAllByRole('textbox')).toHaveLength(1);
   });
 });
