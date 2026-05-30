@@ -16,30 +16,10 @@ vi.mock('@/features/containers/hooks/use-endpoints', () => ({
 vi.mock('@/features/containers/hooks/use-containers', () => ({
   useContainers: vi.fn().mockReturnValue({
     data: [
-      {
-        id: 'c1',
-        name: 'api-1',
-        state: 'running',
-        labels: { 'com.docker.compose.project': 'alpha' },
-      },
-      {
-        id: 'c2',
-        name: 'worker-1',
-        state: 'running',
-        labels: { 'com.docker.compose.project': 'alpha' },
-      },
-      {
-        id: 'c4',
-        name: 'beta-api-1',
-        state: 'running',
-        labels: { 'com.docker.compose.project': 'beta' },
-      },
-      {
-        id: 'c3',
-        name: 'standalone-1',
-        state: 'running',
-        labels: {},
-      },
+      { id: 'c1', name: 'api-1', image: 'api:1', state: 'running', status: 'Up', endpointId: 1, endpointName: 'local', ports: [], created: 0, networks: [], labels: { 'com.docker.compose.project': 'alpha' } },
+      { id: 'c2', name: 'worker-1', image: 'worker:1', state: 'running', status: 'Up', endpointId: 1, endpointName: 'local', ports: [], created: 0, networks: [], labels: { 'com.docker.compose.project': 'alpha' } },
+      { id: 'c4', name: 'beta-api-1', image: 'beta:1', state: 'running', status: 'Up', endpointId: 1, endpointName: 'local', ports: [], created: 0, networks: [], labels: { 'com.docker.compose.project': 'beta' } },
+      { id: 'c3', name: 'standalone-1', image: 'std:1', state: 'running', status: 'Up', endpointId: 1, endpointName: 'local', ports: [], created: 0, networks: [], labels: {} },
     ],
   }),
 }));
@@ -113,45 +93,18 @@ function makeCapture(overrides: Partial<Capture> = {}): Capture {
 }
 
 describe('PacketCapture', () => {
-  // Radix Select portal interactions are slow on cold JSDOM start; give them headroom.
-  it('groups running container options by stack and no-stack bucket', () => {
+  it('shows capture targets without selecting an endpoint first', () => {
     render(<PacketCapture />);
+    const input = screen.getByLabelText('Search capture target container');
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: 'api-1' } });
+    expect(screen.getByText('api-1')).toBeInTheDocument();
+  });
 
-    const endpointSelect = screen.getAllByRole('combobox')[0];
-    fireEvent.click(endpointSelect);
-    fireEvent.click(screen.getByRole('option', { name: 'local' }));
-
-    const containerSelect = screen.getAllByRole('combobox')[2];
-    fireEvent.click(containerSelect);
-
-    expect(screen.getByText('alpha')).toBeInTheDocument();
-    expect(screen.getByText('beta')).toBeInTheDocument();
-    expect(screen.getByText('No Stack')).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: 'api-1' })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: 'worker-1' })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: 'beta-api-1' })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: 'standalone-1' })).toBeInTheDocument();
-  }, 20000);
-
-  it('filters container options by selected stack', () => {
+  it('disables Start until a target is selected', () => {
     render(<PacketCapture />);
-
-    const endpointSelect = screen.getAllByRole('combobox')[0];
-    fireEvent.click(endpointSelect);
-    fireEvent.click(screen.getByRole('option', { name: 'local' }));
-
-    const stackSelect = screen.getAllByRole('combobox')[1];
-    fireEvent.click(stackSelect);
-    fireEvent.click(screen.getByRole('option', { name: 'alpha' }));
-
-    const containerSelect = screen.getAllByRole('combobox')[2];
-    fireEvent.click(containerSelect);
-
-    expect(screen.getByRole('option', { name: 'api-1' })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: 'worker-1' })).toBeInTheDocument();
-    expect(screen.queryByRole('option', { name: 'beta-api-1' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('option', { name: 'standalone-1' })).not.toBeInTheDocument();
-  }, 20000);
+    expect(screen.getByRole('button', { name: /start capture/i })).toBeDisabled();
+  });
 
   it('shows the empty state when there are no captures', () => {
     mockUseCaptures.mockReturnValue({ data: { captures: [] }, refetch: vi.fn() } as unknown as ReturnType<typeof useCaptures>);
