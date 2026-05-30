@@ -272,6 +272,26 @@ describe('buildRootGraph', () => {
   });
 });
 
+describe('buildCacheKey', () => {
+  it('changes when a node dimension changes', () => {
+    const a = buildCacheKey([{ id: 'x', width: 10, height: 10 }], []);
+    const b = buildCacheKey([{ id: 'x', width: 20, height: 10 }], []);
+    expect(a).not.toBe(b);
+  });
+
+  it('changes when an edge is added', () => {
+    const nodes: ElkLayoutNode[] = [{ id: 'x', width: 10, height: 10 }];
+    const a = buildCacheKey(nodes, []);
+    const b = buildCacheKey(nodes, [{ id: 'e1', source: 'x', target: 'x' }]);
+    expect(a).not.toBe(b);
+  });
+
+  it('is stable for identical input', () => {
+    const nodes: ElkLayoutNode[] = [{ id: 'x', width: 10, height: 10 }];
+    expect(buildCacheKey(nodes, [])).toBe(buildCacheKey(nodes, []));
+  });
+});
+
 describe('useElkLayout with a rectpacking root', () => {
   it('lays out multiple disconnected stacks without choking', async () => {
     const nodes: ElkLayoutNode[] = [
