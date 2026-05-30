@@ -14,6 +14,9 @@ import {
   formatRate,
   ROOT_LAYOUT_OPTIONS,
   GROUP_LAYOUT_OPTIONS,
+  FIT_VIEW_OPTIONS,
+  MIN_ZOOM,
+  MAX_ZOOM,
   type ContainerData,
   type NetworkData,
 } from './topology-graph';
@@ -27,6 +30,18 @@ describe('layout configuration', () => {
   it('gives container nodes generous spacing inside each stack', () => {
     expect(GROUP_LAYOUT_OPTIONS['elk.algorithm']).toBe('stress');
     expect(Number(GROUP_LAYOUT_OPTIONS['elk.spacing.nodeNode'])).toBeGreaterThanOrEqual(160);
+  });
+});
+
+describe('viewport configuration', () => {
+  it('zooms out far enough to fit a large fleet', () => {
+    expect(MIN_ZOOM).toBeLessThanOrEqual(0.1);
+    expect(MAX_ZOOM).toBeGreaterThanOrEqual(1);
+  });
+
+  it('does not over-zoom a sparse fit', () => {
+    expect(FIT_VIEW_OPTIONS.maxZoom).toBeLessThanOrEqual(1);
+    expect(FIT_VIEW_OPTIONS.padding).toBeGreaterThan(0);
   });
 });
 

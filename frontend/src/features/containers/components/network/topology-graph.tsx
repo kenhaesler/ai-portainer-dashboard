@@ -281,6 +281,12 @@ export const ROOT_LAYOUT_OPTIONS: Record<string, string> = {
 // Phase 4, so we hand ELK an empty root edge set (stable reference).
 const EMPTY_ELK_EDGES: ElkLayoutEdge[] = [];
 
+// Viewport tuning for a large fleet: minZoom well below React Flow's 0.5 default
+// so ~200 nodes fit, and a fitView that doesn't over-zoom a sparse grid.
+export const MIN_ZOOM = 0.1;
+export const MAX_ZOOM = 2;
+export const FIT_VIEW_OPTIONS = { padding: 0.1, maxZoom: 1 } as const;
+
 export function getEdgeStyle(
   containerId: string,
   state: string,
@@ -659,7 +665,11 @@ export function TopologyGraph({
         onNodeClick={handleNodeClick}
         nodeTypes={nodeTypes}
         nodesDraggable={false}
+        onlyRenderVisibleElements
+        minZoom={MIN_ZOOM}
+        maxZoom={MAX_ZOOM}
         fitView
+        fitViewOptions={FIT_VIEW_OPTIONS}
         attributionPosition="bottom-left"
       >
         <Background />
