@@ -28,8 +28,7 @@ import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
 import { MetricsLineChart } from '@/shared/components/charts/metrics-line-chart';
 import { AnomalySparkline } from '@/shared/components/charts/anomaly-sparkline';
 import { NetworkTrafficTooltip } from '@/shared/components/charts/network-traffic-tooltip';
-import { AutoRefreshToggle } from '@/shared/components/ui/auto-refresh-toggle';
-import { RefreshButton } from '@/shared/components/ui/refresh-button';
+import { RefreshControls } from '@/shared/components/ui/refresh-controls';
 import { EmptyState } from '@/shared/components/feedback/empty-state';
 import { SkeletonText, SkeletonChart, SkeletonTableRow } from '@/shared/components/feedback/skeleton';
 import { DataTable } from '@/shared/components/tables/data-table';
@@ -467,8 +466,7 @@ export default function MetricsDashboardPage() {
               Ask AI
             </button>
           )}
-          <AutoRefreshToggle interval={interval} onIntervalChange={setInterval} />
-          <RefreshButton onClick={handleRefresh} isLoading={isFetching} />
+          <RefreshControls interval={interval} onIntervalChange={setInterval} onRefresh={handleRefresh} isLoading={isFetching} />
         </div>
       </div>
 

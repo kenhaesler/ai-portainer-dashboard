@@ -10,8 +10,7 @@ import { useStacks } from '@/features/containers/hooks/use-stacks';
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
 import { DataTable } from '@/shared/components/tables/data-table';
 import { StatusBadge } from '@/shared/components/feedback/status-badge';
-import { AutoRefreshToggle } from '@/shared/components/ui/auto-refresh-toggle';
-import { RefreshButton } from '@/shared/components/ui/refresh-button';
+import { RefreshControls } from '@/shared/components/ui/refresh-controls';
 import { useForceRefresh } from '@/shared/hooks/use-force-refresh';
 import { FavoriteButton } from '@/shared/components/ui/favorite-button';
 import { EmptyState } from '@/shared/components/feedback/empty-state';
@@ -38,6 +37,7 @@ export default function WorkloadExplorerPage() {
   const stackParam = searchParams.get('stack');
   const groupParam = searchParams.get('group');
   const stateParam = searchParams.get('state');
+  const imageParam = searchParams.get('image');
   const selectedEndpoint = endpointParam ? Number(endpointParam) : undefined;
   const selectedStack = stackParam || undefined;
   const selectedGroup: ContainerGroup | undefined =
@@ -45,6 +45,7 @@ export default function WorkloadExplorerPage() {
       ? groupParam
       : undefined;
   const selectedState = stateParam || undefined;
+  const selectedImage = imageParam || undefined;
 
   // Compare-mode state from URL
   const compareMode = searchParams.get('mode') === 'compare';
@@ -69,7 +70,8 @@ export default function WorkloadExplorerPage() {
     endpointId: number | undefined,
     stackName: string | undefined,
     group: ContainerGroup | undefined,
-    state?: string | undefined
+    state?: string | undefined,
+    image?: string | undefined
   ) => {
     const next = new URLSearchParams(searchParams);
     // Reset only the filter keys this function owns
@@ -77,27 +79,33 @@ export default function WorkloadExplorerPage() {
     next.delete('stack');
     next.delete('group');
     next.delete('state');
+    next.delete('image');
     if (endpointId !== undefined) next.set('endpoint', String(endpointId));
     if (stackName) next.set('stack', stackName);
     if (group) next.set('group', group);
     if (state) next.set('state', state);
+    if (image) next.set('image', image);
     setSearchParams(next);
   };
 
   const setSelectedEndpoint = (endpointId: number | undefined) => {
-    setFilters(endpointId, undefined, selectedGroup, selectedState);
+    setFilters(endpointId, undefined, selectedGroup, selectedState, selectedImage);
   };
 
   const setSelectedStack = (stackName: string | undefined) => {
-    setFilters(selectedEndpoint, stackName, selectedGroup, selectedState);
+    setFilters(selectedEndpoint, stackName, selectedGroup, selectedState, selectedImage);
   };
 
   const setSelectedGroup = (group: ContainerGroup | undefined) => {
-    setFilters(selectedEndpoint, selectedStack, group, selectedState);
+    setFilters(selectedEndpoint, selectedStack, group, selectedState, selectedImage);
   };
 
   const setSelectedState = (state: string | undefined) => {
-    setFilters(selectedEndpoint, selectedStack, selectedGroup, state);
+    setFilters(selectedEndpoint, selectedStack, selectedGroup, state, selectedImage);
+  };
+
+  const setSelectedImage = (image: string | undefined) => {
+    setFilters(selectedEndpoint, selectedStack, selectedGroup, selectedState, image);
   };
 
   const { data: endpoints } = useEndpoints();
@@ -132,9 +140,10 @@ export default function WorkloadExplorerPage() {
     return containers.filter((container) => {
       const stackMatches = !selectedStack || resolveContainerStackName(container, knownStackNames) === selectedStack;
       const groupMatches = !selectedGroup || getContainerGroup(container) === selectedGroup;
-      return stackMatches && groupMatches;
+      const imageMatches = !selectedImage || container.image === selectedImage;
+      return stackMatches && groupMatches && imageMatches;
     });
-  }, [containers, selectedStack, selectedGroup, knownStackNames]);
+  }, [containers, selectedStack, selectedGroup, selectedImage, knownStackNames]);
 
   const stateCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -189,8 +198,16 @@ export default function WorkloadExplorerPage() {
         },
       });
     }
+    if (selectedImage) {
+      filters.push({
+        key: 'image',
+        label: 'Image',
+        value: truncate(getImageShortName(selectedImage), 30),
+        onRemove: () => setFilters(selectedEndpoint, selectedStack, selectedGroup, selectedState, undefined),
+      });
+    }
     return filters;
-  }, [selectedEndpoint, selectedStack, selectedGroup, selectedState, endpoints]);
+  }, [selectedEndpoint, selectedStack, selectedGroup, selectedState, selectedImage, endpoints]);
 
   const [selectedContainers, setSelectedContainers] = useState<Container[]>([]);
   const [controlledRowIds, setControlledRowIds] = useState<RowSelectionState | undefined>(undefined);
@@ -200,7 +217,7 @@ export default function WorkloadExplorerPage() {
   // Reset search-filtered results when the upstream (dropdown) filters change
   useEffect(() => {
     setSearchFilteredContainers(undefined);
-  }, [selectedEndpoint, selectedStack, selectedGroup, selectedState]);
+  }, [selectedEndpoint, selectedStack, selectedGroup, selectedState, selectedImage]);
 
   const exportRows = useMemo<Record<string, unknown>[]>(() => {
     if (!filteredContainers) return [];
@@ -338,7 +355,22 @@ export default function WorkloadExplorerPage() {
     {
       accessorKey: 'state',
       header: 'State',
-      cell: ({ getValue }) => <StatusBadge status={getValue<string>()} />,
+      cell: ({ getValue }) => {
+        const state = getValue<string>();
+        return (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setSelectedState(state);
+            }}
+            className="rounded-full transition-all duration-200 hover:shadow-sm hover:ring-1 hover:ring-primary/30"
+            title={`Filter by state: ${state}`}
+          >
+            <StatusBadge status={state} />
+          </button>
+        );
+      },
     },
     {
       accessorKey: 'endpointName',
@@ -346,9 +378,17 @@ export default function WorkloadExplorerPage() {
       cell: ({ row }) => {
         const container = row.original;
         return (
-          <span className="inline-flex items-center rounded-md bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setSelectedEndpoint(container.endpointId);
+            }}
+            className="inline-flex items-center whitespace-nowrap rounded-md bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800 transition-colors hover:bg-blue-200 hover:ring-1 hover:ring-blue-300 dark:bg-blue-900/30 dark:text-blue-400 dark:hover:bg-blue-900/50"
+            title={`Filter by endpoint: ${container.endpointName}`}
+          >
             {container.endpointName}
-          </span>
+          </button>
         );
       },
     },
@@ -358,12 +398,17 @@ export default function WorkloadExplorerPage() {
       cell: ({ getValue }) => {
         const full = getValue<string>();
         return (
-          <span
-            className="inline-flex items-center rounded-md bg-muted/50 px-2 py-0.5 text-xs font-mono text-muted-foreground"
-            title={full}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setSelectedImage(full);
+            }}
+            className="inline-flex items-center whitespace-nowrap rounded-md bg-muted/50 px-2 py-0.5 text-xs font-mono text-muted-foreground transition-colors hover:bg-muted hover:text-foreground hover:ring-1 hover:ring-border"
+            title={`Filter by image: ${full}`}
           >
             {truncate(getImageShortName(full), 50)}
-          </span>
+          </button>
         );
       },
     },
@@ -372,26 +417,31 @@ export default function WorkloadExplorerPage() {
       header: 'Group',
       size: 72,
       cell: ({ row }) => {
-        const label = getContainerGroupLabel(row.original);
+        const container = row.original;
+        const label = getContainerGroupLabel(container);
         const isSystem = label === 'System';
         const Icon = isSystem ? Cog : Box;
         return (
-          <span
-            role="img"
-            title={label}
-            aria-label={label}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setSelectedGroup(getContainerGroup(container));
+            }}
+            title={`Filter by group: ${label}`}
+            aria-label={`Filter by ${label}`}
             className={
               isSystem
-                ? 'inline-flex items-center justify-center rounded-md bg-amber-100 p-1 text-amber-900 dark:bg-amber-900/30 dark:text-amber-300'
-                : 'inline-flex items-center justify-center rounded-md bg-slate-100 p-1 text-slate-700 dark:bg-slate-900/30 dark:text-slate-300'
+                ? 'inline-flex items-center justify-center rounded-md bg-amber-100 p-1 text-amber-900 transition-colors hover:bg-amber-200 hover:ring-1 hover:ring-amber-300 dark:bg-amber-900/30 dark:text-amber-300 dark:hover:bg-amber-900/50'
+                : 'inline-flex items-center justify-center rounded-md bg-slate-100 p-1 text-slate-700 transition-colors hover:bg-slate-200 hover:ring-1 hover:ring-slate-300 dark:bg-slate-900/30 dark:text-slate-300 dark:hover:bg-slate-900/50'
             }
           >
             <Icon className="h-3.5 w-3.5" aria-hidden="true" />
-          </span>
+          </button>
         );
       },
     },
-  ], [navigate, knownStackNames, selectedEndpoint, selectedGroup, selectedState]);
+  ], [navigate, knownStackNames, selectedEndpoint, selectedStack, selectedGroup, selectedState, selectedImage]);
 
   if (isError) {
     return (
@@ -475,8 +525,7 @@ export default function WorkloadExplorerPage() {
               </button>
             </>
           )}
-          <AutoRefreshToggle interval={interval} onIntervalChange={setInterval} />
-          <RefreshButton onClick={() => refetch()} onForceRefresh={forceRefresh} isLoading={isFetching || isForceRefreshing} />
+          <RefreshControls interval={interval} onIntervalChange={setInterval} onRefresh={() => refetch()} onForceRefresh={forceRefresh} isLoading={isFetching || isForceRefreshing} />
         </div>
       </div>
 

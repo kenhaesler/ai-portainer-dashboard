@@ -22,8 +22,7 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/shared/lib/api';
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
-import { AutoRefreshToggle } from '@/shared/components/ui/auto-refresh-toggle';
-import { RefreshButton } from '@/shared/components/ui/refresh-button';
+import { RefreshControls } from '@/shared/components/ui/refresh-controls';
 import { SkeletonText } from '@/shared/components/feedback/skeleton';
 import { cn, formatDate } from '@/shared/lib/utils';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
@@ -377,8 +376,7 @@ export default function EdgeAgentLogsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <AutoRefreshToggle interval={interval} onIntervalChange={setInterval} />
-          <RefreshButton onClick={handleRefresh} isLoading={isFetching} />
+          <RefreshControls interval={interval} onIntervalChange={setInterval} onRefresh={handleRefresh} isLoading={isFetching} />
         </div>
       </div>
 

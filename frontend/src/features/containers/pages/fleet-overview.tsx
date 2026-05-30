@@ -13,7 +13,7 @@ import { useStacks } from '@/features/containers/hooks/use-stacks';
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
 import { DataTable } from '@/shared/components/tables/data-table';
 import { StatusBadge } from '@/shared/components/feedback/status-badge';
-import { AutoRefreshToggle } from '@/shared/components/ui/auto-refresh-toggle';
+import { RefreshControls } from '@/shared/components/ui/refresh-controls';
 import { RefreshButton } from '@/shared/components/ui/refresh-button';
 import { EmptyState } from '@/shared/components/feedback/empty-state';
 import { SkeletonText, SkeletonChart } from '@/shared/components/feedback/skeleton';
@@ -827,9 +827,10 @@ export default function InfrastructurePage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <AutoRefreshToggle interval={interval} onIntervalChange={setInterval} />
-          <RefreshButton
-            onClick={handleRefresh}
+          <RefreshControls
+            interval={interval}
+            onIntervalChange={setInterval}
+            onRefresh={handleRefresh}
             onForceRefresh={forceRefresh}
             isLoading={isFetching || isForceRefreshing}
           />

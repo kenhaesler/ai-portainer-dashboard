@@ -91,11 +91,8 @@ vi.mock('@/shared/components/layout/motion-page', () => ({
   MotionReveal: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   MotionStagger: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
-vi.mock('@/shared/components/ui/auto-refresh-toggle', () => ({
-  AutoRefreshToggle: () => <div data-testid="mock-auto-refresh" />,
-}));
-vi.mock('@/shared/components/ui/refresh-button', () => ({
-  RefreshButton: () => <button data-testid="mock-refresh" />,
+vi.mock('@/shared/components/ui/refresh-controls', () => ({
+  RefreshControls: () => <button data-testid="mock-refresh" />,
 }));
 vi.mock('@/shared/components/feedback/status-badge', () => ({
   StatusBadge: ({ status }: { status: string }) => <span>{status}</span>,

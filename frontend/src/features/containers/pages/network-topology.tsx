@@ -9,8 +9,7 @@ import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
 import { useNetworkRates } from '@/features/observability/hooks/use-metrics';
 import { useServiceMap } from '@/features/observability/hooks/use-service-map';
 import { TopologyGraph, type RpcEdgeInput } from '@/features/containers/components/network/topology-graph';
-import { AutoRefreshToggle } from '@/shared/components/ui/auto-refresh-toggle';
-import { RefreshButton } from '@/shared/components/ui/refresh-button';
+import { RefreshControls } from '@/shared/components/ui/refresh-controls';
 import { SkeletonChart } from '@/shared/components/feedback/skeleton';
 import { EmptyState } from '@/shared/components/feedback/empty-state';
 import { StatusBadge } from '@/shared/components/feedback/status-badge';
@@ -174,8 +173,7 @@ export default function NetworkTopologyPage() {
               )}
             </span>
           </label>
-          <AutoRefreshToggle interval={interval} onIntervalChange={setInterval} />
-          <RefreshButton onClick={handleRefresh} isLoading={isFetching} />
+          <RefreshControls interval={interval} onIntervalChange={setInterval} onRefresh={handleRefresh} isLoading={isFetching} />
         </div>
       </div>
 
