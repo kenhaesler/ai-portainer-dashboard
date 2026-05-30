@@ -12,7 +12,14 @@ vi.mock('elkjs/lib/elk.bundled.js', () => ({
   },
 }));
 
-import { useElkLayout, type ElkLayoutNode, type ElkLayoutEdge } from './use-elk-layout';
+import {
+  useElkLayout,
+  buildCacheKey,
+  buildRootGraph,
+  DEFAULT_ROOT_LAYOUT_OPTIONS,
+  type ElkLayoutNode,
+  type ElkLayoutEdge,
+} from './use-elk-layout';
 
 beforeEach(() => {
   mockLayout.mockReset();
@@ -236,5 +243,54 @@ describe('useElkLayout', () => {
       sources: ['c1'],
       targets: ['n1'],
     });
+  });
+});
+
+describe('buildRootGraph', () => {
+  it('defaults to DEFAULT_ROOT_LAYOUT_OPTIONS when none provided', () => {
+    const graph = buildRootGraph([{ id: 'a', width: 10, height: 10 }], []);
+    expect(graph.id).toBe('root');
+    expect(graph.layoutOptions).toBe(DEFAULT_ROOT_LAYOUT_OPTIONS);
+  });
+
+  it('applies provided rootLayoutOptions to the root node', () => {
+    const opts = { 'elk.algorithm': 'rectpacking' };
+    const graph = buildRootGraph([{ id: 'a', width: 10, height: 10 }], [], opts);
+    expect(graph.layoutOptions).toBe(opts);
+  });
+
+  it('converts children and edges into elk format', () => {
+    const graph = buildRootGraph(
+      [
+        { id: 'a', width: 10, height: 10 },
+        { id: 'b', width: 10, height: 10 },
+      ],
+      [{ id: 'e1', source: 'a', target: 'b' }],
+    );
+    expect(graph.children).toHaveLength(2);
+    expect(graph.edges).toEqual([{ id: 'e1', sources: ['a'], targets: ['b'] }]);
+  });
+});
+
+describe('useElkLayout with a rectpacking root', () => {
+  it('lays out multiple disconnected stacks without choking', async () => {
+    const nodes: ElkLayoutNode[] = [
+      { id: 'g1', width: 0, height: 0, children: [{ id: 'c1', width: 100, height: 50 }] },
+      { id: 'g2', width: 0, height: 0, children: [{ id: 'c2', width: 100, height: 50 }] },
+      { id: 'n1', width: 100, height: 50 },
+    ];
+    const rootLayoutOptions = {
+      'elk.algorithm': 'rectpacking',
+      'elk.hierarchyHandling': 'SEPARATE_CHILDREN',
+    };
+    const { result } = renderHook(() =>
+      useElkLayout({ nodes, edges: [], rootLayoutOptions }),
+    );
+    await waitFor(() => {
+      expect(result.current.get('g1')).toBeDefined();
+      expect(result.current.get('g2')).toBeDefined();
+    });
+    expect(result.current.get('c1')).toBeDefined();
+    expect(result.current.get('n1')).toBeDefined();
   });
 });
