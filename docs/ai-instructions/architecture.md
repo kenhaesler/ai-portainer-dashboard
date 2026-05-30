@@ -114,7 +114,7 @@ Cross-domain communication is resolved via dependency injection in `packages/ser
 |------|---------|
 | `app.ts` | Fastify factory — registers all plugins and routes |
 | `wiring.ts` | DI wiring — builds adapters implementing contract interfaces |
-| `scheduler.ts` | Background jobs: metrics (60s), monitoring (5min), daily cleanup |
+| `scheduler.ts` | Background jobs: metrics, monitoring, webhook retry, cleanup, etc. (see [Background Scheduler](#background-scheduler)) |
 | `socket-setup.ts` | Socket.IO namespace initialization |
 | `index.ts` | Entry point — DB init, server start, graceful shutdown |
 
@@ -192,6 +192,134 @@ ThemeProvider > QueryProvider > AuthProvider > SocketProvider > SearchProvider >
 - The **server cache** is a Redis-backed layer in front of Portainer. Auto-refresh intervals, React Query background revalidation, and cross-panel re-renders read from it so the upstream Portainer API isn't hammered on every poll.
 - The **explicit Refresh button** (`frontend/src/shared/components/ui/refresh-button.tsx`) treats a user click as a foreground freshness signal: it invalidates the server cache for the active resource via `POST /api/admin/cache/invalidate?resource=…` and then re-fetches. `useForceRefresh` (`frontend/src/shared/hooks/use-force-refresh.ts`) swallows the 403 non-admins get from the admin-only invalidate endpoint and falls through to a plain refetch — non-admins keep working, no error toast.
 - The invalidate endpoint is admin-only (`packages/foundation/src/routes/cache-admin.ts`). Cache TTLs, keys, and invalidation patterns belong to the kernel (`packages/core/src/portainer/`).
+
+## Database Schema
+
+The backend uses **two PostgreSQL databases** managed by sequential SQL migrations in `packages/core/src/db/`:
+
+- **App DB** (`postgres-migrations/`, currently 37 migrations) — all relational application state.
+- **Metrics DB** (`timescale-migrations/`) — a TimescaleDB instance holding time-series metrics in hypertables.
+
+Metrics are dual-written: every collected sample lands in the app DB `metrics` table (for direct lookups) **and** the TimescaleDB `metrics` hypertable (for time-series rollups). Migrations run automatically on startup.
+
+### App database (PostgreSQL)
+
+| Table(s) | Purpose |
+|----------|---------|
+| `sessions` | Server-side auth sessions (token hash, expiry, validity) — validated per request |
+| `users` | Local accounts with RBAC `role` (`viewer` / `operator` / `admin`) + default landing page |
+| `oidc_user_groups` | OIDC group claims observed at login (migration 034) |
+| `settings` | Global key/value app configuration, categorized |
+| `user_settings` | **Per-user** preferences keyed by `(user_id, key)` — e.g. anomaly sensitivity (migration 036) |
+| `insights` | Detected anomalies/findings (severity, category, structured dimensions, acknowledged flag) |
+| `incidents` | Correlated insight groups (root-cause insight, `signature` for dedup rollup, affected containers) |
+| `investigations` | LLM root-cause analyses linked to a triggering insight |
+| `actions` | Remediation action queue + audit trail (`pending`→`approved`→`executing`→`completed`/`failed`) |
+| `anomaly_feedback` | Per-user false-positive dispositions, unique on `(anomaly_id, user_id)` (migration 037, #1298) |
+| `monitoring_cycles` / `monitoring_snapshots` | Monitoring run telemetry + fleet snapshots |
+| `monitoring_dedup_metrics` | Per-signature alert-volume telemetry for tuning (migration 033) |
+| `spans` | Distributed trace spans (OTLP) with container / k8s attributes |
+| `llm_traces` | LLM request/response telemetry (tokens, latency, model, status) |
+| `llm_feedback` / `llm_prompt_suggestions` | LLM output ratings + suggested prompt edits |
+| `prompt_profiles` / prompt versions | Built-in + custom system-prompt profiles and version history |
+| `mcp_servers` | MCP tool-bridge server configurations |
+| `webhooks` / `webhook_deliveries` | Outbound webhook definitions + delivery attempts/retries |
+| `notification_log` | Notification delivery history (email/Teams/Discord/Telegram) |
+| `harbor_vulnerabilities` / `harbor_vulnerability_exceptions` / `harbor_sync_status` | Harbor CVE inventory, exceptions, sync state |
+| `pcap_captures` | Packet-capture jobs + protocol/analysis results |
+| `ebpf_coverage` | Per-endpoint Beyla/eBPF deployment status |
+| `security_destination_rules` | Network egress verdict rules (allow/warn/deny) for observed destinations |
+| `image_staleness` | Local-vs-registry image digest comparison results |
+| `metrics` | Raw container metrics (also written to TimescaleDB) |
+| `kpi_snapshots` | Dashboard KPI aggregates (also in TimescaleDB) |
+| `audit_log` | Immutable record of user actions for compliance |
+| `stream_tickets` | Single-use, 30s-TTL SSE auth tickets |
+
+### Metrics database (TimescaleDB)
+
+| Object | Purpose |
+|--------|---------|
+| `metrics` (hypertable) | Raw time-series samples, 7-day chunks, compressed after 7 days (segment by `container_id, metric_type`) |
+| `metrics_5min` / `metrics_1hour` / `metrics_1day` | Continuous aggregates (avg/min/max/stddev/count per bucket) — queried by range to keep charts cheap |
+| `kpi_snapshots` (hypertable) | Time-series fleet KPI snapshots for dashboard sparklines |
+
+## Data Flows
+
+### Container metrics (read path)
+
+```
+[Frontend / React Query]
+   → GET /api/metrics/:endpointId/:containerId
+   → @dashboard/observability route → metrics-store
+   → reads metrics_5min | metrics_1hour | metrics_1day (by range)
+   → LTTB decimation (≤ 500 points)
+   → [UI charts]
+
+[Scheduler every 60s]  → metrics-collector → portainer-client (Redis-cached)
+   → compute cpu% / mem% / net rx·tx → metrics-store
+   → INSERT app `metrics` + TimescaleDB `metrics` hypertable
+```
+
+### Monitoring & anomaly detection
+
+```
+[Scheduler]  (polls 60s; runs at MONITORING_INTERVAL_MINUTES)
+   → monitoring-service.runMonitoringCycle()
+        ├─ adaptive detector (z-score / Bollinger / CV-scaled) + Isolation Forest
+        ├─ optional security scan, NLP log analysis, predictive alerting
+        ├─ INSERT insights → correlate → incidents
+        ├─ critical anomaly → trigger LLM investigation → investigations
+        └─ Socket.IO /monitoring → emit insights:new / insights:batch
+   → [UI: Health & Monitoring, live]
+```
+
+See [AI & Anomaly Detection](../ai-anomaly-detection.md) for detector internals.
+
+### Remediation (observer-first gate)
+
+```
+anomaly/incident → remediation-service.suggestAction()
+   → protected-container check (destructive action downgraded to INVESTIGATE)
+   → INSERT actions (status=pending) → Socket.IO /remediation
+   → admin approves  [authenticate + requireRole('admin')]
+   → execute via portainer-client → status=executing→completed/failed
+   → audit_log entry
+```
+
+Both an `admin` role **and** an explicit approval are required before any container-mutating action runs.
+
+### LLM chat
+
+```
+[/llm socket: chat:message]  (also REST POST /api/llm/query)
+   → prompt-injection guard (regex + heuristic scoring + per-session canary)
+   → effective system prompt from prompt_profiles
+   → infrastructure context + MCP tools (looped, max tool iterations)
+   → stream chunks → chat:chunk … chat:end
+   → output sanitization (strip canary, thinking blocks, PII)
+   → INSERT llm_traces
+```
+
+The guard is applied to both the REST and WebSocket entry points; see CLAUDE.md → Security for the contract.
+
+## Background Scheduler
+
+`packages/server/src/scheduler.ts` starts a set of interval jobs after the cache is warmed and Portainer connectivity is confirmed. Cadences marked *configurable* are read live from Settings/env (changes take effect without restart):
+
+| Job | Cadence | Controlled by |
+|-----|---------|---------------|
+| Metrics collection | 60s | `METRICS_COLLECTION_INTERVAL_SECONDS` |
+| Monitoring cycle | configurable (1-min poll) | `MONITORING_INTERVAL_MINUTES` (Settings) |
+| Webhook retry sweep | 30s | `WEBHOOKS_RETRY_INTERVAL_SECONDS` |
+| KPI snapshot | 5 min | — |
+| Image staleness check | 24h | `IMAGE_STALENESS_CHECK_INTERVAL_HOURS` |
+| Harbor CVE sync | configurable (1-min poll) | `HARBOR_SYNC_INTERVAL_MINUTES` (Settings) |
+| Portainer backup | configurable | `portainer_backup.interval_hours` (Settings) |
+| Daily cleanup (retention) | 24h | — |
+| Session cleanup | 60 min | — |
+| Dedup telemetry | 60 min | — |
+| Stream-ticket cleanup | 5 min | — |
+| Anomaly cooldown sweep | 15 min | — |
 
 ## Key Patterns
 
