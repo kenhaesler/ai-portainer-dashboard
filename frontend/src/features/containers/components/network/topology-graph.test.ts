@@ -11,6 +11,8 @@ import {
   sortStacks,
   getHandleForAngle,
   getBestHandles,
+  collectUsedHandles,
+  type HandleDirection,
   formatRate,
   ROOT_LAYOUT_OPTIONS,
   GROUP_LAYOUT_OPTIONS,
@@ -663,5 +665,44 @@ describe('formatRate', () => {
 
   it('rounds correctly for fractional KB', () => {
     expect(formatRate(1536)).toBe('1.5KB/s');
+  });
+});
+
+describe('collectUsedHandles', () => {
+  it('records sourceHandle on source and targetHandle on target', () => {
+    const m = collectUsedHandles([
+      { source: 'a', target: 'b', sourceHandle: 'right', targetHandle: 'left' },
+    ]);
+    expect([...(m.get('a') ?? [])]).toEqual(['right']);
+    expect([...(m.get('b') ?? [])]).toEqual(['left']);
+  });
+
+  it('keeps both handles for a node used as source and target', () => {
+    const m = collectUsedHandles([
+      { source: 'a', target: 'b', sourceHandle: 'right', targetHandle: 'left' },
+      { source: 'c', target: 'a', sourceHandle: 'bottom', targetHandle: 'top' },
+    ]);
+    expect([...(m.get('a') ?? [])].sort()).toEqual(['right', 'top']);
+  });
+
+  it('dedupes repeated handles', () => {
+    const m = collectUsedHandles([
+      { source: 'a', target: 'b', sourceHandle: 'right', targetHandle: 'left' },
+      { source: 'a', target: 'd', sourceHandle: 'right', targetHandle: 'left' },
+    ]);
+    expect([...(m.get('a') ?? [])]).toEqual(['right']);
+  });
+
+  it('ignores null/undefined handles', () => {
+    const m = collectUsedHandles([
+      { source: 'a', target: 'b', sourceHandle: null, targetHandle: undefined },
+    ]);
+    expect(m.has('a')).toBe(false);
+    expect(m.has('b')).toBe(false);
+  });
+
+  it('returns no entry for nodes with no edges', () => {
+    const m = collectUsedHandles([]);
+    expect(m.size).toBe(0);
   });
 });

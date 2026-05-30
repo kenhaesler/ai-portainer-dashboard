@@ -211,7 +211,7 @@ export function sortStacks(
 
 // --- Handle helpers (pure functions, exported for testing) ---
 
-type HandleDirection = 'top' | 'right' | 'bottom' | 'left';
+export type HandleDirection = 'top' | 'right' | 'bottom' | 'left';
 
 /** Map an angle (radians, 0 = right, counter-clockwise negative) to the closest handle direction. */
 export function getHandleForAngle(angle: number): HandleDirection {
@@ -239,6 +239,26 @@ export function getBestHandles(
     left: 'right',
   };
   return { sourceHandle, targetHandle: opposites[sourceHandle] };
+}
+
+/**
+ * Map each node id to the set of handle directions some edge attaches to
+ * (as source or target). Lets nodes render only their connected handles. Pure.
+ */
+export function collectUsedHandles(
+  edges: Array<{ source: string; target: string; sourceHandle?: string | null; targetHandle?: string | null }>,
+): Map<string, Set<HandleDirection>> {
+  const used = new Map<string, Set<HandleDirection>>();
+  const add = (nodeId: string, handle?: string | null) => {
+    if (!handle) return;
+    if (!used.has(nodeId)) used.set(nodeId, new Set());
+    used.get(nodeId)!.add(handle as HandleDirection);
+  };
+  for (const e of edges) {
+    add(e.source, e.sourceHandle);
+    add(e.target, e.targetHandle);
+  }
+  return used;
 }
 
 // --- End handle helpers ---
