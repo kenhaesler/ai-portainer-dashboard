@@ -128,19 +128,25 @@ describe('WorkloadSmartSearch', () => {
     expect(screen.queryByRole('button', { name: /state:running/i })).not.toBeInTheDocument();
   });
 
-  it('hides the in-field example chips on focus and restores them on blur', () => {
+  it('keeps the in-field example chips mounted while the empty field is focused (keyboard reachability)', () => {
     renderComponent();
     const input = screen.getByRole('textbox');
-    // Visible while the empty field is unfocused…
     expect(screen.getByRole('button', { name: 'state:running' })).toBeInTheDocument();
 
-    // …hidden once the field is focused so the user can type…
+    // Focusing the input must NOT unmount the chips — a keyboard user needs to
+    // be able to Tab from the input onto them.
     fireEvent.focus(input);
-    expect(screen.queryByRole('button', { name: 'state:running' })).not.toBeInTheDocument();
-
-    // …and restored on blur (still empty).
-    fireEvent.blur(input);
     expect(screen.getByRole('button', { name: 'state:running' })).toBeInTheDocument();
+  });
+
+  it('clicking the empty example strip focuses the input', () => {
+    renderComponent();
+    const input = screen.getByRole('textbox');
+    const strip = screen.getByRole('group', { name: 'Example searches' });
+
+    expect(document.activeElement).not.toBe(input);
+    fireEvent.click(strip);
+    expect(document.activeElement).toBe(input);
   });
 
   it('pressing Enter calls mutate (AI mode) and shows AI badge', async () => {

@@ -46,7 +46,6 @@ export function WorkloadSmartSearch({
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState('');
   const [mode, setMode] = useState<SearchMode>('filter');
-  const [focused, setFocused] = useState(false);
   const [aiResult, setAiResult] = useState<NlQueryResult | null>(null);
   const [aiFilteredCount, setAiFilteredCount] = useState<number | null>(null);
   const nlQuery = useNlQuery();
@@ -162,8 +161,10 @@ export function WorkloadSmartSearch({
 
   const isAiMode = mode === 'ai';
   const isAiFilterActive = isAiMode && aiResult?.action === 'filter' && aiFilteredCount !== null;
-  // Example chips overlay the field only while it is empty, idle, and unfocused.
-  const showExamples = !query && !nlQuery.isPending && !focused;
+  // Example chips overlay the field while it is empty and idle. They stay
+  // mounted on focus (rather than unmounting) so a keyboard user can Tab from
+  // the input onto them; the first keystroke fills the field and removes them.
+  const showExamples = !query && !nlQuery.isPending;
 
   return (
     <div className="space-y-3">
@@ -184,8 +185,6 @@ export function WorkloadSmartSearch({
           value={query}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
           placeholder={placeholder}
           className={cn(
             'w-full rounded-xl border bg-card/80 py-3 pl-11 pr-24 text-sm backdrop-blur-sm',
@@ -218,17 +217,18 @@ export function WorkloadSmartSearch({
           )}
         </div>
         {/* Example searches — overlaid inside the empty field; click fills the
-            search. Hidden on focus/typing so the placeholder and typed text
-            stay visible. Long AI prompts scroll horizontally. */}
+            search. Kept mounted whenever the field is empty (incl. while
+            focused) so they stay keyboard-reachable; the first keystroke removes
+            them, so typed text is never obscured. Long AI prompts scroll. */}
         {showExamples && (
           <div
             role="group"
             aria-label="Example searches"
-            onMouseDown={(e) => {
-              // A click on the empty strip (not a chip) focuses the input so
-              // the user can type; the chips then disappear.
+            onClick={(e) => {
+              // A click on the empty strip (not a chip) focuses the input so the
+              // user can start typing. Using onClick (not onMouseDown) leaves
+              // drag-to-scroll of overflowing chips intact.
               if (e.target === e.currentTarget) {
-                e.preventDefault();
                 inputRef.current?.focus();
               }
             }}
