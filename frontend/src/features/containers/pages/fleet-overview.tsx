@@ -26,6 +26,7 @@ import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 import { FleetStatusSummary } from '@/features/containers/components/fleet/fleet-status-summary';
 import { FleetSearch } from '@/features/containers/components/fleet/fleet-search';
 import { filterEndpoints, filterStacks, type StackWithEndpoint } from '@/features/containers/lib/fleet-search-filter';
+import { filterK8sResources } from '@/features/containers/lib/k8s-search-filter';
 import { useK8sPods, useK8sDeployments, useK8sServices, useK8sNamespaces, type K8sPod, type K8sDeployment, type K8sService } from '@/features/kubernetes/hooks/use-kubernetes';
 
 const FLEET_GRID_PAGE_SIZE = 30;
@@ -326,6 +327,24 @@ export default function InfrastructurePage() {
   const {
     data: k8sNamespaces,
   } = useK8sNamespaces();
+
+  const [k8sSearchQuery, setK8sSearchQuery] = useState('');
+  const filteredK8sPods = useMemo(
+    () => filterK8sResources(k8sPods ?? [], k8sSearchQuery),
+    [k8sPods, k8sSearchQuery],
+  );
+  const filteredK8sDeployments = useMemo(
+    () => filterK8sResources(k8sDeployments ?? [], k8sSearchQuery),
+    [k8sDeployments, k8sSearchQuery],
+  );
+  const filteredK8sServices = useMemo(
+    () => filterK8sResources(k8sServices ?? [], k8sSearchQuery),
+    [k8sServices, k8sSearchQuery],
+  );
+  const k8sTotalCount =
+    (k8sPods?.length ?? 0) + (k8sDeployments?.length ?? 0) + (k8sServices?.length ?? 0);
+  const k8sFilteredCount =
+    filteredK8sPods.length + filteredK8sDeployments.length + filteredK8sServices.length;
 
   const isLoading = endpointsLoading || stacksLoading;
   const isFetching = endpointsFetching || stacksFetching;
@@ -1249,6 +1268,18 @@ export default function InfrastructurePage() {
         </div>
         </SpotlightCard>
 
+        {/* K8s smart search */}
+        {!k8sPodsLoading && k8sTotalCount > 0 && (
+          <FleetSearch
+            onSearch={setK8sSearchQuery}
+            totalCount={k8sTotalCount}
+            filteredCount={k8sFilteredCount}
+            placeholder="Search resources... (namespace:kube-system status:running nginx)"
+            label="Search Kubernetes resources"
+            examples={['namespace:kube-system', 'status:running', 'nginx']}
+          />
+        )}
+
         {/* Pods table */}
         {k8sPodsLoading ? (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -1262,9 +1293,8 @@ export default function InfrastructurePage() {
             <h3 className="mb-4 text-sm font-semibold">Pods</h3>
             <DataTable
               columns={k8sPodColumns}
-              data={k8sPods ?? []}
-              searchKey="name"
-              searchPlaceholder="Search pods..."
+              data={filteredK8sPods}
+              hideSearch
               pageSize={15}
             />
           </div>
@@ -1278,9 +1308,8 @@ export default function InfrastructurePage() {
             <h3 className="mb-4 text-sm font-semibold">Deployments</h3>
             <DataTable
               columns={k8sDeploymentColumns}
-              data={k8sDeployments}
-              searchKey="name"
-              searchPlaceholder="Search deployments..."
+              data={filteredK8sDeployments}
+              hideSearch
               pageSize={15}
             />
           </div>
@@ -1294,9 +1323,8 @@ export default function InfrastructurePage() {
             <h3 className="mb-4 text-sm font-semibold">Services</h3>
             <DataTable
               columns={k8sServiceColumns}
-              data={k8sServices}
-              searchKey="name"
-              searchPlaceholder="Search services..."
+              data={filteredK8sServices}
+              hideSearch
               pageSize={15}
             />
           </div>

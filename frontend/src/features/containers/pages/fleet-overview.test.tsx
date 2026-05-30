@@ -18,6 +18,13 @@ vi.mock('@/features/containers/hooks/use-stacks', () => ({
   useStacks: vi.fn(),
 }));
 
+vi.mock('@/features/kubernetes/hooks/use-kubernetes', () => ({
+  useK8sPods: vi.fn(() => ({ data: [], isLoading: false, refetch: vi.fn(), isFetching: false })),
+  useK8sDeployments: vi.fn(() => ({ data: [], isLoading: false })),
+  useK8sServices: vi.fn(() => ({ data: [], isLoading: false })),
+  useK8sNamespaces: vi.fn(() => ({ data: [] })),
+}));
+
 vi.mock('@/shared/hooks/use-auto-refresh', () => ({
   useAutoRefresh: () => ({ interval: 30, setInterval: vi.fn() }),
 }));
@@ -36,6 +43,7 @@ vi.mock('sonner', () => ({
 import { toast } from 'sonner';
 import { useEndpoints } from '@/features/containers/hooks/use-endpoints';
 import { useStacks } from '@/features/containers/hooks/use-stacks';
+import { useK8sPods } from '@/features/kubernetes/hooks/use-kubernetes';
 import type { Endpoint } from '@/features/containers/hooks/use-endpoints';
 import type { Stack } from '@/features/containers/hooks/use-stacks';
 import { useUiStore } from '@/stores/ui-store';
@@ -1148,5 +1156,43 @@ describe('Infrastructure smart search — Stacks tab', () => {
     renderPageWithInitialParams('/infrastructure?tab=stacks');
     expect(screen.getByRole('textbox', { name: 'Search stacks' })).toBeInTheDocument();
     expect(screen.queryByTestId('data-table-search')).not.toBeInTheDocument();
+  });
+});
+
+describe('Infrastructure smart search — Kubernetes tab', () => {
+  const pod = (name: string, namespace: string, status: string) => ({
+    id: `${namespace}/${name}`, name, namespace, images: [], state: 'running',
+    status, restarts: 0, created: 0, endpointId: 1, endpointName: 'prod-1',
+    labels: {}, containers: [], resourceType: 'pod',
+  });
+
+  beforeEach(() => {
+    mockEndpoints([makeEndpoint({ id: 1, name: 'prod-1' })]);
+    mockStacks([]);
+    vi.mocked(useK8sPods).mockReturnValue({
+      data: [pod('nginx-1', 'default', 'Running'), pod('redis-1', 'cache', 'Pending')],
+      isLoading: false, refetch: vi.fn(), isFetching: false,
+    } as any);
+  });
+
+  it('renders a Kubernetes search bar with example chips', () => {
+    renderPageWithInitialParams('/infrastructure?tab=kubernetes');
+    expect(screen.getByRole('textbox', { name: /search kubernetes resources/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'namespace:kube-system' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'status:running' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'nginx' })).toBeInTheDocument();
+  });
+
+  it('filters the pods table by the search query', async () => {
+    renderPageWithInitialParams('/infrastructure?tab=kubernetes');
+    expect(screen.getByText('nginx-1')).toBeInTheDocument();
+    expect(screen.getByText('redis-1')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'nginx' }));
+
+    await waitFor(() => {
+      expect(screen.queryByText('redis-1')).not.toBeInTheDocument();
+    });
+    expect(screen.getByText('nginx-1')).toBeInTheDocument();
   });
 });
