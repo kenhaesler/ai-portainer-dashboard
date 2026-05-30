@@ -51,14 +51,16 @@ describe('filterK8sResources', () => {
     expect(r).toHaveLength(0); // 'kube-system' is not an exact match for 'kube'
   });
 
-  it('matches status as a case-insensitive substring', () => {
+  it('narrows resources that have a status, by case-insensitive substring', () => {
     const r = filterK8sResources(items, 'status:running');
-    expect(r.map((i) => i.name)).toEqual(['nginx-abc', 'nginx-old']);
+    // The two Running pods match; redis (Pending) is dropped; api-svc has no
+    // status so the status token is ignored for it and it passes through.
+    expect(r.map((i) => i.name)).toEqual(['nginx-abc', 'nginx-old', 'api-svc']);
   });
 
-  it('excludes resources without a status when a status token is given', () => {
+  it('passes status-less resources through a status token (does not exclude them)', () => {
     const r = filterK8sResources(items, 'status:running');
-    expect(r.some((i) => i.name === 'api-svc')).toBe(false);
+    expect(r.some((i) => i.name === 'api-svc')).toBe(true);
   });
 
   it('combines tokens with AND', () => {

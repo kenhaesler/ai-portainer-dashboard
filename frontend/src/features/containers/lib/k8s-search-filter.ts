@@ -2,8 +2,8 @@
  * Smart-search filter for Kubernetes resource lists (pods, deployments,
  * services) shown on the Infrastructure page. Supports `namespace:` and
  * `status:` field tokens plus free-text matched against the resource name.
- * Resources without a `status` field (e.g. services) never match a `status:`
- * token, which is the intended behavior.
+ * A `status:` token is ignored for resources without a `status` field
+ * (e.g. services); those resources pass through unaffected.
  */
 export interface K8sSearchableResource {
   name: string;
@@ -46,9 +46,10 @@ export function filterK8sResources<T extends K8sSearchableResource>(
 
   return items.filter((item) => {
     if (namespace && (item.namespace ?? '').toLowerCase() !== namespace) return false;
-    if (status) {
-      if (item.status === undefined) return false;
-      if (!item.status.toLowerCase().includes(status)) return false;
+    // A status: token only narrows resources that have a status (pods).
+    // Status-less resources (deployments, services) pass through unaffected.
+    if (status && item.status !== undefined && !item.status.toLowerCase().includes(status)) {
+      return false;
     }
     if (text && !item.name.toLowerCase().includes(text)) return false;
     return true;

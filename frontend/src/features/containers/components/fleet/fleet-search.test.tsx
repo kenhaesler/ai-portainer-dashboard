@@ -102,6 +102,12 @@ describe('FleetSearch', () => {
     expect(screen.queryByTestId('fleet-search-count')).not.toBeInTheDocument();
   });
 
+  it('hides the count badge when showCount is false', () => {
+    renderSearch({ totalCount: 10, filteredCount: 3, showCount: false });
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'prod' } });
+    expect(screen.queryByTestId('fleet-search-count')).not.toBeInTheDocument();
+  });
+
   it('shows filtered count when search reduces results', () => {
     renderSearch({ totalCount: 10, filteredCount: 3 });
     const input = screen.getByRole('textbox');

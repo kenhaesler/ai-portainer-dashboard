@@ -927,6 +927,7 @@ export default function InfrastructurePage() {
                   // Focus the search when the Fleet tab (the default landing tab) mounts,
                   // mirroring the Workload Explorer open-on-page autofocus.
                   autoFocus
+                  showCount={false}
                 />
               </div>
             )}
@@ -1102,6 +1103,7 @@ export default function InfrastructurePage() {
                   placeholder="Search stacks... (name:traefik status:active endpoint:prod)"
                   label="Search stacks"
                   examples={['name:traefik', 'status:active', 'endpoint:prod']}
+                  showCount={false}
                 />
               </div>
             )}
@@ -1280,55 +1282,65 @@ export default function InfrastructurePage() {
           />
         )}
 
-        {/* Pods table */}
-        {k8sPodsLoading ? (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <SkeletonChart key={i} size="md" />
-            ))}
-          </div>
+        {k8sSearchQuery && k8sFilteredCount === 0 ? (
+          <EmptyState
+            icon={Search}
+            title="No matching resources"
+            description="Try a different query or clear the search."
+          />
         ) : (
-          <SpotlightCard>
-          <div className="rounded-lg border bg-card p-6 shadow-sm">
-            <h3 className="mb-4 text-sm font-semibold">Pods</h3>
-            <DataTable
-              columns={k8sPodColumns}
-              data={filteredK8sPods}
-              hideSearch
-              pageSize={15}
-            />
-          </div>
-          </SpotlightCard>
-        )}
+          <>
+            {/* Pods table */}
+            {k8sPodsLoading ? (
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <SkeletonChart key={i} size="md" />
+                ))}
+              </div>
+            ) : (
+              <SpotlightCard>
+              <div className="rounded-lg border bg-card p-6 shadow-sm">
+                <h3 className="mb-4 text-sm font-semibold">Pods</h3>
+                <DataTable
+                  columns={k8sPodColumns}
+                  data={filteredK8sPods}
+                  hideSearch
+                  pageSize={15}
+                />
+              </div>
+              </SpotlightCard>
+            )}
 
-        {/* Deployments table */}
-        {!k8sDeploymentsLoading && k8sDeployments && k8sDeployments.length > 0 && (
-          <SpotlightCard>
-          <div className="rounded-lg border bg-card p-6 shadow-sm">
-            <h3 className="mb-4 text-sm font-semibold">Deployments</h3>
-            <DataTable
-              columns={k8sDeploymentColumns}
-              data={filteredK8sDeployments}
-              hideSearch
-              pageSize={15}
-            />
-          </div>
-          </SpotlightCard>
-        )}
+            {/* Deployments table */}
+            {!k8sDeploymentsLoading && k8sDeployments && k8sDeployments.length > 0 && (
+              <SpotlightCard>
+              <div className="rounded-lg border bg-card p-6 shadow-sm">
+                <h3 className="mb-4 text-sm font-semibold">Deployments</h3>
+                <DataTable
+                  columns={k8sDeploymentColumns}
+                  data={filteredK8sDeployments}
+                  hideSearch
+                  pageSize={15}
+                />
+              </div>
+              </SpotlightCard>
+            )}
 
-        {/* Services table */}
-        {!k8sServicesLoading && k8sServices && k8sServices.length > 0 && (
-          <SpotlightCard>
-          <div className="rounded-lg border bg-card p-6 shadow-sm">
-            <h3 className="mb-4 text-sm font-semibold">Services</h3>
-            <DataTable
-              columns={k8sServiceColumns}
-              data={filteredK8sServices}
-              hideSearch
-              pageSize={15}
-            />
-          </div>
-          </SpotlightCard>
+            {/* Services table */}
+            {!k8sServicesLoading && k8sServices && k8sServices.length > 0 && (
+              <SpotlightCard>
+              <div className="rounded-lg border bg-card p-6 shadow-sm">
+                <h3 className="mb-4 text-sm font-semibold">Services</h3>
+                <DataTable
+                  columns={k8sServiceColumns}
+                  data={filteredK8sServices}
+                  hideSearch
+                  pageSize={15}
+                />
+              </div>
+              </SpotlightCard>
+            )}
+          </>
         )}
       </section>
         </Tabs.Content>

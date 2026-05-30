@@ -1196,4 +1196,14 @@ describe('Infrastructure smart search — Kubernetes tab', () => {
     });
     expect(screen.getByText('nginx-1')).toBeInTheDocument();
   });
+
+  it('shows an empty state when the K8s search matches nothing', async () => {
+    renderPageWithInitialParams('/infrastructure?tab=kubernetes');
+    fireEvent.change(screen.getByRole('textbox', { name: /search kubernetes resources/i }), {
+      target: { value: 'zzz-no-match' },
+    });
+    await waitFor(() => {
+      expect(screen.getByText(/no matching resources/i)).toBeInTheDocument();
+    });
+  });
 });

@@ -12,6 +12,8 @@ export interface FleetSearchProps {
   examples?: string[];
   /** Focus the input on mount (e.g. when the page first opens). */
   autoFocus?: boolean;
+  /** Show the filtered count badge when isFiltered. Defaults to true. */
+  showCount?: boolean;
 }
 
 export function FleetSearch({
@@ -22,6 +24,7 @@ export function FleetSearch({
   label,
   examples,
   autoFocus = false,
+  showCount = true,
 }: FleetSearchProps) {
   const [query, setQuery] = useState('');
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -100,7 +103,7 @@ export function FleetSearch({
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
           className={cn(
-            'w-full rounded-xl border bg-card/80 py-3 pl-11 pr-9 text-sm backdrop-blur-sm',
+            'w-full rounded-xl border bg-card/80 py-3 pl-11 pr-9 text-[16px] sm:text-sm backdrop-blur-sm',
             'placeholder:text-muted-foreground/50',
             'focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50',
             'transition-all duration-200',
@@ -155,7 +158,7 @@ export function FleetSearch({
           </button>
         )}
       </div>
-      {isFiltered && (
+      {isFiltered && showCount && (
         <span className="shrink-0 text-sm text-muted-foreground" data-testid="fleet-search-count">
           {filteredCount} of {totalCount}
         </span>

@@ -163,8 +163,9 @@ Add one smart search bar between the counts summary bar and the first table.
 
   - Supports `namespace:<ns>` and `status:<value>` field tokens plus free text
     matched against `name` (case-insensitive, substring). Empty/blank query
-    returns all items. A `status:` token simply never matches resources without a
-    `status` field (e.g. services), which is the intended behavior.
+    returns all items. A `status:` token only narrows resources that have a
+    `status` field (pods); resources without a `status` field (e.g. deployments,
+    services) pass through unaffected — they are not excluded.
 - Apply `filterK8sResources` to `k8sPods`, `k8sDeployments`, and `k8sServices`
   before passing each to its `DataTable`; remove all three `DataTable` built-in
   searches.
@@ -201,7 +202,7 @@ editing; the rest of the design does not depend on the outcome.
   - `parseK8sQuery` extracts `namespace:` / `status:` tokens and free text;
   - `filterK8sResources` matches by name substring (case-insensitive), by
     namespace, by status; combines tokens (AND); returns all on empty query;
-    `status:` token excludes status-less resources (services).
+    `status:` token passes through status-less resources (services/deployments) unaffected.
 - `pages/fleet-overview.test.tsx` (update):
   - Fleet/Stacks toolbar renders the search bar and the filter dropdowns on the
     same toolbar (regrouped layout);
