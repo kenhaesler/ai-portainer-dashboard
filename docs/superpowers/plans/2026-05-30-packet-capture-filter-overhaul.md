@@ -4,13 +4,20 @@
 
 **Goal:** Replace the Packet Capture page's forced Endpoint → Stack → Container cascade with a search-first, cross-endpoint container picker (type a name, or `stack:`/`endpoint:`), add capture-history search, and add BPF filter presets.
 
-**Architecture:** Reuse the existing `filterContainers()` parser and `cmdk` to build a small `CaptureTargetPicker` that filters the full cross-endpoint running-container list client-side, grouped by endpoint, with edge-async endpoints disabled. Extract `BpfFilterInput` for the presets. Add an optional `search` param to the captures list API (parameterized SQL). The 667-line page becomes an orchestrator composing these focused, independently tested components.
+**Architecture:** Reuse the existing `filterContainers()` parser and `cmdk` to build a small `CaptureTargetPicker` that filters the full cross-endpoint running-container list client-side, grouped by endpoint, with edge-async endpoints disabled. Extract `BpfFilterInput` for the presets and a `CaptureBrowseFallback` for the optional dropdown path. Add an optional `search` param to the captures list API (parameterized SQL). The 667-line page becomes an orchestrator composing these focused, independently tested components.
 
-**Tech Stack:** React 19 + TypeScript, `cmdk`, TanStack Query, Tailwind, Vitest + Testing Library (frontend, jsdom); Fastify 5 + Zod + PostgreSQL, Vitest + real PG (backend).
+**Tech Stack:** React 19 + TypeScript, `cmdk`, TanStack Query, Tailwind, Vitest + Testing Library (frontend, jsdom); Fastify 5 + Zod + PostgreSQL, Vitest (backend — pcap suites mock the store/service, no live DB).
 
 **Spec:** `docs/superpowers/specs/2026-05-30-packet-capture-filter-overhaul-design.md`
 
 **Working directory:** worktree `.claude/worktrees/feature+packet-capture-filter-overhaul` on branch `worktree-feature+packet-capture-filter-overhaul`. Run all commands from the worktree root.
+
+### Ground-truth facts (verified against the code — do not "fix" these)
+- `CaptureListQuerySchema` is **already exported** from `packages/security/src/models/pcap.ts` (line ~88) and **already imported** by `packages/security/src/routes/pcap.ts` (line 7). There is **no inline duplicate** to remove.
+- `packages/security/src/services/pcap-store.ts` `getCaptures` uses **`?` placeholders** (a `db()` wrapper translates them), e.g. `conditions.push('status = ?')`. The DB is PostgreSQL (so `ILIKE` is available), but **never** use `$1`/`$n` here.
+- `pcap-service.test.ts` **mocks `pcap-store`**; `pcap-route.test.ts` **mocks `pcap-service`**. Follow that: test plumbing with mocks, not a live DB.
+- `useCaptures` (`frontend/src/features/security/hooks/use-pcap.ts`, lines 46–74) calls `api.get<CapturesResponse>('/api/pcap/captures', { params })` with a `params` **object** (not a query string in the path), and contains a dead first `useQuery` plus a returned second one. Add `search` to the params object(s).
+- The page test (`packet-capture.test.tsx`) mocks `useContainers` with container objects that are **missing** `image`, `status`, `endpointName`, `ports`, `networks` — `filterContainers` reads those, so the mock data must be enriched (Task 7).
 
 ---
 
@@ -22,39 +29,32 @@
 
 Run:
 ```bash
-cd packages/security && npx vitest run src/__tests__/pcap-route.test.ts src/__tests__/pcap-model.test.ts
+cd packages/security && npx vitest run src/__tests__/pcap-route.test.ts src/__tests__/pcap-model.test.ts src/__tests__/pcap-service.test.ts
 cd ../../frontend && npx vitest run src/features/security/pages/packet-capture.test.tsx
 ```
-Expected: PASS (existing suites green). If anything fails before changes, stop and report — do not proceed.
+Expected: PASS. If anything fails before changes, stop and report — do not proceed.
 
 ---
 
 ## Task 1: Add `search` to the captures-list query schema (backend)
 
-The route currently defines `CaptureListQuerySchema` inline (`packages/security/src/routes/pcap.ts`) and a second unexported copy lives in `packages/security/src/models/pcap.ts`. Consolidate: export one schema from the model (with the new `search` field) and import it into the route. This is DRY and makes the schema unit-testable.
-
 **Files:**
-- Modify: `packages/security/src/models/pcap.ts` (export schema + add `search`)
-- Modify: `packages/security/src/routes/pcap.ts` (import it, delete inline copy)
+- Modify: `packages/security/src/models/pcap.ts` (add `search` to the existing exported `CaptureListQuerySchema`)
 - Test: `packages/security/src/__tests__/pcap-model.test.ts`
 
 - [ ] **Step 1: Write the failing test**
 
-Add to `packages/security/src/__tests__/pcap-model.test.ts`:
+Add to `packages/security/src/__tests__/pcap-model.test.ts` (the file already imports from `../models/pcap.js`; reuse that import style):
 ```ts
 import { CaptureListQuerySchema } from '../models/pcap.js';
 
 describe('CaptureListQuerySchema search', () => {
   it('accepts an optional search string', () => {
-    const parsed = CaptureListQuerySchema.parse({ search: 'web' });
-    expect(parsed.search).toBe('web');
+    expect(CaptureListQuerySchema.parse({ search: 'web' }).search).toBe('web');
   });
-
   it('defaults search to undefined when absent', () => {
-    const parsed = CaptureListQuerySchema.parse({});
-    expect(parsed.search).toBeUndefined();
+    expect(CaptureListQuerySchema.parse({}).search).toBeUndefined();
   });
-
   it('rejects an over-long search string', () => {
     expect(() => CaptureListQuerySchema.parse({ search: 'x'.repeat(201) })).toThrow();
   });
@@ -64,11 +64,11 @@ describe('CaptureListQuerySchema search', () => {
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `cd packages/security && npx vitest run src/__tests__/pcap-model.test.ts -t "search"`
-Expected: FAIL — `CaptureListQuerySchema` is not exported (import error) / `search` not present.
+Expected: FAIL — `search` is stripped/undefined (and over-long does not throw).
 
-- [ ] **Step 3: Export the schema and add `search` in `models/pcap.ts`**
+- [ ] **Step 3: Add the field**
 
-Replace the existing `const CaptureListQuerySchema = z.object({ ... });` block with:
+In `packages/security/src/models/pcap.ts`, inside the existing `export const CaptureListQuerySchema = z.object({ ... })`, add the `search` line after `containerId`:
 ```ts
 export const CaptureListQuerySchema = z.object({
   status: CaptureStatusSchema.optional(),
@@ -77,28 +77,17 @@ export const CaptureListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
   offset: z.coerce.number().int().min(0).default(0),
 });
-
-export type CaptureListQuery = z.infer<typeof CaptureListQuerySchema>;
 ```
 
-- [ ] **Step 4: Use the model schema in `routes/pcap.ts`**
-
-In `packages/security/src/routes/pcap.ts`:
-1. Extend the existing import from `'../models/pcap.js'` to include the schema:
-```ts
-import { StartCaptureRequestSchema, CaptureListQuerySchema } from '../models/pcap.js';
-```
-2. Delete the inline `const CaptureListQuerySchema = z.object({ ... });` block near the top of the file. Leave the `GET /api/pcap/captures` handler unchanged — it already does `CaptureListQuerySchema.safeParse(query)` and passes `parsed.data` to `listCaptures`, so `search` flows through automatically.
-
-- [ ] **Step 5: Run tests to verify they pass**
+- [ ] **Step 4: Run test to verify it passes**
 
 Run: `cd packages/security && npx vitest run src/__tests__/pcap-model.test.ts`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add packages/security/src/models/pcap.ts packages/security/src/routes/pcap.ts packages/security/src/__tests__/pcap-model.test.ts
+git add packages/security/src/models/pcap.ts packages/security/src/__tests__/pcap-model.test.ts
 git commit -m "feat(pcap): add optional search to capture list query schema"
 ```
 
@@ -109,141 +98,103 @@ git commit -m "feat(pcap): add optional search to capture list query schema"
 **Files:**
 - Modify: `packages/security/src/services/pcap-store.ts` (`GetCapturesOptions` + `getCaptures`)
 - Modify: `packages/security/src/services/pcap-service.ts` (`listCaptures` options type)
-- Test: `packages/security/src/__tests__/pcap-store.test.ts` (create if absent; uses real PG via the test-db helper)
+- Test: `packages/security/src/__tests__/pcap-service.test.ts` (mocks the store — assert passthrough)
 
 - [ ] **Step 1: Write the failing test**
 
-In `packages/security/src/__tests__/pcap-store.test.ts` (follow the existing real-PG setup pattern used by other store tests in this package — import the test-db helper, insert rows directly into `pcap_captures`). Add:
+Add to the `describe('listCaptures', ...)` block in `packages/security/src/__tests__/pcap-service.test.ts`:
 ```ts
-import { describe, it, expect, beforeEach } from 'vitest';
-import { query } from '@dashboard/core';
-import { getCaptures } from '../services/pcap-store.js';
-
-async function insertCapture(id: string, name: string, filter: string | null) {
-  await query(
-    `INSERT INTO pcap_captures (id, endpoint_id, container_id, container_name, status, filter, created_at)
-     VALUES ($1, 1, $2, $3, 'complete', $4, NOW())`,
-    [id, `cid-${id}`, name, filter],
-  );
-}
-
-describe('getCaptures search', () => {
-  beforeEach(async () => {
-    await query('DELETE FROM pcap_captures', []);
-    await insertCapture('s1', 'web-frontend', 'port 80');
-    await insertCapture('s2', 'db-postgres', 'port 5432');
-  });
-
-  it('filters by container_name (case-insensitive)', async () => {
-    const rows = await getCaptures({ search: 'WEB' });
-    expect(rows.map((r) => r.id)).toEqual(['s1']);
-  });
-
-  it('also matches the filter text', async () => {
-    const rows = await getCaptures({ search: '5432' });
-    expect(rows.map((r) => r.id)).toEqual(['s2']);
-  });
-
-  it('returns all when no search', async () => {
-    const rows = await getCaptures({});
-    expect(rows.length).toBe(2);
-  });
+it('passes search through to getCaptures', async () => {
+  vi.mocked(store.getCaptures).mockResolvedValue([]);
+  await listCaptures({ search: 'web' });
+  expect(store.getCaptures).toHaveBeenCalledWith({ search: 'web' });
 });
 ```
-> Note: read an existing `*-store`/route test in `packages/security/src/__tests__/` first to copy the exact DB bootstrap (some suites rely on a shared `beforeAll` migration). If a global setup already truncates tables, drop the local `DELETE`.
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd packages/security && npx vitest run src/__tests__/pcap-store.test.ts`
-Expected: FAIL — `search` is ignored, so `getCaptures({ search: 'WEB' })` returns both rows.
+Run: `cd packages/security && npx vitest run src/__tests__/pcap-service.test.ts -t "search"`
+Expected: FAIL — TypeScript error / `listCaptures` rejects `search` (its options type lacks it).
 
-- [ ] **Step 3: Implement the store change**
+- [ ] **Step 3: Add `search` to the service options type**
 
-In `packages/security/src/services/pcap-store.ts`:
-1. Add `search` to the options interface:
+In `packages/security/src/services/pcap-service.ts`, update `listCaptures`:
 ```ts
-export interface GetCapturesOptions {
-  status?: string;
+export async function listCaptures(options?: {
+  status?: CaptureStatus;
   containerId?: string;
   search?: string;
   limit?: number;
   offset?: number;
-}
-```
-2. Inside `getCaptures`, after the `containerId` condition block and before `const whereClause = ...`, add:
-```ts
-  if (options.search) {
-    conditions.push(
-      `(container_name ILIKE $${paramIndex} OR COALESCE(filter, '') ILIKE $${paramIndex})`,
-    );
-    params.push(`%${options.search}%`);
-    paramIndex++;
-  }
-```
-(One placeholder reused for both columns — parameterized, no concatenation of user input.)
-
-- [ ] **Step 4: Thread `search` through the service**
-
-In `packages/security/src/services/pcap-service.ts`, update the `listCaptures` options type to include `search`:
-```ts
-export async function listCaptures(options: {
-  status?: string;
-  containerId?: string;
-  search?: string;
-  limit?: number;
-  offset?: number;
-}) {
+}): Promise<Capture[]> {
   return getCaptures(options);
 }
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [ ] **Step 4: Add `search` to the store options + SQL (parameterized, `?` placeholders)**
 
-Run: `cd packages/security && npx vitest run src/__tests__/pcap-store.test.ts`
+In `packages/security/src/services/pcap-store.ts`:
+1. Extend the options interface:
+```ts
+export interface GetCapturesOptions {
+  status?: CaptureStatus;
+  containerId?: string;
+  search?: string;
+  limit?: number;
+  offset?: number;
+}
+```
+2. In `getCaptures`, after the `containerId` condition block (before `const where = ...`), add:
+```ts
+  if (options.search) {
+    conditions.push("(container_name ILIKE ? OR COALESCE(filter, '') ILIKE ?)");
+    params.push(`%${options.search}%`, `%${options.search}%`);
+  }
+```
+(Use `?` placeholders to match the existing style — two `?`, so push the pattern twice. No string concatenation of user input.)
+
+- [ ] **Step 5: Run test to verify it passes**
+
+Run: `cd packages/security && npx vitest run src/__tests__/pcap-service.test.ts`
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add packages/security/src/services/pcap-store.ts packages/security/src/services/pcap-service.ts packages/security/src/__tests__/pcap-store.test.ts
+git add packages/security/src/services/pcap-store.ts packages/security/src/services/pcap-service.ts packages/security/src/__tests__/pcap-service.test.ts
 git commit -m "feat(pcap): filter captures by parameterized search (name + filter text)"
 ```
 
 ---
 
-## Task 3: Route-level search test (backend integration)
+## Task 3: Route passes `search` through (backend route test)
+
+The route test mocks `pcap-service`. Verify the Zod schema accepts `?search=` and the parsed value reaches `listCaptures`.
 
 **Files:**
 - Test: `packages/security/src/__tests__/pcap-route.test.ts`
 
-- [ ] **Step 1: Read the existing route test setup**
+- [ ] **Step 1: Write the failing test**
 
-Read `packages/security/src/__tests__/pcap-route.test.ts` to reuse its app bootstrap, admin-auth decoration, and DB seeding helpers.
-
-- [ ] **Step 2: Write the failing test**
-
-Add an `it()` mirroring the existing setup (build the Fastify app, authenticate as admin, seed two captures with distinct `container_name`s):
+Add an `it()` mirroring the existing `'lists captures'` test (which uses the file's `buildApp()` helper and `vi.mocked(pcapService.listCaptures)`):
 ```ts
-it('GET /api/pcap/captures?search= filters by container name', async () => {
-  // seed two captures: container_name 'web-1' and 'db-1' (reuse this file's seed helper)
-  const res = await app.inject({
-    method: 'GET',
-    url: '/api/pcap/captures?search=web',
-    headers: { authorization: `Bearer ${adminToken}` }, // reuse this file's token helper
-  });
+it('passes search from the query string to listCaptures', async () => {
+  vi.mocked(pcapService.listCaptures).mockResolvedValue([]);
+  const app = await buildApp('admin');
+  const res = await app.inject({ method: 'GET', url: '/api/pcap/captures?search=web' });
   expect(res.statusCode).toBe(200);
-  const body = res.json();
-  expect(body.captures.map((c: { container_name: string }) => c.container_name)).toEqual(['web-1']);
+  expect(pcapService.listCaptures).toHaveBeenCalledWith(expect.objectContaining({ search: 'web' }));
+  await app.close();
 });
 ```
-> Match the variable names (`app`, `adminToken`, seed helper) to whatever the existing tests in this file use.
+> Match the exact app-build/inject idiom used by the existing tests in this file (e.g. whether they `await buildApp()` per test or share one). Keep `expect.objectContaining({ search: 'web' })`.
 
-- [ ] **Step 3: Run test to verify it fails, then passes**
+- [ ] **Step 2: Run the test**
 
 Run: `cd packages/security && npx vitest run src/__tests__/pcap-route.test.ts -t "search"`
-Expected: with Tasks 1–2 already merged this should PASS immediately (plumbing is done). If it FAILS, the failure pinpoints a plumbing gap to fix. The test's value is regression protection for the end-to-end path + admin gate.
+Expected: with Tasks 1–2 merged this should PASS (schema + plumbing already done). If it FAILS, the message pinpoints a gap. Value = regression cover for the end-to-end query path + admin gate.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
 git add packages/security/src/__tests__/pcap-route.test.ts
@@ -256,52 +207,45 @@ git commit -m "test(pcap): cover captures list search at the route level"
 
 **Files:**
 - Modify: `frontend/src/features/security/hooks/use-pcap.ts`
-- Test: `frontend/src/features/security/hooks/use-pcap.test.ts`
+- Test: `frontend/src/features/security/hooks/use-pcap.test.ts` (create if absent, following the repo's hook-test pattern: `renderHook` + a `QueryClientProvider` wrapper + `api` spied/mocked)
 
 - [ ] **Step 1: Write the failing test**
 
-Add to `frontend/src/features/security/hooks/use-pcap.test.ts` (follow the file's existing render/mock-fetch pattern; it already mocks `api`). The intent: when `search` is provided, the request URL includes `search=`.
+Open `use-pcap.test.ts` and add (matching the file's existing `api` mock + `wrapper`):
 ```ts
-it('useCaptures includes search in the request path', async () => {
+it('useCaptures forwards search in the request params', async () => {
   const getSpy = vi.spyOn(api, 'get').mockResolvedValue({ captures: [] });
   renderHook(() => useCaptures({ search: 'web' }), { wrapper });
   await waitFor(() => expect(getSpy).toHaveBeenCalled());
-  expect(getSpy).toHaveBeenCalledWith('/api/pcap/captures?search=web');
+  expect(getSpy).toHaveBeenCalledWith(
+    '/api/pcap/captures',
+    { params: expect.objectContaining({ search: 'web' }) },
+  );
 });
 ```
-> Use the same `wrapper` (QueryClientProvider) and `api` import the existing tests use.
+> If the file does not exist, create it with the same provider wrapper used by other hook tests under `frontend/src/features/**/hooks/*.test.ts`. The key assertion is the `{ params: { search } }` shape — `useCaptures` calls `api.get(path, { params })`, NOT a query string.
 
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `cd frontend && npx vitest run src/features/security/hooks/use-pcap.test.ts -t "search"`
-Expected: FAIL — `search` not added to params.
+Expected: FAIL — `search` absent from params.
 
 - [ ] **Step 3: Implement**
 
-In `frontend/src/features/security/hooks/use-pcap.ts`, update the options interface and `useCaptures`:
+In `frontend/src/features/security/hooks/use-pcap.ts`:
+1. Widen the `useCaptures` parameter type:
 ```ts
-interface UseCapturesOptions {
-  status?: string;
-  containerId?: string;
-  search?: string;
-}
-
-export function useCaptures(options?: UseCapturesOptions) {
-  const params = new URLSearchParams();
-  if (options?.status) params.set('status', options.status);
-  if (options?.containerId) params.set('containerId', options.containerId);
-  if (options?.search) params.set('search', options.search);
-
-  const qs = params.toString();
-  const path = qs ? `/api/pcap/captures?${qs}` : '/api/pcap/captures';
-
-  return useQuery<CapturesResponse>({
-    queryKey: ['pcap', 'captures', options?.status, options?.containerId, options?.search],
-    queryFn: () => api.get<CapturesResponse>(path),
-    refetchInterval: 5000,
-  });
-}
+export function useCaptures(filters?: { status?: string; containerId?: string; search?: string }) {
 ```
+2. Add `search: filters?.search` to **both** `params` objects (the dead first `useQuery` at ~line 50 and the returned one at ~line 66):
+```ts
+      const params: Record<string, string | undefined> = {
+        status: filters?.status,
+        containerId: filters?.containerId,
+        search: filters?.search,
+      };
+```
+The `queryKey` is already `['pcap', 'captures', filters]`, so `search` is included automatically. Leave `refetchInterval` logic unchanged.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -336,21 +280,18 @@ describe('BpfFilterInput', () => {
     render(<BpfFilterInput value="port 80" onChange={() => {}} />);
     expect(screen.getByLabelText('BPF filter')).toHaveValue('port 80');
   });
-
   it('sets the value to the preset when empty', () => {
     const onChange = vi.fn();
     render(<BpfFilterInput value="" onChange={onChange} />);
     fireEvent.click(screen.getByRole('button', { name: 'tcp' }));
     expect(onChange).toHaveBeenCalledWith('tcp');
   });
-
   it('appends the preset to an existing value', () => {
     const onChange = vi.fn();
     render(<BpfFilterInput value="port 80" onChange={onChange} />);
     fireEvent.click(screen.getByRole('button', { name: 'udp' }));
     expect(onChange).toHaveBeenCalledWith('port 80 udp');
   });
-
   it('edits via free text', () => {
     const onChange = vi.fn();
     render(<BpfFilterInput value="" onChange={onChange} />);
@@ -445,7 +386,7 @@ git commit -m "feat(pcap): BpfFilterInput with quick presets"
 Create `frontend/src/features/security/components/capture-target-picker.test.tsx`:
 ```tsx
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { CaptureTargetPicker, type CaptureTarget } from './capture-target-picker';
 import type { Container } from '@/features/containers/hooks/use-containers';
 import type { Stack } from '@/features/containers/hooks/use-stacks';
@@ -455,7 +396,6 @@ const containers = [
   { id: 'c2', name: 'nginx-stage', image: 'nginx', state: 'running', status: 'Up', endpointId: 2, endpointName: 'staging', ports: [], created: 0, labels: {}, networks: [] },
   { id: 'c3', name: 'postgres', image: 'postgres', state: 'running', status: 'Up', endpointId: 2, endpointName: 'staging', ports: [], created: 0, labels: {}, networks: [] },
 ] as unknown as Container[];
-
 const stacks = [{ id: 1, name: 'web', endpointId: 1 }] as unknown as Stack[];
 
 function setup(props: Partial<React.ComponentProps<typeof CaptureTargetPicker>> = {}) {
@@ -486,7 +426,7 @@ describe('CaptureTargetPicker', () => {
     expect(screen.queryByText('postgres')).not.toBeInTheDocument();
   });
 
-  it('selecting a container emits a CaptureTarget and shows a chip', () => {
+  it('selecting a container emits a CaptureTarget', () => {
     const { onChange } = setup();
     const input = screen.getByLabelText('Search capture target container');
     fireEvent.focus(input);
@@ -494,10 +434,7 @@ describe('CaptureTargetPicker', () => {
     fireEvent.click(screen.getByText('postgres'));
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining<Partial<CaptureTarget>>({
-        endpointId: 2,
-        containerId: 'c3',
-        containerName: 'postgres',
-        endpointName: 'staging',
+        endpointId: 2, containerId: 'c3', containerName: 'postgres', endpointName: 'staging',
       }),
     );
   });
@@ -565,12 +502,7 @@ export interface CaptureTargetPickerProps {
 }
 
 export function CaptureTargetPicker({
-  containers,
-  stacks,
-  edgeAsyncEndpointIds,
-  value,
-  onChange,
-  autoFocus,
+  containers, stacks, edgeAsyncEndpointIds, value, onChange, autoFocus,
 }: CaptureTargetPickerProps) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
@@ -581,7 +513,6 @@ export function CaptureTargetPicker({
     () => filterContainers(containers, query, knownStackNames),
     [containers, query, knownStackNames],
   );
-
   const grouped = useMemo(() => {
     const map = new Map<string, Container[]>();
     for (const c of matches) {
@@ -591,16 +522,13 @@ export function CaptureTargetPicker({
     }
     return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   }, [matches]);
-
   const matchingStacks = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q || q.includes(':')) return [];
     return [...new Set(knownStackNames)].filter((n) => n.toLowerCase().includes(q)).slice(0, 4);
   }, [knownStackNames, query]);
 
-  useEffect(() => {
-    if (autoFocus) inputRef.current?.focus();
-  }, [autoFocus]);
+  useEffect(() => { if (autoFocus) inputRef.current?.focus(); }, [autoFocus]);
 
   if (value) {
     return (
@@ -703,12 +631,12 @@ export function CaptureTargetPicker({
   );
 }
 ```
-> cmdk sets `data-disabled` on disabled items (used by the edge-async test). `shouldFilter={false}` means cmdk shows exactly the items we render — our own `filterContainers` does the filtering.
+> cmdk sets `data-disabled` on disabled items (the edge-async test relies on it). `shouldFilter={false}` makes cmdk render exactly the items we pass — our `filterContainers` does the filtering.
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `cd frontend && npx vitest run src/features/security/components/capture-target-picker.test.tsx`
-Expected: PASS. If cmdk's `onValueChange` doesn't fire under `fireEvent.change` in jsdom, switch the test to `@testing-library/user-event` `await userEvent.type(input, 'nginx')` (already a dependency in this repo's frontend tests).
+Expected: PASS. If cmdk's `onValueChange` doesn't fire under `fireEvent.change` in jsdom, switch the typing lines to `@testing-library/user-event`: `const user = userEvent.setup(); await user.type(input, 'nginx');`.
 
 - [ ] **Step 5: Commit**
 
@@ -723,28 +651,37 @@ git commit -m "feat(pcap): cross-endpoint CaptureTargetPicker (cmdk + filterCont
 
 **Files:**
 - Modify: `frontend/src/features/security/pages/packet-capture.tsx`
-- Test: `frontend/src/features/security/pages/packet-capture.test.tsx`
+- Modify: `frontend/src/features/security/pages/packet-capture.test.tsx`
 
 - [ ] **Step 1: Update the page test for the new flow**
 
 In `frontend/src/features/security/pages/packet-capture.test.tsx`:
-1. Update `mockContainers` to include containers on two endpoints (e.g. add one with `endpointId: 2, endpointName: 'edge-async-host'`). Keep `mockEndpoints` as-is (endpoint 2 has `edgeMode: 'async'`).
-2. Replace any assertions that rely on selecting an endpoint dropdown first. Add:
+
+1. **Enrich the `useContainers` mock** so `filterContainers` works (it reads `image`, `status`, `endpointName`, `ports`, `state`, `labels`, `name`). Replace the mocked container array with objects that include every field, spanning two endpoints, e.g.:
+```ts
+{ id: 'c1', name: 'api-1', image: 'api:1', state: 'running', status: 'Up', endpointId: 1, endpointName: 'local', ports: [], created: 0, networks: [], labels: { 'com.docker.compose.project': 'alpha' } },
+{ id: 'c2', name: 'worker-1', image: 'worker:1', state: 'running', status: 'Up', endpointId: 1, endpointName: 'local', ports: [], created: 0, networks: [], labels: { 'com.docker.compose.project': 'alpha' } },
+{ id: 'c4', name: 'beta-api-1', image: 'beta:1', state: 'running', status: 'Up', endpointId: 1, endpointName: 'local', ports: [], created: 0, networks: [], labels: { 'com.docker.compose.project': 'beta' } },
+{ id: 'c3', name: 'standalone-1', image: 'std:1', state: 'running', status: 'Up', endpointId: 1, endpointName: 'local', ports: [], created: 0, networks: [], labels: {} },
+```
+
+2. **Remove the two cascade-based tests** — `'groups running container options by stack and no-stack bucket'` and `'filters container options by selected stack'`. Their coverage moves to `capture-browse-fallback.test.tsx` (Task 9). Keep `'shows the empty state when there are no captures'` and `'renders the capture history in a DataTable...'`.
+
+3. **Add new tests:**
 ```ts
 it('shows capture targets without selecting an endpoint first', () => {
-  renderPage(); // the file's existing render helper
+  render(<PacketCapture />);
   const input = screen.getByLabelText('Search capture target container');
   fireEvent.focus(input);
-  fireEvent.change(input, { target: { value: 'web-1' } });
-  expect(screen.getByText('web-1')).toBeInTheDocument();
+  fireEvent.change(input, { target: { value: 'api-1' } });
+  expect(screen.getByText('api-1')).toBeInTheDocument();
 });
 
 it('disables Start until a target is selected', () => {
-  renderPage();
+  render(<PacketCapture />);
   expect(screen.getByRole('button', { name: /start capture/i })).toBeDisabled();
 });
 ```
-3. Ensure the `useContainers` mock still returns `{ data: mockContainers }` (the page will now call it with `{ state: 'running' }` — the mock ignores args, so it still returns the list).
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -761,17 +698,17 @@ import { CaptureTargetPicker, type CaptureTarget } from '@/features/security/com
 import { BpfFilterInput } from '@/features/security/components/bpf-filter-input';
 ```
 
-2. Replace the four target-selection state vars (`selectedEndpoint`, `selectedStack`, `selectedContainer`, `selectedContainerName`) with:
+2. Replace the four target-selection state vars (`selectedEndpoint`, `selectedStack`, `selectedContainer`, `selectedContainerName`) with one:
 ```tsx
 const [target, setTarget] = useState<CaptureTarget | null>(null);
 ```
 
-3. Change the containers query to fetch running containers across all endpoints:
+3. Fetch running containers across all endpoints:
 ```tsx
 const { data: containers } = useContainers({ state: 'running' });
 ```
 
-4. Derive edge-async endpoints and remove the old per-endpoint capability usage:
+4. Replace the per-endpoint capability/grouping derivations with:
 ```tsx
 const edgeAsyncEndpointIds = useMemo(
   () => new Set((endpoints ?? []).filter((e) => e.edgeMode === 'async').map((e) => e.id)),
@@ -781,10 +718,13 @@ const endpointNameById = useMemo(
   () => new Map((endpoints ?? []).map((e) => [e.id, e.name])),
   [endpoints],
 );
-const runningContainers = useMemo(() => (containers ?? []).filter((c) => c.state === 'running'), [containers]);
+const runningContainers = useMemo(
+  () => (containers ?? []).filter((c) => c.state === 'running'),
+  [containers],
+);
 const targetIsEdgeAsync = target ? edgeAsyncEndpointIds.has(target.endpointId) : false;
 ```
-Delete the now-unused `useEndpointCapabilities` call, `stackNamesForEndpoint`, `stackOptions`, `filteredRunningContainers`, `groupedContainerOptions`, `handleContainerChange`, and the `isEdgeAsync` page-level variable. Keep `useStacks()` (passed to the picker).
+Delete the now-dead code: the `useEndpointCapabilities(selectedEndpoint)` call and `isEdgeAsync`, `stackNamesForEndpoint`, `stackOptions`, `filteredRunningContainers`, `groupedContainerOptions`, `handleContainerChange`, and the old `runningContainers` line. Keep `useStacks()`.
 
 5. Update `handleStartCapture`:
 ```tsx
@@ -801,7 +741,7 @@ const handleStartCapture = () => {
 };
 ```
 
-6. Replace the New Capture form body (the Endpoint / Stack / Container `ThemedSelect` blocks and the inline BPF `<input>`) with the picker, the BPF input, and contextual edge-async warning. The grid keeps Duration / Max Packets / Start as-is:
+6. In the New Capture form, **replace** the three `ThemedSelect` blocks (Endpoint / Stack / Container) and the inline BPF `<input>` with the target picker, the BPF component, and a contextual edge-async note. Keep Duration / Max Packets / Start in the grid; update the Start `disabled`:
 ```tsx
 <div className="mb-4">
   <label className="mb-1 block text-sm font-medium">Target container</label>
@@ -823,7 +763,6 @@ const handleStartCapture = () => {
   <BpfFilterInput value={bpfFilter} onChange={setBpfFilter} />
   {/* keep the existing Duration block */}
   {/* keep the existing Max Packets block */}
-  {/* Start button (updated disabled condition) */}
   <div className="flex items-end">
     <button
       onClick={handleStartCapture}
@@ -836,7 +775,7 @@ const handleStartCapture = () => {
   </div>
 </div>
 ```
-Remove the old top-level `{isEdgeAsync && (...)}` warning banner block (now handled contextually). Remove the now-unused imports (`ThemedSelect`, `buildStackGroupedContainerOptions`, `NO_STACK_LABEL`, `resolveContainerStackName`, `useEndpointCapabilities`) — let the typecheck in Task 11 catch any stragglers.
+7. Remove the old top-level `{isEdgeAsync && (...)}` warning banner block (now contextual). Remove now-unused imports (`ThemedSelect`, `buildStackGroupedContainerOptions`, `NO_STACK_LABEL`, `resolveContainerStackName`, `useEndpointCapabilities`); the Task 11 typecheck will flag any stragglers.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
@@ -856,37 +795,41 @@ git commit -m "feat(pcap): search-first cross-endpoint target picker on the capt
 
 **Files:**
 - Modify: `frontend/src/features/security/pages/packet-capture.tsx`
-- Test: `frontend/src/features/security/pages/packet-capture.test.tsx`
+- Modify: `frontend/src/features/security/pages/packet-capture.test.tsx`
 
 - [ ] **Step 1: Write the failing test**
 
-Add to `packet-capture.test.tsx`:
+Add to `packet-capture.test.tsx` (import `useCaptures` is already mocked at top via `vi.mock('@/features/security/hooks/use-pcap', ...)`; `mockUseCaptures = vi.mocked(useCaptures)` already exists):
 ```ts
 it('passes the history search term to useCaptures', async () => {
-  renderPage();
-  const search = screen.getByLabelText('Search capture history');
-  fireEvent.change(search, { target: { value: 'web' } });
+  render(<PacketCapture />);
+  fireEvent.change(screen.getByLabelText('Search capture history'), { target: { value: 'web' } });
   await waitFor(() =>
-    expect(vi.mocked(useCaptures)).toHaveBeenCalledWith(expect.objectContaining({ search: 'web' })),
+    expect(mockUseCaptures).toHaveBeenCalledWith(expect.objectContaining({ search: 'web' })),
   );
 });
 
 it('shows the endpoint name in the history table', () => {
-  renderPage();
+  mockUseCaptures.mockReturnValue({
+    data: { captures: [makeCapture({ endpoint_id: 1, container_name: 'web-1' })] },
+    refetch: vi.fn(),
+  } as unknown as ReturnType<typeof useCaptures>);
+  render(<PacketCapture />);
   expect(screen.getByText('local')).toBeInTheDocument(); // endpoint_id 1 -> 'local'
 });
 ```
+> `waitFor` is imported from `@testing-library/react`; add it to the existing import if not present.
 
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `cd frontend && npx vitest run src/features/security/pages/packet-capture.test.tsx -t "history search"`
-Expected: FAIL — no history search input / endpoint column.
+Expected: FAIL — no search input / endpoint column.
 
 - [ ] **Step 3: Implement**
 
 In `packet-capture.tsx`:
 
-1. Add debounced history-search state:
+1. Add debounced history-search state (ensure `useEffect` is imported):
 ```tsx
 const [historySearch, setHistorySearch] = useState('');
 const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -904,7 +847,7 @@ const { data: capturesData, refetch, isFetching } = useCaptures({
 });
 ```
 
-3. Add the search input next to the status tabs (in the "Capture History" header row, before the tabs):
+3. Add the search input in the "Capture History" header row, before the status-tabs block:
 ```tsx
 <input
   type="text"
@@ -916,7 +859,7 @@ const { data: capturesData, refetch, isFetching } = useCaptures({
 />
 ```
 
-4. Add an Endpoint column to the `columns` definition (insert after the `container_name` column). Include `endpointNameById` in the `useMemo` dependency array:
+4. Add an Endpoint column to the `columns` `useMemo` (insert right after the `container_name` column object) and add `endpointNameById` to that `useMemo`'s dependency array:
 ```tsx
 {
   accessorKey: 'endpoint_id',
@@ -945,7 +888,7 @@ git commit -m "feat(pcap): search capture history + show endpoint column"
 
 ## Task 9: Collapsible "Browse by endpoint" fallback
 
-Keeps the familiar Endpoint → Stack → Container dropdowns as an optional path, sourced from the same cross-endpoint `runningContainers` list and producing the same `CaptureTarget`.
+Keeps the familiar Endpoint → Stack → Container dropdowns as an optional path, sourced from the same cross-endpoint `runningContainers` list and producing the same `CaptureTarget`. This is also where the old stack-grouping assertions live now.
 
 **Files:**
 - Create: `frontend/src/features/security/components/capture-browse-fallback.tsx`
@@ -954,7 +897,7 @@ Keeps the familiar Endpoint → Stack → Container dropdowns as an optional pat
 
 - [ ] **Step 1: Write the failing test**
 
-Create `frontend/src/features/security/components/capture-browse-fallback.test.tsx`:
+First read `frontend/src/shared/components/ui/themed-select.tsx` to confirm the option/group shape and how a `ThemedSelect` renders options (Radix `combobox` role + `option` role, as the old page test used). Then create `frontend/src/features/security/components/capture-browse-fallback.test.tsx`:
 ```tsx
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
@@ -963,29 +906,44 @@ import type { Container } from '@/features/containers/hooks/use-containers';
 import type { Stack } from '@/features/containers/hooks/use-stacks';
 
 const containers = [
-  { id: 'c1', name: 'web-1', image: 'nginx', state: 'running', status: 'Up', endpointId: 1, endpointName: 'local', ports: [], created: 0, labels: {}, networks: [] },
+  { id: 'c1', name: 'api-1', image: 'a', state: 'running', status: 'Up', endpointId: 1, endpointName: 'local', ports: [], created: 0, networks: [], labels: { 'com.docker.compose.project': 'alpha' } },
+  { id: 'c4', name: 'beta-api-1', image: 'b', state: 'running', status: 'Up', endpointId: 1, endpointName: 'local', ports: [], created: 0, networks: [], labels: { 'com.docker.compose.project': 'beta' } },
+  { id: 'c3', name: 'standalone-1', image: 's', state: 'running', status: 'Up', endpointId: 1, endpointName: 'local', ports: [], created: 0, networks: [], labels: {} },
 ] as unknown as Container[];
-const endpoints = [{ id: 1, name: 'local' }] as { id: number; name: string }[];
+const stacks = [{ id: 1, name: 'alpha', endpointId: 1 }, { id: 2, name: 'beta', endpointId: 1 }] as unknown as Stack[];
+const endpoints = [{ id: 1, name: 'local' }];
 
-it('selecting endpoint then container emits a CaptureTarget', () => {
-  const onChange = vi.fn();
-  render(
-    <CaptureBrowseFallback
-      containers={containers}
-      stacks={[] as Stack[]}
-      endpoints={endpoints}
-      edgeAsyncEndpointIds={new Set()}
-      onChange={onChange}
-    />,
-  );
-  // Open the disclosure
+function open() {
   fireEvent.click(screen.getByText(/browse by endpoint/i));
-  // (Drive the ThemedSelects per their test-friendly API; assert onChange receives endpointId 1 + containerId 'c1'.)
-  // This asserts the wiring contract:
-  expect(typeof onChange).toBe('function');
+}
+
+describe('CaptureBrowseFallback', () => {
+  it('groups containers by stack once an endpoint is chosen', () => {
+    render(<CaptureBrowseFallback containers={containers} stacks={stacks} endpoints={endpoints} edgeAsyncEndpointIds={new Set()} onChange={() => {}} />);
+    open();
+    fireEvent.click(screen.getAllByRole('combobox')[0]); // endpoint
+    fireEvent.click(screen.getByRole('option', { name: 'local' }));
+    fireEvent.click(screen.getAllByRole('combobox')[2]); // container
+    expect(screen.getByText('alpha')).toBeInTheDocument();
+    expect(screen.getByText('beta')).toBeInTheDocument();
+    expect(screen.getByText('No Stack')).toBeInTheDocument();
+  }, 20000);
+
+  it('emits a CaptureTarget when a container is chosen', () => {
+    const onChange = vi.fn();
+    render(<CaptureBrowseFallback containers={containers} stacks={stacks} endpoints={endpoints} edgeAsyncEndpointIds={new Set()} onChange={onChange} />);
+    open();
+    fireEvent.click(screen.getAllByRole('combobox')[0]);
+    fireEvent.click(screen.getByRole('option', { name: 'local' }));
+    fireEvent.click(screen.getAllByRole('combobox')[2]);
+    fireEvent.click(screen.getByRole('option', { name: 'api-1' }));
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ endpointId: 1, containerId: 'c1', containerName: 'api-1', endpointName: 'local' }),
+    );
+  }, 20000);
 });
 ```
-> The exact ThemedSelect interaction depends on its implementation; read `frontend/src/shared/components/ui/themed-select.tsx` and assert selection drives `onChange` with `{ endpointId: 1, containerId: 'c1', containerName: 'web-1', endpointName: 'local', stackName }`. Keep at least one assertion that a full endpoint→container selection calls `onChange` with the right target.
+> If `ThemedSelect`'s interaction differs from Radix `combobox`/`option` roles, adapt the queries to its actual API (the old page test used `getAllByRole('combobox')` + `getByRole('option', { name })`, so this should hold).
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -1016,11 +974,7 @@ export interface CaptureBrowseFallbackProps {
 }
 
 export function CaptureBrowseFallback({
-  containers,
-  stacks,
-  endpoints,
-  edgeAsyncEndpointIds,
-  onChange,
+  containers, stacks, endpoints, edgeAsyncEndpointIds, onChange,
 }: CaptureBrowseFallbackProps) {
   const [endpointId, setEndpointId] = useState<number | undefined>();
   const [stackName, setStackName] = useState<string | undefined>();
@@ -1041,12 +995,9 @@ export function CaptureBrowseFallback({
     return [...set].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true }));
   }, [endpointContainers, knownStackNames]);
   const filtered = useMemo(
-    () =>
-      stackName
-        ? endpointContainers.filter(
-            (c) => (resolveContainerStackName(c, knownStackNames) ?? NO_STACK_LABEL) === stackName,
-          )
-        : endpointContainers,
+    () => (stackName
+      ? endpointContainers.filter((c) => (resolveContainerStackName(c, knownStackNames) ?? NO_STACK_LABEL) === stackName)
+      : endpointContainers),
     [endpointContainers, stackName, knownStackNames],
   );
   const containerOptions = useMemo(
@@ -1074,15 +1025,9 @@ export function CaptureBrowseFallback({
       <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
         <ThemedSelect
           value={endpointId != null ? String(endpointId) : '__all__'}
-          onValueChange={(v) => {
-            setEndpointId(v === '__all__' ? undefined : Number(v));
-            setStackName(undefined);
-          }}
+          onValueChange={(v) => { setEndpointId(v === '__all__' ? undefined : Number(v)); setStackName(undefined); }}
           placeholder="Select endpoint..."
-          options={[
-            { value: '__all__', label: 'Select endpoint...' },
-            ...endpoints.map((e) => ({ value: String(e.id), label: e.name })),
-          ]}
+          options={[{ value: '__all__', label: 'Select endpoint...' }, ...endpoints.map((e) => ({ value: String(e.id), label: e.name }))]}
           className="w-full text-sm"
         />
         <ThemedSelect
@@ -1090,10 +1035,7 @@ export function CaptureBrowseFallback({
           onValueChange={(v) => setStackName(v === '__all__' ? undefined : v)}
           disabled={endpointId == null}
           placeholder="All stacks"
-          options={[
-            { value: '__all__', label: 'All stacks' },
-            ...stackOptions.map((s) => ({ value: s, label: s })),
-          ]}
+          options={[{ value: '__all__', label: 'All stacks' }, ...stackOptions.map((s) => ({ value: s, label: s }))]}
           className="w-full text-sm"
         />
         <ThemedSelect
@@ -1112,7 +1054,7 @@ export function CaptureBrowseFallback({
 
 - [ ] **Step 4: Mount it in the page under the picker**
 
-In `packet-capture.tsx`, import and render below the `CaptureTargetPicker` block:
+In `packet-capture.tsx`, import and render directly below the `CaptureTargetPicker` block (inside the same `<div className="mb-4">` or just after it):
 ```tsx
 import { CaptureBrowseFallback } from '@/features/security/components/capture-browse-fallback';
 // ...
@@ -1146,7 +1088,7 @@ git commit -m "feat(pcap): collapsible browse-by-endpoint fallback picker"
 
 - [ ] **Step 1: Document the change**
 
-Add a short note under the relevant section of `docs/architecture.md` (packet capture / security): the capture target picker now searches running containers across all endpoints (no endpoint pre-selection) via the shared `filterContainers` parser and `cmdk`; the captures list API accepts an optional `search` param (parameterized match on `container_name`/`filter`). No new env vars. If there is a packet-capture note in the repo root `CLAUDE.md`, add one sentence describing cross-endpoint search; otherwise skip.
+Add a short note under the packet-capture / security section of `docs/architecture.md`: the capture target picker now searches running containers across all endpoints (no endpoint pre-selection) via the shared `filterContainers` parser and `cmdk`, with a collapsible browse-by-endpoint fallback; the captures list API accepts an optional `search` param (parameterized match on `container_name`/`filter`). No new env vars.
 
 - [ ] **Step 2: Commit**
 
@@ -1168,24 +1110,23 @@ Run:
 npm run typecheck
 npm run lint
 ```
-Expected: no errors. Fix any unused-import / type errors surfaced by the page refactor (e.g. removed `ThemedSelect`/`useEndpointCapabilities` imports) before continuing.
+Expected: no errors. Fix unused-import / type errors from the page refactor (removed `ThemedSelect`/`useEndpointCapabilities`/grouping imports) before continuing.
 
-- [ ] **Step 2: Run the affected test suites**
+- [ ] **Step 2: Run the affected suites**
 
 Run:
 ```bash
-cd packages/security && npx vitest run src/__tests__/pcap-model.test.ts src/__tests__/pcap-store.test.ts src/__tests__/pcap-route.test.ts
+cd packages/security && npx vitest run src/__tests__/pcap-model.test.ts src/__tests__/pcap-service.test.ts src/__tests__/pcap-route.test.ts
 cd ../../frontend && npx vitest run src/features/security
 ```
 Expected: all PASS.
 
-- [ ] **Step 3: Final review commit (if anything was fixed)**
+- [ ] **Step 3: Final fixups commit (only if something changed)**
 
 ```bash
 git add -A
 git commit -m "chore(pcap): typecheck/lint fixups for filter overhaul"
 ```
-(Skip if nothing changed.)
 
 ---
 
@@ -1194,12 +1135,13 @@ git commit -m "chore(pcap): typecheck/lint fixups for filter overhaul"
 - **Type container name directly** → Task 6 (`filterContainers` free-text), Task 7 (page wiring).
 - **Search stacks + containers without selecting an endpoint** → Task 6 (cross-endpoint list + `stack:` quick-filters), Task 7 (`useContainers({ state: 'running' })`, no endpoint gate).
 - **Dropdowns as fallback** → Task 9.
-- **History search** → Tasks 1–4 (backend + hook), Task 8 (UI + endpoint column).
+- **History search** → Tasks 1–4 (schema/store/service/route/hook), Task 8 (UI + endpoint column).
 - **BPF presets** → Task 5 + Task 7 wiring.
 - **Chip with endpoint/stack context** → Task 6 (selected-state chip).
-- **Edge-async safety** → Task 6 (disabled items) + Task 7 (contextual warning + Start gating).
+- **Edge-async safety** → Task 6 (disabled items) + Task 7 (contextual warning + Start gating) + Task 9 (fallback guards).
 - **Parameterized SQL / Zod boundary** → Tasks 1–2.
 - **Tests for every change** → each task is TDD.
 - **Docs** → Task 10.
 
-Type consistency: `CaptureTarget` is defined once in Task 6 and imported by Tasks 7 & 9; `GetCapturesOptions.search`, `listCaptures({search})`, `CaptureListQuerySchema.search`, and `useCaptures({search})` all use the same `search` name.
+Type consistency: `CaptureTarget` is defined once in Task 6 and imported by Tasks 7 & 9; `GetCapturesOptions.search`, `listCaptures({search})`, `CaptureListQuerySchema.search`, and `useCaptures({search})` all use the same `search` name and shapes verified against the current code.
+```
