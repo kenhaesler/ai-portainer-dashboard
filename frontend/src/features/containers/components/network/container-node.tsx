@@ -14,11 +14,14 @@ export function ContainerNode({ data }: NodeProps) {
   const image = (data as any).image || '';
   const selected = Boolean((data as any).selected);
   const related = Boolean((data as any).related);
+  const usedHandles = (data as any).usedHandles as Array<'top' | 'right' | 'bottom' | 'left'> | undefined;
+  const showHandle = (id: 'top' | 'right' | 'bottom' | 'left') =>
+    usedHandles === undefined || usedHandles.includes(id);
 
   return (
     <div className="flex flex-col items-center gap-1">
-      <Handle id="top" type="source" position={Position.Top} className="!bg-gray-400" />
-      <Handle id="right" type="source" position={Position.Right} className="!bg-gray-400" />
+      {showHandle('top') && <Handle id="top" type="source" position={Position.Top} className="!bg-gray-400" />}
+      {showHandle('right') && <Handle id="right" type="source" position={Position.Right} className="!bg-gray-400" />}
       <div
         className={cn(
           'h-10 w-10 rounded-full border-2 flex items-center justify-center text-white text-xs font-bold transition-all duration-200',
@@ -37,8 +40,8 @@ export function ContainerNode({ data }: NodeProps) {
       <div className="text-[10px] text-muted-foreground max-w-[100px] truncate">
         {image}
       </div>
-      <Handle id="bottom" type="source" position={Position.Bottom} className="!bg-gray-400" />
-      <Handle id="left" type="source" position={Position.Left} className="!bg-gray-400" />
+      {showHandle('bottom') && <Handle id="bottom" type="source" position={Position.Bottom} className="!bg-gray-400" />}
+      {showHandle('left') && <Handle id="left" type="source" position={Position.Left} className="!bg-gray-400" />}
     </div>
   );
 }
