@@ -750,6 +750,36 @@ describe('DataTable', () => {
       expect(screen.getByText('container-11')).toBeInTheDocument();
       expect(screen.queryByText('container-12')).not.toBeInTheDocument();
     });
+
+    it('divides by the measured row height, not the ROW_HEIGHT constant', () => {
+      // Rows render taller than the ROW_HEIGHT (48) assumption once cell
+      // padding + font metrics are applied (~53px in real tables). autoFit must
+      // page off the *measured* height, otherwise it fits too many rows and the
+      // page scrolls by ~(rows × overshoot)px. Here body rows report 53px:
+      //   available = 1000 - 200 - 40 - 56 - 24 = 680
+      //   floor(680 / 53) = 12 rows/page  (a 48 assumption would show 14)
+      Object.defineProperty(window, 'innerHeight', { value: 1000, configurable: true });
+      rectSpy = vi
+        .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+        .mockImplementation(function (this: HTMLElement) {
+          const height = this.tagName === 'TR' ? 53 : 0;
+          return {
+            top: 200,
+            bottom: 0,
+            left: 0,
+            right: 0,
+            width: 0,
+            height,
+            x: 0,
+            y: 200,
+            toJSON: () => ({}),
+          } as DOMRect;
+        });
+
+      render(<DataTable columns={testColumns} data={makeRows(30)} autoFit />);
+      expect(screen.getByText('container-12')).toBeInTheDocument();
+      expect(screen.queryByText('container-13')).not.toBeInTheDocument();
+    });
   });
 
   describe('horizontal scroll (minTableWidth)', () => {
