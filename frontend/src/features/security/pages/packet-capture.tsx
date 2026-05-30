@@ -34,6 +34,7 @@ import {
   type PcapFinding,
 } from '@/features/security/hooks/use-pcap';
 import { CaptureTargetPicker, type CaptureTarget } from '@/features/security/components/capture-target-picker';
+import { CaptureBrowseFallback } from '@/features/security/components/capture-browse-fallback';
 import { BpfFilterInput } from '@/features/security/components/bpf-filter-input';
 import { api } from '@/shared/lib/api';
 import { cn } from '@/shared/lib/utils';
@@ -314,6 +315,13 @@ export default function PacketCapture() {
               This container&apos;s endpoint is Edge Async — packet capture requires docker exec and is unavailable.
             </p>
           )}
+          <CaptureBrowseFallback
+            containers={runningContainers}
+            stacks={stacks ?? []}
+            endpoints={endpoints ?? []}
+            edgeAsyncEndpointIds={edgeAsyncEndpointIds}
+            onChange={setTarget}
+          />
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
