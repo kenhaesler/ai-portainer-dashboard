@@ -47,7 +47,7 @@ Each theme defines: semantic colors, sidebar colors, 5 chart colors, border radi
 
 - **Bento grids** — `auto-rows-[minmax(180px,1fr)]`, 1-4 column responsive
 - **Hero cards** — 2-column span for primary KPIs with animated counters + sparklines
-- **Sidebar** — Collapsible (60px/16rem), glassmorphic, 4 nav groups, hidden scrollbar (thin on hover)
+- **Sidebar** — Collapsible (60px/16rem), glassmorphic, 6 intent-based nav groups (Overview, Monitoring, Diagnostics, Intelligence, Security, Operations) with Settings pinned separately at the foot, hidden scrollbar (thin on hover)
 - **Header** — Fixed top: breadcrumbs, Ctrl+K command palette, theme toggle, user menu
 
 ## Animation Standards

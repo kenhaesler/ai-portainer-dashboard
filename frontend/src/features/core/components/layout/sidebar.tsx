@@ -46,6 +46,11 @@ interface NavGroup {
   items: NavItem[];
 }
 
+// Grouped by operator intent: what's running -> is it healthy -> why ->
+// ask the AI -> security posture -> act. Remediation is the one mutating
+// workflow and lives alone under Operations to keep the observer-first
+// separation between looking and acting. Settings is pinned separately
+// (see `settingsItem`), out of the themed groups.
 const navigation: NavGroup[] = [
   {
     title: 'Overview',
@@ -53,40 +58,52 @@ const navigation: NavGroup[] = [
       { label: 'Home', to: '/', icon: LayoutDashboard },
       { label: 'Workload Explorer', to: '/workloads', icon: Boxes },
       { label: 'Infrastructure', to: '/infrastructure', icon: Server },
+      { label: 'Image Footprint', to: '/images', icon: PackageOpen },
     ],
   },
   {
-    title: 'Containers',
+    title: 'Monitoring',
     items: [
       { label: 'Health & Monitoring', to: '/health', icon: HeartPulse },
-      { label: 'Image Footprint', to: '/images', icon: PackageOpen },
+      { label: 'Metrics Dashboard', to: '/metrics', icon: BarChart3 },
+    ],
+  },
+  {
+    title: 'Diagnostics',
+    items: [
+      { label: 'Trace Explorer', to: '/traces', icon: GitBranch },
+      { label: 'eBPF Coverage', to: '/ebpf-coverage', icon: Bug },
       { label: 'Network Topology', to: '/topology', icon: Network },
+      { label: 'Packet Capture', to: '/packet-capture', icon: Radio },
+      { label: 'Log Viewer', to: '/logs', icon: ScrollText },
+      { label: 'Edge Agent Logs', to: '/edge-logs', icon: FileSearch },
     ],
   },
   {
     title: 'Intelligence',
     items: [
-      { label: 'Metrics Dashboard', to: '/metrics', icon: BarChart3 },
-      { label: 'Trace Explorer', to: '/traces', icon: GitBranch },
-      { label: 'eBPF Coverage', to: '/ebpf-coverage', icon: Bug },
       { label: 'LLM Assistant', to: '/assistant', icon: MessageSquare },
       { label: 'LLM Observability', to: '/llm-observability', icon: Activity },
-      { label: 'Remediation', to: '/remediation', icon: Shield },
+    ],
+  },
+  {
+    title: 'Security',
+    items: [
+      { label: 'Security Audit', to: '/security/audit', icon: Shield },
+      { label: 'Vulnerabilities', to: '/security/vulnerabilities', icon: ShieldAlert },
     ],
   },
   {
     title: 'Operations',
     items: [
-      { label: 'Log Viewer', to: '/logs', icon: ScrollText },
-      { label: 'Security Audit', to: '/security/audit', icon: Shield },
-      { label: 'Vulnerabilities', to: '/security/vulnerabilities', icon: ShieldAlert },
-      { label: 'Edge Agent Logs', to: '/edge-logs', icon: FileSearch },
-      { label: 'Packet Capture', to: '/packet-capture', icon: Radio },
+      { label: 'Remediation', to: '/remediation', icon: Shield },
       { label: 'Reports', to: '/reports', icon: FileBarChart },
-      { label: 'Settings', to: '/settings', icon: Settings },
     ],
   },
 ];
+
+// Pinned at the foot of the sidebar, separated from the themed groups.
+const settingsItem: NavItem = { label: 'Settings', to: '/settings', icon: Settings };
 
 function AnimatedBadge({ count }: { count: number }) {
   const prevCountRef = useRef(count);
@@ -156,6 +173,110 @@ function ScrollGradient({ navRef }: { navRef: React.RefObject<HTMLElement | null
   );
 }
 
+function NavLink({
+  item,
+  isActive,
+  collapsed,
+  reducedMotion,
+  pendingCount,
+  onPrefetch,
+  onNavigate,
+}: {
+  item: NavItem;
+  isActive: boolean;
+  collapsed: boolean;
+  reducedMotion: boolean | null;
+  pendingCount: number;
+  onPrefetch?: () => void;
+  onNavigate: () => void;
+}) {
+  const link = (
+    <button
+      type="button"
+      className={cn(
+        'relative flex w-full items-center gap-3 rounded-md px-2 py-2 text-sm font-medium transition-colors duration-200',
+        isActive
+          ? 'text-sidebar-accent-foreground'
+          : 'text-sidebar-foreground hover:bg-sidebar-background/45 hover:text-sidebar-accent-foreground',
+        collapsed && 'justify-center px-0'
+      )}
+      onMouseEnter={onPrefetch}
+      onFocus={onPrefetch}
+      onClick={onNavigate}
+    >
+      <>
+        {isActive && (
+          <motion.span
+            layoutId="sidebar-active-pill"
+            data-testid="sidebar-active-indicator"
+            className="absolute inset-0 -z-10 rounded-md bg-sidebar-background/55 shadow-sm ring-1 ring-sidebar-border/60 backdrop-blur-sm"
+            transition={
+              reducedMotion
+                ? { duration: 0 }
+                : { type: 'spring', stiffness: 400, damping: 30 }
+            }
+          />
+        )}
+        <motion.span
+          className="shrink-0"
+          layout={!reducedMotion}
+          transition={
+            reducedMotion
+              ? { duration: 0 }
+              : { type: 'spring', stiffness: 300, damping: 25 }
+          }
+        >
+          <item.icon className="h-4 w-4" />
+        </motion.span>
+        <AnimatePresence>
+          {!collapsed && (
+            <motion.span
+              className="flex flex-1 items-center gap-1 truncate"
+              initial={reducedMotion ? false : { opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={
+                reducedMotion
+                  ? { duration: 0 }
+                  : { duration: 0.1, ease: 'easeOut' }
+              }
+            >
+              <span className="truncate">{item.label}</span>
+              {item.to === '/remediation' ? (
+                <AnimatedBadge count={pendingCount} />
+              ) : item.badge != null && item.badge > 0 ? (
+                <AnimatedBadge count={item.badge} />
+              ) : null}
+            </motion.span>
+          )}
+        </AnimatePresence>
+      </>
+    </button>
+  );
+
+  return (
+    <li>
+      {collapsed ? (
+        <TooltipPrimitive.Root>
+          <TooltipPrimitive.Trigger asChild>{link}</TooltipPrimitive.Trigger>
+          <TooltipPrimitive.Portal>
+            <TooltipPrimitive.Content
+              side="right"
+              sideOffset={8}
+              className="z-50 rounded-md bg-popover px-3 py-1.5 text-xs font-medium text-popover-foreground shadow-md"
+            >
+              {item.label}
+              <TooltipPrimitive.Arrow className="fill-popover" />
+            </TooltipPrimitive.Content>
+          </TooltipPrimitive.Portal>
+        </TooltipPrimitive.Root>
+      ) : (
+        link
+      )}
+    </li>
+  );
+}
+
 export function Sidebar() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -203,6 +324,17 @@ export function Sidebar() {
       return !item.hidden;
     }),
   }));
+
+  const isItemActive = (to: string) =>
+    to === '/' ? location.pathname === '/' : location.pathname.startsWith(to);
+
+  const handleNavigate = (to: string) => {
+    if (to === '/') {
+      window.location.assign('/');
+      return;
+    }
+    navigate(to, { state: { source: 'sidebar-nav', ts: Date.now() } });
+  };
 
   return (
     <TooltipPrimitive.Provider delayDuration={200}>
@@ -287,101 +419,18 @@ export function Sidebar() {
                   )}
                 >
                   <ul className="space-y-0.5 overflow-hidden px-2">
-                    {group.items.map((item) => {
-                      const isActive = item.to === '/'
-                        ? location.pathname === '/'
-                        : location.pathname.startsWith(item.to);
-                      const link = (
-                        <button
-                          type="button"
-                          className={cn(
-                            'relative flex w-full items-center gap-3 rounded-md px-2 py-2 text-sm font-medium transition-colors duration-200',
-                            isActive
-                              ? 'text-sidebar-accent-foreground'
-                              : 'text-sidebar-foreground hover:bg-sidebar-background/45 hover:text-sidebar-accent-foreground',
-                            sidebarCollapsed && 'justify-center px-0'
-                          )}
-                          onMouseEnter={prefetchMap[item.to]}
-                          onFocus={prefetchMap[item.to]}
-                          onClick={() => {
-                            if (item.to === '/') {
-                              window.location.assign('/');
-                              return;
-                            }
-                            navigate(item.to, { state: { source: 'sidebar-nav', ts: Date.now() } });
-                          }}
-                        >
-                          <>
-                            {isActive && (
-                              <motion.span
-                                layoutId="sidebar-active-pill"
-                                data-testid="sidebar-active-indicator"
-                                className="absolute inset-0 -z-10 rounded-md bg-sidebar-background/55 shadow-sm ring-1 ring-sidebar-border/60 backdrop-blur-sm"
-                                transition={
-                                  reducedMotion
-                                    ? { duration: 0 }
-                                    : { type: 'spring', stiffness: 400, damping: 30 }
-                                }
-                              />
-                            )}
-                            <motion.span
-                              className="shrink-0"
-                              layout={!reducedMotion}
-                              transition={
-                                reducedMotion
-                                  ? { duration: 0 }
-                                  : { type: 'spring', stiffness: 300, damping: 25 }
-                              }
-                            >
-                              <item.icon className="h-4 w-4" />
-                            </motion.span>
-                            <AnimatePresence>
-                              {!sidebarCollapsed && (
-                                <motion.span
-                                  className="flex flex-1 items-center gap-1 truncate"
-                                  initial={reducedMotion ? false : { opacity: 0 }}
-                                  animate={{ opacity: 1 }}
-                                  exit={{ opacity: 0 }}
-                                  transition={
-                                    reducedMotion
-                                      ? { duration: 0 }
-                                      : { duration: 0.1, ease: 'easeOut' }
-                                  }
-                                >
-                                  <span className="truncate">{item.label}</span>
-                                  {item.to === '/remediation' ? (
-                                    <AnimatedBadge count={pendingCount} />
-                                  ) : item.badge != null && item.badge > 0 ? (
-                                    <AnimatedBadge count={item.badge} />
-                                  ) : null}
-                                </motion.span>
-                              )}
-                            </AnimatePresence>
-                          </>
-                        </button>
-                      );
-                      return (
-                        <li key={item.to}>
-                          {sidebarCollapsed ? (
-                            <TooltipPrimitive.Root>
-                              <TooltipPrimitive.Trigger asChild>{link}</TooltipPrimitive.Trigger>
-                              <TooltipPrimitive.Portal>
-                                <TooltipPrimitive.Content
-                                  side="right"
-                                  sideOffset={8}
-                                  className="z-50 rounded-md bg-popover px-3 py-1.5 text-xs font-medium text-popover-foreground shadow-md"
-                                >
-                                  {item.label}
-                                  <TooltipPrimitive.Arrow className="fill-popover" />
-                                </TooltipPrimitive.Content>
-                              </TooltipPrimitive.Portal>
-                            </TooltipPrimitive.Root>
-                          ) : (
-                            link
-                          )}
-                        </li>
-                      );
-                    })}
+                    {group.items.map((item) => (
+                      <NavLink
+                        key={item.to}
+                        item={item}
+                        isActive={isItemActive(item.to)}
+                        collapsed={sidebarCollapsed}
+                        reducedMotion={reducedMotion}
+                        pendingCount={pendingCount}
+                        onPrefetch={prefetchMap[item.to]}
+                        onNavigate={() => handleNavigate(item.to)}
+                      />
+                    ))}
                   </ul>
                 </div>
               </div>
@@ -389,6 +438,20 @@ export function Sidebar() {
           })}
           <ScrollGradient navRef={navRef} />
         </nav>
+
+        {/* Settings — pinned at the foot, separated from the themed groups */}
+        <div className="border-t border-border/30 px-2 pt-2">
+          <ul className="space-y-0.5">
+            <NavLink
+              item={settingsItem}
+              isActive={isItemActive(settingsItem.to)}
+              collapsed={sidebarCollapsed}
+              reducedMotion={reducedMotion}
+              pendingCount={pendingCount}
+              onNavigate={() => handleNavigate(settingsItem.to)}
+            />
+          </ul>
+        </div>
 
         {/* Collapse toggle */}
         <div className="p-2">

@@ -26,6 +26,26 @@ function renderSidebar() {
   );
 }
 
+/**
+ * Reads the rendered nav into an ordered list of { title, items } groups so
+ * tests can assert both grouping and order. Each group is a direct `div.mb-2`
+ * child of <nav>; the title is the header button's first span, items are <li>s.
+ */
+function getNavGroups() {
+  const nav = screen.getByRole('navigation');
+  const groupDivs = Array.from(nav.children).filter((el) =>
+    el.classList.contains('mb-2'),
+  ) as HTMLElement[];
+  return groupDivs.map((group) => {
+    const header = group.querySelector(':scope > button');
+    const title = header?.querySelector('span')?.textContent?.trim() ?? '';
+    const items = Array.from(group.querySelectorAll('li')).map((li) =>
+      (li.textContent ?? '').trim(),
+    );
+    return { title, items };
+  });
+}
+
 describe('Sidebar', () => {
   beforeEach(() => {
     useUiStore.persist?.clearStorage?.();
@@ -98,19 +118,82 @@ describe('Sidebar', () => {
     expect(screen.getByTestId('sidebar-active-indicator')).toBeInTheDocument();
   });
 
-  it('renders all navigation groups', () => {
+  it('renders the intent-based navigation groups in order', () => {
     mockUseRemediationActions.mockReturnValue({
       data: [],
     } as any);
 
     renderSidebar();
 
-    expect(screen.getByText('Overview')).toBeInTheDocument();
-    expect(screen.getByText('Containers')).toBeInTheDocument();
-    expect(screen.getByText('Intelligence')).toBeInTheDocument();
-    expect(screen.getByText('Operations')).toBeInTheDocument();
+    expect(getNavGroups().map((g) => g.title)).toEqual([
+      'Overview',
+      'Monitoring',
+      'Diagnostics',
+      'Intelligence',
+      'Security',
+      'Operations',
+    ]);
+    // Old grab-bag groups are gone.
+    expect(screen.queryByText('Containers')).not.toBeInTheDocument();
     expect(screen.queryByText('Backups')).not.toBeInTheDocument();
     expect(screen.getByText(/Settings/i)).toBeInTheDocument();
+  });
+
+  it('places Remediation under Operations, not Intelligence (observer-first: actions are separated)', () => {
+    mockUseRemediationActions.mockReturnValue({ data: [] } as any);
+
+    renderSidebar();
+
+    const groups = getNavGroups();
+    const intelligence = groups.find((g) => g.title === 'Intelligence');
+    const operations = groups.find((g) => g.title === 'Operations');
+    expect(intelligence?.items).not.toContain('Remediation');
+    expect(operations?.items).toContain('Remediation');
+  });
+
+  it('consolidates the two monitoring views under the Monitoring group', () => {
+    mockUseRemediationActions.mockReturnValue({ data: [] } as any);
+
+    renderSidebar();
+
+    const monitoring = getNavGroups().find((g) => g.title === 'Monitoring');
+    expect(monitoring?.items).toEqual(['Health & Monitoring', 'Metrics Dashboard']);
+  });
+
+  it('keeps the two log views adjacent under Diagnostics', () => {
+    mockUseRemediationActions.mockReturnValue({ data: [] } as any);
+
+    renderSidebar();
+
+    const diagnostics = getNavGroups().find((g) => g.title === 'Diagnostics');
+    const items = diagnostics?.items ?? [];
+    const logViewer = items.indexOf('Log Viewer');
+    const edgeLogs = items.indexOf('Edge Agent Logs');
+    expect(logViewer).toBeGreaterThanOrEqual(0);
+    expect(edgeLogs).toBeGreaterThanOrEqual(0);
+    expect(Math.abs(logViewer - edgeLogs)).toBe(1);
+  });
+
+  it('gives Security its own group containing the Security Audit view', () => {
+    mockUseRemediationActions.mockReturnValue({ data: [] } as any);
+
+    renderSidebar();
+
+    const security = getNavGroups().find((g) => g.title === 'Security');
+    expect(security?.items).toContain('Security Audit');
+  });
+
+  it('pins the Settings link below the nav groups, not inside one', () => {
+    mockUseRemediationActions.mockReturnValue({ data: [] } as any);
+
+    renderSidebar();
+
+    // Settings remains reachable...
+    expect(screen.getByRole('button', { name: /Settings/i })).toBeInTheDocument();
+    // ...but is no longer an item inside any of the titled groups.
+    for (const group of getNavGroups()) {
+      expect(group.items).not.toContain('Settings');
+    }
   });
 
   it('renders collapse toggle button', () => {
