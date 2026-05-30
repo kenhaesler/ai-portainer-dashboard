@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import {
   ReactFlow,
   Background,
@@ -18,7 +18,6 @@ import {
   type ElkLayoutNode,
   type ElkLayoutEdge,
 } from '@/features/containers/hooks/use-elk-layout';
-import { useForceSimulation } from '@/features/containers/hooks/use-force-simulation';
 import { useUiStore } from '@/stores/ui-store';
 import { TopologyLegend } from './topology-legend';
 
@@ -256,13 +255,37 @@ const CONTAINER_H = 90;
 const NETWORK_W = 140;
 const NETWORK_H = 90;
 
-// Layout options for within-group arrangement (elkjs compound graph)
-const GROUP_LAYOUT_OPTIONS: Record<string, string> = {
+// Layout options for within-group arrangement (each stack lays out its interior
+// with stress; bumped spacing gives container nodes room to breathe at scale).
+export const GROUP_LAYOUT_OPTIONS: Record<string, string> = {
   'elk.algorithm': 'stress',
-  'elk.stress.desiredEdgeLength': '200',
-  'elk.spacing.nodeNode': '100',
-  'elk.padding': '[top=50, left=40, bottom=30, right=40]',
+  'elk.stress.desiredEdgeLength': '220',
+  'elk.spacing.nodeNode': '160',
+  'elk.padding': '[top=50, left=40, bottom=40, right=40]',
 };
+
+// Root packs the (mostly-disconnected) stack boxes into a compact, deterministic
+// grid. rectpacking is ELK's algorithm for packing unconnected boxes;
+// SEPARATE_CHILDREN lets each stack run its own interior layout independently.
+export const ROOT_LAYOUT_OPTIONS: Record<string, string> = {
+  'elk.algorithm': 'rectpacking',
+  'elk.hierarchyHandling': 'SEPARATE_CHILDREN',
+  'elk.aspectRatio': '1.6',
+  'elk.rectpacking.widthApproximation.optimizationGoal': 'ASPECT_RATIO_DRIVEN',
+  'elk.expandNodes': 'true',
+  'elk.spacing.nodeNode': '60',
+  'elk.padding': '[top=24, left=24, bottom=24, right=24]',
+};
+
+// rectpacking ignores edges; React Flow still draws container↔network edges in
+// Phase 4, so we hand ELK an empty root edge set (stable reference).
+const EMPTY_ELK_EDGES: ElkLayoutEdge[] = [];
+
+// Viewport tuning for a large fleet: minZoom well below React Flow's 0.5 default
+// so ~200 nodes fit, and a fitView that doesn't over-zoom a sparse grid.
+export const MIN_ZOOM = 0.1;
+export const MAX_ZOOM = 2;
+export const FIT_VIEW_OPTIONS = { padding: 0.1, maxZoom: 1 } as const;
 
 export function getEdgeStyle(
   containerId: string,
@@ -293,11 +316,71 @@ export function getEdgeStyle(
 }
 
 /** Simplified blueprint: stack metadata + sorted members (elkjs handles positioning). */
-interface StackBlueprint {
+export interface StackBlueprint {
   stackName: string;
   groupId: string;
   containers: ContainerData[];
   inlineNets: NetworkData[];
+}
+
+/**
+ * Build the compound ELK input from sorted stack blueprints + external networks.
+ * Each stack becomes an auto-sized compound group node containing its container and
+ * inline-network children, with intra-stack container→inline-net edges. External
+ * networks are emitted as root-level boxes. Cross-stack edges are intentionally
+ * omitted — the root packs with rectpacking (edgeless), and React Flow draws every
+ * edge itself in Phase 4. Pure; exported for testing.
+ */
+export function buildStackElkNodes(
+  blueprints: StackBlueprint[],
+  externalNets: NetworkData[],
+): ElkLayoutNode[] {
+  const elkNodes: ElkLayoutNode[] = [];
+
+  for (const bp of blueprints) {
+    const children: ElkLayoutNode[] = [];
+    const groupEdges: ElkLayoutEdge[] = [];
+
+    // Inline networks as group children
+    for (const net of bp.inlineNets) {
+      children.push({ id: `net-${net.id}`, width: NETWORK_W, height: NETWORK_H });
+    }
+
+    // Containers as group children
+    for (const container of bp.containers) {
+      children.push({ id: `container-${container.id}`, width: CONTAINER_W, height: CONTAINER_H });
+
+      for (const netName of container.networks) {
+        // Intra-group edge (container → inline net within same stack)
+        const inlineNet = bp.inlineNets.find((n) => n.name === netName);
+        if (inlineNet) {
+          groupEdges.push({
+            id: `e-${container.id}-${inlineNet.id}`,
+            source: `container-${container.id}`,
+            target: `net-${inlineNet.id}`,
+          });
+        }
+        // Cross-stack edges are intentionally NOT fed to ELK: the root uses
+        // rectpacking (edgeless box packing). React Flow draws them in Phase 4.
+      }
+    }
+
+    elkNodes.push({
+      id: bp.groupId,
+      width: 0,
+      height: 0,
+      children,
+      edges: groupEdges.length > 0 ? groupEdges : undefined,
+      layoutOptions: GROUP_LAYOUT_OPTIONS,
+    });
+  }
+
+  // External networks at root level (packed as boxes alongside the stacks)
+  for (const net of externalNets) {
+    elkNodes.push({ id: `net-${net.id}`, width: NETWORK_W, height: NETWORK_H });
+  }
+
+  return elkNodes;
 }
 
 export function TopologyGraph({
@@ -363,68 +446,18 @@ export function TopologyGraph({
     return { blueprints, externalNets };
   }, [containers, networks, networkRates]);
 
-  // Phase 2: Build compound elkjs graph — groups with children + cross-hierarchy edges
-  const { elkNodes, elkEdges } = useMemo(() => {
-    const elkNodes: ElkLayoutNode[] = [];
-    const elkEdges: ElkLayoutEdge[] = [];
+  // Phase 2: Build compound elkjs graph — groups with children + intra-stack edges
+  const elkNodes = useMemo(
+    () => buildStackElkNodes(blueprints, externalNets),
+    [blueprints, externalNets],
+  );
 
-    for (const bp of blueprints) {
-      const children: ElkLayoutNode[] = [];
-      const groupEdges: ElkLayoutEdge[] = [];
-
-      // Inline networks as group children
-      for (const net of bp.inlineNets) {
-        children.push({ id: `net-${net.id}`, width: NETWORK_W, height: NETWORK_H });
-      }
-
-      // Containers as group children
-      for (const container of bp.containers) {
-        children.push({ id: `container-${container.id}`, width: CONTAINER_W, height: CONTAINER_H });
-
-        for (const netName of container.networks) {
-          // Intra-group edge (container → inline net within same stack)
-          const inlineNet = bp.inlineNets.find((n) => n.name === netName);
-          if (inlineNet) {
-            groupEdges.push({
-              id: `e-${container.id}-${inlineNet.id}`,
-              source: `container-${container.id}`,
-              target: `net-${inlineNet.id}`,
-            });
-            continue;
-          }
-
-          // Cross-hierarchy edge (container → external net)
-          const extNet = externalNets.find((n) => n.name === netName);
-          if (extNet) {
-            elkEdges.push({
-              id: `e-${container.id}-${extNet.id}`,
-              source: `container-${container.id}`,
-              target: `net-${extNet.id}`,
-            });
-          }
-        }
-      }
-
-      elkNodes.push({
-        id: bp.groupId,
-        width: 0,
-        height: 0,
-        children,
-        edges: groupEdges.length > 0 ? groupEdges : undefined,
-        layoutOptions: GROUP_LAYOUT_OPTIONS,
-      });
-    }
-
-    // External networks at root level
-    for (const net of externalNets) {
-      elkNodes.push({ id: `net-${net.id}`, width: NETWORK_W, height: NETWORK_H });
-    }
-
-    return { elkNodes, elkEdges };
-  }, [blueprints, externalNets]);
-
-  // Phase 3: Run elkjs compound layout (positions all nodes at all hierarchy levels)
-  const layoutPositions = useElkLayout({ nodes: elkNodes, edges: elkEdges });
+  // Phase 3: Run elkjs compound layout (rectpacking root + per-stack interiors)
+  const layoutPositions = useElkLayout({
+    nodes: elkNodes,
+    edges: EMPTY_ELK_EDGES,
+    rootLayoutOptions: ROOT_LAYOUT_OPTIONS,
+  });
 
   // Phase 4: Assemble React Flow nodes and edges using elkjs-computed positions
   const { nodes: initialNodes, edges: initialEdges } = useMemo(() => {
@@ -623,115 +656,6 @@ export function TopologyGraph({
     setEdges(initialEdges);
   }, [initialEdges, setEdges]);
 
-  // --- Force simulation: top-level nodes push each other when dragged ---
-
-  // Build simulation input from elkjs top-level node positions
-  const simNodes = useMemo(() => {
-    const result: Array<{ id: string; x: number; y: number; width: number; height: number }> = [];
-    for (const bp of blueprints) {
-      const pos = layoutPositions.get(bp.groupId);
-      if (!pos) continue;
-      result.push({
-        id: bp.groupId,
-        x: pos.x,
-        y: pos.y,
-        width: pos.width ?? 200,
-        height: pos.height ?? 150,
-      });
-    }
-    for (const net of externalNets) {
-      const pos = layoutPositions.get(`net-${net.id}`);
-      if (!pos) continue;
-      result.push({
-        id: `net-${net.id}`,
-        x: pos.x,
-        y: pos.y,
-        width: NETWORK_W,
-        height: NETWORK_H,
-      });
-    }
-    return result;
-  }, [blueprints, externalNets, layoutPositions]);
-
-  // Build top-level links (group ↔ external net) for force simulation
-  const simLinks = useMemo(() => {
-    const links: Array<{ id: string; source: string; target: string }> = [];
-    const seen = new Set<string>();
-    for (const bp of blueprints) {
-      for (const container of bp.containers) {
-        for (const netName of container.networks) {
-          const extNet = externalNets.find((n) => n.name === netName);
-          if (!extNet) continue;
-          const key = `${bp.groupId}--net-${extNet.id}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          links.push({ id: key, source: bp.groupId, target: `net-${extNet.id}` });
-        }
-      }
-    }
-    return links;
-  }, [blueprints, externalNets]);
-
-  // Track which node IDs are children of which group, for moving children with groups
-  const childToGroupRef = useRef<Map<string, string>>(new Map());
-  useEffect(() => {
-    const map = new Map<string, string>();
-    for (const bp of blueprints) {
-      for (const c of bp.containers) map.set(`container-${c.id}`, bp.groupId);
-      for (const n of bp.inlineNets) map.set(`net-${n.id}`, bp.groupId);
-    }
-    childToGroupRef.current = map;
-  }, [blueprints]);
-
-  // On simulation tick: update top-level node positions; children follow via React Flow parentId
-  const handleSimTick = useCallback((positions: Map<string, { x: number; y: number }>) => {
-    setNodes((prevNodes) =>
-      prevNodes.map((node) => {
-        const newPos = positions.get(node.id);
-        if (newPos) {
-          // Top-level node (group or external net) — apply simulation position
-          return { ...node, position: { x: newPos.x, y: newPos.y } };
-        }
-        return node;
-      }),
-    );
-  }, [setNodes]);
-
-  const { onNodeDragStart, onNodeDrag, onNodeDragStop } = useForceSimulation({
-    nodes: simNodes,
-    links: simLinks,
-    onTick: handleSimTick,
-  });
-
-  // Wrap drag handlers to translate React Flow events into our hook's API
-  const handleDragStart = useCallback(
-    (event: React.MouseEvent, node: Node) => {
-      // Only top-level nodes participate in simulation (groups + external nets)
-      const groupId = childToGroupRef.current.get(node.id);
-      if (groupId) return; // child node — let React Flow handle normally (constrained to parent)
-      onNodeDragStart(event, node.id);
-    },
-    [onNodeDragStart],
-  );
-
-  const handleDrag = useCallback(
-    (event: React.MouseEvent, node: Node) => {
-      const groupId = childToGroupRef.current.get(node.id);
-      if (groupId) return;
-      onNodeDrag(event, node.id, node.position);
-    },
-    [onNodeDrag],
-  );
-
-  const handleDragStop = useCallback(
-    (event: React.MouseEvent, node: Node) => {
-      const groupId = childToGroupRef.current.get(node.id);
-      if (groupId) return;
-      onNodeDragStop(event, node.id);
-    },
-    [onNodeDragStop],
-  );
-
   const handleNodeClick = useCallback((_event: React.MouseEvent, node: Node) => {
     if (onNodeClick) {
       onNodeClick(node.id);
@@ -755,12 +679,13 @@ export function TopologyGraph({
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeClick={handleNodeClick}
-        onNodeDragStart={potatoMode ? undefined : handleDragStart}
-        onNodeDrag={potatoMode ? undefined : handleDrag}
-        onNodeDragStop={potatoMode ? undefined : handleDragStop}
         nodeTypes={nodeTypes}
-        nodesDraggable={!potatoMode}
+        nodesDraggable={false}
+        onlyRenderVisibleElements
+        minZoom={MIN_ZOOM}
+        maxZoom={MAX_ZOOM}
         fitView
+        fitViewOptions={FIT_VIEW_OPTIONS}
         attributionPosition="bottom-left"
       >
         <Background />

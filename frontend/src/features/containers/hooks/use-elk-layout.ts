@@ -19,6 +19,13 @@ export interface ElkLayoutEdge {
 export interface ElkLayoutInput {
   nodes: ElkLayoutNode[];
   edges: ElkLayoutEdge[];
+  /**
+   * Layout options applied to the synthetic root node. Pass a referentially
+   * stable (module-level) object — it is part of the layout effect's deps, so a
+   * fresh object each render would re-trigger the effect. Defaults to
+   * DEFAULT_ROOT_LAYOUT_OPTIONS.
+   */
+  rootLayoutOptions?: Record<string, string>;
 }
 
 export interface LayoutPosition {
@@ -30,7 +37,7 @@ export interface LayoutPosition {
 
 const elk = new ELK();
 
-const ROOT_LAYOUT_OPTIONS: Record<string, string> = {
+export const DEFAULT_ROOT_LAYOUT_OPTIONS: Record<string, string> = {
   'elk.algorithm': 'stress',
   'elk.stress.desiredEdgeLength': '200',
   'elk.spacing.nodeNode': '80',
@@ -66,6 +73,21 @@ function buildElkNode(node: ElkLayoutNode): ElkNode {
   return elkNode;
 }
 
+/** Build the synthetic ELK root graph (pure; exported for testing). */
+export function buildRootGraph(
+  nodes: ElkLayoutNode[],
+  edges: ElkLayoutEdge[],
+  rootLayoutOptions: Record<string, string> = DEFAULT_ROOT_LAYOUT_OPTIONS,
+): ElkNode {
+  const children = nodes.map(buildElkNode);
+  const elkEdges: ElkExtendedEdge[] = edges.map((e) => ({
+    id: e.id,
+    sources: [e.source],
+    targets: [e.target],
+  }));
+  return { id: 'root', layoutOptions: rootLayoutOptions, children, edges: elkEdges };
+}
+
 /** Recursively extract positions (and auto-computed sizes) from elkjs result. */
 function extractPositions(
   nodes: ElkNode[] | undefined,
@@ -91,13 +113,15 @@ function extractPositions(
  * Compound nodes (with children, width/height = 0) are auto-sized by elkjs.
  * Results are cached by input key to avoid redundant computations.
  */
-export function useElkLayout({ nodes, edges }: ElkLayoutInput) {
+export function useElkLayout({ nodes, edges, rootLayoutOptions }: ElkLayoutInput) {
   const [positions, setPositions] = useState<Map<string, LayoutPosition>>(
     () => new Map(),
   );
   const cacheKeyRef = useRef('');
 
-  const cacheKey = buildCacheKey(nodes, edges);
+  // Include rootLayoutOptions in the cache key so changing the root algorithm
+  // re-runs layout even when the node/edge structure is unchanged.
+  const cacheKey = `${buildCacheKey(nodes, edges)}|root:${JSON.stringify(rootLayoutOptions ?? '')}`;
 
   useEffect(() => {
     if (cacheKey === cacheKeyRef.current) return;
@@ -108,26 +132,14 @@ export function useElkLayout({ nodes, edges }: ElkLayoutInput) {
       return;
     }
 
-    const elkNodes: ElkNode[] = nodes.map(buildElkNode);
-    const elkEdges: ElkExtendedEdge[] = edges.map((e) => ({
-      id: e.id,
-      sources: [e.source],
-      targets: [e.target],
-    }));
-
-    const graph: ElkNode = {
-      id: 'root',
-      layoutOptions: ROOT_LAYOUT_OPTIONS,
-      children: elkNodes,
-      edges: elkEdges,
-    };
+    const graph = buildRootGraph(nodes, edges, rootLayoutOptions);
 
     elk.layout(graph).then((result) => {
       const map = new Map<string, LayoutPosition>();
       extractPositions(result.children, map);
       setPositions(map);
     });
-  }, [cacheKey, nodes, edges]);
+  }, [cacheKey, nodes, edges, rootLayoutOptions]);
 
   return positions;
 }
