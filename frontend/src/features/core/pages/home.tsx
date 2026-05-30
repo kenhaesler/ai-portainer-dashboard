@@ -1,12 +1,12 @@
 import { lazy, Suspense, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Server, Boxes, PackageOpen, Layers, AlertTriangle, Star, ShieldAlert } from 'lucide-react';
+import { AlertTriangle, Star, ShieldAlert } from 'lucide-react';
 import { useDashboardFull } from '@/features/core/hooks/use-dashboard-full';
 import { useContainers, useFavoriteContainers } from '@/features/containers/hooks/use-containers';
 import { calculateHealthStats } from '@/shared/lib/health-score';
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
 import { KpiCard } from '@/shared/components/data-display/kpi-card';
-import { HealthScoreCard } from '@/shared/components/data-display/health-score-card';
+import { FleetHealthSummary } from '@/features/ai-intelligence/components/fleet-health-summary';
 import { StatusBadge } from '@/shared/components/feedback/status-badge';
 import { EmptyState } from '@/shared/components/feedback/empty-state';
 import { SkeletonKpi, SkeletonChart } from '@/shared/components/feedback/skeleton';
@@ -40,10 +40,8 @@ export default function HomePage() {
   const { interval, setInterval } = useAutoRefresh(30);
   const favoriteIds = useFavoritesStore((s) => s.favoriteIds);
   const { data: favoriteContainers = [] } = useFavoriteContainers(favoriteIds);
-  // KPI history is included in the unified /api/dashboard/full response — no separate call needed
-  const kpiHistory = fullData?.kpiHistory;
 
-  // Containers feed the Overall Health Score row (row 2). Uses the same
+  // Containers feed the Overall Health Score row. Uses the same
   // helpers as the Health & Monitoring page so the two views never disagree.
   const {
     data: containers,
@@ -78,44 +76,6 @@ export default function HomePage() {
       total: stack.containerCount,
     }));
   }, [resourcesData]);
-
-  // Derive sparkline arrays from KPI history snapshots
-  const sparklines = useMemo(() => {
-    if (!kpiHistory || kpiHistory.length < 2) {
-      return { endpoints: [], running: [], stopped: [], stacks: [] };
-    }
-    return {
-      endpoints: kpiHistory.map((s) => s.endpoints),
-      running: kpiHistory.map((s) => s.running),
-      stopped: kpiHistory.map((s) => s.stopped),
-      stacks: kpiHistory.map((s) => s.stacks),
-    };
-  }, [kpiHistory]);
-
-  // Compute hover detail strings from history
-  const hoverDetails = useMemo(() => {
-    if (!kpiHistory || kpiHistory.length === 0) {
-      return { endpoints: undefined, running: undefined, stopped: undefined, stacks: undefined };
-    }
-    const latest = kpiHistory[kpiHistory.length - 1];
-    const oneHourAgo = kpiHistory.length > 12 ? kpiHistory[kpiHistory.length - 13] : kpiHistory[0];
-
-    function detail(key: 'endpoints' | 'running' | 'stopped' | 'stacks') {
-      const values = kpiHistory!.map((s) => s[key]);
-      const peak = Math.max(...values);
-      const avg = Math.round(values.reduce((a, b) => a + b, 0) / values.length);
-      const delta = latest[key] - oneHourAgo[key];
-      const sign = delta >= 0 ? '+' : '';
-      return `Last hour: ${sign}${delta} | Peak: ${peak} | Avg: ${avg}`;
-    }
-
-    return {
-      endpoints: detail('endpoints'),
-      running: detail('running'),
-      stopped: detail('stopped'),
-      stacks: detail('stacks'),
-    };
-  }, [kpiHistory]);
 
   if (isError) {
     return (
@@ -157,70 +117,29 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* KPI Cards */}
-      {isLoading ? (
-        <div className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-5">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <SkeletonKpi key={i} />
-          ))}
-        </div>
-      ) : data ? (
-        <MotionStagger className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-5" stagger={0.05}>
-          <MotionReveal className="h-full">
-            <TiltCard>
-              <KpiCard
-                label="Endpoints"
-                value={data.kpis.endpoints}
-                icon={<Server className="h-5 w-5" />}
-                trendValue={`${data.kpis.endpointsUp} up`}
-                trend={data.kpis.endpointsDown > 0 ? 'down' : 'up'}
-                sparklineData={sparklines.endpoints}
-                sparklineColor="var(--color-chart-1)"
-                hoverDetail={hoverDetails.endpoints}
-              />
-            </TiltCard>
-          </MotionReveal>
-          <MotionReveal className="h-full">
-            <TiltCard>
-              <KpiCard
-                label="Running Containers"
-                value={data.kpis.running}
-                icon={<Boxes className="h-5 w-5" />}
-                trendValue={`of ${data.kpis.total} total`}
-                trend="neutral"
-                sparklineData={sparklines.running}
-                sparklineColor="var(--color-chart-2)"
-                hoverDetail={hoverDetails.running}
-              />
-            </TiltCard>
-          </MotionReveal>
-          <MotionReveal className="h-full">
-            <TiltCard>
-              <KpiCard
-                label="Stopped Containers"
-                value={data.kpis.stopped}
-                icon={<PackageOpen className="h-5 w-5" />}
-                trend={data.kpis.stopped > 0 ? 'down' : 'neutral'}
-                trendValue={data.kpis.stopped > 0 ? `${data.kpis.stopped} stopped` : 'none'}
-                sparklineData={sparklines.stopped}
-                sparklineColor="var(--color-chart-3)"
-                hoverDetail={hoverDetails.stopped}
-              />
-            </TiltCard>
-          </MotionReveal>
-          <MotionReveal className="h-full">
-            <TiltCard>
-              <KpiCard
-                label="Stacks"
-                value={data.kpis.stacks}
-                icon={<Layers className="h-5 w-5" />}
-                sparklineData={sparklines.stacks}
-                sparklineColor="var(--color-chart-4)"
-                hoverDetail={hoverDetails.stacks}
-              />
-            </TiltCard>
-          </MotionReveal>
-          <MotionReveal className="h-full">
+      {/* Overall Health Score (4 fr) + Security Findings (1 fr) — single hero
+          row that answers "is everything OK?" at a glance. The health pane
+          reuses FleetHealthSummary so Home shows the same score and inner stat
+          tiles as the Health & Monitoring page and the two can never drift. */}
+      <MotionStagger className="grid grid-cols-1 gap-8 lg:grid-cols-5" stagger={0.05}>
+        <MotionReveal className="h-full lg:col-span-4">
+          {isContainersError ? (
+            <EmptyState
+              variant="error"
+              icon={AlertTriangle}
+              title="Failed to load fleet health"
+              description="Could not compute the Overall Health Score from container data."
+            />
+          ) : (
+            <SpotlightCard>
+              <FleetHealthSummary stats={healthStats} isLoading={isLoadingContainers} />
+            </SpotlightCard>
+          )}
+        </MotionReveal>
+        <MotionReveal className="h-full lg:col-span-1">
+          {isLoading ? (
+            <SkeletonKpi className="h-full" />
+          ) : data ? (
             <TiltCard>
               <button
                 type="button"
@@ -237,35 +156,9 @@ export default function HomePage() {
                 />
               </button>
             </TiltCard>
-          </MotionReveal>
-        </MotionStagger>
-      ) : null}
-
-      {/* Overall Health Score — single hero row that answers "is everything OK?"
-          without a click. Same component as Health & Monitoring so the two
-          pages can never drift apart. */}
-      {isContainersError ? (
-        <EmptyState
-          variant="error"
-          icon={AlertTriangle}
-          title="Failed to load fleet health"
-          description="Could not compute the Overall Health Score from container data."
-        />
-      ) : isLoadingContainers ? (
-        <div data-testid="health-score-skeleton">
-          <SkeletonKpi />
-        </div>
-      ) : healthStats ? (
-        <MotionStagger stagger={0.05}>
-          <MotionReveal>
-            <SpotlightCard>
-              <div className="rounded-lg border bg-card p-6 shadow-sm">
-                <HealthScoreCard stats={healthStats} />
-              </div>
-            </SpotlightCard>
-          </MotionReveal>
-        </MotionStagger>
-      ) : null}
+          ) : null}
+        </MotionReveal>
+      </MotionStagger>
 
       {/* Pinned Favorites */}
       {favoriteContainers.length > 0 && (
