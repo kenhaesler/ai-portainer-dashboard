@@ -936,7 +936,7 @@ describe('monitoring-service', () => {
       await runMonitoringCycle();
 
       // Cooldown entries should exist now; sweep with 0 minutes removes all
-      const swept = sweepExpiredCooldowns(0);
+      const swept = await sweepExpiredCooldowns(0);
       expect(swept).toBeGreaterThan(0);
     });
 
@@ -956,12 +956,12 @@ describe('monitoring-service', () => {
       await runMonitoringCycle();
 
       // Sweep with a large cooldown period should keep everything
-      const swept = sweepExpiredCooldowns(999);
+      const swept = await sweepExpiredCooldowns(999);
       expect(swept).toBe(0);
     });
 
-    it('sweepExpiredCooldowns returns 0 when map is empty', () => {
-      expect(sweepExpiredCooldowns(30)).toBe(0);
+    it('sweepExpiredCooldowns returns 0 when map is empty', async () => {
+      expect(await sweepExpiredCooldowns(30)).toBe(0);
     });
 
     it('startCooldownSweep and stopCooldownSweep do not throw', () => {

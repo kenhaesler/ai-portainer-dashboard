@@ -8,6 +8,7 @@ import { normalizeEndpoint, type NormalizedEndpoint } from '@dashboard/core/port
 import { getSetting, getEffectiveHarborConfig, getEffectiveMonitoringSchedulerConfig, cleanExpiredSessions, cleanExpiredStreamTickets } from '@dashboard/core/services/index.js';
 import { runWithTraceContext } from '@dashboard/core/tracing/index.js';
 import { startCooldownSweep, stopCooldownSweep, cleanupOldInsights, pruneCanaryRegistry, runDedupTelemetryCycle, cleanupOldDedupMetrics } from '@dashboard/ai';
+import { initCooldownStore } from '@dashboard/core/services/cooldown-store.js';
 import { collectMetrics, insertMetrics, cleanOldMetrics, cleanOldSpans, type MetricInsert, recordNetworkSample, insertKpiSnapshot, cleanOldKpiSnapshots, pruneStaleEntries } from '@dashboard/observability';
 import { cleanupOldCaptures, cleanupOrphanedSidecars, runStalenessChecks, runHarborSync, isHarborSyncRunning, isHarborConfiguredAsync, cleanupOldVulnerabilities } from '@dashboard/security';
 import { createPortainerBackup, cleanupOldPortainerBackups, startWebhookListener, stopWebhookListener, processRetries } from '@dashboard/operations';
@@ -730,6 +731,12 @@ export async function startScheduler(runMonitoringCycle: () => Promise<void>): P
   );
   streamTicketCleanupInterval.unref();
   intervals.push(streamTicketCleanupInterval);
+
+  // Upgrade anomaly cooldown state to the shared Redis store (#1361 fix 4) so
+  // suppression survives restarts and is shared across replicas. Fire-and-forget:
+  // the store serves in-memory until this resolves, then stays in-memory if Redis
+  // is unavailable.
+  void initCooldownStore().catch((err) => log.warn({ err }, 'cooldown store init failed'));
 
   // Periodic sweep of expired anomaly cooldowns (every 15 minutes)
   startCooldownSweep();

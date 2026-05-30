@@ -4,6 +4,7 @@ import { getConfig } from '@dashboard/core/config/index.js';
 import { getEffectiveMonitoringConfig } from '@dashboard/core/services/settings-store.js';
 import type { MonitoringConfig } from '@dashboard/core/services/settings-store.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
+import { getCooldownStore } from '@dashboard/core/services/cooldown-store.js';
 import { getEndpoints, getContainers, isEndpointDegraded, isCircuitOpen } from '@dashboard/core/portainer/portainer-client.js';
 import { CircuitBreakerOpenError } from '@dashboard/core/portainer/circuit-breaker.js';
 import { cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
@@ -54,8 +55,10 @@ export interface MonitoringDeps {
   runTraceAnomalyCycle?: () => Promise<void>;
 }
 
-// Per-container+metric cooldown tracker: key = `${containerId}:${metricType}`, value = timestamp (ms)
-const anomalyCooldowns = new Map<string, number>();
+// Per-container+metric cooldown tracker (key = `${containerId}:${metricType}`),
+// backed by the shared cooldown store (#1361 fix 4) so suppression survives
+// restarts and is shared across replicas. Falls back to in-memory when Redis
+// is not configured.
 
 // Track previous cycle stats for delta-based logging
 let previousCycleStats: Record<string, number> | null = null;
@@ -65,27 +68,22 @@ export function resetPreviousCycleStats(): void {
   previousCycleStats = null;
 }
 
-/** Clear all cooldown entries (used in tests). */
+/** Clear all cooldown entries (used in tests). In-memory clears synchronously. */
 export function resetAnomalyCooldowns(): void {
-  anomalyCooldowns.clear();
+  void getCooldownStore().reset();
 }
 
 const COOLDOWN_SWEEP_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
 let cooldownSweepTimer: ReturnType<typeof setInterval> | undefined;
 
-/** Remove expired entries from the anomalyCooldowns map. */
-export function sweepExpiredCooldowns(cooldownMinutes: number): number {
-  const cooldownMs = cooldownMinutes * 60_000;
-  const now = Date.now();
-  let swept = 0;
-  for (const [key, timestamp] of anomalyCooldowns) {
-    if (now - timestamp >= cooldownMs) {
-      anomalyCooldowns.delete(key);
-      swept++;
-    }
-  }
+/**
+ * Remove expired cooldown entries. With the Redis-backed store entries
+ * self-expire via TTL (this returns 0); the in-memory fallback is swept here.
+ */
+export async function sweepExpiredCooldowns(cooldownMinutes: number): Promise<number> {
+  const swept = await getCooldownStore().sweep(cooldownMinutes * 60_000);
   if (swept > 0) {
-    log.debug({ swept, remaining: anomalyCooldowns.size }, 'Swept expired anomaly cooldowns');
+    log.debug({ swept }, 'Swept expired anomaly cooldowns');
   }
   return swept;
 }
@@ -96,7 +94,7 @@ export function startCooldownSweep(): void {
   cooldownSweepTimer = setInterval(() => {
     try {
       const config = getConfig();
-      sweepExpiredCooldowns(config.ANOMALY_COOLDOWN_MINUTES);
+      void sweepExpiredCooldowns(config.ANOMALY_COOLDOWN_MINUTES).catch(() => {});
     } catch {
       // Config may not be available during shutdown
     }
@@ -346,15 +344,14 @@ export function createMonitoringService(deps: MonitoringDeps) {
         // Cooldown check: skip if this container+metric was recently flagged
         const cooldownKey = key;
         const cooldownMs = monCfg.anomalyCooldownMinutes * 60_000;
-        const lastAlerted = anomalyCooldowns.get(cooldownKey);
-        if (cooldownMs > 0 && lastAlerted && Date.now() - lastAlerted < cooldownMs) {
+        if (cooldownMs > 0 && (await getCooldownStore().isHot(cooldownKey, cooldownMs))) {
           log.debug(
             { containerId: item.containerId, metricType: item.metricType, cooldownMinutes: monCfg.anomalyCooldownMinutes },
             'Anomaly suppressed by cooldown',
           );
           continue;
         }
-        anomalyCooldowns.set(cooldownKey, Date.now());
+        await getCooldownStore().mark(cooldownKey);
 
         anomalyInsights.push({
           id: uuidv4(),
@@ -399,9 +396,8 @@ export function createMonitoringService(deps: MonitoringDeps) {
             // Cooldown check
             const cooldownKey = `${container.raw.Id}:${metricType}:threshold`;
             const cooldownMs = monCfg.anomalyCooldownMinutes * 60_000;
-            const lastAlerted = anomalyCooldowns.get(cooldownKey);
-            if (cooldownMs > 0 && lastAlerted && Date.now() - lastAlerted < cooldownMs) continue;
-            anomalyCooldowns.set(cooldownKey, Date.now());
+            if (cooldownMs > 0 && (await getCooldownStore().isHot(cooldownKey, cooldownMs))) continue;
+            await getCooldownStore().mark(cooldownKey);
 
             anomalyInsights.push({
               id: uuidv4(),
