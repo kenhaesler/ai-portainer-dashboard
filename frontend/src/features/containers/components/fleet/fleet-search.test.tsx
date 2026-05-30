@@ -130,4 +130,51 @@ describe('FleetSearch', () => {
     renderSearch({ placeholder: 'Custom placeholder' });
     expect(screen.getByPlaceholderText('Custom placeholder')).toBeInTheDocument();
   });
+
+  it('renders example chips when examples provided and field is empty', () => {
+    renderSearch({ examples: ['name:prod', 'status:up'] });
+    expect(screen.getByRole('group', { name: /example searches/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'name:prod' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'status:up' })).toBeInTheDocument();
+  });
+
+  it('hides example chips once a query is typed', () => {
+    renderSearch({ examples: ['name:prod'] });
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'x' } });
+    expect(screen.queryByRole('button', { name: 'name:prod' })).not.toBeInTheDocument();
+  });
+
+  it('does not render the example group when no examples are given', () => {
+    renderSearch();
+    expect(screen.queryByRole('group', { name: /example searches/i })).not.toBeInTheDocument();
+  });
+
+  it('clicking an example chip fills the query and calls onSearch immediately', () => {
+    const { onSearch } = renderSearch({ examples: ['status:up'] });
+    fireEvent.click(screen.getByRole('button', { name: 'status:up' }));
+    expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('status:up');
+    // Immediate (not debounced): assert before advancing timers.
+    expect(onSearch).toHaveBeenCalledWith('status:up');
+  });
+
+  it('focuses the input on mount when autoFocus is set', () => {
+    renderSearch({ autoFocus: true });
+    expect(document.activeElement).toBe(screen.getByRole('textbox'));
+  });
+
+  it('does not focus the input on mount by default', () => {
+    renderSearch();
+    expect(document.activeElement).not.toBe(screen.getByRole('textbox'));
+  });
+
+  it('Escape clears the query and blurs the input', () => {
+    const { onSearch } = renderSearch();
+    const input = screen.getByRole('textbox');
+    input.focus();
+    fireEvent.change(input, { target: { value: 'test' } });
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect((input as HTMLInputElement).value).toBe('');
+    expect(onSearch).toHaveBeenCalledWith('');
+    expect(document.activeElement).not.toBe(input);
+  });
 });
