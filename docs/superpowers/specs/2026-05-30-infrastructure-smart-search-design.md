@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-30
 **Branch:** `feature/infrastructure-smart-search` (off `dev`)
-**Status:** Approved design — pending spec review
+**Status:** Implemented
 
 ## Overview
 
