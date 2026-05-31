@@ -6,6 +6,7 @@ import type { MonitoringConfig } from '@dashboard/core/services/settings-store.j
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { getCooldownStore } from '@dashboard/core/services/cooldown-store.js';
 import { confirmAnomaly } from './anomaly-gate.js';
+import { hasMetricInsight } from './insight-dedup.js';
 import { getEndpoints, getContainers, isEndpointDegraded, isCircuitOpen } from '@dashboard/core/portainer/portainer-client.js';
 import { CircuitBreakerOpenError } from '@dashboard/core/portainer/circuit-breaker.js';
 import { cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
@@ -401,10 +402,9 @@ export function createMonitoringService(deps: MonitoringDeps) {
             );
             if (!metric || metric.value <= monCfg.anomalyThresholdPct) continue;
 
-            // Skip if already flagged by statistical detection
-            if (anomalyInsights.some(
-              (a) => a.container_id === container.raw.Id && a.title.toLowerCase().includes(metricType),
-            )) continue;
+            // Skip if statistical detection already flagged this (container,
+            // metric) — real signature dedup, not a title substring (#1363).
+            if (hasMetricInsight(anomalyInsights, container.raw.Id, metricType)) continue;
 
             // Cooldown check
             const cooldownKey = `${container.raw.Id}:${metricType}:threshold`;
