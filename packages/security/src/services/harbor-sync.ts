@@ -151,8 +151,9 @@ export async function runFullSync(): Promise<SyncResult> {
             page++;
           }
 
-          // Safety limit — configurable via HARBOR_MAX_PAGES (default 500 = 50k items)
-          if (page > maxPages) {
+          // Safety limit — configurable via HARBOR_MAX_PAGES (default 500 = 50k items).
+          // HARBOR_MAX_PAGES=0 disables the cap (rely on Harbor's last-page signal).
+          if (maxPages > 0 && page > maxPages) {
             log.warn({ maxPages, fetched: allVulns.length }, 'Hit pagination safety limit, stopping fetch');
             break;
           }
