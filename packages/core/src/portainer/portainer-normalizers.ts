@@ -1,5 +1,5 @@
 import type { Endpoint, Container, Stack, Network, K8sPod, K8sDeployment, K8sService, K8sNamespace } from '../models/portainer.js';
-import { isKubernetesEndpoint } from '../models/portainer.js';
+import { isKubernetesEndpoint, isDockerEndpoint } from '../models/portainer.js';
 import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('normalizers');
@@ -34,13 +34,12 @@ export interface NormalizedEndpoint {
   lastCheckIn?: number;
   /**
    * Where the container counts came from (issue #1249).
-   * - `snapshot`: read from Portainer's persisted `Snapshots[0]` (the normal path).
-   * - `live`: fetched live via `/docker/info` through the chisel tunnel — used for
-   *   Edge Standard endpoints whose Snapshots[] never gets populated.
-   * - `unavailable`: live-fetch was attempted but failed/timed out. Counts are 0/0/0
-   *   and the UI should label this distinctly from a genuinely empty endpoint.
+   * - `live`: fetched live via `/docker/info` through the Docker tunnel — set by
+   *   `applyLiveDockerInfo` after a successful live query.
+   * - `unavailable`: live-fetch not yet attempted or failed/timed out. Counts are
+   *   0/0/0 and the UI should label this distinctly from a genuinely empty endpoint.
    */
-  snapshotSource: 'snapshot' | 'live' | 'unavailable';
+  snapshotSource: 'live' | 'unavailable';
   /** Epoch millis of when the counts were last refreshed. Set when `snapshotSource` is `live`. */
   snapshotFetchedAt?: number;
 }
@@ -143,8 +142,6 @@ export function normalizeEndpoint(ep: Endpoint): NormalizedEndpoint {
       edgeCheckinInterval: ep.EdgeCheckinInterval,
     }, 'Normalizing Edge endpoint');
   }
-  const snapshot = ep.Snapshots?.[0];
-  const raw = snapshot?.DockerSnapshotRaw;
   // Portainer Type 7 = Edge Agent Async (poll-based, no Docker tunnel).
   // Type 4 = Edge Agent Standard (persistent tunnel, supports live features).
   // Previously we used QueryDate presence as a heuristic, but that field can
@@ -152,8 +149,6 @@ export function normalizeEndpoint(ep: Endpoint): NormalizedEndpoint {
   const edgeMode: 'standard' | 'async' | null = isEdge
     ? (ep.Type === 7 ? 'async' : 'standard')
     : null;
-  const snapshotTime = snapshot?.Time;
-  const snapshotAge = snapshotTime ? Date.now() - snapshotTime * 1000 : null;
 
   return {
     id: ep.Id,
@@ -161,35 +156,41 @@ export function normalizeEndpoint(ep: Endpoint): NormalizedEndpoint {
     type: ep.Type,
     url: ep.URL,
     status,
-    containersRunning: snapshot?.RunningContainerCount ?? raw?.ContainersRunning ?? 0,
-    containersStopped: snapshot?.StoppedContainerCount ?? raw?.ContainersStopped ?? 0,
-    containersHealthy: snapshot?.HealthyContainerCount ?? 0,
-    containersUnhealthy: snapshot?.UnhealthyContainerCount ?? 0,
-    totalContainers: (raw?.Containers) ?? (
-      (snapshot?.RunningContainerCount ?? 0) + (snapshot?.StoppedContainerCount ?? 0)
-    ),
-    stackCount: snapshot?.StackCount ?? 0,
-    totalCpu: snapshot?.TotalCPU ?? 0,
-    totalMemory: snapshot?.TotalMemory ?? 0,
+    containersRunning: 0,
+    containersStopped: 0,
+    containersHealthy: 0,
+    containersUnhealthy: 0,
+    totalContainers: 0,
+    stackCount: 0,
+    totalCpu: 0,
+    totalMemory: 0,
     isEdge,
     edgeMode,
-    snapshotAge,
+    snapshotAge: null,
     checkInInterval: ep.EdgeCheckinInterval ?? null,
     capabilities: buildCapabilities(edgeMode),
     agentVersion: ep.Agent?.Version,
     lastCheckIn: ep.LastCheckInDate,
-    // Without a live merge, the source is whatever the snapshot lookup yielded.
-    // `applyLiveDockerInfo` / `markLiveUnavailable` flip this for Edge endpoints
-    // whose Snapshots[] is empty.
-    snapshotSource: 'snapshot',
+    // Counts are always zero until a live fetch overlays them via applyLiveDockerInfo.
+    // markLiveUnavailable keeps this 'unavailable' to signal the UI distinctly.
+    snapshotSource: 'unavailable',
   };
 }
 
 /**
- * True when the normalizer produced 0/0/0 because Portainer has no snapshot
- * (the Edge Standard case from issue #1249). Use this to decide whether a
- * live `/docker/info` fallback should be attempted.
+ * True when an endpoint can be live-queried via `/docker/info`: it must be up
+ * and a Docker endpoint (types 1/2/4). K8s (5/6) and Edge Async (7) have no
+ * Docker tunnel and are excluded.
+ *
+ * Note: Edge Async (type 7) is excluded even though it is an "Edge" type —
+ * `isDockerEndpoint` groups it under KUBERNETES_ENDPOINT_TYPES in portainer.ts,
+ * so it correctly returns false here.
  */
+export function endpointSupportsLiveDockerInfo(ep: NormalizedEndpoint): boolean {
+  return ep.status === 'up' && isDockerEndpoint(ep.type);
+}
+
+/** @deprecated Use endpointSupportsLiveDockerInfo. Kept until packages/foundation/src/services/edge-live-enrichment.ts is removed. */
 export function endpointNeedsLiveFallback(ep: NormalizedEndpoint): boolean {
   return (
     ep.isEdge &&
@@ -207,6 +208,8 @@ export interface LiveDockerInfoCounts {
   containersRunning: number;
   containersStopped: number;
   containersPaused?: number;
+  ncpu?: number;
+  memTotal?: number;
   fetchedAt: number;
 }
 
@@ -222,8 +225,11 @@ export function applyLiveDockerInfo(
   ep.containersRunning = info.containersRunning;
   ep.containersStopped = info.containersStopped;
   ep.totalContainers = info.containers;
+  if (info.ncpu != null) ep.totalCpu = info.ncpu;
+  if (info.memTotal != null) ep.totalMemory = info.memTotal;
   ep.snapshotSource = 'live';
   ep.snapshotFetchedAt = info.fetchedAt;
+  ep.snapshotAge = Date.now() - info.fetchedAt;
   return ep;
 }
 
@@ -533,4 +539,4 @@ export function normalizeNamespace(
 }
 
 /** Re-export for convenience */
-export { isKubernetesEndpoint } from '../models/portainer.js';
+export { isKubernetesEndpoint, isDockerEndpoint } from '../models/portainer.js';
