@@ -146,13 +146,13 @@ describe('InfrastructurePage — page structure', () => {
   });
 });
 
-describe('InfrastructurePage — interactive summary bar', () => {
+describe('InfrastructurePage — interactive status KPI', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useUiStore.setState({ pageViewModes: {} });
   });
 
-  it('shows correct endpoint counts in summary bar', () => {
+  it('shows correct endpoint counts in the Fleet tab KPI', () => {
     mockEndpoints([
       makeEndpoint({ id: 1, name: 'ep1', status: 'up' }),
       makeEndpoint({ id: 2, name: 'ep2', status: 'up' }),
@@ -162,11 +162,35 @@ describe('InfrastructurePage — interactive summary bar', () => {
 
     renderPage();
 
-    const summaryBar = screen.getByTestId('summary-bar');
-    expect(summaryBar).toBeInTheDocument();
-    expect(screen.getByTestId('endpoint-total')).toHaveTextContent('3 endpoints');
+    expect(screen.getByTestId('status-kpi')).toBeInTheDocument();
     expect(screen.getByTestId('status-pill-up')).toHaveTextContent('(2)');
     expect(screen.getByTestId('status-pill-down')).toHaveTextContent('(1)');
+  });
+
+  it('does not render the removed title-level summary bar', () => {
+    mockEndpoints([makeEndpoint({ status: 'up' })]);
+    mockStacks([makeStack({ status: 'active' })]);
+
+    renderPage();
+
+    expect(screen.queryByTestId('summary-bar')).not.toBeInTheDocument();
+  });
+
+  it('renders the endpoint status dropdown below the search bar', () => {
+    mockEndpoints([
+      makeEndpoint({ id: 1, name: 'ep1', status: 'up' }),
+      makeEndpoint({ id: 2, name: 'ep2', status: 'down' }),
+    ]);
+    mockStacks([]);
+
+    renderPage();
+
+    const search = screen.getByLabelText('Search endpoints');
+    const statusLabel = screen.getByText('Status');
+    // The dropdown row follows the search row in DOM order (sits below it).
+    expect(
+      search.compareDocumentPosition(statusLabel) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it('shows zero down count with opacity when all endpoints are up', () => {
@@ -183,7 +207,7 @@ describe('InfrastructurePage — interactive summary bar', () => {
     expect(downPill.className).toContain('opacity-50');
   });
 
-  it('shows correct stack counts in summary bar', () => {
+  it('shows correct stack counts in the Stacks tab KPI', () => {
     mockEndpoints([makeEndpoint()]);
     mockStacks([
       makeStack({ id: 1, name: 's1', status: 'active' }),
@@ -191,9 +215,8 @@ describe('InfrastructurePage — interactive summary bar', () => {
       makeStack({ id: 3, name: 's3', status: 'inactive' }),
     ]);
 
-    renderPage();
+    renderPageWithInitialParams('/infrastructure?tab=stacks');
 
-    expect(screen.getByTestId('stack-total')).toHaveTextContent('3 stacks');
     expect(screen.getByTestId('status-pill-active')).toHaveTextContent('(2)');
     expect(screen.getByTestId('status-pill-inactive')).toHaveTextContent('(1)');
   });
@@ -204,11 +227,44 @@ describe('InfrastructurePage — interactive summary bar', () => {
       makeStack({ id: 1, name: 's1', status: 'active' }),
     ]);
 
-    renderPage();
+    renderPageWithInitialParams('/infrastructure?tab=stacks');
 
     const inactivePill = screen.getByTestId('status-pill-inactive');
     expect(inactivePill).toHaveTextContent('(0)');
     expect(inactivePill.className).toContain('opacity-50');
+  });
+
+  it('renders the stack status dropdown below the search bar', () => {
+    mockEndpoints([makeEndpoint({ id: 1, name: 'ep1' })]);
+    mockStacks([
+      makeStack({ id: 1, name: 's1', status: 'active', endpointId: 1 }),
+      makeStack({ id: 2, name: 's2', status: 'inactive', endpointId: 1 }),
+    ]);
+
+    renderPageWithInitialParams('/infrastructure?tab=stacks');
+
+    const search = screen.getByLabelText('Search stacks');
+    const statusLabel = screen.getByText('Status');
+    // The dropdown row follows the search row in DOM order (sits below it).
+    expect(
+      search.compareDocumentPosition(statusLabel) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('keeps the stack status KPI visible when a filter hides the search box', () => {
+    mockEndpoints([makeEndpoint({ id: 1, name: 'ep1' })]);
+    mockStacks([
+      makeStack({ id: 1, name: 's1', status: 'active', endpointId: 1 }),
+      makeStack({ id: 2, name: 's2', status: 'active', endpointId: 1 }),
+    ]);
+
+    // Filtering to "inactive" matches no stacks, so the search box is hidden...
+    renderPageWithInitialParams('/infrastructure?tab=stacks&stackStatus=inactive');
+
+    expect(screen.queryByLabelText('Search stacks')).not.toBeInTheDocument();
+    // ...but the KPI (unfiltered counts) stays so its pills can clear the filter.
+    expect(screen.getByTestId('status-kpi')).toBeInTheDocument();
+    expect(screen.getByTestId('status-pill-active')).toHaveTextContent('(2)');
   });
 
   it('clicking endpoint Up pill filters endpoints to "up" only', () => {
@@ -284,24 +340,6 @@ describe('InfrastructurePage — interactive summary bar', () => {
 
     expect(screen.getByText('active-stack')).toBeInTheDocument();
     expect(screen.queryByText('inactive-stack')).not.toBeInTheDocument();
-  });
-
-  it('clicking endpoint total button clears endpoint filter', () => {
-    mockEndpoints([
-      makeEndpoint({ id: 1, name: 'up-ep', status: 'up' }),
-      makeEndpoint({ id: 2, name: 'down-ep', status: 'down' }),
-    ]);
-    mockStacks([]);
-
-    renderPage();
-
-    // Filter to "up" only
-    fireEvent.click(screen.getByTestId('status-pill-up'));
-    expect(screen.queryByText('down-ep')).not.toBeInTheDocument();
-
-    // Click total to clear
-    fireEvent.click(screen.getByTestId('endpoint-total'));
-    expect(screen.getByText('down-ep')).toBeInTheDocument();
   });
 });
 
