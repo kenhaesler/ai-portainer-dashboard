@@ -47,7 +47,7 @@ interface PageEntry {
   icon: React.ComponentType<{ className?: string }>;
 }
 
-const pages: PageEntry[] = [
+export const pages: PageEntry[] = [
   { label: 'Home', to: '/', icon: LayoutDashboard },
   { label: 'Workload Explorer', to: '/workloads', icon: Boxes },
   { label: 'Infrastructure', to: '/infrastructure', icon: Server },
@@ -55,9 +55,9 @@ const pages: PageEntry[] = [
   { label: 'Image Footprint', to: '/images', icon: PackageOpen },
   { label: 'Network Topology', to: '/topology', icon: Network },
   { label: 'Metrics Dashboard', to: '/metrics', icon: BarChart3 },
-  { label: 'Trace Explorer', to: '/traces', icon: GitBranch },
   { label: 'LLM Assistant', to: '/assistant', icon: MessageSquare },
   { label: 'LLM Observability', to: '/llm-observability', icon: Activity },
+  { label: 'Trace Explorer', to: '/traces', icon: GitBranch },
   { label: 'Remediation', to: '/remediation', icon: Shield },
   { label: 'Security Audit', to: '/security/audit', icon: Shield },
   { label: 'Edge Agent Logs', to: '/edge-logs', icon: FileSearch },
