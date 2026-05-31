@@ -5,10 +5,25 @@ import { dashboardRoutes } from '@dashboard/foundation';
 
 const mockGetSecurityAudit = vi.fn();
 const mockBuildSecurityAuditSummary = vi.fn();
+const mockGetLatestKpiSnapshot = vi.fn();
+
+// Drive live container counts deterministically without hitting Portainer's
+// /docker/info proxy. The config mock keeps the live-query feature enabled.
+vi.mock('@dashboard/core/portainer/edge-live-query.js', () => ({ fetchLiveDockerInfo: vi.fn() }));
+vi.mock('@dashboard/core/services/settings-store.js', () => ({
+  getEffectiveEdgeLiveQueryConfig: vi.fn().mockResolvedValue({ enabled: true, concurrency: 2, intervalSeconds: 60, timeoutMs: 5000 }),
+}));
+// Source /summary healthy/unhealthy from the latest KPI snapshot.
+vi.mock('@dashboard/observability', async (importOriginal) => ({
+  ...(await importOriginal() as Record<string, unknown>),
+  getLatestKpiSnapshot: (...a: unknown[]) => mockGetLatestKpiSnapshot(...a),
+}));
 
 // Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
 vi.mock('@dashboard/core/portainer/portainer-client.js', async (importOriginal) => await importOriginal());
 
+import { fetchLiveDockerInfo } from '@dashboard/core/portainer/edge-live-query.js';
+const mockLiveFetch = vi.mocked(fetchLiveDockerInfo);
 import * as portainerClient from '@dashboard/core/portainer/portainer-client.js';
 import { cache, waitForInFlight } from '@dashboard/core/portainer/portainer-cache.js';
 import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
@@ -36,6 +51,12 @@ describe('Dashboard Summary Route', () => {
     vi.restoreAllMocks();
     mockGetEndpoints = vi.spyOn(portainerClient, 'getEndpoints');
     mockGetContainers = vi.spyOn(portainerClient, 'getContainers');
+    // Default: no stacks, no live counts, no KPI snapshot — tests opt in per case.
+    vi.spyOn(portainerClient, 'getStacks').mockResolvedValue([] as never);
+    mockLiveFetch.mockReset();
+    mockLiveFetch.mockResolvedValue(null);
+    mockGetLatestKpiSnapshot.mockReset();
+    mockGetLatestKpiSnapshot.mockResolvedValue(null);
     mockBuildSecurityAuditSummary.mockReturnValue({ totalAudited: 0, flagged: 0, ignored: 0 });
     mockGetSecurityAudit.mockResolvedValue([]);
   });
@@ -48,10 +69,14 @@ describe('Dashboard Summary Route', () => {
     await app.register(dashboardRoutes);
     await app.ready();
 
+    // Snapshots[] is ignored now — counts come from the live /docker/info mock.
     mockGetEndpoints.mockResolvedValue([{
       Id: 1, Name: 'ep-1', Type: 1, URL: 'http://ep-1', Status: 1,
-      Snapshots: [{ RunningContainerCount: 2, StoppedContainerCount: 1, HealthyContainerCount: 2, UnhealthyContainerCount: 1, StackCount: 1, TotalCPU: 0, TotalMemory: 0 }],
     }] as any);
+    mockLiveFetch.mockResolvedValue({ containers: 3, containersRunning: 2, containersStopped: 1, ncpu: 0, memTotal: 0, fetchedAt: Date.now() });
+    vi.spyOn(portainerClient, 'getStacks').mockResolvedValue([{ EndpointId: 1 }] as never);
+    // healthy/unhealthy for /summary come from the latest KPI snapshot.
+    mockGetLatestKpiSnapshot.mockResolvedValue({ healthy: 2, unhealthy: 1 });
 
     const res = await app.inject({ method: 'GET', url: '/api/dashboard/summary' });
 
@@ -98,7 +123,6 @@ describe('Dashboard Summary Route', () => {
           callOrder.push('getEndpoints:resolved');
           resolve([{
             Id: 1, Name: 'ep-1', Type: 1, URL: 'http://ep-1', Status: 1,
-            Snapshots: [{ RunningContainerCount: 1, StoppedContainerCount: 0, HealthyContainerCount: 1, UnhealthyContainerCount: 0, StackCount: 0, TotalCPU: 0, TotalMemory: 0 }],
           }]);
         }, 10);
       });
@@ -132,7 +156,6 @@ describe('Dashboard Summary Route', () => {
 
     mockGetEndpoints.mockResolvedValue([{
       Id: 1, Name: 'ep-1', Type: 1, URL: 'http://ep-1', Status: 1,
-      Snapshots: [{ RunningContainerCount: 1, StoppedContainerCount: 0, HealthyContainerCount: 1, UnhealthyContainerCount: 0, StackCount: 0, TotalCPU: 0, TotalMemory: 0 }],
     }]);
     mockGetSecurityAudit.mockRejectedValue(new Error('DB unavailable'));
 
