@@ -1,6 +1,56 @@
 import { getMetricsDb } from '@dashboard/core/db/timescale.js';
 import { isUndefinedTableError } from './metrics-store.js';
 
+/** Minimal container shape needed for lifecycle tracking (subset of Portainer's Container). */
+export interface LifecycleContainer {
+  Id: string;
+  Names?: string[];
+  State?: string;
+}
+
+/**
+ * Record the full current container list (all states) for an endpoint so fleet
+ * aggregates can exclude stopped/removed containers (#1394). Upserts every
+ * present container (refreshing name/last_seen/running) then marks any
+ * previously-known container that is no longer present as not running — which
+ * covers both stopped and deleted containers. Call only with a successfully
+ * fetched full list, so a failed fetch never mass-marks containers as gone.
+ */
+export async function upsertContainerLifecycle(
+  endpointId: number,
+  containers: LifecycleContainer[],
+): Promise<void> {
+  if (containers.length === 0) return;
+  const db = await getMetricsDb();
+
+  const ids: string[] = [];
+  const names: string[] = [];
+  const running: boolean[] = [];
+  for (const c of containers) {
+    ids.push(c.Id);
+    names.push(c.Names?.[0]?.replace(/^\//, '') || c.Id.slice(0, 12));
+    running.push(c.State === 'running');
+  }
+
+  await db.query(
+    `INSERT INTO container_lifecycle (endpoint_id, container_id, container_name, last_seen, running)
+     SELECT $1::int, cid, cname, NOW(), crun
+     FROM unnest($2::text[], $3::text[], $4::bool[]) AS t(cid, cname, crun)
+     ON CONFLICT (endpoint_id, container_id) DO UPDATE
+       SET container_name = EXCLUDED.container_name,
+           last_seen      = EXCLUDED.last_seen,
+           running        = EXCLUDED.running`,
+    [endpointId, ids, names, running],
+  );
+
+  await db.query(
+    `UPDATE container_lifecycle
+        SET running = FALSE
+      WHERE endpoint_id = $1 AND container_id <> ALL($2::text[])`,
+    [endpointId, ids],
+  );
+}
+
 /**
  * Returns the set of currently-running container ids for the given endpoint
  * (or all endpoints when omitted). Returns `null` to signal "fail open" — the
