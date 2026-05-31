@@ -117,6 +117,15 @@ export const envSchema = z.object({
   // Default 0.7 sits above the 3-of-5 (0.6) confirmation floor, so a barely-
   // persisted low-magnitude anomaly is logged, not paged. 0 surfaces everything.
   ANOMALY_CONFIDENCE_MIN_SURFACE: z.coerce.number().min(0).max(1).default(0.7),
+  // System-wide detection-time suppression floor (#1363). A confirmed anomaly
+  // whose confidence is below this is DROPPED entirely (never inserted), so the
+  // shared insights table, incident correlator, and notifications stay clean for
+  // everyone — not just per-user view filtering. Complements the per-user
+  // Sensitivity preset (#1297), which remains a read-time filter. Default 0
+  // suppresses nothing (the info-tier routing already quiets low confidence);
+  // raise it in noisy environments. Severe fast-burn anomalies (confidence 1.0)
+  // are never dropped here.
+  ANOMALY_SUPPRESS_BELOW_CONFIDENCE: z.coerce.number().min(0).max(1).default(0),
   BOLLINGER_BANDS_ENABLED: z.coerce.boolean().default(true),
   // Hour-of-day baseline (issue #1295): compare the recent sample against the
   // baseline for the same hour-of-day across the last N days, rather than a

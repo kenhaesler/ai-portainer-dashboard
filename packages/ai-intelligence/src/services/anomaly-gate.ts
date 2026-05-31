@@ -43,14 +43,13 @@ export async function confirmAnomaly(opts: {
 }): Promise<ConfirmResult> {
   const config = getConfig();
   const fastBurn = config.ANOMALY_FAST_BURN_MULTIPLIER;
+  const suppressFloor = config.ANOMALY_SUPPRESS_BELOW_CONFIDENCE;
   const magnitudeFactor = Math.min(1, Math.max(0, opts.severity) / fastBurn);
 
   if (config.ANOMALY_PERSISTENCE_ENABLED === false) {
-    return {
-      emit: opts.isAnomalous,
-      reason: 'disabled',
-      confidence: opts.isAnomalous ? magnitudeFactor : 0,
-    };
+    const confidence = opts.isAnomalous ? magnitudeFactor : 0;
+    const emit = opts.isAnomalous && confidence >= suppressFloor;
+    return { emit, reason: emit ? 'disabled' : 'suppressed', confidence };
   }
 
   const m = config.ANOMALY_PERSISTENCE_M;
@@ -62,6 +61,12 @@ export async function confirmAnomaly(opts: {
   const confidence = Math.max(Math.min(1, anomalousCount / n), magnitudeFactor);
 
   if (!opts.isAnomalous) return { emit: false, reason: 'suppressed', confidence: 0 };
+
+  // System-wide detection-time suppression floor (#1363): drop the lowest-
+  // confidence anomalies entirely so the shared insights table / correlator /
+  // notifications stay clean for everyone. Fast-burn has confidence 1.0, so a
+  // severe spike is never dropped here.
+  if (confidence < suppressFloor) return { emit: false, reason: 'suppressed', confidence };
 
   // Multi-window short path: a severe single sample pages immediately so brief
   // hard failures are not delayed by the persistence requirement.
