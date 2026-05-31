@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { getConfig } from '@dashboard/core/config/index.js';
+import { getCooldownStore } from '@dashboard/core/services/cooldown-store.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import type { AnomalyDimension } from '@dashboard/core/models/monitoring.js';
 import * as insightsStore from './insights-store.js';
@@ -89,20 +90,19 @@ const lastLoggedAt = new Map<string, number>();
 //     individual or a re-correlated alert. The minute bucket is part of
 //     the key so the next minute's correlation can still flag a NEW
 //     incident if the cooldown has elapsed.
+// Cooldown + per-service rate-limit state is held in the shared cooldown store
+// (#1361 fix 4) so it survives restarts and is shared across replicas. The
+// per-service rate limit (#1294, fix 7) keeps a single noisy service from
+// emitting two anomalies (latency_p95 *and* error_rate) back to back; it uses a
+// distinct `svc:` key namespace so it never collides with the per-dimension
+// cooldown keys.
 const COOLDOWN_MS = 10 * 60 * 1000;
-const lastInsertedAt = new Map<string, number>();
+const serviceKey = (service: string): string => `svc:${service}`;
 
-// Per-service rate limit (#1294, fix 7). A single noisy service must not be
-// able to emit two anomalies (e.g. latency_p95 *and* error_rate) back to back
-// — the per-key cooldown above is per-(service,metric_type), so without this
-// ceiling a service flapping on both signals doubles its alert volume.
-const lastServiceInsertAt = new Map<string, number>();
-
-/** Test hook: clear log throttle and cooldown state between tests. */
+/** Test hook: clear log throttle and (in-memory) cooldown state between tests. */
 export function __resetTraceAnomalyLogState(): void {
   lastLoggedAt.clear();
-  lastInsertedAt.clear();
-  lastServiceInsertAt.clear();
+  void getCooldownStore().reset();
 }
 
 function shouldLog(seriesKey: string): boolean {
@@ -113,23 +113,19 @@ function shouldLog(seriesKey: string): boolean {
   return true;
 }
 
-function inCooldown(seriesKey: string): boolean {
-  const last = lastInsertedAt.get(seriesKey);
-  if (last === undefined) return false;
-  return Date.now() - last < COOLDOWN_MS;
+async function inCooldown(seriesKey: string): Promise<boolean> {
+  return getCooldownStore().isHot(seriesKey, COOLDOWN_MS);
 }
 
-function inServiceRateLimit(service: string, windowMs: number): boolean {
+async function inServiceRateLimit(service: string, windowMs: number): Promise<boolean> {
   if (windowMs <= 0) return false;
-  const last = lastServiceInsertAt.get(service);
-  if (last === undefined) return false;
-  return Date.now() - last < windowMs;
+  return getCooldownStore().isHot(serviceKey(service), windowMs);
 }
 
-function markInserted(seriesKey: string, service: string): void {
-  const now = Date.now();
-  lastInsertedAt.set(seriesKey, now);
-  lastServiceInsertAt.set(service, now);
+async function markInserted(seriesKey: string, service: string): Promise<void> {
+  const store = getCooldownStore();
+  await store.mark(seriesKey);
+  await store.mark(serviceKey(service));
 }
 
 function collectBaselineSeries(
@@ -264,6 +260,18 @@ interface AnomalyCandidate {
   description: string;
   /** Per-dimension suggested operator action for single-dim insights. */
   suggestedAction: string;
+}
+
+/**
+ * The typed z_score persisted on an insight for a given dimension (#1308).
+ *
+ * Only `latency_p95` formats a `z-score:` substring into its description, so
+ * historically only it was visible to the Sensitivity post-filter. Other
+ * dimensions (error_rate) never carried a parseable z-score and passed the
+ * filter through; returning `null` for them preserves that behaviour exactly.
+ */
+export function persistedDimensionZScore(dim: AnomalyDimension): number | null {
+  return dim.type === 'latency_p95' ? dim.zScore : null;
 }
 
 /**
@@ -518,14 +526,14 @@ export async function runTraceAnomalyCycle(deps: TraceAnomalyDeps): Promise<void
       // per-(service, metric_type) cooldown below; the correlated path
       // additionally relies on this to prevent rapid back-to-back inserts
       // when multiple minute-keys queue up for the same service.
-      if (inServiceRateLimit(service, perServiceWindowMs)) continue;
+      if (await inServiceRateLimit(service, perServiceWindowMs)) continue;
 
       if (group.length === 1) {
         // ── Single-dimension path (unchanged behaviour) ───────────────
         const [c] = group;
         const dimKey = `${c.dimension.type}:${service}`;
-        if (inCooldown(dimKey) || inCooldown(`correlated:${service}:${minuteKey}`)) continue;
-        markInserted(dimKey, service);
+        if ((await inCooldown(dimKey)) || (await inCooldown(`correlated:${service}:${minuteKey}`))) continue;
+        await markInserted(dimKey, service);
         insights.push({
           id: uuidv4(),
           endpoint_id: null,
@@ -543,6 +551,7 @@ export async function runTraceAnomalyCycle(deps: TraceAnomalyDeps): Promise<void
           suggested_action: c.suggestedAction,
           metric_type: c.dimension.type,
           detection_method: 'ml-anomaly',
+          z_score: persistedDimensionZScore(c.dimension),
         });
         continue;
       }
@@ -553,8 +562,15 @@ export async function runTraceAnomalyCycle(deps: TraceAnomalyDeps): Promise<void
       // the same service shouldn't be immediately followed by a
       // correlated one in the next cycle.
       const correlatedKey = `correlated:${service}:${minuteKey}`;
-      if (inCooldown(correlatedKey)) continue;
-      if (group.some((c) => inCooldown(`${c.dimension.type}:${service}`))) continue;
+      if (await inCooldown(correlatedKey)) continue;
+      let anyDimHot = false;
+      for (const c of group) {
+        if (await inCooldown(`${c.dimension.type}:${service}`)) {
+          anyDimHot = true;
+          break;
+        }
+      }
+      if (anyDimHot) continue;
 
       // Pick the more severe dimension as the "primary" — its metric_type
       // drives signature derivation and the title carries both signals.
@@ -593,10 +609,10 @@ export async function runTraceAnomalyCycle(deps: TraceAnomalyDeps): Promise<void
       // via `markInserted(key, service)` — any subsequent single-dim or
       // correlated firing on the same service is suppressed until the
       // window elapses.
-      markInserted(correlatedKey, service);
+      await markInserted(correlatedKey, service);
       // Also mark per-dimension keys so any out-of-band single-dim
       // detection later in the cooldown window is suppressed.
-      for (const c of group) markInserted(`${c.dimension.type}:${service}`, service);
+      for (const c of group) await markInserted(`${c.dimension.type}:${service}`, service);
 
       insights.push({
         id: uuidv4(),
@@ -612,6 +628,11 @@ export async function runTraceAnomalyCycle(deps: TraceAnomalyDeps): Promise<void
         metric_type: primary.dimension.type,
         detection_method: 'ml-anomaly',
         dimensions,
+        // persistedDimensionZScore returns non-null only for latency_p95, so
+        // find(non-null) yields the latency z-score regardless of candidate
+        // order within the group (null when the group is error_rate-only).
+        // This matches what the legacy description-regex recovered (#1308).
+        z_score: group.map((c) => persistedDimensionZScore(c.dimension)).find((z) => z !== null) ?? null,
       });
     }
   }

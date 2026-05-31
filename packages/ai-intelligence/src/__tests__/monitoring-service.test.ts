@@ -1,10 +1,18 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterAll, afterEach } from 'vitest';
 import { setConfigForTest, resetConfig } from '@dashboard/core/config/index.js';
+import {
+  InMemoryPersistenceStore,
+  setPersistenceStoreForTest,
+} from '@dashboard/core/services/persistence-store.js';
 import type { MonitoringDeps } from '../services/monitoring-service.js';
 
 // Default config values used in tests
 const defaultConfig = {
   ANOMALY_DETECTION_METHOD: 'adaptive' as const,
+  // Persistence gate off by default in tests so a single anomalous cycle still
+  // surfaces an insight (these tests predate #1363 and assert single-cycle
+  // emission). A dedicated test below enables it to verify suppression.
+  ANOMALY_PERSISTENCE_ENABLED: false,
   ANOMALY_COOLDOWN_MINUTES: 0,
   ANOMALY_THRESHOLD_PCT: 80,
   ANOMALY_HARD_THRESHOLD_ENABLED: true,
@@ -914,6 +922,55 @@ describe('monitoring-service', () => {
     });
   });
 
+  describe('M-of-N persistence gate (#1363)', () => {
+    beforeEach(() => {
+      setPersistenceStoreForTest(new InMemoryPersistenceStore());
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local', Status: 1, Type: 1, URL: 'tcp://localhost' }]);
+      mockGetContainers.mockResolvedValue([
+        { Id: 'c1', Names: ['/web-app'], State: 'running', Image: 'node:18' },
+      ]);
+    });
+    afterEach(() => {
+      setPersistenceStoreForTest(null);
+    });
+
+    // The statistical detector's description is unique ("... standard deviations
+    // from the moving average") — isolates it from threshold / IF / predictive.
+    const statAnomalies = () =>
+      getInsertedInsights().filter((i) =>
+        i.description.includes('standard deviations from the moving average'),
+      );
+
+    const persistCfg = {
+      ...defaultConfig,
+      ANOMALY_PERSISTENCE_ENABLED: true,
+      ANOMALY_PERSISTENCE_M: 3,
+      ANOMALY_PERSISTENCE_N: 5,
+      ANOMALY_FAST_BURN_MULTIPLIER: 2,
+      ANOMALY_HARD_THRESHOLD_ENABLED: false, // isolate the statistical path
+    };
+
+    it('suppresses a moderate anomaly on a single cycle (not yet persisted)', async () => {
+      setConfigForTest(persistCfg);
+      // z just over threshold → severity ~1.0 < fast-burn (2).
+      mockDetectAnomalyAdaptive.mockReturnValue({
+        is_anomalous: true, z_score: 3.6, threshold: 3.5, current_value: 50, mean: 45, method: 'adaptive',
+      });
+      await runMonitoringCycle();
+      expect(statAnomalies()).toHaveLength(0); // 1 of 5, not fast-burn → suppressed
+    });
+
+    it('surfaces a severe anomaly immediately via the fast-burn path', async () => {
+      setConfigForTest(persistCfg);
+      // z = 8 vs threshold 3.5 → severity ~2.3 >= fast-burn (2).
+      mockDetectAnomalyAdaptive.mockReturnValue({
+        is_anomalous: true, z_score: 8, threshold: 3.5, current_value: 50, mean: 10, method: 'adaptive',
+      });
+      await runMonitoringCycle();
+      expect(statAnomalies().length).toBeGreaterThan(0); // fast-burn → emitted on cycle 1
+    });
+  });
+
   describe('anomalyCooldowns sweep (#547)', () => {
     beforeEach(() => {
       resetAnomalyCooldowns();
@@ -936,7 +993,7 @@ describe('monitoring-service', () => {
       await runMonitoringCycle();
 
       // Cooldown entries should exist now; sweep with 0 minutes removes all
-      const swept = sweepExpiredCooldowns(0);
+      const swept = await sweepExpiredCooldowns(0);
       expect(swept).toBeGreaterThan(0);
     });
 
@@ -956,12 +1013,12 @@ describe('monitoring-service', () => {
       await runMonitoringCycle();
 
       // Sweep with a large cooldown period should keep everything
-      const swept = sweepExpiredCooldowns(999);
+      const swept = await sweepExpiredCooldowns(999);
       expect(swept).toBe(0);
     });
 
-    it('sweepExpiredCooldowns returns 0 when map is empty', () => {
-      expect(sweepExpiredCooldowns(30)).toBe(0);
+    it('sweepExpiredCooldowns returns 0 when map is empty', async () => {
+      expect(await sweepExpiredCooldowns(30)).toBe(0);
     });
 
     it('startCooldownSweep and stopCooldownSweep do not throw', () => {
@@ -990,6 +1047,29 @@ describe('monitoring-service', () => {
       const containerKeys = swrKeys.filter((k: string) => k.startsWith('containers:'));
       expect(containerKeys).toContain('containers:1');
       expect(containerKeys).not.toContain('containers:2');
+    });
+  });
+
+  describe('telemetry snapshot — unhealthy count derived from live container health', () => {
+    it('counts containersUnhealthy from container healthStatus, not endpoint field', async () => {
+      mockGetEndpoints.mockResolvedValue([
+        { Id: 1, Name: 'local', Status: 1, Type: 1, URL: 'tcp://localhost' },
+      ]);
+      // Two running containers: one healthy, one unhealthy (Docker Status string contains "(unhealthy)")
+      mockGetContainers.mockResolvedValue([
+        { Id: 'c1', Names: ['/app-healthy'], State: 'running', Status: 'Up 3 hours', Image: 'node:18' },
+        { Id: 'c2', Names: ['/app-sick'], State: 'running', Status: 'Up 1 hour (unhealthy)', Image: 'node:18' },
+        { Id: 'c3', Names: ['/app-stopped'], State: 'exited', Status: 'Exited (0) 5 minutes ago', Image: 'node:18' },
+      ]);
+
+      const telemetryStore = await import('../services/monitoring-telemetry-store.js');
+      const snapshotSpy = vi.mocked(telemetryStore.insertMonitoringSnapshot);
+
+      await runMonitoringCycle();
+
+      expect(snapshotSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ containersUnhealthy: 1 }),
+      );
     });
   });
 });

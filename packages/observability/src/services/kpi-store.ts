@@ -1,5 +1,6 @@
 import { getMetricsDb } from '@dashboard/core/db/timescale.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
+import { isUndefinedTableError } from './metrics-store.js';
 
 const log = createChildLogger('kpi-store');
 
@@ -47,6 +48,25 @@ export async function getKpiHistory(hours = 24): Promise<KpiSnapshot[]> {
     [hours],
   );
   return rows as KpiSnapshot[];
+}
+
+/** Most recent KPI snapshot row, or null if none exists / table missing. */
+export async function getLatestKpiSnapshot(): Promise<KpiSnapshot | null> {
+  const db = await getMetricsDb();
+  try {
+    const { rows } = await db.query(
+      `SELECT endpoints, endpoints_up, endpoints_down, running, stopped,
+              healthy, unhealthy, total, stacks, timestamp
+       FROM kpi_snapshots
+       ORDER BY timestamp DESC
+       LIMIT 1`,
+      [],
+    );
+    return (rows[0] as KpiSnapshot) ?? null;
+  } catch (err) {
+    if (isUndefinedTableError(err)) return null;
+    throw err;
+  }
 }
 
 export async function cleanOldKpiSnapshots(retentionDays: number): Promise<number> {

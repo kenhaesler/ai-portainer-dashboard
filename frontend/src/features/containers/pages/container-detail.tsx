@@ -186,11 +186,11 @@ export default function ContainerDetailPage() {
           <Wifi className="h-5 w-5 text-amber-500 shrink-0" />
           <div>
             <p className="text-sm font-medium text-amber-700 dark:text-amber-400">
-              Edge Agent — Data may be stale
+              Data may be stale
             </p>
             <p className="text-xs text-muted-foreground">
               Last check-in: {currentEndpoint.lastCheckIn ? `${Math.round((Date.now() - currentEndpoint.lastCheckIn * 1000) / 1000)}s ago` : 'unknown'}.
-              {' '}Snapshot age: {currentEndpoint.snapshotAge != null ? `${Math.round(currentEndpoint.snapshotAge / 1000)}s` : 'unknown'}.
+              {' '}Data age: {currentEndpoint.snapshotAge != null ? `${Math.round(currentEndpoint.snapshotAge / 1000)}s` : 'unknown'}.
             </p>
           </div>
         </div>

@@ -122,8 +122,8 @@ describe('NormalizedContainerSchema', () => {
 describe('NormalizedEndpointSchema', () => {
   it('parses a valid endpoint', () => {
     const raw = { id: 1, name: 'local', type: 1, url: 'http://localhost:2375',
-      status: 'up', containersRunning: 5, containersStopped: 2, containersHealthy: 4,
-      containersUnhealthy: 1, totalContainers: 7, stackCount: 3 };
+      status: 'up', containersRunning: 5, containersStopped: 2,
+      totalContainers: 7, stackCount: 3 };
     expect(NormalizedEndpointSchema.parse(raw).id).toBe(1);
   });
 });

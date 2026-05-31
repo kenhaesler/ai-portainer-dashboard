@@ -3,12 +3,27 @@
 This project's architecture documentation is maintained in [docs/ai-instructions/architecture.md](ai-instructions/architecture.md).
 
 For detailed diagrams and data flow, see:
+- **[Visual architecture map](architecture/ARCHITECTURE.md)** — component & data-flow diagrams (Mermaid, renders on GitHub)
+- **[Interactive architecture diagram](architecture/architecture.html)** — open in a browser for hover-to-trace edges, package deps, data flows & deployment views
 - [Architecture Overview](ai-instructions/architecture.md) — monorepo structure, dependency graph, and key patterns
 - [Database Schema](ai-instructions/architecture.md#database-schema) — app (PostgreSQL) + metrics (TimescaleDB) tables
 - [Data Flows](ai-instructions/architecture.md#data-flows) — metrics, monitoring/anomaly, remediation, and LLM chat paths
 - [Background Scheduler](ai-instructions/architecture.md#background-scheduler) — interval jobs and cadences
 - [Security Checklist](ai-instructions/security-checklist.md)
 - [UI Design System](ai-instructions/ui-design-system.md)
+
+## Portainer Integration & Live Data Source
+
+All per-endpoint container counts, host CPU/memory, and stack totals are obtained by calling the Docker API directly via live `/docker/info` requests — Portainer's per-endpoint `Snapshots[]` array is **no longer read**. The pipeline is implemented in `packages/core/src/portainer/live-fleet.ts` and exposes four functions used by foundation routes and the scheduler:
+
+- `enrichEndpointsWithLiveDockerInfo` — fans out `/docker/info` calls across all eligible endpoints and annotates each with live counts; endpoints that fail or are unreachable are marked `unavailable`.
+- `attachStackCounts` — overlays live stack counts (from Portainer's stacks list) onto each endpoint.
+- `computeFleetTotals` — derives fleet-wide KPIs (running/stopped/healthy/unhealthy/stacks) from the enriched endpoints and live containers.
+- `collectFleetOverview` — orchestrates the full pipeline for dashboard aggregation.
+
+**Source states:** Docker endpoints that respond to `/docker/info` are `live`; all others (down, non-Docker, or Edge Async / Type 7) are `unavailable`. Our `kpi_snapshots` and `monitoring_snapshots` history tables are unchanged — only their inputs are now live rather than snapshot-derived.
+
+**Kill-switch:** Setting `EDGE_LIVE_QUERY_ENABLED=false` disables all live queries; affected endpoints remain `unavailable` with no snapshot fallback.
 
 ## UI notes
 

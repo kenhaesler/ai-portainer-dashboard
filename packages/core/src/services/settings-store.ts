@@ -83,12 +83,14 @@ export async function getEffectiveHarborConfig() {
 }
 
 /**
- * Edge Standard live-fetch fallback (issue #1249).
+ * Live Docker info — PRIMARY source for container counts + host CPU/memory on
+ * all up Docker endpoints.
  *
  * Read at the top of each endpoints/dashboard request so operators can dial
  * concurrency / interval / timeout from the Settings UI without restarting.
  * DB values override env defaults; clamped on read so a bad DB value never
- * crashes the request path.
+ * crashes the request path. Setting enabled=false is a hard kill-switch: with
+ * no snapshot fallback, affected endpoints render as "unavailable" (0 counts).
  */
 export interface EdgeLiveQueryConfig {
   enabled: boolean;
@@ -146,7 +148,7 @@ export interface MonitoringConfig {
   logAnalysisConcurrency: number;
   maxLlmHistoryMessages: number;
   // Anomaly detection
-  anomalyDetectionMethod: 'zscore' | 'bollinger' | 'adaptive';
+  anomalyDetectionMethod: 'zscore' | 'bollinger' | 'adaptive' | 'robust-mad';
   anomalyZscoreThreshold: number;
   anomalyMovingAverageWindow: number;
   anomalyMinSamples: number;

@@ -14,9 +14,9 @@
  * accepts ≤ 0.5 but operators shouldn't exceed today's default just by
  * picking High).
  *
- * The post-filter looks at the z-score embedded in the insight's description
- * (the detectors format it as "z-score: X.YZ"). Records whose z-score is
- * BELOW the effective threshold are dropped before they leave the API.
+ * The post-filter reads the typed `z_score` column persisted by the detectors
+ * (#1308). Records whose |z-score| is BELOW the effective threshold are dropped
+ * before they leave the API; records without a z-score pass through.
  */
 import { z } from 'zod';
 import { getConfig } from '@dashboard/core/config/index.js';
@@ -83,45 +83,25 @@ export async function setUserPreset(userId: string, preset: SensitivityPreset): 
 }
 
 /**
- * Pull the z-score out of a description string formatted by the detectors:
- * "Current cpu: 95.0% (mean: 40.0%, z-score: 3.50)".
- * Returns null if no z-score is present (non-anomaly insights like
- * predictive forecasts won't have one).
- *
- * WARNING — the detector description format is LOAD-BEARING for this regex.
- * If the detectors ever change their wording (e.g. "z=3.50", localisation,
- * structured metadata), the entire per-user Sensitivity preset feature
- * silently degrades to a pass-through. The follow-up plan (issue #1308) is
- * to persist the z-score as a typed/JSONB column on `insights` so the
- * filter no longer depends on description-string parsing.
- */
-export function extractZScore(description: string): number | null {
-  // Tolerate negative, decimal, and scientific notation. The detectors round
-  // to 2 dp but isolation-forest scores are 0..1 so we accept any number.
-  const match = description.match(/z-score:\s*(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/);
-  if (!match) return null;
-  const value = Number(match[1]);
-  return Number.isFinite(value) ? value : null;
-}
-
-/**
  * Returns true if the insight should be VISIBLE under the user's preset.
  *
- * Logic:
- *   - Non-anomaly insights (no parseable z-score) always pass through —
- *     the preset only filters z-score-based anomalies.
- *   - For records with a z-score, |z| must be ≥ effective threshold.
+ * Reads the typed `z_score` column (#1308). Records without a z-score
+ * (`null` / `undefined` — predictive forecasts, isolation-forest, threshold,
+ * error-rate-only trace anomalies) always pass through; the preset only filters
+ * z-score-based anomalies. pg returns NUMERIC as a string, so the value is
+ * coerced before comparison; non-finite values pass through (conservative).
  *
- * This is Option A from the issue (post-filter on read) — the detector
- * writes everything, the user view filters.
+ * This is Option A from issue #1297 (post-filter on read): the detectors write
+ * everything, the per-user view filters.
  */
 export function shouldIncludeAnomaly(
-  insight: { description: string; category?: string | null },
+  insight: { z_score?: number | string | null; category?: string | null },
   preset: SensitivityPreset,
   defaults: { zScore: number; contamination: number },
 ): boolean {
-  const z = extractZScore(insight.description);
-  if (z === null) return true;
+  if (insight.z_score === null || insight.z_score === undefined) return true;
+  const z = typeof insight.z_score === 'number' ? insight.z_score : Number(insight.z_score);
+  if (!Number.isFinite(z)) return true;
   const { zScore: threshold } = effectiveThresholds(preset, defaults);
   return Math.abs(z) >= threshold;
 }

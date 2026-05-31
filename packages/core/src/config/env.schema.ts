@@ -43,8 +43,11 @@ export const envSchema = z.object({
   PORTAINER_CB_FAILURE_THRESHOLD: z.coerce.number().int().min(1).max(50).default(5),
   PORTAINER_CB_RESET_TIMEOUT_MS: z.coerce.number().int().min(1000).max(300000).default(30000),
 
-  // Edge Standard live-fetch fallback (issue #1249) — fills container counts for
-  // Edge Agent Standard endpoints whose Portainer Snapshots[] never gets populated.
+  // Live /docker/info — PRIMARY source for container counts + host CPU/memory on
+  // all up Docker endpoints (Portainer's per-endpoint Snapshots[] is no longer
+  // written back by edge agents). Env names kept for backward compatibility.
+  // ENABLED=false is a hard kill-switch: with no snapshot fallback, endpoints
+  // then render as "unavailable" (0 counts).
   EDGE_LIVE_QUERY_ENABLED: z.string().default('true').transform((v) => v === 'true' || v === '1'),
   EDGE_LIVE_QUERY_CONCURRENCY: z.coerce.number().int().min(1).max(20).default(2),
   EDGE_LIVE_QUERY_INTERVAL_SECONDS: z.coerce.number().int().min(15).max(3600).default(60),
@@ -89,10 +92,54 @@ export const envSchema = z.object({
   // preserving sensitivity to sustained shifts.
   ANOMALY_MOVING_AVERAGE_WINDOW: z.coerce.number().int().min(5).default(60),
   ANOMALY_MIN_SAMPLES: z.coerce.number().int().min(3).default(10),
-  ANOMALY_DETECTION_METHOD: z.enum(['zscore', 'bollinger', 'adaptive']).default('adaptive'),
+  // Default is robust median+MAD (#1362) — outlier-resistant, so a spike no
+  // longer inflates the baseline that should catch it. 'adaptive'/'zscore'/
+  // 'bollinger' (mean/std based) remain available for rollback.
+  ANOMALY_DETECTION_METHOD: z.enum(['zscore', 'bollinger', 'adaptive', 'robust-mad']).default('robust-mad'),
+  // #1361 fix 3 — one-sided detection. Resource/latency metrics flag spikes
+  // only by default; a drop below baseline is rarely an incident and flagging
+  // it (two-sided) roughly doubled the false-positive rate. 'both' restores
+  // the legacy two-sided behaviour.
+  ANOMALY_DETECTION_DIRECTION: z.enum(['spike', 'drop', 'both']).default('spike'),
   ANOMALY_COOLDOWN_MINUTES: z.coerce.number().int().min(0).default(30),
   ANOMALY_THRESHOLD_PCT: z.coerce.number().min(50).max(100).default(85),
   ANOMALY_HARD_THRESHOLD_ENABLED: z.coerce.boolean().default(true),
+  // Alerting discipline (#1363) — M-of-N persistence + multi-window. An anomaly
+  // must persist (>= M of the last N cycles) before it is surfaced, suppressing
+  // isolated benign blips. A severe single sample (severity >= multiplier ×
+  // threshold) takes a short high-burn-rate path and is surfaced immediately so
+  // brief hard failures still page (Google SRE multi-window). Set M > N to make
+  // only the fast path fire; disable to surface every raw anomaly (legacy).
+  ANOMALY_PERSISTENCE_ENABLED: z.coerce.boolean().default(true),
+  ANOMALY_PERSISTENCE_M: z.coerce.number().int().min(1).default(3),
+  ANOMALY_PERSISTENCE_N: z.coerce.number().int().min(1).default(5),
+  ANOMALY_FAST_BURN_MULTIPLIER: z.coerce.number().min(1).default(2),
+  // Severity × confidence routing (#1363). A confirmed anomaly whose confidence
+  // (max of persistence ratio and burn magnitude) is below this surfaces as
+  // 'info' — a quieter log tier that does not page — instead of warning/critical.
+  // Default 0.7 sits above the 3-of-5 (0.6) confirmation floor, so a barely-
+  // persisted low-magnitude anomaly is logged, not paged. 0 surfaces everything.
+  ANOMALY_CONFIDENCE_MIN_SURFACE: z.coerce.number().min(0).max(1).default(0.7),
+  // System-wide detection-time suppression floor (#1363). A confirmed anomaly
+  // whose confidence is below this is DROPPED entirely (never inserted), so the
+  // shared insights table, incident correlator, and notifications stay clean for
+  // everyone — not just per-user view filtering. Complements the per-user
+  // Sensitivity preset (#1297), which remains a read-time filter. Default 0
+  // suppresses nothing (the info-tier routing already quiets low confidence);
+  // raise it in noisy environments. Severe fast-burn anomalies (confidence 1.0)
+  // are never dropped here.
+  ANOMALY_SUPPRESS_BELOW_CONFIDENCE: z.coerce.number().min(0).max(1).default(0),
+  // Feedback → threshold auto-tune (#1364). A scheduled job measures the real
+  // per-detector false-positive rate from operator feedback (#1298) and nudges
+  // ANOMALY_ZSCORE_THRESHOLD toward the target rate, one bounded step at a time.
+  // OFF by default — auto-mutating a detection threshold is opt-in (observer-
+  // first); with the flag off the job still logs what it WOULD change. Every
+  // applied change is written to the audit log.
+  ANOMALY_AUTOTUNE_ENABLED: z.coerce.boolean().default(false),
+  ANOMALY_AUTOTUNE_INTERVAL_MINUTES: z.coerce.number().int().min(5).default(360),
+  ANOMALY_AUTOTUNE_TARGET_FP_RATE: z.coerce.number().min(0).max(1).default(0.05),
+  ANOMALY_AUTOTUNE_MIN_SAMPLES: z.coerce.number().int().min(1).default(20),
+  ANOMALY_AUTOTUNE_LOOKBACK_DAYS: z.coerce.number().int().min(1).default(30),
   BOLLINGER_BANDS_ENABLED: z.coerce.boolean().default(true),
   // Hour-of-day baseline (issue #1295): compare the recent sample against the
   // baseline for the same hour-of-day across the last N days, rather than a
@@ -105,6 +152,18 @@ export const envSchema = z.object({
   // the legacy flat-baseline behavior. Prevents erratic alerts during the
   // warm-up window.
   ANOMALY_HOUROFDAY_MIN_SAMPLES: z.coerce.number().int().min(1).max(100).default(3),
+  // Day-of-week × hour-of-day seasonality (#1307, carried over from #1364).
+  // Refines the hour-of-day baseline so e.g. Monday 09:00 is compared against
+  // previous Mondays 09:00, not every day's 09:00 — catching weekly patterns
+  // (weekday vs weekend traffic). The detector tries day-of-week × hour first,
+  // falls back to hour-of-day, then to the flat window, so cold-start and sparse
+  // weekday buckets degrade gracefully. A wider lookback (default 28d ≈ 4 same-
+  // weekday occurrences) is needed for the weekly bucket to be stable. The
+  // mean/std path reads this from the metrics_1hour aggregate; the robust path
+  // narrows its raw query (median+MAD needs raw samples).
+  ANOMALY_DAYOFWEEK_ENABLED: z.coerce.boolean().default(true),
+  ANOMALY_DAYOFWEEK_LOOKBACK_DAYS: z.coerce.number().int().min(7).max(120).default(28),
+  ANOMALY_DAYOFWEEK_MIN_SAMPLES: z.coerce.number().int().min(1).max(1000).default(3),
 
   // Predictive Alerting
   PREDICTIVE_ALERTING_ENABLED: z.coerce.boolean().default(true),
