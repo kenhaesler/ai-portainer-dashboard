@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { InsightSchema } from './monitoring.js';
+import {
+  PERSISTED_ANOMALY_DETECTORS,
+  IN_MEMORY_ANOMALY_DETECTORS,
+  ANOMALY_DETECTORS,
+  InsightSchema,
+} from './monitoring.js';
 
 describe('InsightSchema', () => {
   const valid = {
@@ -74,5 +79,43 @@ describe('InsightSchema', () => {
       const result = InsightSchema.safeParse({ ...valid, metric_type: t });
       expect(result.success).toBe(true);
     }
+  });
+});
+
+describe('anomaly detector constants (#1314)', () => {
+  it('ANOMALY_DETECTORS is exactly the union of persisted + in-memory, in order', () => {
+    expect(ANOMALY_DETECTORS).toEqual([
+      'threshold', 'ml-anomaly', 'prediction', 'health-check', 'log-pattern', 'security-scan',
+      'correlated-zscore', 'isolation-forest',
+    ]);
+  });
+
+  it('ANOMALY_DETECTORS length equals the sum of its two groups', () => {
+    expect(ANOMALY_DETECTORS.length).toBe(
+      PERSISTED_ANOMALY_DETECTORS.length + IN_MEMORY_ANOMALY_DETECTORS.length,
+    );
+  });
+
+  it('has no duplicate identifiers across the two groups', () => {
+    expect(new Set(ANOMALY_DETECTORS).size).toBe(ANOMALY_DETECTORS.length);
+  });
+
+  it('exposes the persisted set the insert path historically hard-coded', () => {
+    expect([...PERSISTED_ANOMALY_DETECTORS]).toEqual([
+      'threshold', 'ml-anomaly', 'prediction', 'health-check', 'log-pattern', 'security-scan',
+    ]);
+  });
+
+  it('exposes the in-memory correlated detectors', () => {
+    expect([...IN_MEMORY_ANOMALY_DETECTORS]).toEqual(['correlated-zscore', 'isolation-forest']);
+  });
+
+  it('InsightSchema.detection_method accepts persisted detectors and rejects in-memory ones', () => {
+    for (const d of PERSISTED_ANOMALY_DETECTORS) {
+      expect(InsightSchema.shape.detection_method.safeParse(d).success).toBe(true);
+    }
+    expect(InsightSchema.shape.detection_method.safeParse('correlated-zscore').success).toBe(false);
+    expect(InsightSchema.shape.detection_method.safeParse('isolation-forest').success).toBe(false);
+    expect(InsightSchema.shape.detection_method.safeParse(undefined).success).toBe(true); // optional
   });
 });

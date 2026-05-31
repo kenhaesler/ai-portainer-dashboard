@@ -18,6 +18,38 @@ export const AnomalyDimensionSchema = z.object({
 
 export type AnomalyDimension = z.infer<typeof AnomalyDimensionSchema>;
 
+/**
+ * Canonical anomaly-detector identifiers — single source of truth (#1314).
+ *
+ * `PERSISTED_ANOMALY_DETECTORS` are the only values that can land in
+ * `insights.detection_method`. `IN_MEMORY_ANOMALY_DETECTORS` are correlated /
+ * in-memory detectors that never reach the `insights` table but DO appear on
+ * `anomaly_feedback.detector`. The anomaly-feedback route allowlist accepts the
+ * union (`ANOMALY_DETECTORS`); the persisted-record schema accepts only the
+ * persisted subset. Adding a detector source is now a single edit here.
+ */
+export const PERSISTED_ANOMALY_DETECTORS = [
+  'threshold',
+  'ml-anomaly',
+  'prediction',
+  'health-check',
+  'log-pattern',
+  'security-scan',
+] as const;
+
+export const IN_MEMORY_ANOMALY_DETECTORS = [
+  'correlated-zscore',
+  'isolation-forest',
+] as const;
+
+export const ANOMALY_DETECTORS = [
+  ...PERSISTED_ANOMALY_DETECTORS,
+  ...IN_MEMORY_ANOMALY_DETECTORS,
+] as const;
+
+export type PersistedAnomalyDetector = (typeof PERSISTED_ANOMALY_DETECTORS)[number];
+export type AnomalyDetector = (typeof ANOMALY_DETECTORS)[number];
+
 export const InsightSchema = z.object({
   id: z.string(),
   endpoint_id: z.number().nullable(),
@@ -32,9 +64,7 @@ export const InsightSchema = z.object({
   is_acknowledged: z.number().default(0),
   created_at: z.string(),
   metric_type: z.enum(['cpu', 'memory', 'disk', 'network', 'restart', 'latency_p95', 'error_rate']).optional(),
-  detection_method: z
-    .enum(['threshold', 'ml-anomaly', 'prediction', 'health-check', 'log-pattern', 'security-scan'])
-    .optional(),
+  detection_method: z.enum(PERSISTED_ANOMALY_DETECTORS).optional(),
   /**
    * When set, this insight collapses multiple co-occurring signals (e.g.
    * latency p95 + error-rate spiking in the same minute for the same
