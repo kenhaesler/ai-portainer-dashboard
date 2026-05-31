@@ -2,6 +2,7 @@ import { getConfig } from '@dashboard/core/config/index.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import type { AnomalyDetection } from '@dashboard/core/models/metrics.js';
 import type { MovingAverageResult } from '@dashboard/contracts';
+import { exceedsThreshold } from './anomaly-stats.js';
 
 const log = createChildLogger('anomaly-detector');
 
@@ -79,6 +80,7 @@ export async function detectAnomaly(
 ): Promise<AnomalyDetection | null> {
   const config = getConfig();
   const threshold = config.ANOMALY_ZSCORE_THRESHOLD;
+  const direction = config.ANOMALY_DETECTION_DIRECTION;
   const windowSize = config.ANOMALY_MOVING_AVERAGE_WINDOW;
   const minSamples = config.ANOMALY_MIN_SAMPLES;
   const lookbackDays = config.ANOMALY_HOUROFDAY_LOOKBACK_DAYS;
@@ -110,8 +112,10 @@ export async function detectAnomaly(
 
   // Avoid division by zero when standard deviation is zero
   if (stats.std_dev === 0) {
-    // If std_dev is 0, all values are the same. Flag only if current differs from mean.
-    const isAnomalous = Math.abs(currentValue - stats.mean) > 0.001;
+    // If std_dev is 0, all values are the same. Flag only if current differs
+    // from mean in the configured direction (#1361 fix 3).
+    const delta = currentValue - stats.mean;
+    const isAnomalous = exceedsThreshold(delta, 0.001, direction);
     return {
       container_id: containerId,
       container_name: containerName,
@@ -119,7 +123,7 @@ export async function detectAnomaly(
       current_value: currentValue,
       mean: stats.mean,
       std_dev: 0,
-      z_score: isAnomalous ? Infinity : 0,
+      z_score: isAnomalous ? (delta >= 0 ? Infinity : -Infinity) : 0,
       is_anomalous: isAnomalous,
       threshold,
       timestamp: now.toISOString(),
@@ -128,7 +132,7 @@ export async function detectAnomaly(
   }
 
   const zScore = (currentValue - stats.mean) / stats.std_dev;
-  const isAnomalous = Math.abs(zScore) > threshold;
+  const isAnomalous = exceedsThreshold(zScore, threshold, direction);
 
   if (isAnomalous) {
     log.warn(

@@ -38,6 +38,31 @@
 export type CvRegime = 'low' | 'medium' | 'high';
 
 /**
+ * Detection direction (#1361 fix 3). Resource/latency metrics care about
+ * increases; a drop below baseline is rarely an incident, so flagging it
+ * (two-sided) roughly doubled the false-positive rate. Default is 'spike'.
+ */
+export type DetectionDirection = 'spike' | 'drop' | 'both';
+
+/**
+ * Decide whether a signed deviation crosses the threshold for a given
+ * direction. `value` is a z-score (or any signed deviation) and `threshold`
+ * its positive cutoff.
+ *   spike → value >  threshold
+ *   drop  → value < -threshold
+ *   both  → |value| > threshold   (legacy two-sided behaviour)
+ */
+export function exceedsThreshold(
+  value: number,
+  threshold: number,
+  direction: DetectionDirection,
+): boolean {
+  if (direction === 'spike') return value > threshold;
+  if (direction === 'drop') return value < -threshold;
+  return Math.abs(value) > threshold;
+}
+
+/**
  * Classify a series by its coefficient of variation.
  * A non-positive mean is treated as "low" because CV is undefined and
  * the legacy behavior (no multiplier inflation) is the safest fallback.

@@ -242,6 +242,11 @@ describe('config validation', () => {
       expect(getConfig().ANOMALY_MIN_SAMPLES).toBe(10);
     });
 
+    it('defaults ANOMALY_DETECTION_DIRECTION to spike (#1361 — one-sided)', async () => {
+      const { getConfig } = await import('./index.js');
+      expect(getConfig().ANOMALY_DETECTION_DIRECTION).toBe('spike');
+    });
+
     it('defaults ANOMALY_MOVING_AVERAGE_WINDOW to 60', async () => {
       // Raised 20 → 60 in #1294 (epic #1291): the previous ~20-min window
       // over-reacted to traffic ramps and short-lived bursts.

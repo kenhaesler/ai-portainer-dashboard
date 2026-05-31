@@ -31,13 +31,18 @@ export function averagePathLength(n: number): number {
   return 2 * harmonicNumber - (2 * (n - 1)) / n;
 }
 
-function buildTree(data: number[][], depth: number, maxDepth: number): TreeNode {
+function buildTree(
+  data: number[][],
+  depth: number,
+  maxDepth: number,
+  rng: () => number,
+): TreeNode {
   if (depth >= maxDepth || data.length <= 1) {
     return { type: 'external', size: data.length };
   }
 
   const nFeatures = data[0].length;
-  const splitFeature = Math.floor(Math.random() * nFeatures);
+  const splitFeature = Math.floor(rng() * nFeatures);
 
   // Find min/max for the chosen feature
   let min = Infinity;
@@ -53,7 +58,7 @@ function buildTree(data: number[][], depth: number, maxDepth: number): TreeNode 
     return { type: 'external', size: data.length };
   }
 
-  const splitValue = min + Math.random() * (max - min);
+  const splitValue = min + rng() * (max - min);
 
   const left: number[][] = [];
   const right: number[][] = [];
@@ -69,8 +74,8 @@ function buildTree(data: number[][], depth: number, maxDepth: number): TreeNode 
     type: 'internal',
     splitFeature,
     splitValue,
-    left: buildTree(left, depth + 1, maxDepth),
-    right: buildTree(right, depth + 1, maxDepth),
+    left: buildTree(left, depth + 1, maxDepth, rng),
+    right: buildTree(right, depth + 1, maxDepth, rng),
   };
 }
 
@@ -90,12 +95,25 @@ export class IsolationForest {
   private readonly nTrees: number;
   private readonly sampleSize: number;
   private readonly contamination: number;
+  private readonly rng: () => number;
   private threshold = 0.5;
 
-  constructor(nTrees = 100, sampleSize = 256, contamination = 0.1) {
+  /**
+   * @param rng injectable uniform [0,1) source. Defaults to `Math.random` for
+   *   back-compat, but callers SHOULD pass a seeded PRNG so the trained model
+   *   is reproducible across retrains (a fresh `Math.random` forest reclassifies
+   *   the same point differently on every retrain — see #1361).
+   */
+  constructor(
+    nTrees = 100,
+    sampleSize = 256,
+    contamination = 0.1,
+    rng: () => number = Math.random,
+  ) {
     this.nTrees = nTrees;
     this.sampleSize = sampleSize;
     this.contamination = contamination;
+    this.rng = rng;
   }
 
   fit(data: number[][]): void {
@@ -109,11 +127,11 @@ export class IsolationForest {
       const sample: number[][] = [];
       const sampleCount = Math.min(this.sampleSize, data.length);
       for (let j = 0; j < sampleCount; j++) {
-        const idx = Math.floor(Math.random() * data.length);
+        const idx = Math.floor(this.rng() * data.length);
         sample.push(data[idx]);
       }
 
-      this.trees.push(buildTree(sample, 0, maxDepth));
+      this.trees.push(buildTree(sample, 0, maxDepth, this.rng));
     }
 
     // Compute threshold: score all training data, then pick the percentile

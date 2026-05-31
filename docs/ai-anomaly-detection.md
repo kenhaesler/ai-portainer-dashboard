@@ -38,6 +38,7 @@ Instead of a single flat 24h baseline, the detector compares each observation ag
 | Variable | Default | Meaning |
 |----------|---------|---------|
 | `ANOMALY_DETECTION_METHOD` | `adaptive` | Detection strategy |
+| `ANOMALY_DETECTION_DIRECTION` | `spike` | Which deviations are flagged: `spike` (increases only), `drop` (decreases only), or `both` (legacy two-sided). Resource/latency drops are rarely incidents, so flagging them doubled false positives (#1361). |
 | `ANOMALY_ZSCORE_THRESHOLD` | `3.5` | Base z-score threshold (before CV scaling) |
 | `ANOMALY_MOVING_AVERAGE_WINDOW` | `60` | Rolling window in samples (~1h at 60s cadence; raised from 20 in #1294) |
 | `ANOMALY_MIN_SAMPLES` | `10` | Warm-up minimum before detection activates |

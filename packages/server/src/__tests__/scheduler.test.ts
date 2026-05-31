@@ -80,6 +80,10 @@ vi.mock('@dashboard/ai', () => ({
   cleanupOldInsights: (...args: unknown[]) => cleanupOldInsightsMock(...args),
   pruneCanaryRegistry: (...args: unknown[]) => pruneCanaryRegistryMock(...args),
 }));
+// initCooldownStore would otherwise attempt a real Redis connect at startup.
+vi.mock('@dashboard/core/services/cooldown-store.js', () => ({
+  initCooldownStore: vi.fn().mockResolvedValue(undefined),
+}));
 
 import * as portainerClient from '@dashboard/core/portainer/portainer-client.js';
 import * as portainerCache from '@dashboard/core/portainer/portainer-cache.js';
