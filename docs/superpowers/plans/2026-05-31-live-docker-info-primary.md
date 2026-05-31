@@ -714,11 +714,23 @@ git commit -m "feat(foundation): /api/endpoints uses live /docker/info + live st
 
 ### Task 5: Dashboard routes use `computeFleetTotals`; delete old foundation enrichment
 
+> **OVERRIDES below for `/summary` (decided during implementation):** `/summary`
+> stays container-free (honor #801 — its test asserts `getContainers` is never
+> called). It computes `running/stopped/total/endpointsUp/Down` live from
+> enriched endpoints + `stacks` from `getStacks()`, and sources `healthy/
+> unhealthy` from the latest `kpi_snapshots` row via the new
+> `getLatestKpiSnapshot()` (Task 5a, observability). Do NOT add a container
+> fan-out to `/summary`. `/resources` and `/full` keep their container fetches and
+> derive health live via `computeFleetTotals`. The dashboard route tests live in
+> `backend/src/routes/dashboard.test.ts` + `dashboard-summary.test.ts` (NOT
+> `packages/foundation`).
+
 **Files:**
 - Modify: `packages/foundation/src/routes/dashboard.ts`
 - Delete: `packages/foundation/src/services/edge-live-enrichment.ts`
 - Delete: `packages/foundation/src/__tests__/edge-live-enrichment.test.ts`
-- Test: existing dashboard route test (find with `grep -rl "/api/dashboard/full" packages/foundation/src/__tests__`).
+- Test: `backend/src/routes/dashboard.test.ts`, `backend/src/routes/dashboard-summary.test.ts`.
+- Depends on Task 5a (`getLatestKpiSnapshot`).
 
 - [ ] **Step 1: Update the dashboard route test**
 
