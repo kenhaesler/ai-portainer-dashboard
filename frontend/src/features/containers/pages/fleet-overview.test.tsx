@@ -234,6 +234,39 @@ describe('InfrastructurePage — interactive status KPI', () => {
     expect(inactivePill.className).toContain('opacity-50');
   });
 
+  it('renders the stack status dropdown below the search bar', () => {
+    mockEndpoints([makeEndpoint({ id: 1, name: 'ep1' })]);
+    mockStacks([
+      makeStack({ id: 1, name: 's1', status: 'active', endpointId: 1 }),
+      makeStack({ id: 2, name: 's2', status: 'inactive', endpointId: 1 }),
+    ]);
+
+    renderPageWithInitialParams('/infrastructure?tab=stacks');
+
+    const search = screen.getByLabelText('Search stacks');
+    const statusLabel = screen.getByText('Status');
+    // The dropdown row follows the search row in DOM order (sits below it).
+    expect(
+      search.compareDocumentPosition(statusLabel) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('keeps the stack status KPI visible when a filter hides the search box', () => {
+    mockEndpoints([makeEndpoint({ id: 1, name: 'ep1' })]);
+    mockStacks([
+      makeStack({ id: 1, name: 's1', status: 'active', endpointId: 1 }),
+      makeStack({ id: 2, name: 's2', status: 'active', endpointId: 1 }),
+    ]);
+
+    // Filtering to "inactive" matches no stacks, so the search box is hidden...
+    renderPageWithInitialParams('/infrastructure?tab=stacks&stackStatus=inactive');
+
+    expect(screen.queryByLabelText('Search stacks')).not.toBeInTheDocument();
+    // ...but the KPI (unfiltered counts) stays so its pills can clear the filter.
+    expect(screen.getByTestId('status-kpi')).toBeInTheDocument();
+    expect(screen.getByTestId('status-pill-active')).toHaveTextContent('(2)');
+  });
+
   it('clicking endpoint Up pill filters endpoints to "up" only', () => {
     mockEndpoints([
       makeEndpoint({ id: 1, name: 'up-ep', status: 'up' }),

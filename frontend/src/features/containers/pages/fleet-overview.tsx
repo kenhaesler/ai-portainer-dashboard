@@ -975,25 +975,25 @@ export default function InfrastructurePage() {
             {/* Row 1: search + slim status KPI + view toggle */}
             <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-3">
               {endpoints.length > 0 && (
-                <div className="lg:flex-1">
-                  <FleetSearch
-                    onSearch={handleEndpointSearch}
-                    totalCount={endpoints.length}
-                    filteredCount={filteredEndpoints.length}
-                    placeholder="Search endpoints... (name:prod status:up type:edge)"
-                    label="Search endpoints"
-                    examples={['name:prod', 'status:up', 'type:edge']}
-                    // Focus the search when the Fleet tab first mounts; gate with ref
-                    // so re-mounting (tab switch) does not re-steal focus.
-                    autoFocus={!fleetSearchAutoFocusedRef.current}
-                    onAutoFocused={markFleetSearchAutoFocused}
-                    initialValue={endpointSearchQuery}
-                    showCount={false}
-                  />
-                </div>
-              )}
-              {endpoints.length > 0 && (
-                <StatusKpi pills={endpointStatusKpiPills} ariaLabel="Endpoint status" />
+                <>
+                  <div className="lg:flex-1">
+                    <FleetSearch
+                      onSearch={handleEndpointSearch}
+                      totalCount={endpoints.length}
+                      filteredCount={filteredEndpoints.length}
+                      placeholder="Search endpoints... (name:prod status:up type:edge)"
+                      label="Search endpoints"
+                      examples={['name:prod', 'status:up', 'type:edge']}
+                      // Focus the search when the Fleet tab first mounts; gate with ref
+                      // so re-mounting (tab switch) does not re-steal focus.
+                      autoFocus={!fleetSearchAutoFocusedRef.current}
+                      onAutoFocused={markFleetSearchAutoFocused}
+                      initialValue={endpointSearchQuery}
+                      showCount={false}
+                    />
+                  </div>
+                  <StatusKpi pills={endpointStatusKpiPills} ariaLabel="Endpoint status" />
+                </>
               )}
               <div className="flex items-center rounded-lg border p-1">
                 <button
@@ -1176,6 +1176,10 @@ export default function InfrastructurePage() {
                   />
                 </div>
               )}
+              {/* Rendered outside the search-box gate above (not behind
+                  dropdownFilteredStacks.length > 0) so the status pills stay
+                  available to clear an over-restrictive dropdown filter even when
+                  the current filters match no stacks and the search box is hidden. */}
               <StatusKpi pills={stackStatusKpiPills} ariaLabel="Stack status" />
               <div className="flex items-center rounded-lg border p-1">
                 <button
