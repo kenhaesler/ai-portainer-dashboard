@@ -7,7 +7,11 @@ vi.mock('@dashboard/core/db/timescale.js', () => ({
   getMetricsDb: vi.fn().mockResolvedValue({ query: (...args: unknown[]) => mockQuery(...args) }),
 }));
 
-import { getMovingAverage, getMovingAverageByHourOfDay } from '../services/metrics-store.js';
+import {
+  getMovingAverage,
+  getMovingAverageByHourOfDay,
+  getMetricWindow,
+} from '../services/metrics-store.js';
 
 describe('getMovingAverage — baseline leakage (#1361 fix 2)', () => {
   beforeEach(() => {
@@ -55,5 +59,26 @@ describe('getMovingAverageByHourOfDay — baseline leakage (#1361 fix 2)', () =>
     const sql: string = mockQuery.mock.calls[0][0];
     expect(sql).toMatch(/date_part\('hour'/i);
     expect(mockQuery).toHaveBeenCalledWith(expect.any(String), ['c1', 'cpu', 14, 9]);
+  });
+});
+
+describe('getMetricWindow — raw window for robust stats (#1362)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns raw values newest-first, excluding the point under test', async () => {
+    mockQuery.mockResolvedValue({ rows: [{ value: 3 }, { value: 2 }, { value: 1 }] });
+    const window = await getMetricWindow('c1', 'cpu', 60);
+    expect(window).toEqual([3, 2, 1]);
+    const sql: string = mockQuery.mock.calls[0][0];
+    expect(sql).toMatch(/ORDER BY\s+timestamp\s+DESC/i);
+    expect(sql).toMatch(/OFFSET\s+1/i); // same leakage exclusion as getMovingAverage
+    expect(mockQuery).toHaveBeenCalledWith(expect.any(String), ['c1', 'cpu', 60]);
+  });
+
+  it('coerces values to numbers and tolerates an empty window', async () => {
+    mockQuery.mockResolvedValue({ rows: [] });
+    expect(await getMetricWindow('c1', 'cpu', 60)).toEqual([]);
   });
 });

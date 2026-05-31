@@ -121,6 +121,29 @@ export async function getMovingAverage(
 }
 
 /**
+ * Raw trailing window of metric values, newest-first, EXCLUDING the most recent
+ * sample (the point under test — same `OFFSET 1` leakage exclusion as
+ * getMovingAverage, #1361 fix 2). Robust detectors (#1362) need the actual
+ * values to compute median + MAD, which cannot be derived from pre-aggregated
+ * mean/std.
+ */
+export async function getMetricWindow(
+  containerId: string,
+  metricType: string,
+  windowSize: number,
+): Promise<number[]> {
+  const db = await getMetricsDb();
+  const { rows } = await db.query(
+    `SELECT value FROM metrics
+     WHERE container_id = $1 AND metric_type = $2
+     ORDER BY timestamp DESC
+     LIMIT $3 OFFSET 1`,
+    [containerId, metricType, windowSize],
+  );
+  return (rows as Array<{ value: number }>).map((r) => Number(r.value));
+}
+
+/**
  * Hour-of-day baseline statistics for a container metric (issue #1295).
  *
  * Aggregates samples whose timestamp falls in the supplied UTC hour-of-day
