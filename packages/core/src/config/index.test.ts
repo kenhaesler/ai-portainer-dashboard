@@ -263,6 +263,16 @@ describe('config validation', () => {
       expect(c.ANOMALY_SUPPRESS_BELOW_CONFIDENCE).toBe(0);
     });
 
+    it('defaults the feedback auto-tune to OFF, 6h cadence, 5% target (#1364)', async () => {
+      const { getConfig } = await import('./index.js');
+      const c = getConfig();
+      expect(c.ANOMALY_AUTOTUNE_ENABLED).toBe(false); // opt-in (observer-first)
+      expect(c.ANOMALY_AUTOTUNE_INTERVAL_MINUTES).toBe(360);
+      expect(c.ANOMALY_AUTOTUNE_TARGET_FP_RATE).toBe(0.05);
+      expect(c.ANOMALY_AUTOTUNE_MIN_SAMPLES).toBe(20);
+      expect(c.ANOMALY_AUTOTUNE_LOOKBACK_DAYS).toBe(30);
+    });
+
     it('defaults ANOMALY_MOVING_AVERAGE_WINDOW to 60', async () => {
       // Raised 20 → 60 in #1294 (epic #1291): the previous ~20-min window
       // over-reacted to traffic ramps and short-lived bursts.
