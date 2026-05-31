@@ -120,6 +120,26 @@ export const envSchema = z.object({
   // Default 0.7 sits above the 3-of-5 (0.6) confirmation floor, so a barely-
   // persisted low-magnitude anomaly is logged, not paged. 0 surfaces everything.
   ANOMALY_CONFIDENCE_MIN_SURFACE: z.coerce.number().min(0).max(1).default(0.7),
+  // System-wide detection-time suppression floor (#1363). A confirmed anomaly
+  // whose confidence is below this is DROPPED entirely (never inserted), so the
+  // shared insights table, incident correlator, and notifications stay clean for
+  // everyone — not just per-user view filtering. Complements the per-user
+  // Sensitivity preset (#1297), which remains a read-time filter. Default 0
+  // suppresses nothing (the info-tier routing already quiets low confidence);
+  // raise it in noisy environments. Severe fast-burn anomalies (confidence 1.0)
+  // are never dropped here.
+  ANOMALY_SUPPRESS_BELOW_CONFIDENCE: z.coerce.number().min(0).max(1).default(0),
+  // Feedback → threshold auto-tune (#1364). A scheduled job measures the real
+  // per-detector false-positive rate from operator feedback (#1298) and nudges
+  // ANOMALY_ZSCORE_THRESHOLD toward the target rate, one bounded step at a time.
+  // OFF by default — auto-mutating a detection threshold is opt-in (observer-
+  // first); with the flag off the job still logs what it WOULD change. Every
+  // applied change is written to the audit log.
+  ANOMALY_AUTOTUNE_ENABLED: z.coerce.boolean().default(false),
+  ANOMALY_AUTOTUNE_INTERVAL_MINUTES: z.coerce.number().int().min(5).default(360),
+  ANOMALY_AUTOTUNE_TARGET_FP_RATE: z.coerce.number().min(0).max(1).default(0.05),
+  ANOMALY_AUTOTUNE_MIN_SAMPLES: z.coerce.number().int().min(1).default(20),
+  ANOMALY_AUTOTUNE_LOOKBACK_DAYS: z.coerce.number().int().min(1).default(30),
   BOLLINGER_BANDS_ENABLED: z.coerce.boolean().default(true),
   // Hour-of-day baseline (issue #1295): compare the recent sample against the
   // baseline for the same hour-of-day across the last N days, rather than a
@@ -132,6 +152,18 @@ export const envSchema = z.object({
   // the legacy flat-baseline behavior. Prevents erratic alerts during the
   // warm-up window.
   ANOMALY_HOUROFDAY_MIN_SAMPLES: z.coerce.number().int().min(1).max(100).default(3),
+  // Day-of-week × hour-of-day seasonality (#1307, carried over from #1364).
+  // Refines the hour-of-day baseline so e.g. Monday 09:00 is compared against
+  // previous Mondays 09:00, not every day's 09:00 — catching weekly patterns
+  // (weekday vs weekend traffic). The detector tries day-of-week × hour first,
+  // falls back to hour-of-day, then to the flat window, so cold-start and sparse
+  // weekday buckets degrade gracefully. A wider lookback (default 28d ≈ 4 same-
+  // weekday occurrences) is needed for the weekly bucket to be stable. The
+  // mean/std path reads this from the metrics_1hour aggregate; the robust path
+  // narrows its raw query (median+MAD needs raw samples).
+  ANOMALY_DAYOFWEEK_ENABLED: z.coerce.boolean().default(true),
+  ANOMALY_DAYOFWEEK_LOOKBACK_DAYS: z.coerce.number().int().min(7).max(120).default(28),
+  ANOMALY_DAYOFWEEK_MIN_SAMPLES: z.coerce.number().int().min(1).max(1000).default(3),
 
   // Predictive Alerting
   PREDICTIVE_ALERTING_ENABLED: z.coerce.boolean().default(true),

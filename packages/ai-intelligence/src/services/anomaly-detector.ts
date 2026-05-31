@@ -17,20 +17,22 @@ export type GetMovingAverageByHourOfDayFn = (
   metricType: string,
   hourOfDay: number,
   lookbackDays: number,
+  dayOfWeek?: number,
 ) => Promise<MovingAverageResult | null>;
 
+/** Which seasonal bucket the baseline was drawn from (finest that had data). */
+export type BaselineKind = 'flat' | 'hourOfDay' | 'dayOfWeek';
+
 /**
- * Resolve the baseline distribution for the current hour-of-day, falling back
- * to the flat rolling-window baseline when:
- *   • no hour-of-day fetcher was injected, or
- *   • the hour-of-day bucket has fewer than `minHourSamples` samples
- *     (warm-up window — issue #1295).
+ * Resolve the baseline distribution for the current seasonal bucket, trying the
+ * finest bucket first and falling back when it is unavailable or too sparse:
  *
- * The fallback is the historical (flat 24h) behavior, so existing callers
- * preserve their semantics until the hour bucket warms up.
+ *   1. day-of-week × hour-of-day (#1307) — when enabled and warm,
+ *   2. hour-of-day (#1295) — when warm,
+ *   3. flat rolling window — the historical behavior.
  *
- * Exported so that the trace detector and tests can reuse the same warm-up
- * policy.
+ * Each fallback preserves older callers' semantics until the finer bucket warms
+ * up. Exported so the trace detector and tests reuse the same policy.
  */
 export async function resolveBaseline(opts: {
   containerId: string;
@@ -42,8 +44,27 @@ export async function resolveBaseline(opts: {
   minHourSamples: number;
   getMovingAverage: GetMovingAverageFn;
   getMovingAverageByHourOfDay?: GetMovingAverageByHourOfDayFn;
-}): Promise<{ stats: MovingAverageResult | null; usedHourOfDay: boolean }> {
+  /** Day-of-week layer (#1307). When dayOfWeekEnabled, tried before hour-of-day. */
+  dayOfWeek?: number;
+  dayOfWeekEnabled?: boolean;
+  dayOfWeekLookbackDays?: number;
+  dayOfWeekMinSamples?: number;
+}): Promise<{ stats: MovingAverageResult | null; usedHourOfDay: boolean; baselineKind: BaselineKind }> {
   if (opts.getMovingAverageByHourOfDay) {
+    // 1. day-of-week × hour-of-day
+    if (opts.dayOfWeekEnabled && Number.isInteger(opts.dayOfWeek)) {
+      const dow = await opts.getMovingAverageByHourOfDay(
+        opts.containerId,
+        opts.metricType,
+        opts.hourOfDay,
+        opts.dayOfWeekLookbackDays ?? opts.lookbackDays,
+        opts.dayOfWeek,
+      );
+      if (dow && dow.sample_count >= (opts.dayOfWeekMinSamples ?? opts.minHourSamples)) {
+        return { stats: dow, usedHourOfDay: true, baselineKind: 'dayOfWeek' };
+      }
+    }
+    // 2. hour-of-day
     const hourly = await opts.getMovingAverageByHourOfDay(
       opts.containerId,
       opts.metricType,
@@ -51,15 +72,16 @@ export async function resolveBaseline(opts: {
       opts.lookbackDays,
     );
     if (hourly && hourly.sample_count >= opts.minHourSamples) {
-      return { stats: hourly, usedHourOfDay: true };
+      return { stats: hourly, usedHourOfDay: true, baselineKind: 'hourOfDay' };
     }
   }
+  // 3. flat
   const flat = await opts.getMovingAverage(
     opts.containerId,
     opts.metricType,
     opts.windowSize,
   );
-  return { stats: flat, usedHourOfDay: false };
+  return { stats: flat, usedHourOfDay: false, baselineKind: 'flat' };
 }
 
 /**
@@ -100,6 +122,10 @@ export async function detectAnomaly(
     minHourSamples,
     getMovingAverage,
     getMovingAverageByHourOfDay,
+    dayOfWeek: now.getUTCDay(),
+    dayOfWeekEnabled: config.ANOMALY_DAYOFWEEK_ENABLED,
+    dayOfWeekLookbackDays: config.ANOMALY_DAYOFWEEK_LOOKBACK_DAYS,
+    dayOfWeekMinSamples: config.ANOMALY_DAYOFWEEK_MIN_SAMPLES,
   });
 
   if (!stats || stats.sample_count < minSamples) {

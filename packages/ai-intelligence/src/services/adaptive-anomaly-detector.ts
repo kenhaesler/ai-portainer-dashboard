@@ -32,6 +32,7 @@ export type GetMetricWindowByHourOfDayFn = (
   metricType: string,
   hourOfDay: number,
   lookbackDays: number,
+  dayOfWeek?: number,
 ) => Promise<number[]>;
 
 interface BollingerBands {
@@ -104,6 +105,10 @@ export async function detectAnomalyAdaptive(
     minHourSamples,
     getMovingAverage,
     getMovingAverageByHourOfDay,
+    dayOfWeek: now.getUTCDay(),
+    dayOfWeekEnabled: config.ANOMALY_DAYOFWEEK_ENABLED,
+    dayOfWeekLookbackDays: config.ANOMALY_DAYOFWEEK_LOOKBACK_DAYS,
+    dayOfWeekMinSamples: config.ANOMALY_DAYOFWEEK_MIN_SAMPLES,
   });
 
   if (!stats || stats.sample_count < minSamples) {
@@ -219,19 +224,38 @@ export async function detectAnomalyRobust(
   const minHourSamples = config.ANOMALY_HOUROFDAY_MIN_SAMPLES;
 
   let window: number[] = [];
-  let usedHourOfDay = false;
+  // Seasonal preference: day-of-week × hour (#1307) → hour-of-day (#1295) →
+  // flat. Each level keeps RAW samples (median+MAD needs them) and excludes the
+  // point under test; we fall through when a bucket is below its warm-up floor.
+  let baselineKind: 'flat' | 'hourOfDay' | 'dayOfWeek' = 'flat';
   if (getMetricWindowByHourOfDay) {
-    const hourly = await getMetricWindowByHourOfDay(
-      containerId,
-      metricType,
-      now.getUTCHours(),
-      lookbackDays,
-    );
-    if (hourly.length >= minHourSamples) {
-      window = hourly;
-      usedHourOfDay = true;
+    if (config.ANOMALY_DAYOFWEEK_ENABLED) {
+      const dow = await getMetricWindowByHourOfDay(
+        containerId,
+        metricType,
+        now.getUTCHours(),
+        config.ANOMALY_DAYOFWEEK_LOOKBACK_DAYS,
+        now.getUTCDay(),
+      );
+      if (dow.length >= config.ANOMALY_DAYOFWEEK_MIN_SAMPLES) {
+        window = dow;
+        baselineKind = 'dayOfWeek';
+      }
+    }
+    if (baselineKind === 'flat') {
+      const hourly = await getMetricWindowByHourOfDay(
+        containerId,
+        metricType,
+        now.getUTCHours(),
+        lookbackDays,
+      );
+      if (hourly.length >= minHourSamples) {
+        window = hourly;
+        baselineKind = 'hourOfDay';
+      }
     }
   }
+  const usedHourOfDay = baselineKind !== 'flat';
   if (!usedHourOfDay) {
     window = await getMetricWindow(containerId, metricType, windowSize);
   }

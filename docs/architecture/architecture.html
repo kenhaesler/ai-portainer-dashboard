@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en" data-view="overview">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AI Portainer Dashboard · Software Architecture</title>
+<style>
+  :root {
+    --bg-0: #070a13;
+    --bg-1: #0b1020;
+    --bg-2: #111a33;
+    --glass: rgba(255, 255, 255, 0.045);
+    --glass-strong: rgba(255, 255, 255, 0.08);
+    --stroke: rgba(255, 255, 255, 0.10);
+    --stroke-strong: rgba(255, 255, 255, 0.22);
+    --text: #e9eefb;
+    --muted: #9aa6c4;
+    --faint: #6b769a;
+    /* domain palette */
+    --c-client: #38bdf8;   /* sky  */
+    --c-edge:   #a78bfa;   /* violet */
+    --c-core:   #f472b6;   /* pink */
+    --c-domain: #34d399;   /* emerald */
+    --c-ai:     #c084fc;   /* purple - AI insight */
+    --c-data:   #fbbf24;   /* amber */
+    --c-ext:    #fb7185;   /* rose */
+    --c-sched:  #f59e0b;   /* orange */
+    --shadow: 0 18px 50px -20px rgba(0,0,0,0.8);
+    font-synthesis: none;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background:
+      radial-gradient(1100px 700px at 82% -8%, rgba(167,139,250,0.16), transparent 60%),
+      radial-gradient(900px 600px at 8% 12%, rgba(56,189,248,0.13), transparent 55%),
+      radial-gradient(800px 800px at 50% 120%, rgba(52,211,153,0.10), transparent 60%),
+      linear-gradient(160deg, var(--bg-0), var(--bg-1) 45%, var(--bg-2));
+    background-attachment: fixed;
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+    line-height: 1.5;
+  }
+  a { color: inherit; }
+
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 40px 28px 96px; }
+
+  /* ---------- header ---------- */
+  header.hero { text-align: center; margin-bottom: 30px; }
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 12px; letter-spacing: .18em; text-transform: uppercase;
+    color: var(--muted); padding: 6px 14px; border-radius: 999px;
+    background: var(--glass); border: 1px solid var(--stroke); backdrop-filter: blur(12px);
+  }
+  .eyebrow .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--c-domain); box-shadow: 0 0 12px var(--c-domain); animation: pulse 2.4s infinite; }
+  @keyframes pulse { 0%,100% { opacity:1; transform: scale(1);} 50% { opacity:.45; transform: scale(.8);} }
+  h1 {
+    font-size: clamp(30px, 5vw, 52px); margin: 18px 0 6px; font-weight: 800; letter-spacing: -0.02em;
+    background: linear-gradient(120deg, #fff 10%, #b9c6ef 50%, #8aa0e8 90%);
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .subtitle { color: var(--muted); font-size: clamp(14px, 2vw, 17px); max-width: 720px; margin: 0 auto; }
+
+  /* ---------- tabs ---------- */
+  nav.tabs {
+    display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;
+    margin: 28px auto 8px; padding: 6px; width: fit-content;
+    background: var(--glass); border: 1px solid var(--stroke); border-radius: 16px; backdrop-filter: blur(14px);
+  }
+  .tab {
+    appearance: none; border: 0; cursor: pointer; color: var(--muted);
+    background: transparent; padding: 10px 18px; border-radius: 11px; font-size: 14px; font-weight: 600;
+    transition: all .22s ease; white-space: nowrap;
+  }
+  .tab:hover { color: var(--text); background: var(--glass-strong); }
+  .tab.active { color: #0a0f1f; background: linear-gradient(120deg, #cdd9ff, #9fb4f6); box-shadow: 0 8px 22px -10px rgba(159,180,246,.8); }
+
+  .view { display: none; animation: fade .4s ease; }
+  .view.active { display: block; }
+  @keyframes fade { from { opacity: 0; transform: translateY(8px);} to { opacity:1; transform:none; } }
+
+  .view-intro { text-align:center; color: var(--muted); font-size: 14.5px; max-width: 760px; margin: 14px auto 26px; }
+
+  /* ---------- diagram canvas ---------- */
+  .canvas { position: relative; }
+  svg.edges { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; overflow: visible; }
+  .layer { position: relative; z-index: 2; margin: 0 0 30px; }
+  .layer-label {
+    display: flex; align-items: center; gap: 10px; margin: 0 0 12px; font-size: 12px;
+    letter-spacing: .14em; text-transform: uppercase; color: var(--faint); font-weight: 700;
+  }
+  .layer-label::after { content:""; flex:1; height:1px; background: linear-gradient(90deg, var(--stroke), transparent); }
+  .row { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; }
+
+  /* ---------- node card ---------- */
+  .node {
+    position: relative; z-index: 2;
+    background: var(--glass); border: 1px solid var(--stroke); border-radius: 16px;
+    padding: 14px 16px; min-width: 150px; max-width: 230px; backdrop-filter: blur(10px);
+    transition: transform .25s cubic-bezier(.2,.8,.2,1), box-shadow .25s, border-color .25s, opacity .25s;
+    cursor: default;
+  }
+  .node::before {
+    content:""; position:absolute; left:0; top:14px; bottom:14px; width:3px; border-radius: 3px;
+    background: var(--accent, var(--c-domain)); box-shadow: 0 0 14px var(--accent, var(--c-domain));
+  }
+  .node:hover { transform: translateY(-4px); box-shadow: var(--shadow); border-color: var(--stroke-strong); }
+  .node .nt { display:flex; align-items:center; gap:8px; font-weight: 700; font-size: 14.5px; }
+  .node .nt .ic { font-size: 16px; filter: saturate(1.2); }
+  .node .nd { color: var(--muted); font-size: 11.5px; margin-top: 5px; line-height: 1.45; }
+  .node .tag { display:inline-block; margin-top:8px; font-size: 10px; color: var(--accent); border:1px solid color-mix(in srgb, var(--accent) 40%, transparent); padding: 2px 7px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 12%, transparent); }
+
+  /* accent helpers */
+  .a-client { --accent: var(--c-client); }
+  .a-edge   { --accent: var(--c-edge); }
+  .a-core   { --accent: var(--c-core); }
+  .a-domain { --accent: var(--c-domain); }
+  .a-ai     { --accent: var(--c-ai); }
+  .a-data   { --accent: var(--c-data); }
+  .a-ext    { --accent: var(--c-ext); }
+  .a-sched  { --accent: var(--c-sched); }
+
+  /* dim / highlight on hover */
+  .canvas.dim .node { opacity: .28; }
+  .canvas.dim .node.lit { opacity: 1; transform: translateY(-4px); box-shadow: var(--shadow); border-color: var(--stroke-strong); }
+  .edges path { transition: opacity .25s, stroke-width .25s; }
+  .canvas.dim .edges path { opacity: .06; }
+  .canvas.dim .edges path.lit { opacity: .95; stroke-width: 2.4; }
+
+  /* ---------- legend ---------- */
+  .legend { display:flex; flex-wrap:wrap; gap: 14px 22px; justify-content:center; margin: 8px auto 30px; padding: 14px 18px;
+    background: var(--glass); border:1px solid var(--stroke); border-radius: 14px; width: fit-content; max-width:100%; backdrop-filter: blur(12px); }
+  .legend .li { display:flex; align-items:center; gap:8px; font-size:12.5px; color: var(--muted); }
+  .legend .sw { width:12px; height:12px; border-radius:4px; box-shadow: 0 0 10px var(--c); background: var(--c); }
+
+  /* ---------- package grid (deps view) ---------- */
+  .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(240px,1fr)); gap:14px; }
+  .pkg { background: var(--glass); border:1px solid var(--stroke); border-radius:16px; padding:16px 18px; backdrop-filter: blur(10px); transition: transform .2s, box-shadow .2s, border-color .2s; }
+  .pkg:hover { transform: translateY(-3px); box-shadow: var(--shadow); border-color: var(--stroke-strong); }
+  .pkg h3 { margin:0 0 4px; font-size:15px; display:flex; align-items:center; gap:8px; }
+  .pkg .npm { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:11.5px; color: var(--accent); }
+  .pkg p { color: var(--muted); font-size:12.5px; margin:8px 0 10px; }
+  .pkg .deps { font-size:11px; color: var(--faint); }
+  .pkg .deps b { color: var(--muted); font-weight:600; }
+
+  /* ---------- flow steps ---------- */
+  .flows { display:grid; grid-template-columns: repeat(auto-fit, minmax(300px,1fr)); gap:18px; }
+  .flow { background: var(--glass); border:1px solid var(--stroke); border-radius:18px; padding:20px; backdrop-filter: blur(10px); }
+  .flow h3 { margin:0 0 4px; font-size:16px; display:flex; align-items:center; gap:9px; }
+  .flow .sub { color: var(--muted); font-size:12.5px; margin-bottom:14px; }
+  .step { position:relative; padding: 0 0 16px 26px; }
+  .step:last-child { padding-bottom:0; }
+  .step::before { content:""; position:absolute; left:7px; top:3px; width:9px; height:9px; border-radius:50%; background: var(--accent); box-shadow: 0 0 10px var(--accent); }
+  .step::after { content:""; position:absolute; left:11px; top:14px; bottom:0; width:1.5px; background: linear-gradient(var(--accent), transparent); }
+  .step:last-child::after { display:none; }
+  .step .s-t { font-size:13.5px; font-weight:650; }
+  .step .s-d { color: var(--muted); font-size:12px; margin-top:2px; }
+  .step code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:11px; background: var(--glass-strong); padding:1px 6px; border-radius:6px; color: var(--text); }
+
+  footer { text-align:center; color: var(--faint); font-size:12px; margin-top: 40px; }
+  footer code { font-family: ui-monospace, monospace; color: var(--muted); }
+
+  @media (max-width: 640px) {
+    .node { min-width: 130px; padding: 12px; }
+    .wrap { padding: 28px 14px 70px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="hero">
+    <span class="eyebrow"><span class="dot"></span> Observer-first · Fastify 5 + React 19 monorepo</span>
+    <h1>AI Portainer Dashboard</h1>
+    <p class="subtitle">A living map of every component and how it talks to the rest — the browser client, the edge, nine backend domain packages, dual data stores, background workers, and the external systems they integrate with.</p>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab active" data-tab="overview">System Overview</button>
+    <button class="tab" data-tab="packages">Package Dependencies</button>
+    <button class="tab" data-tab="flows">Key Data Flows</button>
+    <button class="tab" data-tab="deploy">Deployment Topology</button>
+  </nav>
+
+  <!-- ============ OVERVIEW ============ -->
+  <section class="view active" id="overview" role="tabpanel">
+    <p class="view-intro">Hover any component to trace what it connects to. Layers flow top→bottom: the user's browser, the edge/proxy, the Fastify backend (composition root → routes → domain services → kernel), the data stores, and the external systems on the right.</p>
+
+    <div class="legend">
+      <div class="li"><span class="sw" style="--c:var(--c-client)"></span>Client</div>
+      <div class="li"><span class="sw" style="--c:var(--c-edge)"></span>Edge / Proxy</div>
+      <div class="li"><span class="sw" style="--c:var(--c-core)"></span>Server &amp; Kernel</div>
+      <div class="li"><span class="sw" style="--c:var(--c-domain)"></span>Domain Packages</div>
+      <div class="li"><span class="sw" style="--c:var(--c-ai)"></span>AI Intelligence</div>
+      <div class="li"><span class="sw" style="--c:var(--c-data)"></span>Data Stores</div>
+      <div class="li"><span class="sw" style="--c:var(--c-ext)"></span>External Systems</div>
+      <div class="li"><span class="sw" style="--c:var(--c-sched)"></span>Scheduler</div>
+    </div>
+
+    <div class="canvas" id="canvas-overview">
+      <svg class="edges" id="edges-overview"></svg>
+
+      <!-- CLIENT -->
+      <div class="layer">
+        <div class="layer-label">Client · React 19 SPA</div>
+        <div class="row">
+          <div class="node a-client" id="n-spa" data-edges="n-proxy">
+            <div class="nt"><span class="ic">🖥️</span> React SPA</div>
+            <div class="nd">Vite · React Router · Zustand stores · 16 themes · Framer Motion · Recharts</div>
+            <span class="tag">frontend/src</span>
+          </div>
+          <div class="node a-client" id="n-rq" data-edges="n-proxy">
+            <div class="nt"><span class="ic">🔁</span> React Query</div>
+            <div class="nd">REST cache, retries, <code style="font-size:10px">keepPreviousData</code>. Calls via <code style="font-size:10px">api</code> client w/ JWT.</div>
+            <span class="tag">shared/lib/api.ts</span>
+          </div>
+          <div class="node a-client" id="n-ws" data-edges="n-proxy">
+            <div class="nt"><span class="ic">⚡</span> Socket.IO client</div>
+            <div class="nd">Live namespaces: <code style="font-size:10px">/llm</code>, <code style="font-size:10px">/monitoring</code>, <code style="font-size:10px">/remediation</code></div>
+            <span class="tag">shared/lib/socket.ts</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- EDGE -->
+      <div class="layer">
+        <div class="layer-label">Edge · TLS, routing, rate limiting</div>
+        <div class="row">
+          <div class="node a-edge" id="n-proxy" data-edges="n-server">
+            <div class="nt"><span class="ic">🛡️</span> Reverse Proxy</div>
+            <div class="nd">Traefik / nginx — HTTPS, IP allowlist + rate limit on OTLP ingest, security headers</div>
+            <span class="tag">docker/traefik</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- SERVER / ROUTES -->
+      <div class="layer">
+        <div class="layer-label">Backend · Fastify 5 composition root</div>
+        <div class="row">
+          <div class="node a-core" id="n-server" data-edges="n-found n-ai n-obs n-sec n-ops n-infra n-sched n-sockets">
+            <div class="nt"><span class="ic">🧩</span> @dashboard/server</div>
+            <div class="nd">App factory, DI wiring, plugin chain — the only package that imports all domains</div>
+            <span class="tag">packages/server</span>
+          </div>
+          <div class="node a-core" id="n-sockets" data-edges="n-ai n-obs n-ops n-core">
+            <div class="nt"><span class="ic">🔌</span> Socket.IO server</div>
+            <div class="nd">Namespaces stream chat tokens, new insights, remediation status</div>
+            <span class="tag">socket-setup.ts</span>
+          </div>
+          <div class="node a-sched" id="n-sched" data-edges="n-obs n-ai n-sec n-ops n-core">
+            <div class="nt"><span class="ic">⏱️</span> Scheduler</div>
+            <div class="nd">Metrics 60s · monitoring cycle 5m · Harbor sync · cleanups · KPI snapshots</div>
+            <span class="tag">scheduler.ts</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- DOMAIN PACKAGES -->
+      <div class="layer">
+        <div class="layer-label">Domain packages · routes + services</div>
+        <div class="row">
+          <div class="node a-domain" id="n-found" data-edges="n-core">
+            <div class="nt"><span class="ic">🚪</span> foundation</div>
+            <div class="nd">15 core routes: auth, OIDC, dashboard, containers, logs, stacks, images, networks, k8s, settings, users, search, cache-admin</div>
+          </div>
+          <div class="node a-ai" id="n-ai" data-edges="n-core n-llm n-mcp">
+            <div class="nt"><span class="ic">🧠</span> ai-intelligence</div>
+            <div class="nd">LLM chat, prompt-guard, anomaly detection, incidents, investigations, MCP, prompt profiles</div>
+            <span class="tag">@dashboard/ai · isolated</span>
+          </div>
+          <div class="node a-domain" id="n-obs" data-edges="n-core n-ts n-prom">
+            <div class="nt"><span class="ic">📈</span> observability</div>
+            <div class="nd">Metrics ingest/query, ARIMA forecasts, OTLP traces, RED metrics, Prometheus export</div>
+          </div>
+          <div class="node a-domain" id="n-sec" data-edges="n-core n-harbor">
+            <div class="nt"><span class="ic">🔒</span> security</div>
+            <div class="nd">Audit, container scanning, PCAP capture, Harbor CVE sync, eBPF coverage</div>
+          </div>
+          <div class="node a-domain" id="n-ops" data-edges="n-core n-notify">
+            <div class="nt"><span class="ic">🛠️</span> operations</div>
+            <div class="nd">Remediation (suggest→approve→execute), backup/restore, webhooks, notifications</div>
+          </div>
+          <div class="node a-domain" id="n-infra" data-edges="n-core n-es">
+            <div class="nt"><span class="ic">🌐</span> infrastructure</div>
+            <div class="nd">Edge-agent jobs, async log collection, Docker frame decode, Elasticsearch forwarding</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- KERNEL -->
+      <div class="layer">
+        <div class="layer-label">Kernel · @dashboard/core (shared by all)</div>
+        <div class="row">
+          <div class="node a-core" id="n-core" data-edges="n-pg n-ts n-redis n-portainer">
+            <div class="nt"><span class="ic">⚙️</span> core kernel</div>
+            <div class="nd">JWT/OIDC auth + RBAC, session store, config, DB pools &amp; migrations, Portainer client + circuit breaker, Redis cache, audit log, event bus, OTLP tracing</div>
+            <span class="tag">@dashboard/core</span>
+          </div>
+          <div class="node a-core" id="n-contracts">
+            <div class="nt"><span class="ic">📜</span> contracts</div>
+            <div class="nd">Zod schemas, interfaces, typed events — zero deps, the shared language</div>
+            <span class="tag">@dashboard/contracts</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- DATA + EXTERNAL -->
+      <div class="layer">
+        <div class="layer-label">Data stores &amp; external systems</div>
+        <div class="row">
+          <div class="node a-data" id="n-pg"><div class="nt"><span class="ic">🐘</span> PostgreSQL</div><div class="nd">App DB — users, sessions, settings, insights, incidents, actions, webhooks, traces. 37 migrations.</div></div>
+          <div class="node a-data" id="n-ts"><div class="nt"><span class="ic">⏳</span> TimescaleDB</div><div class="nd">Metrics hypertable, continuous aggregates (5m/1h/1d rollups)</div></div>
+          <div class="node a-data" id="n-redis"><div class="nt"><span class="ic">🟥</span> Redis</div><div class="nd">Portainer response cache, cooldowns, suppression state</div></div>
+          <div class="node a-ext" id="n-portainer"><div class="nt"><span class="ic">🐳</span> Portainer API</div><div class="nd">Endpoints, containers, stacks, networks, images, Docker stats, K8s</div></div>
+          <div class="node a-ext" id="n-llm"><div class="nt"><span class="ic">✨</span> LLM API</div><div class="nd">OpenAI-compatible / Ollama — chat completions (guarded)</div></div>
+          <div class="node a-ext" id="n-harbor"><div class="nt"><span class="ic">⚓</span> Harbor</div><div class="nd">Registry CVE scan results via robot account</div></div>
+          <div class="node a-ext" id="n-prom"><div class="nt"><span class="ic">🔥</span> Prometheus</div><div class="nd">Scrapes <code style="font-size:10px">/metrics</code> (bearer auth)</div></div>
+          <div class="node a-ext" id="n-es"><div class="nt"><span class="ic">🔎</span> Elasticsearch</div><div class="nd">Log shipping + Kibana search</div></div>
+          <div class="node a-ext" id="n-mcp"><div class="nt"><span class="ic">🔧</span> MCP servers</div><div class="nd">Tool bridge — LLM-callable tools (e.g. read logs)</div></div>
+          <div class="node a-ext" id="n-notify"><div class="nt"><span class="ic">📣</span> Notifiers</div><div class="nd">Teams · Discord · Telegram · SMTP · webhooks</div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ PACKAGES ============ -->
+  <section class="view" id="packages" role="tabpanel">
+    <p class="view-intro">Backend is an npm-workspace monorepo with a strict dependency hierarchy. Arrows point <em>downward</em>: a package may only import from layers below it. <b>contracts</b> is the shared vocabulary, <b>core</b> is the kernel, the four domains sit on top, <b>ai</b> stays deliberately isolated, and <b>server</b> is the only composition root that wires everything together.</p>
+    <div class="grid">
+      <div class="pkg a-core"><h3><span>📜</span> contracts</h3><div class="npm">@dashboard/contracts</div><p>Zod schemas, TypeScript interfaces, typed event definitions. Pure types, no implementation.</p><div class="deps"><b>Depends on:</b> nothing</div></div>
+      <div class="pkg a-core"><h3><span>⚙️</span> core <span style="font-size:11px;color:var(--faint)">· kernel</span></h3><div class="npm">@dashboard/core</div><p>DB pools + migrations, JWT/OIDC auth &amp; RBAC, session/user stores, config, Portainer client + circuit breaker, Redis cache, audit logger, event bus, OTLP tracing, Fastify plugins.</p><div class="deps"><b>Depends on:</b> contracts</div></div>
+      <div class="pkg a-domain"><h3><span>📈</span> observability</h3><div class="npm">@dashboard/observability</div><p>Metrics ingestion/query (TimescaleDB), capacity forecasting (ARIMA), OTLP trace ingest, RED metrics, service map, Prometheus export.</p><div class="deps"><b>Depends on:</b> core, contracts</div></div>
+      <div class="pkg a-domain"><h3><span>🔒</span> security</h3><div class="npm">@dashboard/security</div><p>Security audit, container scanning, PCAP capture/analyze, Harbor CVE sync, image staleness, eBPF coverage &amp; sidecar deploy.</p><div class="deps"><b>Depends on:</b> core, contracts</div></div>
+      <div class="pkg a-domain"><h3><span>🛠️</span> operations</h3><div class="npm">@dashboard/operations</div><p>Observer-first remediation workflow (suggest→approve→execute), app + Portainer backup/restore, webhooks w/ retry, notification fan-out.</p><div class="deps"><b>Depends on:</b> core, contracts</div></div>
+      <div class="pkg a-domain"><h3><span>🌐</span> infrastructure</h3><div class="npm">@dashboard/infrastructure</div><p>Edge-agent capabilities &amp; jobs, async log collection, Docker frame decoding, Elasticsearch/Kibana log forwarding.</p><div class="deps"><b>Depends on:</b> core, contracts</div></div>
+      <div class="pkg a-ai"><h3><span>🧠</span> ai-intelligence <span style="font-size:11px;color:var(--faint)">· isolated</span></h3><div class="npm">@dashboard/ai</div><p>LLM chat client, 3-layer prompt-injection guard, statistical + isolation-forest anomaly detection, incident correlation, investigations, MCP tool bridge, prompt profiles.</p><div class="deps"><b>Depends on:</b> core, contracts <i>(no other domain)</i></div></div>
+      <div class="pkg a-domain"><h3><span>🚪</span> foundation</h3><div class="npm">@dashboard/foundation</div><p>15 foundational routes: auth, OIDC, health, dashboard, containers, logs, stacks, settings, images, networks, search, users, endpoints, k8s, cache-admin.</p><div class="deps"><b>Depends on:</b> core, contracts</div></div>
+      <div class="pkg a-core"><h3><span>🧩</span> server <span style="font-size:11px;color:var(--faint)">· composition root</span></h3><div class="npm">@dashboard/server</div><p>Fastify app factory, dependency-injection wiring, background scheduler, Socket.IO namespaces. The single place that imports every domain.</p><div class="deps"><b>Depends on:</b> all of the above</div></div>
+    </div>
+  </section>
+
+  <!-- ============ FLOWS ============ -->
+  <section class="view" id="flows" role="tabpanel">
+    <p class="view-intro">Four representative paths through the system — from a metric being scraped, to an AI chat, to a gated remediation, to an OTLP trace arriving from the kernel.</p>
+    <div class="flows">
+      <div class="flow a-sched">
+        <h3><span>📈</span> Monitoring cycle</h3>
+        <div class="sub">Scheduler · every 5 minutes (metrics every 60s)</div>
+        <div class="step"><div class="s-t">Collect stats</div><div class="s-d">Scheduler pulls CPU/mem/net for every running container via the Portainer client</div></div>
+        <div class="step"><div class="s-t">Dual-write metrics</div><div class="s-d">Each sample → PostgreSQL <code>metrics</code> + TimescaleDB hypertable</div></div>
+        <div class="step"><div class="s-t">Detect anomalies</div><div class="s-d">ai-intelligence runs robust-MAD / isolation-forest detectors, scores against baselines</div></div>
+        <div class="step"><div class="s-t">Correlate &amp; persist</div><div class="s-d">Group into incidents, write <code>insights</code> + <code>investigations</code></div></div>
+        <div class="step"><div class="s-t">Broadcast &amp; notify</div><div class="s-d"><code>insight:new</code> over <code>/monitoring</code> socket; webhooks + notifiers fire</div></div>
+      </div>
+
+      <div class="flow a-ai">
+        <h3><span>🧠</span> LLM chat assistant</h3>
+        <div class="sub">Socket.IO <code>/llm</code> namespace · streamed</div>
+        <div class="step"><div class="s-t">User message</div><div class="s-d">Client emits <code>chat:message</code> (authenticated socket) with prompt + context</div></div>
+        <div class="step"><div class="s-t">Prompt guard</div><div class="s-d">3 layers: 25+ regexes → heuristic scoring → output sanitization</div></div>
+        <div class="step"><div class="s-t">LLM call (+ tools)</div><div class="s-d">POST to <code>LLM_API_URL/v1/chat/completions</code>; MCP tools can read logs mid-chat</div></div>
+        <div class="step"><div class="s-t">Stream back</div><div class="s-d"><code>chat:response</code> token-by-token, then <code>chat:complete</code></div></div>
+        <div class="step"><div class="s-t">Trace it</div><div class="s-d">Call recorded in <code>llm_traces</code>; user feedback to <code>llm_feedback</code></div></div>
+      </div>
+
+      <div class="flow a-domain">
+        <h3><span>🛠️</span> Remediation (observer-first)</h3>
+        <div class="sub">Gated by <code>admin</code> role + approval</div>
+        <div class="step"><div class="s-t">Suggested</div><div class="s-d">An insight proposes an action → <code>actions</code> row (status: suggested)</div></div>
+        <div class="step"><div class="s-t">Approve</div><div class="s-d">Admin <code>POST /api/remediation/actions/:id/approve</code></div></div>
+        <div class="step"><div class="s-t">Execute</div><div class="s-d">Admin executes; protected containers auto-downgrade to <code>INVESTIGATE</code></div></div>
+        <div class="step"><div class="s-t">Act via Portainer</div><div class="s-d">Kernel client performs restart/stop; result written back + audited</div></div>
+        <div class="step"><div class="s-t">Live update</div><div class="s-d">Status streamed over <code>/remediation</code> socket</div></div>
+      </div>
+
+      <div class="flow a-edge">
+        <h3><span>🛰️</span> eBPF / OTLP trace ingest</h3>
+        <div class="sub">Grafana Beyla → backend</div>
+        <div class="step"><div class="s-t">Kernel instrumentation</div><div class="s-d">Beyla sidecar captures spans at the kernel (no app changes)</div></div>
+        <div class="step"><div class="s-t">Through the proxy</div><div class="s-d">OTLP/HTTP to <code>/api/traces/otlp</code> — IP allowlist + rate limit + API key</div></div>
+        <div class="step"><div class="s-t">Store spans</div><div class="s-d">observability persists spans; computes RED metrics + service map</div></div>
+        <div class="step"><div class="s-t">Anomaly check</div><div class="s-d">p95 z-score &amp; error-rate thresholds raise trace-path insights</div></div>
+        <div class="step"><div class="s-t">Visualize</div><div class="s-d">Trace explorer + service dependency graph in the SPA</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ DEPLOY ============ -->
+  <section class="view" id="deploy" role="tabpanel">
+    <p class="view-intro">Everything runs as hardened containers on an isolated <code>dashboard-net</code> bridge. Only the proxy is reachable from outside; internal services never bind <code>0.0.0.0</code>. Dashed boxes are optional overlay stacks.</p>
+
+    <div class="legend">
+      <div class="li"><span class="sw" style="--c:var(--c-edge)"></span>Internet-facing</div>
+      <div class="li"><span class="sw" style="--c:var(--c-core)"></span>Application</div>
+      <div class="li"><span class="sw" style="--c:var(--c-data)"></span>Data</div>
+      <div class="li"><span class="sw" style="--c:var(--c-ext)"></span>Optional overlay</div>
+    </div>
+
+    <div class="canvas">
+      <div class="layer">
+        <div class="layer-label">Internet-facing</div>
+        <div class="row">
+          <div class="node a-edge"><div class="nt"><span class="ic">🌍</span> Traefik / Proxy</div><div class="nd">:443 HTTPS — only public surface. TLS, routing, OTLP allowlist + rate limit</div></div>
+        </div>
+      </div>
+      <div class="layer">
+        <div class="layer-label">Application tier · dashboard-net</div>
+        <div class="row">
+          <div class="node a-edge"><div class="nt"><span class="ic">🧱</span> frontend</div><div class="nd">nginx serving the SPA · 127.0.0.1:8080 · non-root, read-only FS, cap-drop ALL</div></div>
+          <div class="node a-core"><div class="nt"><span class="ic">🧩</span> backend</div><div class="nd">Fastify + OTLP ingest · 127.0.0.1:3051 · hardened, no-new-privileges</div></div>
+        </div>
+      </div>
+      <div class="layer">
+        <div class="layer-label">Data tier · internal only</div>
+        <div class="row">
+          <div class="node a-data"><div class="nt"><span class="ic">🐘</span> postgres-app</div><div class="nd">postgres:17 — app database</div></div>
+          <div class="node a-data"><div class="nt"><span class="ic">⏳</span> timescaledb</div><div class="nd">TimescaleDB pg17 — metrics hypertable</div></div>
+          <div class="node a-data"><div class="nt"><span class="ic">🟥</span> redis</div><div class="nd">redis:8 — 512MB LRU cache</div></div>
+          <div class="node a-data"><div class="nt"><span class="ic">💾</span> timescale-backup</div><div class="nd">Daily cron · 7d/4w retention</div></div>
+        </div>
+      </div>
+      <div class="layer">
+        <div class="layer-label">Optional overlay stacks</div>
+        <div class="row">
+          <div class="node a-ext" style="border-style:dashed"><div class="nt"><span class="ic">🔥</span> Prometheus + Grafana</div><div class="nd">monitoring.yml — scrape + dashboards</div></div>
+          <div class="node a-ext" style="border-style:dashed"><div class="nt"><span class="ic">🛰️</span> Grafana Beyla</div><div class="nd">beyla.yml — privileged eBPF tracing</div></div>
+          <div class="node a-ext" style="border-style:dashed"><div class="nt"><span class="ic">🐳</span> Portainer + Edge Agent</div><div class="nd">portainer.yml / edge-agent.yml</div></div>
+          <div class="node a-ext" style="border-style:dashed"><div class="nt"><span class="ic">🥷</span> Kali MCP</div><div class="nd">pentest profile — allowlisted tools</div></div>
+        </div>
+      </div>
+    </div>
+
+    <p class="view-intro" style="margin-top:6px">CI/CD (<code>.github/workflows/ci.yml</code>): audit → typecheck → lint → backend tests (real Postgres + Redis) → frontend + Playwright E2E → docker build. Branch policy enforced; nightly E2E on <code>dev</code>.</p>
+  </section>
+
+  <footer>
+    Generated from a full sweep of <code>backend/</code>, <code>packages/*</code>, <code>frontend/</code> and <code>docker/</code>.
+    Interactive source: <code>docs/architecture/architecture.html</code> · GitHub-rendered version: <code>docs/architecture/ARCHITECTURE.md</code>
+  </footer>
+</div>
+
+<script>
+  // ---- tab switching ----
+  const tabs = document.querySelectorAll('.tab');
+  const views = document.querySelectorAll('.view');
+  tabs.forEach(t => t.addEventListener('click', () => {
+    tabs.forEach(x => x.classList.remove('active'));
+    views.forEach(v => v.classList.remove('active'));
+    t.classList.add('active');
+    document.getElementById(t.dataset.tab).classList.add('active');
+    if (t.dataset.tab === 'overview') requestAnimationFrame(drawEdges);
+  }));
+
+  // ---- edge drawing for overview ----
+  const canvas = document.getElementById('canvas-overview');
+  const svg = document.getElementById('edges-overview');
+  // de-dupe accidental duplicate ids: prefer first real node
+  function node(id){ return document.querySelector('#canvas-overview #'+CSS.escape(id)+':not([style*="display:none"])') || document.getElementById(id); }
+
+  // build edge list from data-edges attributes
+  function edgeList(){
+    const out = [];
+    canvas.querySelectorAll('.node[data-edges]').forEach(src => {
+      src.dataset.edges.split(/\s+/).filter(Boolean).forEach(tid => {
+        const tgt = canvas.querySelector('#'+CSS.escape(tid));
+        if (tgt && tgt.offsetParent !== null) out.push([src, tgt]);
+      });
+    });
+    return out;
+  }
+
+  const colorOf = el => getComputedStyle(el).getPropertyValue('--accent') || '#6cf';
+
+  function drawEdges(){
+    if (!canvas.offsetParent) return;
+    const cb = canvas.getBoundingClientRect();
+    svg.setAttribute('viewBox', `0 0 ${cb.width} ${cb.height}`);
+    svg.innerHTML = '';
+    const defs = document.createElementNS('http://www.w3.org/2000/svg','defs');
+    svg.appendChild(defs);
+    edgeList().forEach(([s,t], i) => {
+      const a = s.getBoundingClientRect(), b = t.getBoundingClientRect();
+      const x1 = a.left + a.width/2 - cb.left, y1 = a.bottom - cb.top;
+      const x2 = b.left + b.width/2 - cb.left, y2 = b.top - cb.top;
+      const my = (y1 + y2) / 2;
+      const c = colorOf(s).trim() || '#6cf';
+      const gid = 'g'+i;
+      const grad = document.createElementNS('http://www.w3.org/2000/svg','linearGradient');
+      grad.id = gid; grad.setAttribute('x1','0');grad.setAttribute('y1','0');grad.setAttribute('x2','0');grad.setAttribute('y2','1');
+      grad.innerHTML = `<stop offset="0" stop-color="${c}" stop-opacity=".9"/><stop offset="1" stop-color="${colorOf(t).trim()||c}" stop-opacity=".55"/>`;
+      defs.appendChild(grad);
+      const p = document.createElementNS('http://www.w3.org/2000/svg','path');
+      p.setAttribute('d', `M ${x1} ${y1} C ${x1} ${my}, ${x2} ${my}, ${x2} ${y2}`);
+      p.setAttribute('fill','none');
+      p.setAttribute('stroke', `url(#${gid})`);
+      p.setAttribute('stroke-width','1.4');
+      p.setAttribute('stroke-linecap','round');
+      p.dataset.s = s.id; p.dataset.t = t.id;
+      svg.appendChild(p);
+    });
+  }
+
+  // ---- hover highlight ----
+  function connected(id){
+    const set = new Set([id]);
+    edgeList().forEach(([s,t]) => {
+      if (s.id === id) set.add(t.id);
+      if (t.id === id) set.add(s.id);
+    });
+    return set;
+  }
+  canvas.querySelectorAll('.node').forEach(n => {
+    if (n.offsetParent === null && n.style.display === 'none') return;
+    n.addEventListener('mouseenter', () => {
+      const lit = connected(n.id);
+      canvas.classList.add('dim');
+      canvas.querySelectorAll('.node').forEach(x => x.classList.toggle('lit', lit.has(x.id)));
+      svg.querySelectorAll('path').forEach(p => p.classList.toggle('lit', p.dataset.s===n.id || p.dataset.t===n.id));
+    });
+    n.addEventListener('mouseleave', () => {
+      canvas.classList.remove('dim');
+      canvas.querySelectorAll('.node').forEach(x => x.classList.remove('lit'));
+      svg.querySelectorAll('path').forEach(p => p.classList.remove('lit'));
+    });
+  });
+
+  window.addEventListener('load', () => requestAnimationFrame(drawEdges));
+  window.addEventListener('resize', () => requestAnimationFrame(drawEdges));
+  setTimeout(drawEdges, 200);
+</script>
+</body>
+</html>

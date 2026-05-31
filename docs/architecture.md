@@ -3,6 +3,8 @@
 This project's architecture documentation is maintained in [docs/ai-instructions/architecture.md](ai-instructions/architecture.md).
 
 For detailed diagrams and data flow, see:
+- **[Visual architecture map](architecture/ARCHITECTURE.md)** — component & data-flow diagrams (Mermaid, renders on GitHub)
+- **[Interactive architecture diagram](architecture/architecture.html)** — open in a browser for hover-to-trace edges, package deps, data flows & deployment views
 - [Architecture Overview](ai-instructions/architecture.md) — monorepo structure, dependency graph, and key patterns
 - [Database Schema](ai-instructions/architecture.md#database-schema) — app (PostgreSQL) + metrics (TimescaleDB) tables
 - [Data Flows](ai-instructions/architecture.md#data-flows) — metrics, monitoring/anomaly, remediation, and LLM chat paths

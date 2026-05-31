@@ -1,6 +1,7 @@
 import { getMetricsDb } from '@dashboard/core/db/timescale.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import type { Metric } from '@dashboard/core/models/metrics.js';
+import { poolHourlyBuckets, type HourlyBucket } from './seasonal-baseline.js';
 
 const log = createChildLogger('metrics-store');
 
@@ -144,21 +145,33 @@ export async function getMetricWindow(
 }
 
 /**
- * Hour-of-day baseline statistics for a container metric (issue #1295).
+ * Hour-of-day (optionally day-of-week) baseline statistics for a container
+ * metric (issue #1295; #1307 aggregate migration).
  *
- * Aggregates samples whose timestamp falls in the supplied UTC hour-of-day
- * (0..23) across the last `lookbackDays` days. Returns null when no samples
- * are available; callers should then fall back to the flat-window baseline.
+ * Reads TimescaleDB's `metrics_1hour` continuous aggregate — one pre-computed
+ * row per (container, metric, hour) — instead of scanning the raw `metrics`
+ * hypertable, then pools the matching per-day hourly buckets back into the
+ * population mean + stddev of the underlying raw samples via the law of total
+ * variance (`poolHourlyBuckets`). This is statistically equivalent to the old
+ * `AVG(value)` / `STDDEV_POP(value)` raw query but touches a few dozen rows
+ * rather than millions.
  *
- * The aggregation uses Postgres `date_part('hour', timestamp AT TIME ZONE
- * 'UTC')` so the bucket boundary is fixed and not influenced by the server
- * local timezone.
+ * When `dayOfWeek` (0=Sun..6=Sat, UTC) is supplied, buckets are additionally
+ * filtered to that weekday — week-aware seasonality (weekday vs weekend), the
+ * #1364 carry-over. The caller decides the lookback (a wider window is needed
+ * for day-of-week so each weekday has enough occurrences).
+ *
+ * The current, in-progress hour bucket is excluded (`bucket < date_trunc('hour',
+ * NOW())`) so the baseline cannot include / be poisoned by the value under test
+ * — the aggregate-era equivalent of the raw path's OFFSET 1. Returns null when
+ * no completed buckets match; callers then fall back to a coarser baseline.
  */
 export async function getMovingAverageByHourOfDay(
   containerId: string,
   metricType: string,
   hourOfDay: number,
   lookbackDays: number,
+  dayOfWeek?: number,
 ): Promise<MovingAverageResult | null> {
   if (!Number.isInteger(hourOfDay) || hourOfDay < 0 || hourOfDay > 23) {
     return null;
@@ -166,52 +179,58 @@ export async function getMovingAverageByHourOfDay(
   if (!Number.isFinite(lookbackDays) || lookbackDays <= 0) {
     return null;
   }
+  const filterByDow = Number.isInteger(dayOfWeek) && dayOfWeek! >= 0 && dayOfWeek! <= 6;
   const db = await getMetricsDb();
 
+  const params: unknown[] = [containerId, metricType, lookbackDays, hourOfDay];
+  if (filterByDow) params.push(dayOfWeek);
+
   const { rows } = await db.query(
-    `SELECT
-       AVG(value) as mean,
-       STDDEV_POP(value) as std_dev,
-       COUNT(*)::int as sample_count
-     FROM metrics
+    `SELECT avg_value, stddev_value, sample_count
+     FROM metrics_1hour
      WHERE container_id = $1
        AND metric_type = $2
-       AND timestamp >= NOW() - ($3::int * INTERVAL '1 day')
-       AND date_part('hour', timestamp AT TIME ZONE 'UTC') = $4
-       -- #1361 fix 2: exclude the point under test (the latest sample) so the
-       -- hour-of-day baseline cannot include / be poisoned by the value being
-       -- evaluated, mirroring the OFFSET 1 on the flat-window baseline.
-       AND timestamp < (
-         SELECT MAX(timestamp) FROM metrics
-         WHERE container_id = $1 AND metric_type = $2
-       )`,
-    [containerId, metricType, lookbackDays, hourOfDay],
+       AND bucket >= NOW() - ($3::int * INTERVAL '1 day')
+       AND date_part('hour', bucket AT TIME ZONE 'UTC') = $4
+       ${filterByDow ? `AND date_part('dow', bucket AT TIME ZONE 'UTC') = $5` : ''}
+       -- Exclude the current, in-progress hour (the point under test lives there)
+       -- so the seasonal baseline is built only from completed past hours.
+       AND bucket < date_trunc('hour', NOW())`,
+    params,
   );
 
-  const result = rows[0];
-  if (!result || result.sample_count === 0 || result.mean === null) {
-    return null;
-  }
+  const buckets: HourlyBucket[] = (rows as Array<{ avg_value: number; stddev_value: number | null; sample_count: number }>)
+    .map((r) => ({
+      avg_value: Number(r.avg_value),
+      stddev_value: r.stddev_value == null ? null : Number(r.stddev_value),
+      sample_count: Number(r.sample_count),
+    }));
 
-  return {
-    mean: Number(result.mean),
-    std_dev: Number(result.std_dev ?? 0),
-    sample_count: result.sample_count,
-  };
+  const pooled = poolHourlyBuckets(buckets);
+  if (!pooled) return null;
+  return { mean: pooled.mean, std_dev: pooled.std_dev, sample_count: pooled.sample_count };
 }
 
 /**
- * Raw hour-of-day window: metric values whose timestamp falls in the supplied
- * UTC hour-of-day over the last N days, newest-first, EXCLUDING the most recent
- * sample (the point under test). Robust detection (#1362) uses this to keep the
- * #1295 seasonality handling while computing median + MAD instead of mean/std.
- * Returns [] for an out-of-range hour, bad lookback, or empty bucket.
+ * Raw hour-of-day (optionally day-of-week) window: metric values whose timestamp
+ * falls in the supplied UTC hour-of-day over the last N days, newest-first,
+ * EXCLUDING the most recent sample (the point under test). Robust detection
+ * (#1362) uses this to keep #1295 seasonality while computing median + MAD.
+ *
+ * Unlike the mean/std path, this stays on the RAW `metrics` hypertable: median +
+ * MAD need the actual samples, and the `metrics_1hour` aggregate only stores
+ * mean/stddev — pooling daily hourly *averages* would understate the spread and
+ * over-flag. When `dayOfWeek` (0=Sun..6=Sat, UTC) is supplied the query is
+ * narrowed to that weekday (week-aware seasonality, #1307/#1364), which also
+ * scans *fewer* rows. Returns [] for an out-of-range hour, bad lookback, or
+ * empty bucket.
  */
 export async function getMetricWindowByHourOfDay(
   containerId: string,
   metricType: string,
   hourOfDay: number,
   lookbackDays: number,
+  dayOfWeek?: number,
 ): Promise<number[]> {
   if (!Number.isInteger(hourOfDay) || hourOfDay < 0 || hourOfDay > 23) {
     return [];
@@ -219,19 +238,24 @@ export async function getMetricWindowByHourOfDay(
   if (!Number.isFinite(lookbackDays) || lookbackDays <= 0) {
     return [];
   }
+  const filterByDow = Number.isInteger(dayOfWeek) && dayOfWeek! >= 0 && dayOfWeek! <= 6;
   const db = await getMetricsDb();
+  const params: unknown[] = [containerId, metricType, lookbackDays, hourOfDay];
+  if (filterByDow) params.push(dayOfWeek);
+
   const { rows } = await db.query(
     `SELECT value FROM metrics
      WHERE container_id = $1
        AND metric_type = $2
        AND timestamp >= NOW() - ($3::int * INTERVAL '1 day')
        AND date_part('hour', timestamp AT TIME ZONE 'UTC') = $4
+       ${filterByDow ? `AND date_part('dow', timestamp AT TIME ZONE 'UTC') = $5` : ''}
        AND timestamp < (
          SELECT MAX(timestamp) FROM metrics
          WHERE container_id = $1 AND metric_type = $2
        )
      ORDER BY timestamp DESC`,
-    [containerId, metricType, lookbackDays, hourOfDay],
+    params,
   );
   return (rows as Array<{ value: number }>).map((r) => Number(r.value));
 }
