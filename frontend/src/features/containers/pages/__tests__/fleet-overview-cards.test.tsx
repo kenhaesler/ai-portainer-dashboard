@@ -239,17 +239,13 @@ describe('EndpointCard — compact 3-row layout', () => {
     expect(screen.getByTestId('clear-stack-filter')).toBeInTheDocument();
   });
 
-  it('uses singular "stack" when stackCount is 1', () => {
+  it('uses singular "stack" in the view-stacks link when stackCount is 1', () => {
     mockEndpoints([makeEndpoint({ stackCount: 1 })]);
     mockStacks([makeStack({ endpointId: 1 })]);
 
     renderPage();
 
-    // Row 3 stats (also appears in summary bar, so use getAllByText)
-    const stackTexts = screen.getAllByText('1 stack');
-    expect(stackTexts.length).toBeGreaterThanOrEqual(1);
-
-    // View stacks link
+    // The view-stacks link is where the singular form is applied.
     const viewLink = screen.getByTestId('view-stacks-link');
     expect(viewLink).toHaveTextContent('View 1 stack');
   });

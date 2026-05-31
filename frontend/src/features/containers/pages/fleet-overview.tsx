@@ -23,7 +23,7 @@ import { useUiStore } from '@/stores/ui-store';
 import { api } from '@/shared/lib/api';
 import { cn } from '@/shared/lib/utils';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
-import { FleetStatusSummary } from '@/features/containers/components/fleet/fleet-status-summary';
+import { StatusKpi, ENDPOINT_STATUS_COLORS, STACK_STATUS_COLORS, type StatusKpiPill } from '@/features/containers/components/fleet/status-kpi';
 import { FleetSearch } from '@/features/containers/components/fleet/fleet-search';
 import { filterEndpoints, filterStacks, type StackWithEndpoint } from '@/features/containers/lib/fleet-search-filter';
 import { filterK8sResources } from '@/features/containers/lib/k8s-search-filter';
@@ -459,6 +459,56 @@ export default function InfrastructurePage() {
     }));
   }, [stacks, endpoints]);
 
+  // Slim status-KPI pills for the search rows (counts from the unfiltered lists,
+  // matching the old summary-bar semantics). Clicking a pill toggles the same
+  // URL-backed status filter the Status dropdown drives.
+  const endpointStatusKpiPills = useMemo<StatusKpiPill[]>(() => {
+    const list = endpoints ?? [];
+    const up = list.filter((ep) => ep.status === 'up').length;
+    const down = list.filter((ep) => ep.status === 'down').length;
+    return [
+      {
+        key: 'up',
+        label: 'Up',
+        count: up,
+        isActive: activeEndpointStatusPill === 'up',
+        colors: ENDPOINT_STATUS_COLORS.up,
+        onClick: () => handleEndpointStatusPillChange(activeEndpointStatusPill === 'up' ? undefined : 'up'),
+      },
+      {
+        key: 'down',
+        label: 'Down',
+        count: down,
+        isActive: activeEndpointStatusPill === 'down',
+        colors: ENDPOINT_STATUS_COLORS.down,
+        onClick: () => handleEndpointStatusPillChange(activeEndpointStatusPill === 'down' ? undefined : 'down'),
+      },
+    ];
+  }, [endpoints, activeEndpointStatusPill, handleEndpointStatusPillChange]);
+
+  const stackStatusKpiPills = useMemo<StatusKpiPill[]>(() => {
+    const active = stacksWithEndpoints.filter((s) => s.status === 'active').length;
+    const inactive = stacksWithEndpoints.filter((s) => s.status === 'inactive').length;
+    return [
+      {
+        key: 'active',
+        label: 'Active',
+        count: active,
+        isActive: activeStackStatusPill === 'active',
+        colors: STACK_STATUS_COLORS.active,
+        onClick: () => handleStackStatusPillChange(activeStackStatusPill === 'active' ? undefined : 'active'),
+      },
+      {
+        key: 'inactive',
+        label: 'Inactive',
+        count: inactive,
+        isActive: activeStackStatusPill === 'inactive',
+        colors: STACK_STATUS_COLORS.inactive,
+        onClick: () => handleStackStatusPillChange(activeStackStatusPill === 'inactive' ? undefined : 'inactive'),
+      },
+    ];
+  }, [stacksWithEndpoints, activeStackStatusPill, handleStackStatusPillChange]);
+
   // Search-filtered endpoints (dropdown filters applied upstream, then smart search)
   const filteredEndpoints = useMemo(
     () => dropdownFilteredEndpoints ? filterEndpoints(dropdownFilteredEndpoints, endpointSearchQuery) : [],
@@ -877,20 +927,6 @@ export default function InfrastructurePage() {
         </div>
       </div>
 
-      {/* Interactive status summary bar */}
-      {!isLoading && (
-        <SpotlightCard>
-          <FleetStatusSummary
-            endpoints={endpoints ?? []}
-            stacks={stacksWithEndpoints}
-            activeEndpointStatusFilter={activeEndpointStatusPill}
-            onEndpointStatusChange={handleEndpointStatusPillChange}
-            activeStackStatusFilter={activeStackStatusPill}
-            onStackStatusChange={handleStackStatusPillChange}
-          />
-        </SpotlightCard>
-      )}
-
       {/* Error state */}
       {hasError && (
         <>
@@ -935,25 +971,58 @@ export default function InfrastructurePage() {
       <section aria-labelledby="fleet-heading" className="space-y-4">
         <h2 id="fleet-heading" className="sr-only">Fleet Overview</h2>
         {!isLoading && endpoints != null && (
-          <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-3">
-            {endpoints.length > 0 && (
-              <div className="lg:flex-1">
-                <FleetSearch
-                  onSearch={handleEndpointSearch}
-                  totalCount={endpoints.length}
-                  filteredCount={filteredEndpoints.length}
-                  placeholder="Search endpoints... (name:prod status:up type:edge)"
-                  label="Search endpoints"
-                  examples={['name:prod', 'status:up', 'type:edge']}
-                  // Focus the search when the Fleet tab first mounts; gate with ref
-                  // so re-mounting (tab switch) does not re-steal focus.
-                  autoFocus={!fleetSearchAutoFocusedRef.current}
-                  onAutoFocused={markFleetSearchAutoFocused}
-                  initialValue={endpointSearchQuery}
-                  showCount={false}
-                />
+          <div className="space-y-2">
+            {/* Row 1: search + slim status KPI + view toggle */}
+            <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-3">
+              {endpoints.length > 0 && (
+                <div className="lg:flex-1">
+                  <FleetSearch
+                    onSearch={handleEndpointSearch}
+                    totalCount={endpoints.length}
+                    filteredCount={filteredEndpoints.length}
+                    placeholder="Search endpoints... (name:prod status:up type:edge)"
+                    label="Search endpoints"
+                    examples={['name:prod', 'status:up', 'type:edge']}
+                    // Focus the search when the Fleet tab first mounts; gate with ref
+                    // so re-mounting (tab switch) does not re-steal focus.
+                    autoFocus={!fleetSearchAutoFocusedRef.current}
+                    onAutoFocused={markFleetSearchAutoFocused}
+                    initialValue={endpointSearchQuery}
+                    showCount={false}
+                  />
+                </div>
+              )}
+              {endpoints.length > 0 && (
+                <StatusKpi pills={endpointStatusKpiPills} ariaLabel="Endpoint status" />
+              )}
+              <div className="flex items-center rounded-lg border p-1">
+                <button
+                  onClick={() => setFleetViewMode('grid')}
+                  className={cn(
+                    'inline-flex items-center justify-center rounded-md p-2 transition-colors',
+                    fleetViewMode === 'grid'
+                      ? 'bg-accent text-accent-foreground'
+                      : 'text-muted-foreground hover:text-foreground'
+                  )}
+                  title="Grid view"
+                >
+                  <LayoutGrid className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => setFleetViewMode('table')}
+                  className={cn(
+                    'inline-flex items-center justify-center rounded-md p-2 transition-colors',
+                    fleetViewMode === 'table'
+                      ? 'bg-accent text-accent-foreground'
+                      : 'text-muted-foreground hover:text-foreground'
+                  )}
+                  title="Table view"
+                >
+                  <List className="h-4 w-4" />
+                </button>
               </div>
-            )}
+            </div>
+            {/* Row 2: status/type dropdowns + filtered count (below the search bar) */}
             <div className="flex flex-wrap items-center gap-3">
               {/* Endpoint status filter */}
               {endpointStatusOptions.length > 2 && (
@@ -984,32 +1053,6 @@ export default function InfrastructurePage() {
               <span className="text-sm text-muted-foreground" data-testid="fleet-filtered-count">
                 {filteredEndpoints.length}{filteredEndpoints.length !== (endpoints?.length ?? 0) ? ` of ${endpoints?.length}` : ''} endpoint{filteredEndpoints.length !== 1 ? 's' : ''}
               </span>
-              <div className="flex items-center rounded-lg border p-1">
-                <button
-                  onClick={() => setFleetViewMode('grid')}
-                  className={cn(
-                    'inline-flex items-center justify-center rounded-md p-2 transition-colors',
-                    fleetViewMode === 'grid'
-                      ? 'bg-accent text-accent-foreground'
-                      : 'text-muted-foreground hover:text-foreground'
-                  )}
-                  title="Grid view"
-                >
-                  <LayoutGrid className="h-4 w-4" />
-                </button>
-                <button
-                  onClick={() => setFleetViewMode('table')}
-                  className={cn(
-                    'inline-flex items-center justify-center rounded-md p-2 transition-colors',
-                    fleetViewMode === 'table'
-                      ? 'bg-accent text-accent-foreground'
-                      : 'text-muted-foreground hover:text-foreground'
-                  )}
-                  title="Table view"
-                >
-                  <List className="h-4 w-4" />
-                </button>
-              </div>
             </div>
           </div>
         )}
@@ -1116,21 +1159,52 @@ export default function InfrastructurePage() {
           </div>
         )}
         {!isLoading && stacksWithEndpoints.length > 0 && (
-          <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-3">
-            {dropdownFilteredStacks.length > 0 && (
-              <div className="lg:flex-1">
-                <FleetSearch
-                  onSearch={handleStackSearch}
-                  totalCount={dropdownFilteredStacks.length}
-                  filteredCount={filteredStacks.length}
-                  placeholder="Search stacks... (name:traefik status:active endpoint:prod)"
-                  label="Search stacks"
-                  examples={['name:traefik', 'status:active', 'endpoint:prod']}
-                  initialValue={stackSearchQuery}
-                  showCount={false}
-                />
+          <div className="space-y-2">
+            {/* Row 1: search + slim status KPI + view toggle */}
+            <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-3">
+              {dropdownFilteredStacks.length > 0 && (
+                <div className="lg:flex-1">
+                  <FleetSearch
+                    onSearch={handleStackSearch}
+                    totalCount={dropdownFilteredStacks.length}
+                    filteredCount={filteredStacks.length}
+                    placeholder="Search stacks... (name:traefik status:active endpoint:prod)"
+                    label="Search stacks"
+                    examples={['name:traefik', 'status:active', 'endpoint:prod']}
+                    initialValue={stackSearchQuery}
+                    showCount={false}
+                  />
+                </div>
+              )}
+              <StatusKpi pills={stackStatusKpiPills} ariaLabel="Stack status" />
+              <div className="flex items-center rounded-lg border p-1">
+                <button
+                  onClick={() => setStacksViewMode('grid')}
+                  className={cn(
+                    'inline-flex items-center justify-center rounded-md p-2 transition-colors',
+                    stacksViewMode === 'grid'
+                      ? 'bg-accent text-accent-foreground'
+                      : 'text-muted-foreground hover:text-foreground'
+                  )}
+                  title="Grid view"
+                >
+                  <LayoutGrid className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => setStacksViewMode('table')}
+                  className={cn(
+                    'inline-flex items-center justify-center rounded-md p-2 transition-colors',
+                    stacksViewMode === 'table'
+                      ? 'bg-accent text-accent-foreground'
+                      : 'text-muted-foreground hover:text-foreground'
+                  )}
+                  title="Table view"
+                >
+                  <List className="h-4 w-4" />
+                </button>
               </div>
-            )}
+            </div>
+            {/* Row 2: status/endpoint dropdowns + filtered count (below the search bar) */}
             <div className="flex flex-wrap items-center gap-3">
               {/* Stack status filter */}
               {stackStatusOptions.length > 2 && (
@@ -1161,32 +1235,6 @@ export default function InfrastructurePage() {
               <span className="text-sm text-muted-foreground" data-testid="stacks-filtered-count">
                 {filteredStacks.length}{hasActiveStackFilter ? ` of ${stacksWithEndpoints.length}` : ''} stack{filteredStacks.length !== 1 ? 's' : ''}
               </span>
-              <div className="flex items-center rounded-lg border p-1">
-                <button
-                  onClick={() => setStacksViewMode('grid')}
-                  className={cn(
-                    'inline-flex items-center justify-center rounded-md p-2 transition-colors',
-                    stacksViewMode === 'grid'
-                      ? 'bg-accent text-accent-foreground'
-                      : 'text-muted-foreground hover:text-foreground'
-                  )}
-                  title="Grid view"
-                >
-                  <LayoutGrid className="h-4 w-4" />
-                </button>
-                <button
-                  onClick={() => setStacksViewMode('table')}
-                  className={cn(
-                    'inline-flex items-center justify-center rounded-md p-2 transition-colors',
-                    stacksViewMode === 'table'
-                      ? 'bg-accent text-accent-foreground'
-                      : 'text-muted-foreground hover:text-foreground'
-                  )}
-                  title="Table view"
-                >
-                  <List className="h-4 w-4" />
-                </button>
-              </div>
             </div>
           </div>
         )}
