@@ -66,6 +66,10 @@ vi.mock('@dashboard/ai', () => ({
   stopCooldownSweep: vi.fn(),
   cleanupOldInsights: vi.fn().mockResolvedValue(0),
 }));
+// initCooldownStore would otherwise attempt a real Redis connect at startup.
+vi.mock('@dashboard/core/services/cooldown-store.js', () => ({
+  initCooldownStore: vi.fn().mockResolvedValue(undefined),
+}));
 
 vi.mock('@dashboard/infrastructure', () => ({
   startElasticsearchLogForwarder: vi.fn().mockResolvedValue(undefined),

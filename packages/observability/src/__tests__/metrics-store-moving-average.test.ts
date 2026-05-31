@@ -7,7 +7,7 @@ vi.mock('@dashboard/core/db/timescale.js', () => ({
   getMetricsDb: vi.fn().mockResolvedValue({ query: (...args: unknown[]) => mockQuery(...args) }),
 }));
 
-import { getMovingAverage } from '../services/metrics-store.js';
+import { getMovingAverage, getMovingAverageByHourOfDay } from '../services/metrics-store.js';
 
 describe('getMovingAverage — baseline leakage (#1361 fix 2)', () => {
   beforeEach(() => {
@@ -33,5 +33,27 @@ describe('getMovingAverage — baseline leakage (#1361 fix 2)', () => {
   it('maps the aggregate row to a MovingAverageResult', async () => {
     const result = await getMovingAverage('c1', 'cpu', 60);
     expect(result).toEqual({ mean: 50, std_dev: 5, sample_count: 60 });
+  });
+});
+
+describe('getMovingAverageByHourOfDay — baseline leakage (#1361 fix 2)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockQuery.mockResolvedValue({ rows: [{ mean: 50, std_dev: 5, sample_count: 40 }] });
+  });
+
+  it('excludes the point under test (the latest sample) from the hour bucket', async () => {
+    await getMovingAverageByHourOfDay('c1', 'cpu', 9, 14);
+    const sql: string = mockQuery.mock.calls[0][0];
+    // The current observation is the most recent sample; exclude it so the
+    // hour-of-day baseline cannot include / be poisoned by the value under test.
+    expect(sql).toMatch(/timestamp\s*<\s*\(\s*SELECT\s+MAX\(timestamp\)/i);
+  });
+
+  it('still aggregates the requested hour bucket over the lookback window', async () => {
+    await getMovingAverageByHourOfDay('c1', 'cpu', 9, 14);
+    const sql: string = mockQuery.mock.calls[0][0];
+    expect(sql).toMatch(/date_part\('hour'/i);
+    expect(mockQuery).toHaveBeenCalledWith(expect.any(String), ['c1', 'cpu', 14, 9]);
   });
 });

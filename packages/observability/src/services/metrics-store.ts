@@ -154,7 +154,14 @@ export async function getMovingAverageByHourOfDay(
      WHERE container_id = $1
        AND metric_type = $2
        AND timestamp >= NOW() - ($3::int * INTERVAL '1 day')
-       AND date_part('hour', timestamp AT TIME ZONE 'UTC') = $4`,
+       AND date_part('hour', timestamp AT TIME ZONE 'UTC') = $4
+       -- #1361 fix 2: exclude the point under test (the latest sample) so the
+       -- hour-of-day baseline cannot include / be poisoned by the value being
+       -- evaluated, mirroring the OFFSET 1 on the flat-window baseline.
+       AND timestamp < (
+         SELECT MAX(timestamp) FROM metrics
+         WHERE container_id = $1 AND metric_type = $2
+       )`,
     [containerId, metricType, lookbackDays, hourOfDay],
   );
 

@@ -68,6 +68,16 @@ export interface RedisLike {
   set(key: string, value: string, opts: { PX: number }): Promise<unknown>;
 }
 
+/**
+ * Redis-backed store. NB: `isHot` then `mark` is intentionally check-then-act,
+ * NOT atomic. The window is a READ-time parameter (the trace path checks the
+ * same key against different windows — a 10-min per-dimension cooldown vs a
+ * 5-min per-service rate limit), so it cannot be baked into a single
+ * `SET key val NX PX=window` write. Two replicas racing the same key could each
+ * miss-then-mark and both fire once; that is acceptable because cooldown is
+ * best-effort de-duplication, not a mutual-exclusion lock, and it is no weaker
+ * than the previous in-memory Maps (which were per-replica anyway).
+ */
 export class RedisCooldownStore implements CooldownStore {
   constructor(
     private readonly client: RedisLike,
@@ -140,12 +150,21 @@ async function buildStore(): Promise<CooldownStore> {
       socket: { connectTimeout: 3_000, reconnectStrategy: false },
     });
     client.on('error', (err) => log.debug({ err }, 'cooldown redis client error'));
-    await Promise.race([
-      client.connect(),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('redis connect timeout (5s)')), 5_000),
-      ),
-    ]);
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        client.connect(),
+        new Promise((_, reject) => {
+          timeoutHandle = setTimeout(
+            () => reject(new Error('redis connect timeout (5s)')),
+            5_000,
+          );
+        }),
+      ]);
+    } finally {
+      // Clear the loser of the race so a dangling timer/promise does not leak.
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+    }
     log.info('cooldown store: using Redis (shared across restarts and replicas)');
     return new RedisCooldownStore(client as unknown as RedisLike);
   } catch (err) {
