@@ -1,5 +1,7 @@
 import { beforeAll, afterAll, describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { setConfigForTest, resetConfig } from '@dashboard/core/config/index.js';
+import * as liveFleet from '@dashboard/core/portainer/live-fleet.js';
+import { insertKpiSnapshot } from '@dashboard/observability';
 
 // ---------------------------------------------------------------------------
 // Kept mocks — internal services the scheduler depends on
@@ -98,6 +100,7 @@ import {
   runCleanup,
   runImageStalenessCheck,
   runMetricsCollection,
+  runKpiSnapshotCollection,
   isMetricsCycleRunning,
   _resetMetricsMutex,
 } from '../scheduler.js';
@@ -151,6 +154,9 @@ beforeEach(async () => {
   cleanExpiredSessionsMock.mockReturnValue(0);
   cleanupOldInsightsMock.mockReturnValue(0);
   pruneCanaryRegistryMock.mockReturnValue(0);
+
+  // Clear KPI snapshot mock between tests
+  vi.mocked(insertKpiSnapshot).mockClear();
 
   // Re-set inline vi.mock fn defaults cleared by restoreAllMocks
   const securityPkg = await import('@dashboard/security');
@@ -572,5 +578,23 @@ describe('scheduler/setup – runCleanup prunes the LLM canary registry (#1119)'
 
     expect(cleanExpiredSessionsMock).toHaveBeenCalledTimes(1);
     expect(cleanupOldInsightsMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('runKpiSnapshotCollection', () => {
+  it('inserts a KPI snapshot built from live fleet totals', async () => {
+    vi.spyOn(liveFleet, 'collectFleetOverview').mockResolvedValue({
+      endpoints: [], containers: [], stacks: [],
+      totals: { endpoints: 1, endpointsUp: 1, endpointsDown: 0, running: 9, stopped: 3, total: 12, healthy: 1, unhealthy: 1, stacks: 2 },
+    } as any);
+    await runKpiSnapshotCollection();
+    expect(vi.mocked(insertKpiSnapshot)).toHaveBeenCalledWith(
+      expect.objectContaining({ endpoints: 1, endpoints_up: 1, endpoints_down: 0, running: 9, stopped: 3, healthy: 1, unhealthy: 1, total: 12, stacks: 2 }),
+    );
+  });
+
+  it('does not throw if collectFleetOverview rejects', async () => {
+    vi.spyOn(liveFleet, 'collectFleetOverview').mockRejectedValue(new Error('portainer down'));
+    await expect(runKpiSnapshotCollection()).resolves.toBeUndefined();
   });
 });

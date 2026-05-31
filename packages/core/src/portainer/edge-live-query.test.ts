@@ -7,11 +7,12 @@ vi.mock('undici', () => ({
 
 import { fetch as undiciFetch } from 'undici';
 import {
-  fetchEdgeLiveDockerInfo,
+  fetchLiveDockerInfo,
   edgeLiveQueryCacheKey,
   getEdgeLiveQueryConfigFromEnv,
   _resetEdgeLiveQueryState,
   type EdgeLiveQueryConfig,
+  type LiveDockerInfo,
 } from './edge-live-query.js';
 import { resetConfig, setConfigForTest } from '../config/index.js';
 
@@ -44,24 +45,25 @@ function cfg(overrides: Partial<EdgeLiveQueryConfig> = {}): EdgeLiveQueryConfig 
   return { enabled: true, concurrency: 2, intervalSeconds: 60, timeoutMs: 5000, ...overrides };
 }
 
-describe('fetchEdgeLiveDockerInfo', () => {
+describe('fetchLiveDockerInfo', () => {
   it('returns null when disabled and never touches the network', async () => {
-    const result = await fetchEdgeLiveDockerInfo(7, cfg({ enabled: false }));
+    const result = await fetchLiveDockerInfo(7, cfg({ enabled: false }));
     expect(result).toBeNull();
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
-  it('maps Docker /info response into the EdgeDockerInfo shape', async () => {
+  it('maps Docker /info response into the LiveDockerInfo shape', async () => {
     mockFetch.mockResolvedValueOnce(
-      mockJsonResponse({ Containers: 7, ContainersRunning: 5, ContainersStopped: 2, ContainersPaused: 0 }),
+      mockJsonResponse({ Containers: 12, ContainersRunning: 9, ContainersStopped: 3, ContainersPaused: 0, NCPU: 8, MemTotal: 16000000000 }),
     );
-    const result = await fetchEdgeLiveDockerInfo(7, cfg());
+    const result = await fetchLiveDockerInfo(7, cfg());
 
     expect(result).toMatchObject({
-      containers: 7,
-      containersRunning: 5,
-      containersStopped: 2,
-      containersPaused: 0,
+      containers: 12,
+      containersRunning: 9,
+      containersStopped: 3,
+      ncpu: 8,
+      memTotal: 16000000000,
     });
     expect(typeof result?.fetchedAt).toBe('number');
     // /docker/info path is the contract — keep this assertion explicit.
@@ -74,36 +76,38 @@ describe('fetchEdgeLiveDockerInfo', () => {
     mockFetch.mockResolvedValueOnce(
       mockJsonResponse({ ContainersRunning: 3, ContainersStopped: 1, ContainersPaused: 1 }),
     );
-    const result = await fetchEdgeLiveDockerInfo(7, cfg());
+    const result = await fetchLiveDockerInfo(7, cfg());
     expect(result?.containers).toBe(5);
   });
 
   it('treats missing count fields as zero rather than NaN/undefined', async () => {
     mockFetch.mockResolvedValueOnce(mockJsonResponse({}));
-    const result = await fetchEdgeLiveDockerInfo(7, cfg());
+    const result = await fetchLiveDockerInfo(7, cfg());
     expect(result).toMatchObject({
       containers: 0,
       containersRunning: 0,
       containersStopped: 0,
       containersPaused: 0,
+      ncpu: 0,
+      memTotal: 0,
     });
   });
 
   it('returns null on non-2xx response and logs (no throw)', async () => {
     mockFetch.mockResolvedValueOnce(mockJsonResponse({}, 502));
-    const result = await fetchEdgeLiveDockerInfo(7, cfg());
+    const result = await fetchLiveDockerInfo(7, cfg());
     expect(result).toBeNull();
   });
 
   it('returns null when the fetch itself rejects (network / abort)', async () => {
     mockFetch.mockRejectedValueOnce(new Error('AbortError'));
-    const result = await fetchEdgeLiveDockerInfo(7, cfg());
+    const result = await fetchLiveDockerInfo(7, cfg());
     expect(result).toBeNull();
   });
 
   it('passes an AbortController signal so timeouts can cancel the request', async () => {
     mockFetch.mockResolvedValueOnce(mockJsonResponse({ Containers: 0 }));
-    await fetchEdgeLiveDockerInfo(7, cfg({ timeoutMs: 1234 }));
+    await fetchLiveDockerInfo(7, cfg({ timeoutMs: 1234 }));
     const opts = mockFetch.mock.calls[0][1] as { signal?: AbortSignal };
     expect(opts.signal).toBeInstanceOf(AbortSignal);
   });
@@ -125,7 +129,7 @@ describe('fetchEdgeLiveDockerInfo', () => {
     });
 
     const config = cfg({ concurrency: 2 });
-    const tasks = [1, 2, 3, 4, 5].map((id) => fetchEdgeLiveDockerInfo(id, config));
+    const tasks = [1, 2, 3, 4, 5].map((id) => fetchLiveDockerInfo(id, config));
     await Promise.all(tasks);
 
     expect(mockFetch).toHaveBeenCalledTimes(5);
@@ -135,13 +139,17 @@ describe('fetchEdgeLiveDockerInfo', () => {
 
   it('rebuilds the limiter when concurrency changes between calls', async () => {
     mockFetch.mockResolvedValue(mockJsonResponse({ Containers: 0 }));
-    await fetchEdgeLiveDockerInfo(1, cfg({ concurrency: 2 }));
+    await fetchLiveDockerInfo(1, cfg({ concurrency: 2 }));
     // After this call the cached limiter has concurrency=2.
     // Calling with concurrency=5 should rebuild it without throwing.
-    await fetchEdgeLiveDockerInfo(2, cfg({ concurrency: 5 }));
+    await fetchLiveDockerInfo(2, cfg({ concurrency: 5 }));
     expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 });
+
+// Ensure the type alias is exported (compile-time check via usage)
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _typeCheck: LiveDockerInfo = {} as LiveDockerInfo;
 
 describe('edgeLiveQueryCacheKey', () => {
   it('produces a stable, unambiguous key per endpoint id', () => {

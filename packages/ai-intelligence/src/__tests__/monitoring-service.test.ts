@@ -1049,4 +1049,27 @@ describe('monitoring-service', () => {
       expect(containerKeys).not.toContain('containers:2');
     });
   });
+
+  describe('telemetry snapshot — unhealthy count derived from live container health', () => {
+    it('counts containersUnhealthy from container healthStatus, not endpoint field', async () => {
+      mockGetEndpoints.mockResolvedValue([
+        { Id: 1, Name: 'local', Status: 1, Type: 1, URL: 'tcp://localhost' },
+      ]);
+      // Two running containers: one healthy, one unhealthy (Docker Status string contains "(unhealthy)")
+      mockGetContainers.mockResolvedValue([
+        { Id: 'c1', Names: ['/app-healthy'], State: 'running', Status: 'Up 3 hours', Image: 'node:18' },
+        { Id: 'c2', Names: ['/app-sick'], State: 'running', Status: 'Up 1 hour (unhealthy)', Image: 'node:18' },
+        { Id: 'c3', Names: ['/app-stopped'], State: 'exited', Status: 'Exited (0) 5 minutes ago', Image: 'node:18' },
+      ]);
+
+      const telemetryStore = await import('../services/monitoring-telemetry-store.js');
+      const snapshotSpy = vi.mocked(telemetryStore.insertMonitoringSnapshot);
+
+      await runMonitoringCycle();
+
+      expect(snapshotSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ containersUnhealthy: 1 }),
+      );
+    });
+  });
 });

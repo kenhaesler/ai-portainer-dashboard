@@ -139,12 +139,12 @@ export const DEFAULT_SETTINGS = {
   edgeAgent: [
     { key: 'edge.staleness_threshold_minutes', label: 'Staleness Threshold', description: 'Minutes since last Edge Agent check-in before data is marked stale', type: 'number', defaultValue: '5', min: 1, max: 60 },
     { key: 'edge.checkin_warning_multiplier', label: 'Check-in Warning Multiplier', description: 'Show warning when time since last check-in exceeds this multiple of the check-in interval', type: 'number', defaultValue: '3', min: 2, max: 10 },
-    // Live Docker-info fallback (issue #1249) — Portainer EE doesn't persist
-    // Snapshots[] for Edge Standard endpoints, so we fall back to live tunnel
-    // queries. Tunable so large fleets don't hammer Portainer's chisel tunnel.
-    { key: 'edge.live_query_enabled', label: 'Live Container Counts Fallback', description: 'Fetch live Docker info via the chisel tunnel when an Edge Standard endpoint has no snapshot (#1249). Disable to keep the legacy behavior (0/0/0 counts).', type: 'boolean', defaultValue: 'true' },
-    { key: 'edge.live_query_concurrency', label: 'Live Fetch Concurrency', description: 'Max parallel live /docker/info calls across Edge endpoints. Keep low (1–3) for large fleets to avoid stampeding Portainer.', type: 'number', defaultValue: '2', min: 1, max: 20 },
-    { key: 'edge.live_query_interval_seconds', label: 'Live Fetch Interval (seconds)', description: 'Cache TTL per endpoint. The dashboard returns stale data instantly while refreshing in the background.', type: 'number', defaultValue: '60', min: 15, max: 3600 },
+    // Live container data (all Docker endpoints) — reads /docker/info live via
+    // Portainer as the primary data source. Tunable so large fleets don't
+    // hammer Portainer.
+    { key: 'edge.live_query_enabled', label: 'Live Container Data', description: 'Read container counts and host CPU/memory live via /docker/info through Portainer (primary source — replaces stale snapshots). Disabling shows endpoints as "data unavailable".', type: 'boolean', defaultValue: 'true' },
+    { key: 'edge.live_query_concurrency', label: 'Live Fetch Concurrency', description: 'Max parallel live /docker/info calls across endpoints. Keep low (1–3) for large fleets to avoid stampeding Portainer.', type: 'number', defaultValue: '2', min: 1, max: 20 },
+    { key: 'edge.live_query_interval_seconds', label: 'Live Fetch Interval (seconds)', description: 'Per-endpoint cache TTL. The dashboard returns cached data instantly while refreshing in the background.', type: 'number', defaultValue: '60', min: 15, max: 3600 },
     { key: 'edge.live_query_timeout_ms', label: 'Live Fetch Timeout (ms)', description: 'Per-call timeout — a slow agent never blocks the dashboard.', type: 'number', defaultValue: '5000', min: 1000, max: 30000 },
   ],
   harbor: [

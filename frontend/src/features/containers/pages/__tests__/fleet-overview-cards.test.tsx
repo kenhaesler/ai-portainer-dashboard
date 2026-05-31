@@ -51,8 +51,6 @@ function makeEndpoint(overrides: Partial<Endpoint> = {}): Endpoint {
     status: 'up',
     containersRunning: 3,
     containersStopped: 2,
-    containersHealthy: 3,
-    containersUnhealthy: 0,
     totalContainers: 5,
     stackCount: 2,
     totalCpu: 4,
@@ -216,7 +214,7 @@ describe('EndpointCard — compact 3-row layout', () => {
     renderPage();
 
     expect(screen.getByText(/Check-in:/)).toBeInTheDocument();
-    expect(screen.getByText(/Snapshot:/)).toBeInTheDocument();
+    expect(screen.getByText(/Updated:/)).toBeInTheDocument();
   });
 
   it('"View stacks" link works and calls onViewStacks', () => {

@@ -60,8 +60,6 @@ function makeEndpoint(overrides: Partial<Endpoint> = {}): Endpoint {
     status: 'up',
     containersRunning: 5,
     containersStopped: 1,
-    containersHealthy: 4,
-    containersUnhealthy: 0,
     totalContainers: 6,
     stackCount: 2,
     totalCpu: 4,
@@ -380,7 +378,7 @@ describe('InfrastructurePage — fleet section', () => {
 
     expect(screen.getByText(/Edge Agent Standard/)).toBeInTheDocument();
     expect(screen.getByText(/Check-in:/)).toBeInTheDocument();
-    expect(screen.getByText(/Snapshot:/)).toBeInTheDocument();
+    expect(screen.getByText(/Updated:/)).toBeInTheDocument();
   });
 
   it('renders Edge Agent Async badge for async endpoints', () => {
