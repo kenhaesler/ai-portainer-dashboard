@@ -259,6 +259,7 @@ describe('config validation', () => {
       expect(c.ANOMALY_PERSISTENCE_M).toBe(3);
       expect(c.ANOMALY_PERSISTENCE_N).toBe(5);
       expect(c.ANOMALY_FAST_BURN_MULTIPLIER).toBe(2);
+      expect(c.ANOMALY_CONFIDENCE_MIN_SURFACE).toBe(0.7);
     });
 
     it('defaults ANOMALY_MOVING_AVERAGE_WINDOW to 60', async () => {
