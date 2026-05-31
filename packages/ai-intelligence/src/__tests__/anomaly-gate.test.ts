@@ -4,7 +4,7 @@ import {
   InMemoryPersistenceStore,
   setPersistenceStoreForTest,
 } from '@dashboard/core/services/persistence-store.js';
-import { confirmAnomaly } from '../services/anomaly-gate.js';
+import { confirmAnomaly, routeSeverity } from '../services/anomaly-gate.js';
 
 const baseCfg = {
   ANOMALY_PERSISTENCE_ENABLED: true,
@@ -56,5 +56,42 @@ describe('confirmAnomaly — M-of-N persistence + multi-window (#1363)', () => {
     const r = await confirmAnomaly({ key: 'c1:cpu', isAnomalous: true, severity: 1.0 });
     expect(r.emit).toBe(true);
     expect(r.reason).toBe('disabled');
+  });
+
+  it('reports confidence as max(persistence ratio, burn magnitude)', async () => {
+    // Fast-burn severe (severity 2.5, multiplier 2) → magnitude factor 1.0.
+    const fb = await confirmAnomaly({ key: 'a', isAnomalous: true, severity: 2.5 });
+    expect(fb.confidence).toBeCloseTo(1, 5);
+
+    // First moderate cycle on 'b': persistence 1/5 = 0.2, magnitude 1.2/2 = 0.6
+    // → confidence 0.6 (magnitude dominates early).
+    const r1 = await confirmAnomaly({ key: 'b', isAnomalous: true, severity: 1.2 });
+    expect(r1.confidence).toBeCloseTo(0.6, 5);
+
+    // Low-magnitude but fully persisted on 'c': 5/5 = 1.0 dominates.
+    for (let i = 0; i < 4; i++) await confirmAnomaly({ key: 'c', isAnomalous: true, severity: 1.0 });
+    const r5 = await confirmAnomaly({ key: 'c', isAnomalous: true, severity: 1.0 }); // 5/5
+    expect(r5.confidence).toBeCloseTo(1, 5);
+  });
+});
+
+describe('routeSeverity — severity × confidence routing (#1363)', () => {
+  const minSurface = 0.7;
+
+  it('routes low-confidence anomalies to the info (log) tier', () => {
+    // 3-of-5 with low magnitude → confidence 0.6 < 0.7 → quieter tier.
+    expect(routeSeverity(0.6, 3.5, minSurface)).toBe('info');
+  });
+
+  it('routes confident, moderate anomalies to warning', () => {
+    expect(routeSeverity(0.8, 3.5, minSurface)).toBe('warning'); // |z| <= 4
+  });
+
+  it('routes confident, large-magnitude anomalies to critical', () => {
+    expect(routeSeverity(1.0, 5, minSurface)).toBe('critical'); // |z| > 4
+  });
+
+  it('surfaces everything when minSurface is 0', () => {
+    expect(routeSeverity(0, 3.5, 0)).toBe('warning');
   });
 });

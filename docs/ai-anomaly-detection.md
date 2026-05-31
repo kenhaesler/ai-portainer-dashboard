@@ -45,6 +45,7 @@ Instead of a single flat 24h baseline, the detector compares each observation ag
 | `ANOMALY_PERSISTENCE_ENABLED` | `true` | M-of-N persistence + multi-window gate (#1363). An anomaly must persist before it surfaces; `false` = legacy (surface every raw anomaly). |
 | `ANOMALY_PERSISTENCE_M` / `ANOMALY_PERSISTENCE_N` | `3` / `5` | Confirm only when ≥ M of the last N cycles are anomalous — suppresses isolated benign blips. |
 | `ANOMALY_FAST_BURN_MULTIPLIER` | `2` | A severe single sample (severity ≥ this × threshold) bypasses persistence and surfaces immediately (short high-burn-rate window). |
+| `ANOMALY_CONFIDENCE_MIN_SURFACE` | `0.7` | Severity × confidence routing (#1363). A confirmed anomaly with confidence (max of persistence ratio and burn magnitude) below this is routed to `info` (a quieter log tier) instead of warning/critical. `0` surfaces everything. |
 | `ANOMALY_COOLDOWN_MINUTES` | `30` | Per-container/metric cooldown to prevent alert spam |
 | `BOLLINGER_BANDS_ENABLED` | `true` | Enable the Bollinger method |
 

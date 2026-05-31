@@ -5,7 +5,8 @@ import { getEffectiveMonitoringConfig } from '@dashboard/core/services/settings-
 import type { MonitoringConfig } from '@dashboard/core/services/settings-store.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { getCooldownStore } from '@dashboard/core/services/cooldown-store.js';
-import { confirmAnomaly } from './anomaly-gate.js';
+import { confirmAnomaly, routeSeverity } from './anomaly-gate.js';
+import { hasMetricInsight } from './insight-dedup.js';
 import { getEndpoints, getContainers, isEndpointDegraded, isCircuitOpen } from '@dashboard/core/portainer/portainer-client.js';
 import { CircuitBreakerOpenError } from '@dashboard/core/portainer/circuit-breaker.js';
 import { cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
@@ -353,6 +354,13 @@ export function createMonitoringService(deps: MonitoringDeps) {
           : Math.abs(anomaly.z_score);
         const gate = await confirmAnomaly({ key, isAnomalous: anomaly.is_anomalous, severity });
         if (!gate.emit) continue;
+        // Severity × confidence routing (#1363): low-confidence anomalies land
+        // in the quieter 'info' tier instead of warning/critical.
+        const anomalySeverity = routeSeverity(
+          gate.confidence,
+          anomaly.z_score,
+          getConfig().ANOMALY_CONFIDENCE_MIN_SURFACE,
+        );
 
         // Cooldown check: skip if this container+metric was recently flagged
         const cooldownKey = key;
@@ -372,13 +380,13 @@ export function createMonitoringService(deps: MonitoringDeps) {
           endpoint_name: item.endpointName,
           container_id: item.containerId,
           container_name: item.containerName,
-          severity: Math.abs(anomaly.z_score) > 4 ? 'critical' : 'warning',
+          severity: anomalySeverity,
           category: 'anomaly',
           title: `Anomalous ${item.metricType} usage on "${item.containerName}"`,
           description:
             `Current ${item.metricType}: ${anomaly.current_value.toFixed(1)}% ` +
             `(mean: ${anomaly.mean.toFixed(1)}%, z-score: ${anomaly.z_score.toFixed(2)}, ` +
-            `method: ${anomaly.method ?? 'zscore'}). ` +
+            `method: ${anomaly.method ?? 'zscore'}, confidence: ${gate.confidence.toFixed(2)}). ` +
             `This is ${Math.abs(anomaly.z_score).toFixed(1)} standard deviations from the moving average.`,
           suggested_action: item.metricType === 'memory'
             ? 'Investigate memory usage patterns and check container configuration'
@@ -401,10 +409,9 @@ export function createMonitoringService(deps: MonitoringDeps) {
             );
             if (!metric || metric.value <= monCfg.anomalyThresholdPct) continue;
 
-            // Skip if already flagged by statistical detection
-            if (anomalyInsights.some(
-              (a) => a.container_id === container.raw.Id && a.title.toLowerCase().includes(metricType),
-            )) continue;
+            // Skip if statistical detection already flagged this (container,
+            // metric) — real signature dedup, not a title substring (#1363).
+            if (hasMetricInsight(anomalyInsights, container.raw.Id, metricType)) continue;
 
             // Cooldown check
             const cooldownKey = `${container.raw.Id}:${metricType}:threshold`;

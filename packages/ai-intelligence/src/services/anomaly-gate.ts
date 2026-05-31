@@ -18,6 +18,13 @@ export interface ConfirmResult {
   /** Whether this anomaly should be surfaced (inserted) this cycle. */
   emit: boolean;
   reason: ConfirmReason;
+  /**
+   * Confidence in [0,1] that this is a real, actionable anomaly — the max of the
+   * persistence ratio (how many of the last N cycles fired) and the burn
+   * magnitude (severity ÷ fast-burn multiplier). Callers route low-confidence
+   * anomalies to a quieter tier (#1363).
+   */
+  confidence: number;
 }
 
 /**
@@ -35,26 +42,48 @@ export async function confirmAnomaly(opts: {
   severity: number;
 }): Promise<ConfirmResult> {
   const config = getConfig();
+  const fastBurn = config.ANOMALY_FAST_BURN_MULTIPLIER;
+  const magnitudeFactor = Math.min(1, Math.max(0, opts.severity) / fastBurn);
+
   if (config.ANOMALY_PERSISTENCE_ENABLED === false) {
-    return { emit: opts.isAnomalous, reason: 'disabled' };
+    return {
+      emit: opts.isAnomalous,
+      reason: 'disabled',
+      confidence: opts.isAnomalous ? magnitudeFactor : 0,
+    };
   }
 
   const m = config.ANOMALY_PERSISTENCE_M;
   const n = config.ANOMALY_PERSISTENCE_N;
-  const fastBurn = config.ANOMALY_FAST_BURN_MULTIPLIER;
 
   // Always record the decision so the window rolls correctly cycle-to-cycle,
   // even on non-anomalous cycles.
   const anomalousCount = await getPersistenceStore().record(opts.key, opts.isAnomalous, n);
+  const confidence = Math.max(Math.min(1, anomalousCount / n), magnitudeFactor);
 
-  if (!opts.isAnomalous) return { emit: false, reason: 'suppressed' };
+  if (!opts.isAnomalous) return { emit: false, reason: 'suppressed', confidence: 0 };
 
   // Multi-window short path: a severe single sample pages immediately so brief
   // hard failures are not delayed by the persistence requirement.
-  if (opts.severity >= fastBurn) return { emit: true, reason: 'fast-burn' };
+  if (opts.severity >= fastBurn) return { emit: true, reason: 'fast-burn', confidence };
 
   // Long path: require ≥ M of the last N cycles to be anomalous.
   return anomalousCount >= m
-    ? { emit: true, reason: 'persistence' }
-    : { emit: false, reason: 'suppressed' };
+    ? { emit: true, reason: 'persistence', confidence }
+    : { emit: false, reason: 'suppressed', confidence };
+}
+
+/**
+ * Map a confirmed anomaly's confidence + magnitude to a severity tier (#1363).
+ * Below `minSurface` confidence it routes to 'info' — a quieter log tier that
+ * does not page — instead of warning/critical. At or above, severity is by
+ * magnitude (|z| > 4 → critical, else warning). minSurface = 0 surfaces all.
+ */
+export function routeSeverity(
+  confidence: number,
+  magnitudeZ: number,
+  minSurface: number,
+): 'critical' | 'warning' | 'info' {
+  if (confidence < minSurface) return 'info';
+  return Math.abs(magnitudeZ) > 4 ? 'critical' : 'warning';
 }

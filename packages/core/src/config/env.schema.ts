@@ -111,6 +111,12 @@ export const envSchema = z.object({
   ANOMALY_PERSISTENCE_M: z.coerce.number().int().min(1).default(3),
   ANOMALY_PERSISTENCE_N: z.coerce.number().int().min(1).default(5),
   ANOMALY_FAST_BURN_MULTIPLIER: z.coerce.number().min(1).default(2),
+  // Severity × confidence routing (#1363). A confirmed anomaly whose confidence
+  // (max of persistence ratio and burn magnitude) is below this surfaces as
+  // 'info' — a quieter log tier that does not page — instead of warning/critical.
+  // Default 0.7 sits above the 3-of-5 (0.6) confirmation floor, so a barely-
+  // persisted low-magnitude anomaly is logged, not paged. 0 surfaces everything.
+  ANOMALY_CONFIDENCE_MIN_SURFACE: z.coerce.number().min(0).max(1).default(0.7),
   BOLLINGER_BANDS_ENABLED: z.coerce.boolean().default(true),
   // Hour-of-day baseline (issue #1295): compare the recent sample against the
   // baseline for the same hour-of-day across the last N days, rather than a
