@@ -70,6 +70,9 @@ vi.mock('@dashboard/ai', () => ({
 vi.mock('@dashboard/core/services/cooldown-store.js', () => ({
   initCooldownStore: vi.fn().mockResolvedValue(undefined),
 }));
+vi.mock('@dashboard/core/services/persistence-store.js', () => ({
+  initPersistenceStore: vi.fn().mockResolvedValue(undefined),
+}));
 
 vi.mock('@dashboard/infrastructure', () => ({
   startElasticsearchLogForwarder: vi.fn().mockResolvedValue(undefined),

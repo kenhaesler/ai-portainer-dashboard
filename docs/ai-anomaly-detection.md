@@ -42,6 +42,9 @@ Instead of a single flat 24h baseline, the detector compares each observation ag
 | `ANOMALY_ZSCORE_THRESHOLD` | `3.5` | Base z-score threshold (before CV scaling) |
 | `ANOMALY_MOVING_AVERAGE_WINDOW` | `60` | Rolling window in samples (~1h at 60s cadence; raised from 20 in #1294) |
 | `ANOMALY_MIN_SAMPLES` | `10` | Warm-up minimum before detection activates |
+| `ANOMALY_PERSISTENCE_ENABLED` | `true` | M-of-N persistence + multi-window gate (#1363). An anomaly must persist before it surfaces; `false` = legacy (surface every raw anomaly). |
+| `ANOMALY_PERSISTENCE_M` / `ANOMALY_PERSISTENCE_N` | `3` / `5` | Confirm only when ≥ M of the last N cycles are anomalous — suppresses isolated benign blips. |
+| `ANOMALY_FAST_BURN_MULTIPLIER` | `2` | A severe single sample (severity ≥ this × threshold) bypasses persistence and surfaces immediately (short high-burn-rate window). |
 | `ANOMALY_COOLDOWN_MINUTES` | `30` | Per-container/metric cooldown to prevent alert spam |
 | `BOLLINGER_BANDS_ENABLED` | `true` | Enable the Bollinger method |
 

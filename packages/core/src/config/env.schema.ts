@@ -101,6 +101,16 @@ export const envSchema = z.object({
   ANOMALY_COOLDOWN_MINUTES: z.coerce.number().int().min(0).default(30),
   ANOMALY_THRESHOLD_PCT: z.coerce.number().min(50).max(100).default(85),
   ANOMALY_HARD_THRESHOLD_ENABLED: z.coerce.boolean().default(true),
+  // Alerting discipline (#1363) — M-of-N persistence + multi-window. An anomaly
+  // must persist (>= M of the last N cycles) before it is surfaced, suppressing
+  // isolated benign blips. A severe single sample (severity >= multiplier ×
+  // threshold) takes a short high-burn-rate path and is surfaced immediately so
+  // brief hard failures still page (Google SRE multi-window). Set M > N to make
+  // only the fast path fire; disable to surface every raw anomaly (legacy).
+  ANOMALY_PERSISTENCE_ENABLED: z.coerce.boolean().default(true),
+  ANOMALY_PERSISTENCE_M: z.coerce.number().int().min(1).default(3),
+  ANOMALY_PERSISTENCE_N: z.coerce.number().int().min(1).default(5),
+  ANOMALY_FAST_BURN_MULTIPLIER: z.coerce.number().min(1).default(2),
   BOLLINGER_BANDS_ENABLED: z.coerce.boolean().default(true),
   // Hour-of-day baseline (issue #1295): compare the recent sample against the
   // baseline for the same hour-of-day across the last N days, rather than a

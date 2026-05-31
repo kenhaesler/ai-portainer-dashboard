@@ -5,6 +5,7 @@ import { getEffectiveMonitoringConfig } from '@dashboard/core/services/settings-
 import type { MonitoringConfig } from '@dashboard/core/services/settings-store.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { getCooldownStore } from '@dashboard/core/services/cooldown-store.js';
+import { confirmAnomaly } from './anomaly-gate.js';
 import { getEndpoints, getContainers, isEndpointDegraded, isCircuitOpen } from '@dashboard/core/portainer/portainer-client.js';
 import { CircuitBreakerOpenError } from '@dashboard/core/portainer/circuit-breaker.js';
 import { cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
@@ -341,7 +342,17 @@ export function createMonitoringService(deps: MonitoringDeps) {
       for (const item of batchItems) {
         const key = `${item.containerId}:${item.metricType}`;
         const anomaly = batchResults.get(key);
-        if (!anomaly?.is_anomalous) continue;
+        if (!anomaly) continue; // insufficient data — no decision this cycle
+
+        // M-of-N persistence + multi-window gate (#1363). Record EVERY decision
+        // (incl. non-anomalous cycles) so the rolling window stays accurate, then
+        // surface only confirmed anomalies — a moderate anomaly must persist
+        // (>= M of N), while a severe single sample takes the fast-burn path.
+        const severity = anomaly.threshold > 0
+          ? Math.abs(anomaly.z_score) / anomaly.threshold
+          : Math.abs(anomaly.z_score);
+        const gate = await confirmAnomaly({ key, isAnomalous: anomaly.is_anomalous, severity });
+        if (!gate.emit) continue;
 
         // Cooldown check: skip if this container+metric was recently flagged
         const cooldownKey = key;

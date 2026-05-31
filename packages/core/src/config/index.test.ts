@@ -252,6 +252,15 @@ describe('config validation', () => {
       expect(getConfig().ANOMALY_DETECTION_METHOD).toBe('robust-mad');
     });
 
+    it('defaults the persistence gate to 3-of-5 with a 2x fast-burn (#1363)', async () => {
+      const { getConfig } = await import('./index.js');
+      const c = getConfig();
+      expect(c.ANOMALY_PERSISTENCE_ENABLED).toBe(true);
+      expect(c.ANOMALY_PERSISTENCE_M).toBe(3);
+      expect(c.ANOMALY_PERSISTENCE_N).toBe(5);
+      expect(c.ANOMALY_FAST_BURN_MULTIPLIER).toBe(2);
+    });
+
     it('defaults ANOMALY_MOVING_AVERAGE_WINDOW to 60', async () => {
       // Raised 20 → 60 in #1294 (epic #1291): the previous ~20-min window
       // over-reacted to traffic ramps and short-lived bursts.
