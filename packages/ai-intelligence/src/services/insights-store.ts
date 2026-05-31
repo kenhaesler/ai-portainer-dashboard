@@ -1,6 +1,6 @@
 import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
-import type { Insight, AnomalyDimension } from '@dashboard/core/models/monitoring.js';
+import type { Insight, AnomalyDimension, PersistedAnomalyDetector } from '@dashboard/core/models/monitoring.js';
 
 const log = createChildLogger('insights-store');
 
@@ -19,7 +19,7 @@ export interface InsightInsert {
   description: string;
   suggested_action: string | null;
   metric_type?: 'cpu' | 'memory' | 'disk' | 'network' | 'restart' | 'latency_p95' | 'error_rate';
-  detection_method?: 'threshold' | 'ml-anomaly' | 'prediction' | 'health-check' | 'log-pattern' | 'security-scan';
+  detection_method?: PersistedAnomalyDetector;
   /**
    * Multi-signal payload for correlated anomalies (e.g. trace-anomaly's
    * `(service, minute)` collapse of p95 latency + error rate — see #1296).
