@@ -422,6 +422,16 @@ describe('Reports routes', () => {
       expect(trendCall).toBeTruthy();
       expect(String(trendCall![0])).toContain('time_bucket');
     });
+
+    it('restricts the hourly fleet average to running containers (#1394)', async () => {
+      mockClientQuery.mockResolvedValue({ rows: [] });
+      await app.inject({ method: 'GET', url: '/api/reports/trends?timeRange=24h' });
+      const trendCall = mockClientQuery.mock.calls.find(
+        (c) => typeof c[0] === 'string' && /GROUP BY hour/.test(c[0] as string),
+      );
+      expect(trendCall).toBeDefined();
+      expect(trendCall![0]).toMatch(/container_lifecycle/);
+    });
   });
 
   describe('GET /api/reports/management', () => {
@@ -576,6 +586,16 @@ describe('Reports routes', () => {
       // Second identical request — cache hit, no new pool connection
       await app.inject({ method: 'GET', url: '/api/reports/management' });
       expect(mockConnect).toHaveBeenCalledTimes(1);
+    });
+
+    it('restricts the daily fleet average to running containers (#1394)', async () => {
+      mockClientQuery.mockResolvedValue({ rows: [] });
+      await app.inject({ method: 'GET', url: '/api/reports/management?timeRange=7d' });
+      const dailyCall = mockClientQuery.mock.calls.find(
+        (c) => typeof c[0] === 'string' && /GROUP BY day/.test(c[0] as string),
+      );
+      expect(dailyCall).toBeDefined();
+      expect(dailyCall![0]).toMatch(/container_lifecycle/);
     });
   });
 

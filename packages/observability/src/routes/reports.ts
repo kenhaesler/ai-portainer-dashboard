@@ -166,6 +166,34 @@ function addInfrastructureSqlFilter(
   return paramIdx;
 }
 
+/**
+ * Fail-open "running containers only" filter for fleet AVERAGE queries (#1394).
+ * If container_lifecycle has no rows for the scope (fresh deploy / not yet
+ * populated) the clause matches every row, preserving prior behavior. Reuses
+ * the same param placeholder twice (valid in PostgreSQL).
+ */
+function addLifecycleRunningFilter(
+  conditions: string[],
+  params: unknown[],
+  startParamIdx: number,
+  endpointId?: number,
+): number {
+  if (endpointId) {
+    const idx = startParamIdx;
+    params.push(endpointId);
+    conditions.push(
+      `(NOT EXISTS (SELECT 1 FROM container_lifecycle WHERE endpoint_id = $${idx})
+        OR container_id IN (SELECT container_id FROM container_lifecycle WHERE running = TRUE AND endpoint_id = $${idx}))`,
+    );
+    return idx + 1;
+  }
+  conditions.push(
+    `(NOT EXISTS (SELECT 1 FROM container_lifecycle)
+      OR container_id IN (SELECT container_id FROM container_lifecycle WHERE running = TRUE))`,
+  );
+  return startParamIdx;
+}
+
 export async function reportsRoutes(fastify: FastifyInstance) {
   // Fleet utilization report
   fastify.get('/api/reports/utilization', {
@@ -438,7 +466,8 @@ export async function reportsRoutes(fastify: FastifyInstance) {
         params.push(containerId);
         paramIdx++;
       }
-      addInfrastructureSqlFilter(conditions, params, paramIdx, excludeInfrastructure, infrastructurePatterns);
+      paramIdx = addInfrastructureSqlFilter(conditions, params, paramIdx, excludeInfrastructure, infrastructurePatterns);
+      addLifecycleRunningFilter(conditions, params, paramIdx, endpointId);
 
       const where = conditions.join(' AND ');
 
@@ -562,7 +591,8 @@ export async function reportsRoutes(fastify: FastifyInstance) {
         baseParams.push(containerId);
         paramIdx++;
       }
-      addInfrastructureSqlFilter(baseConditions, baseParams, paramIdx, excludeInfrastructure, infrastructurePatterns);
+      paramIdx = addInfrastructureSqlFilter(baseConditions, baseParams, paramIdx, excludeInfrastructure, infrastructurePatterns);
+      addLifecycleRunningFilter(baseConditions, baseParams, paramIdx, endpointId);
       const where = baseConditions.join(' AND ');
 
       // Top-services query: use rollup avg_value/max_value when available.
