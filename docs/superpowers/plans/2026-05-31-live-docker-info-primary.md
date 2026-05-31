@@ -22,6 +22,16 @@
 - Our own `kpi_snapshots` / `monitoring_snapshots` history tables stay; only their inputs change.
 - One feature branch, staged commits, TDD.
 
+## Execution staging (parallel-change — keeps every commit green)
+
+Removing fields/symbols that many consumers use would break all of them at once. So we **expand then contract**. This OVERRIDES the field-removal timing wherever it appears in the tasks below:
+
+- **Keep `containersHealthy` / `containersUnhealthy` on `NormalizedEndpoint`** through the migration, initialised to `0` in `normalizeEndpoint` (do NOT remove them in Task 2). Task 2's test therefore asserts these are `0` (not `undefined`). They are removed only in the final **Cleanup** task, after Tasks 5–8 stop reading them.
+- **Keep a back-compat alias `export const fetchEdgeLiveDockerInfo = fetchLiveDockerInfo`** (Task 1) and **keep `endpointNeedsLiveFallback`** (Task 2) until the **Cleanup** task — the foundation enrichment (deleted in Task 5) still imports them.
+- After each backend task, the implementer MUST run that **package's full typecheck** (`npx tsc --noEmit -p .`) and package test suite, not just the single new test, to confirm the commit compiles.
+- **Frontend type removal + fixtures land in ONE commit** (Task 10 absorbs Task 12) so `frontend` stays green.
+- The **Cleanup** task (runs after Task 11) removes the two dead fields, the `fetchEdgeLiveDockerInfo` alias, and `endpointNeedsLiveFallback`, then runs a full repo typecheck.
+
 ## File map
 
 **Create**
