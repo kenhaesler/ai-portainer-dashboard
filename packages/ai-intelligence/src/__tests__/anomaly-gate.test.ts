@@ -75,6 +75,41 @@ describe('confirmAnomaly — M-of-N persistence + multi-window (#1363)', () => {
   });
 });
 
+describe('global detection-time suppression floor (#1363)', () => {
+  beforeEach(() => {
+    setPersistenceStoreForTest(new InMemoryPersistenceStore());
+    setConfigForTest(baseCfg);
+  });
+  afterEach(() => {
+    setPersistenceStoreForTest(null);
+    resetConfig();
+  });
+
+  it('suppresses a confirmed anomaly whose confidence is below the floor', async () => {
+    setConfigForTest({ ...baseCfg, ANOMALY_SUPPRESS_BELOW_CONFIDENCE: 0.65 });
+    // 3-of-5 at low magnitude → confidence 0.6 < 0.65 → dropped entirely.
+    for (let i = 0; i < 2; i++) await confirmAnomaly({ key: 'k', isAnomalous: true, severity: 1.0 });
+    const r = await confirmAnomaly({ key: 'k', isAnomalous: true, severity: 1.0 });
+    expect(r.emit).toBe(false);
+    expect(r.reason).toBe('suppressed');
+  });
+
+  it('never suppresses a severe (fast-burn) anomaly regardless of the floor', async () => {
+    setConfigForTest({ ...baseCfg, ANOMALY_SUPPRESS_BELOW_CONFIDENCE: 0.9 });
+    const r = await confirmAnomaly({ key: 'k', isAnomalous: true, severity: 2.5 }); // confidence 1.0
+    expect(r.emit).toBe(true);
+    expect(r.reason).toBe('fast-burn');
+  });
+
+  it('a floor of 0 suppresses nothing (default)', async () => {
+    setConfigForTest({ ...baseCfg, ANOMALY_SUPPRESS_BELOW_CONFIDENCE: 0 });
+    for (let i = 0; i < 2; i++) await confirmAnomaly({ key: 'k', isAnomalous: true, severity: 1.0 });
+    const r = await confirmAnomaly({ key: 'k', isAnomalous: true, severity: 1.0 });
+    expect(r.emit).toBe(true);
+    expect(r.reason).toBe('persistence');
+  });
+});
+
 describe('routeSeverity — severity × confidence routing (#1363)', () => {
   const minSurface = 0.7;
 

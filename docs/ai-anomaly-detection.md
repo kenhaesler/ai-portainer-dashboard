@@ -46,6 +46,7 @@ Instead of a single flat 24h baseline, the detector compares each observation ag
 | `ANOMALY_PERSISTENCE_M` / `ANOMALY_PERSISTENCE_N` | `3` / `5` | Confirm only when ≥ M of the last N cycles are anomalous — suppresses isolated benign blips. |
 | `ANOMALY_FAST_BURN_MULTIPLIER` | `2` | A severe single sample (severity ≥ this × threshold) bypasses persistence and surfaces immediately (short high-burn-rate window). |
 | `ANOMALY_CONFIDENCE_MIN_SURFACE` | `0.7` | Severity × confidence routing (#1363). A confirmed anomaly with confidence (max of persistence ratio and burn magnitude) below this is routed to `info` (a quieter log tier) instead of warning/critical. `0` surfaces everything. |
+| `ANOMALY_SUPPRESS_BELOW_CONFIDENCE` | `0` | System-wide detection-time suppression floor (#1363). Below this confidence an anomaly is **dropped entirely** (never inserted), keeping the shared table/correlator/notifications clean for everyone — complements the per-user Sensitivity preset (a read-time filter). `0` drops nothing; fast-burn anomalies are never dropped. |
 | `ANOMALY_COOLDOWN_MINUTES` | `30` | Per-container/metric cooldown to prevent alert spam |
 | `BOLLINGER_BANDS_ENABLED` | `true` | Enable the Bollinger method |
 
