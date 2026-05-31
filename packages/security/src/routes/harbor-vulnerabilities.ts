@@ -30,16 +30,23 @@ export async function harborVulnerabilityRoutes(fastify: FastifyInstance) {
       return { configured: false, connected: false, lastSync: null };
     }
 
-    const [connectionTest, lastSync] = await Promise.all([
+    const [connectionTest, latestSync] = await Promise.all([
       harborClient.testConnection(),
       vulnStore.getLatestSyncStatus(),
     ]);
+
+    // A truncated sync (page cap hit) is successful-but-incomplete, not an error.
+    // Surface it as a typed warning so the UI doesn't render it as a hard error
+    // (the note is still persisted in error_message — see classifySyncStatus).
+    const { lastSync, truncated, syncWarning } = vulnStore.classifySyncStatus(latestSync);
 
     return {
       configured: true,
       connected: connectionTest.ok,
       connectionError: connectionTest.error,
       lastSync,
+      truncated,
+      syncWarning,
     };
   });
 

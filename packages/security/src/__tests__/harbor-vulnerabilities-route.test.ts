@@ -25,7 +25,10 @@ const mockCreateException = vi.fn();
 const mockDeactivateException = vi.fn();
 const mockGetLatestSyncStatus = vi.fn();
 
-vi.mock('../services/harbor-vulnerability-store.js', () => ({
+vi.mock('../services/harbor-vulnerability-store.js', async (importOriginal) => ({
+  // Keep the real pure helpers (classifySyncStatus, TRUNCATION_PREFIX) — only the
+  // DB-touching functions are mocked, since there is no PostgreSQL in CI.
+  ...(await importOriginal<typeof import('../services/harbor-vulnerability-store.js')>()),
   getVulnerabilities: (...args: unknown[]) => mockGetVulnerabilities(...args),
   getVulnerabilitySummary: (...args: unknown[]) => mockGetVulnerabilitySummary(...args),
   getExceptions: (...args: unknown[]) => mockGetExceptions(...args),
@@ -302,6 +305,33 @@ describe('Harbor Vulnerability Routes', () => {
       const body = JSON.parse(response.body);
       expect(body.configured).toBe(true);
       expect(body.connected).toBe(true);
+    });
+
+    it('reclassifies a truncated sync as a warning, not a hard error (#1392)', async () => {
+      mockTestConnection.mockResolvedValue({ ok: true });
+      mockGetLatestSyncStatus.mockResolvedValue({
+        id: 7,
+        sync_type: 'full',
+        status: 'completed',
+        vulnerabilities_synced: 200,
+        in_use_matched: 5,
+        error_message: 'Truncated: synced 200 of 10000 vulnerabilities (raise HARBOR_MAX_PAGES)',
+        started_at: '2026-01-01T00:00:00Z',
+        completed_at: '2026-01-01T00:01:00Z',
+      });
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/harbor/status',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+      expect(body.truncated).toBe(true);
+      expect(body.syncWarning).toContain('Truncated:');
+      // The truncation note must NOT surface as a hard error on lastSync.
+      expect(body.lastSync.error_message).toBeNull();
     });
   });
 });

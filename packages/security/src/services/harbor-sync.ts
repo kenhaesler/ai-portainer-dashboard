@@ -1,5 +1,6 @@
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { withSpan } from '@dashboard/core/tracing/trace-context.js';
+import { getConfig } from '@dashboard/core/config/index.js';
 import * as harbor from './harbor-client.js';
 import * as store from './harbor-vulnerability-store.js';
 import { getEndpoints, getContainers } from '@dashboard/core/portainer/portainer-client.js';
@@ -129,12 +130,16 @@ export async function runFullSync(): Promise<SyncResult> {
         const allVulns: harbor.HarborVulnerabilityItem[] = [];
         let page = 1;
         const pageSize = 100;
-        const maxPages = 500;
+        const maxPages = getConfig().HARBOR_MAX_PAGES;
         let hasMore = true;
+        let harborTotal = 0; // last known x-total-count from Harbor (0 = header absent)
 
         while (hasMore) {
           const result = await harbor.listVulnerabilities({ page, pageSize });
           allVulns.push(...result.items);
+
+          // Track the Harbor-reported total for truncation detection
+          if (result.total > 0) harborTotal = result.total;
 
           // Primary termination: fewer items than page size means last page
           if (result.items.length < pageSize) {
@@ -146,8 +151,9 @@ export async function runFullSync(): Promise<SyncResult> {
             page++;
           }
 
-          // Safety limit — configurable via maxPages (default 500 = 50k items)
-          if (page > maxPages) {
+          // Safety limit — configurable via HARBOR_MAX_PAGES (default 500 = 50k items).
+          // HARBOR_MAX_PAGES=0 disables the cap (rely on Harbor's last-page signal).
+          if (maxPages > 0 && page > maxPages) {
             log.warn({ maxPages, fetched: allVulns.length }, 'Hit pagination safety limit, stopping fetch');
             break;
           }
@@ -192,7 +198,11 @@ export async function runFullSync(): Promise<SyncResult> {
         const synced = await store.replaceAllVulnerabilities(inserts);
 
         const durationMs = Date.now() - startTime;
-        await store.completeSyncStatus(syncId, synced, inUseCount);
+        // Pass harborTotal so completeSyncStatus can flag truncation when
+        // synced < harborTotal (cap was hit before all items were fetched).
+        // Only pass when Harbor reported a total; otherwise undefined = no truncation check.
+        const expectedTotal = harborTotal > 0 ? harborTotal : undefined;
+        await store.completeSyncStatus(syncId, synced, inUseCount, expectedTotal);
 
         log.info(
           { vulnerabilitiesSynced: synced, inUseMatched: inUseCount, durationMs },

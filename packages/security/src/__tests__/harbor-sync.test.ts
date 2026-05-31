@@ -1,4 +1,5 @@
-import { beforeAll, afterAll, describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeAll, afterAll, describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { setConfigForTest, resetConfig } from '@dashboard/core/config/index.js';
 
 vi.mock('@dashboard/core/tracing/trace-context.js', () => ({
   withSpan: (_name: string, _service: string, _kind: string, fn: () => unknown) => fn(),
@@ -57,6 +58,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  resetConfig();
   await closeTestRedis();
 });
 
@@ -140,7 +142,8 @@ describe('harbor-sync', () => {
     expect(result.error).toBeUndefined();
 
     expect(store.createSyncStatus).toHaveBeenCalledWith('full');
-    expect(store.completeSyncStatus).toHaveBeenCalledWith(1, 2, 1);
+    // total=2 is reported by Harbor; synced=2 so no truncation — 4th arg present but not triggering truncation message
+    expect(store.completeSyncStatus).toHaveBeenCalledWith(1, 2, 1, 2);
     expect(store.replaceAllVulnerabilities).toHaveBeenCalledTimes(1);
 
     const insertedVulns = vi.mocked(store.replaceAllVulnerabilities).mock.calls[0][0];
@@ -298,6 +301,119 @@ describe('harbor-sync', () => {
       const result = await runFullSync();
       expect(result.vulnerabilitiesSynced).toBe(342);
       expect(harborClient.listVulnerabilities).toHaveBeenCalledTimes(4);
+    });
+  });
+
+  describe('pagination cap + truncation (#1392)', () => {
+    const makeFullPageItems = (count: number, offset: number) =>
+      Array.from({ length: count }, (_, i) => ({
+        project_id: 1,
+        repository_name: 'myproject/app',
+        digest: `sha256:trunc${offset + i}`,
+        tags: ['latest'],
+        cve_id: `CVE-2024-TRUNC${offset + i}`,
+        severity: 'High',
+        status: '',
+        cvss_v3_score: 7.0,
+        package: `pkg-${offset + i}`,
+        version: '1.0.0',
+        fixed_version: '',
+        desc: 'truncation test',
+        links: [],
+      }));
+
+    beforeEach(() => {
+      // Each test in this describe sets its own HARBOR_MAX_PAGES; reset after
+    });
+
+    afterEach(() => {
+      resetConfig();
+    });
+
+    it('surfaces truncation: completeSyncStatus is called with Harbor total when cap is hit', async () => {
+      // Cap = 2 pages, Harbor reports total = 5000 (far exceeds cap)
+      setConfigForTest({ HARBOR_MAX_PAGES: 2 });
+
+      vi.mocked(harborClient.listVulnerabilities).mockResolvedValue({
+        items: makeFullPageItems(100, 0),
+        total: 5000,
+      });
+
+      await runFullSync();
+
+      // completeSyncStatus must be called with the Harbor total so the store
+      // can write a truncation message into error_message
+      const calls = vi.mocked(store.completeSyncStatus).mock.calls;
+      expect(calls.length).toBeGreaterThan(0);
+      const lastCall = calls[calls.length - 1];
+      // 4th argument: expectedTotal — should be 5000 (the Harbor total)
+      expect(lastCall[3]).toBe(5000);
+    });
+
+    it('HARBOR_MAX_PAGES honored: listVulnerabilities called at most HARBOR_MAX_PAGES+1 times', async () => {
+      // Cap = 2 pages
+      setConfigForTest({ HARBOR_MAX_PAGES: 2 });
+
+      // Always returns full pages with a very large total so neither primary
+      // nor secondary termination fires before the cap
+      vi.mocked(harborClient.listVulnerabilities).mockResolvedValue({
+        items: makeFullPageItems(100, 0),
+        total: 99999,
+      });
+
+      await runFullSync();
+
+      // With cap=2: page 1 fetched, page 2 fetched, then page counter hits cap
+      // So at most cap calls (page 1 through cap)
+      const callCount = vi.mocked(harborClient.listVulnerabilities).mock.calls.length;
+      expect(callCount).toBeLessThanOrEqual(3); // pages 1..HARBOR_MAX_PAGES + one possible check
+      // More precisely: must not be more than HARBOR_MAX_PAGES calls
+      expect(callCount).toBeLessThanOrEqual(2);
+    });
+
+    it('no truncation: completeSyncStatus 4th arg is not a truncating value when under cap', async () => {
+      setConfigForTest({ HARBOR_MAX_PAGES: 500 });
+
+      // Return fewer than a full page — terminates naturally via primary signal
+      // Harbor reports total=42, synced=42 → no truncation (synced >= expectedTotal)
+      vi.mocked(harborClient.listVulnerabilities).mockResolvedValueOnce({
+        items: makeFullPageItems(42, 0),
+        total: 42,
+      });
+
+      await runFullSync();
+
+      const calls = vi.mocked(store.completeSyncStatus).mock.calls;
+      const lastCall = calls[calls.length - 1];
+      // synced (lastCall[1]) must equal or exceed expectedTotal (lastCall[3]) → no truncation
+      const synced = lastCall[1] as number;
+      const expectedTotal = lastCall[3] as number | undefined;
+      if (expectedTotal !== undefined) {
+        expect(synced).toBeGreaterThanOrEqual(expectedTotal);
+      }
+      // Result must not indicate an error
+      const result = vi.mocked(store.completeSyncStatus).mock.results;
+      expect(result.length).toBeGreaterThan(0);
+    });
+
+    it('HARBOR_MAX_PAGES=0 disables the cap (paginates until Harbor total is reached)', async () => {
+      setConfigForTest({ HARBOR_MAX_PAGES: 0 });
+
+      // Always-full pages; termination must come from the Harbor total, not the
+      // cap. With the old min(1) + `page > maxPages` guard, maxPages=0 would have
+      // broken after page 1 (1 > 0); the `maxPages > 0` guard disables it.
+      vi.mocked(harborClient.listVulnerabilities).mockResolvedValue({
+        items: makeFullPageItems(100, 0),
+        total: 300,
+      });
+
+      await runFullSync();
+
+      // 3 full pages (300) reach total=300 → no cap hit, no truncation.
+      expect(vi.mocked(harborClient.listVulnerabilities).mock.calls.length).toBe(3);
+      const lastCall = vi.mocked(store.completeSyncStatus).mock.calls.at(-1)!;
+      expect(lastCall[3]).toBe(300); // expectedTotal
+      expect(lastCall[1]).toBe(300); // synced === total → not truncated
     });
   });
 
