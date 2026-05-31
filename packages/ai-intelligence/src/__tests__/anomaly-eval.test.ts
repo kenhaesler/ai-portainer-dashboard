@@ -4,6 +4,7 @@ import {
   prAuc,
   scoreSeriesRobust,
   scoreSeriesZScore,
+  scoreSeriesSeasonalRobust,
 } from '../services/anomaly-eval.js';
 
 describe('precisionRecallF1', () => {
@@ -112,5 +113,63 @@ describe('PR-AUC regression guard — robust one-sided beats two-sided z-score (
 
     expect(robustAuc).toBeGreaterThan(zscoreAuc); // one-sided robustness win
     expect(robustAuc).toBeGreaterThan(0.5); // CI regression floor
+  });
+});
+
+describe('PR-AUC regression guard — seasonal (day-of-week) beats flat-trailing (#1307)', () => {
+  const HOURS_PER_WEEK = 24 * 7; // seasonal period (hourly samples)
+
+  // Strong weekly seasonality: weekday baseline 50, weekend baseline 15. A flat
+  // trailing window mistakes the regular weekday↔weekend steps for anomalies; a
+  // same-phase (same hour-of-week) baseline sees them as normal. Real spikes
+  // (+40 on weekday hours) are the only true anomalies.
+  function weeklySeasonalScenario() {
+    const WEEKS = 6;
+    const N = WEEKS * HOURS_PER_WEEK;
+    const values: number[] = [];
+    const labels: boolean[] = [];
+    const spikeAt = new Set([
+      4 * HOURS_PER_WEEK + 50, 4 * HOURS_PER_WEEK + 51,
+      5 * HOURS_PER_WEEK + 80, 5 * HOURS_PER_WEEK + 81, 5 * HOURS_PER_WEEK + 130,
+    ]);
+    let seed = 0x2bad_c0de;
+    const rng = () => {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      return seed / 0x7fffffff;
+    };
+    for (let i = 0; i < N; i++) {
+      const dayOfWeek = Math.floor(i / 24) % 7; // 0..6, 0/6 = weekend
+      const weekend = dayOfWeek === 0 || dayOfWeek === 6;
+      const baseline = weekend ? 15 : 50;
+      if (spikeAt.has(i)) { values.push(baseline + 40 + (rng() - 0.5)); labels.push(true); continue; }
+      values.push(baseline + (rng() - 0.5) * 2);
+      labels.push(false);
+    }
+    return { values, labels };
+  }
+
+  // Align two score arrays to the indices where BOTH produced a score.
+  function alignedEvaluable(a: Array<number | null>, b: Array<number | null>, labels: boolean[]) {
+    const sa: number[] = [];
+    const sb: number[] = [];
+    const l: boolean[] = [];
+    for (let i = 0; i < labels.length; i++) {
+      if (a[i] !== null && b[i] !== null) { sa.push(a[i]!); sb.push(b[i]!); l.push(labels[i]); }
+    }
+    return { sa, sb, l };
+  }
+
+  it('seasonal same-phase PR-AUC exceeds the flat trailing window and clears a floor', () => {
+    const { values, labels } = weeklySeasonalScenario();
+    // Flat trailing window of one day vs same-hour-of-week baseline.
+    const flat = scoreSeriesRobust(values, 24);
+    const seasonal = scoreSeriesSeasonalRobust(values, HOURS_PER_WEEK, 3);
+
+    const { sa: seasonalS, sb: flatS, l } = alignedEvaluable(seasonal, flat, labels);
+    const seasonalAuc = prAuc(seasonalS, l);
+    const flatAuc = prAuc(flatS, l);
+
+    expect(seasonalAuc).toBeGreaterThan(flatAuc); // weekly seasonality win
+    expect(seasonalAuc).toBeGreaterThan(0.5); // CI regression floor
   });
 });

@@ -24,14 +24,25 @@ Anomalies are detected per-container, per-metric from historical time-series. Th
 
 > Note (#1295): very stable services now use a **1.0×** multiplier (previously 1.2×). After upgrading, expect a one-time uptick in alerts on historically quiet, low-variance services — this is intentional and surfaces previously-suppressed anomalies.
 
-### Hour-of-day seasonal baseline (#1295)
+### Seasonal baseline: hour-of-day (#1295) + day-of-week (#1307)
 
-Instead of a single flat 24h baseline, the detector compares each observation against the baseline for the **same UTC hour** over a lookback window. This eliminates false positives during predictable diurnal ramps (morning traffic, nightly batch). When an hour bucket hasn't warmed up, it falls back to the flat baseline.
+Instead of a single flat 24h baseline, the detector compares each observation against the baseline for its **seasonal bucket**, falling back from the finest bucket that has data:
+
+1. **day-of-week × hour-of-day** (#1307) — e.g. Monday 09:00 vs previous Mondays 09:00, catching weekly patterns (weekday vs weekend traffic);
+2. **hour-of-day** (#1295) — same UTC hour over a lookback window, catching diurnal ramps;
+3. **flat trailing window** — the historical behavior.
+
+Each level falls through to the next when its bucket is below the warm-up threshold, so cold starts and sparse weekday buckets degrade gracefully.
+
+**Data source by detector (#1307):** the mean/std path (`getMovingAverageByHourOfDay`) reads TimescaleDB's `metrics_1hour` continuous aggregate and reconstructs the exact population mean + `STDDEV_POP` from the per-hour `avg`/`stddev`/`count` via the law of total variance (`poolHourlyBuckets`) — a few dozen rows instead of a full hypertable scan. The **robust median+MAD** path stays on the raw `metrics` hypertable (median+MAD needs raw samples; pooling daily hourly *averages* would understate the spread and over-flag), but a day-of-week filter narrows its query, so it scans *less*. The improvement is guarded in CI by a PR-AUC regression test (`anomaly-eval.ts`): a same-phase seasonal baseline must beat a flat trailing window on a weekly-seasonal series.
 
 | Variable | Default | Meaning |
 |----------|---------|---------|
 | `ANOMALY_HOUROFDAY_LOOKBACK_DAYS` | `14` | Days of history per hour-of-day bucket |
 | `ANOMALY_HOUROFDAY_MIN_SAMPLES` | `3` | Min samples in a bucket before it's used (else flat fallback) |
+| `ANOMALY_DAYOFWEEK_ENABLED` | `true` | Enable the day-of-week × hour-of-day layer; `false` keeps hour-of-day-only |
+| `ANOMALY_DAYOFWEEK_LOOKBACK_DAYS` | `28` | Days of history for the weekly bucket (≈ 4 same-weekday occurrences) |
+| `ANOMALY_DAYOFWEEK_MIN_SAMPLES` | `3` | Min samples in a weekday bucket before it's used (else hour-of-day fallback) |
 
 ### Core configuration
 

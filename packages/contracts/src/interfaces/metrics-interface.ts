@@ -48,6 +48,8 @@ export interface MetricsInterface {
     metricType: string,
     hourOfDay: number,
     lookbackDays: number,
+    /** Optional UTC day-of-week (0=Sun..6=Sat) for week-aware seasonality (#1307). */
+    dayOfWeek?: number,
   ): Promise<MovingAverageResult | null>;
 
   /**
@@ -71,6 +73,8 @@ export interface MetricsInterface {
     metricType: string,
     hourOfDay: number,
     lookbackDays: number,
+    /** Optional UTC day-of-week (0=Sun..6=Sat); narrows the raw window (#1307). */
+    dayOfWeek?: number,
   ): Promise<number[]>;
 
   /** Retrieve top-N capacity forecasts sorted by urgency. */
