@@ -286,8 +286,6 @@ describe('normalizeEndpoint — Edge Agent fields', () => {
       expect(ep.containersRunning).toBe(0);
       expect(ep.containersStopped).toBe(0);
       expect(ep.totalContainers).toBe(0);
-      expect(ep.containersHealthy).toBe(0);
-      expect(ep.containersUnhealthy).toBe(0);
       expect(ep.stackCount).toBe(0);
       expect(ep.totalCpu).toBe(0);
       expect(ep.totalMemory).toBe(0);

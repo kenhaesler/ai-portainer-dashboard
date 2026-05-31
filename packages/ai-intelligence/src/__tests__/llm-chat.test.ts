@@ -889,12 +889,12 @@ describe('setupLlmNamespace — infrastructure context from live fleet data', ()
         {
           id: 1, name: 'prod', status: 'up',
           containersRunning: 5, containersStopped: 2,
-          containersUnhealthy: 1, stackCount: 3,
+          stackCount: 3,
         },
         {
           id: 2, name: 'staging', status: 'up',
           containersRunning: 2, containersStopped: 1,
-          containersUnhealthy: 0, stackCount: 1,
+          stackCount: 1,
         },
       ],
       containers: [],

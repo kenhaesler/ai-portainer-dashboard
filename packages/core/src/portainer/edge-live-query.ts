@@ -173,7 +173,3 @@ export async function fetchLiveDockerInfo(
     return null;
   }
 }
-
-// Back-compat aliases — existing importers keep compiling until they are migrated.
-export const fetchEdgeLiveDockerInfo = fetchLiveDockerInfo;
-export type EdgeDockerInfo = LiveDockerInfo;

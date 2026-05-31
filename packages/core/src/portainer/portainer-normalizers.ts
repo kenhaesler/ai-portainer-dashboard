@@ -19,8 +19,6 @@ export interface NormalizedEndpoint {
   status: 'up' | 'down';
   containersRunning: number;
   containersStopped: number;
-  containersHealthy: number;
-  containersUnhealthy: number;
   totalContainers: number;
   stackCount: number;
   totalCpu: number;
@@ -158,8 +156,6 @@ export function normalizeEndpoint(ep: Endpoint): NormalizedEndpoint {
     status,
     containersRunning: 0,
     containersStopped: 0,
-    containersHealthy: 0,
-    containersUnhealthy: 0,
     totalContainers: 0,
     stackCount: 0,
     totalCpu: 0,
@@ -188,18 +184,6 @@ export function normalizeEndpoint(ep: Endpoint): NormalizedEndpoint {
  */
 export function endpointSupportsLiveDockerInfo(ep: NormalizedEndpoint): boolean {
   return ep.status === 'up' && isDockerEndpoint(ep.type);
-}
-
-/** @deprecated Use endpointSupportsLiveDockerInfo. Kept until packages/foundation/src/services/edge-live-enrichment.ts is removed. */
-export function endpointNeedsLiveFallback(ep: NormalizedEndpoint): boolean {
-  return (
-    ep.isEdge &&
-    ep.edgeMode === 'standard' &&
-    ep.status === 'up' &&
-    ep.totalContainers === 0 &&
-    ep.containersRunning === 0 &&
-    ep.containersStopped === 0
-  );
 }
 
 /** Live `/docker/info` payload shape — narrow enough to keep this file zero-dependency. */

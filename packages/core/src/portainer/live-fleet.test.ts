@@ -7,7 +7,7 @@ import type { NormalizedEndpoint, NormalizedContainer } from './portainer-normal
 function ep(partial: Partial<NormalizedEndpoint>): NormalizedEndpoint {
   return {
     id: 1, name: 'e', type: 1, url: '', status: 'up',
-    containersRunning: 0, containersStopped: 0, containersHealthy: 0, containersUnhealthy: 0,
+    containersRunning: 0, containersStopped: 0,
     totalContainers: 0, stackCount: 0, totalCpu: 0, totalMemory: 0,
     isEdge: false, edgeMode: null, snapshotAge: null, checkInInterval: null,
     capabilities: { exec: true, realtimeLogs: true, liveStats: true, immediateActions: true },
