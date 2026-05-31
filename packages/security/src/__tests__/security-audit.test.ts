@@ -132,6 +132,21 @@ describe('security-audit service', () => {
       expect(isIgnoredContainer('app-svc-prod', ['app*-prod'])).toBe(true);
     });
 
+    it('handles multiple wildcards via the middle segment branch (a*b*c)', () => {
+      // Multi-`*` patterns exercise the interior indexOf branch of matchesPattern
+      // (a fixed segment that is neither the anchored prefix nor suffix). Each
+      // case mirrors the old `^a.*b.*c$` regex semantics.
+      expect(isIgnoredContainer('axbxc', ['a*b*c'])).toBe(true);   // a … b … c, in order
+      expect(isIgnoredContainer('abc', ['a*b*c'])).toBe(true);     // empty `.*` between segments
+      expect(isIgnoredContainer('ac', ['a*b*c'])).toBe(false);     // middle `b` absent
+      expect(isIgnoredContainer('acb', ['a*b*c'])).toBe(false);    // segments out of order
+      expect(isIgnoredContainer('xabc', ['a*b*c'])).toBe(false);   // must start at the prefix
+      expect(isIgnoredContainer('abcd', ['a*b*c'])).toBe(false);   // must end at the suffix
+      // Realistic shape: env-tagged service with two wildcards.
+      expect(isIgnoredContainer('svc-api-prod-1', ['svc*api*prod*'])).toBe(true);
+      expect(isIgnoredContainer('svc-web-prod-1', ['svc*api*prod*'])).toBe(false);
+    });
+
     it('preserves single-anchor wildcard shapes', () => {
       // prefix-anchored: foo*
       expect(isIgnoredContainer('nginx-proxy', ['nginx*'])).toBe(true);
