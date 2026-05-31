@@ -334,6 +334,7 @@ export function createMonitoringService(deps: MonitoringDeps) {
         deps.metrics.getMovingAverage,
         deps.metrics.getMovingAverageByHourOfDay,
         deps.metrics.getMetricWindow,
+        deps.metrics.getMetricWindowByHourOfDay,
       );
 
       // Process batch results with cooldown checks

@@ -206,6 +206,32 @@ describe('adaptive-anomaly-detector', () => {
         expect(spike!.is_anomalous).toBe(true);
         expect(tiny!.is_anomalous).toBe(false); // within 10% tolerance of median
       });
+
+      // #1362 review — keep #1295 seasonality: prefer the hour-of-day window.
+      it('uses the hour-of-day window when it has enough samples (not the flat window)', async () => {
+        const flat = vi.fn().mockResolvedValue(Array(30).fill(50)); // MAD 0 → would not flag 80? it would via tolerance
+        const hourly = vi.fn().mockResolvedValue(spread()); // median 50, MAD 4
+        const r = await detectAnomalyRobust('c1', 'web', 'cpu', 80, flat, hourly);
+        expect(hourly).toHaveBeenCalledWith('c1', 'cpu', expect.any(Number), 14); // (hourOfDay, lookbackDays)
+        expect(flat).not.toHaveBeenCalled();
+        expect(r!.is_anomalous).toBe(true);
+      });
+
+      it('falls back to the flat window when the hour bucket is below the warm-up threshold', async () => {
+        const flat = vi.fn().mockResolvedValue(spread());
+        const hourly = vi.fn().mockResolvedValue([50, 50]); // < ANOMALY_HOUROFDAY_MIN_SAMPLES (3)
+        const r = await detectAnomalyRobust('c1', 'web', 'cpu', 80, flat, hourly);
+        expect(hourly).toHaveBeenCalled();
+        expect(flat).toHaveBeenCalledWith('c1', 'cpu', 30);
+        expect(r!.is_anomalous).toBe(true);
+      });
+
+      it('uses the flat window when no hour-of-day fetcher is injected (back-compat)', async () => {
+        const flat = vi.fn().mockResolvedValue(spread());
+        const r = await detectAnomalyRobust('c1', 'web', 'cpu', 80, flat);
+        expect(flat).toHaveBeenCalledWith('c1', 'cpu', 30);
+        expect(r!.method).toBe('robust-mad');
+      });
     });
 
     it('falls back from bollinger to zscore when bollinger is disabled', async () => {

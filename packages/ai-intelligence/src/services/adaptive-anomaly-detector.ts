@@ -26,6 +26,14 @@ export type GetMetricWindowFn = (
   windowSize: number,
 ) => Promise<number[]>;
 
+/** Fetches the raw hour-of-day window (newest-first, excludes the point under test). */
+export type GetMetricWindowByHourOfDayFn = (
+  containerId: string,
+  metricType: string,
+  hourOfDay: number,
+  lookbackDays: number,
+) => Promise<number[]>;
+
 interface BollingerBands {
   upper: number;
   middle: number;
@@ -185,9 +193,13 @@ export async function detectAnomalyAdaptive(
  * Robust median+MAD detection (#1362). Uses the modified z-score
  * (Iglewicz–Hoaglin) over the RAW trailing window so outliers in the baseline
  * neither mask a real anomaly nor poison the band — unlike the mean/std
- * detectors. One-sided by default (`ANOMALY_DETECTION_DIRECTION`). The window
- * comes from `getMetricWindow`, which already excludes the point under test
- * (#1361 fix 2).
+ * detectors. One-sided by default (`ANOMALY_DETECTION_DIRECTION`).
+ *
+ * Baseline (#1362 review): prefer the hour-of-day window so robust detection
+ * keeps #1295's seasonality handling — a diurnal ramp is compared against the
+ * same hour historically, not flagged as a deviation. Falls back to the flat
+ * trailing window during warm-up or when no hour-of-day fetcher is injected.
+ * Both windows already exclude the point under test (#1361 fix 2).
  */
 export async function detectAnomalyRobust(
   containerId: string,
@@ -195,6 +207,7 @@ export async function detectAnomalyRobust(
   metricType: string,
   currentValue: number,
   getMetricWindow: GetMetricWindowFn,
+  getMetricWindowByHourOfDay?: GetMetricWindowByHourOfDayFn,
   now: Date = new Date(),
 ): Promise<AnomalyDetection | null> {
   const config = getConfig();
@@ -202,11 +215,30 @@ export async function detectAnomalyRobust(
   const direction = config.ANOMALY_DETECTION_DIRECTION;
   const windowSize = config.ANOMALY_MOVING_AVERAGE_WINDOW;
   const minSamples = config.ANOMALY_MIN_SAMPLES;
+  const lookbackDays = config.ANOMALY_HOUROFDAY_LOOKBACK_DAYS;
+  const minHourSamples = config.ANOMALY_HOUROFDAY_MIN_SAMPLES;
 
-  const window = await getMetricWindow(containerId, metricType, windowSize);
+  let window: number[] = [];
+  let usedHourOfDay = false;
+  if (getMetricWindowByHourOfDay) {
+    const hourly = await getMetricWindowByHourOfDay(
+      containerId,
+      metricType,
+      now.getUTCHours(),
+      lookbackDays,
+    );
+    if (hourly.length >= minHourSamples) {
+      window = hourly;
+      usedHourOfDay = true;
+    }
+  }
+  if (!usedHourOfDay) {
+    window = await getMetricWindow(containerId, metricType, windowSize);
+  }
+
   if (window.length < minSamples) {
     log.debug(
-      { containerId, metricType, sampleCount: window.length, minSamples },
+      { containerId, metricType, sampleCount: window.length, minSamples, usedHourOfDay },
       'Insufficient samples for robust detection',
     );
     return null;
@@ -230,7 +262,7 @@ export async function detectAnomalyRobust(
 
   if (isAnomalous) {
     log.warn(
-      { containerId, metricType, currentValue, median, mad, zScore, threshold },
+      { containerId, metricType, currentValue, median, mad, zScore, threshold, usedHourOfDay },
       'Anomaly detected (robust-mad)',
     );
   }
@@ -289,32 +321,38 @@ export async function detectAnomaliesBatch(
   getMovingAverage?: GetMovingAverageFn,
   getMovingAverageByHourOfDay?: GetMovingAverageByHourOfDayFn,
   getMetricWindow?: GetMetricWindowFn,
+  getMetricWindowByHourOfDay?: GetMetricWindowByHourOfDayFn,
 ): Promise<Map<string, AnomalyDetection>> {
   const results = new Map<string, AnomalyDetection>();
   if (items.length === 0) return results;
 
+  // Robust median+MAD (#1362) requires the raw window. If 'robust-mad' is
+  // selected but no window fetcher was injected, fall back to 'adaptive'
+  // (mean/std) rather than mislabelling a z-score result as robust-mad.
+  const robust = method === 'robust-mad' && !!getMetricWindow;
+  const fallbackMethod: DetectionMethod | undefined =
+    method === 'robust-mad' ? 'adaptive' : method;
+
   const settled = await Promise.allSettled(
     items.map(async (item) => {
-      // Route to robust median+MAD when selected (#1362); otherwise the
-      // mean/std adaptive path. Robust needs the raw window, not aggregates.
-      const detection =
-        method === 'robust-mad' && getMetricWindow
-          ? await detectAnomalyRobust(
-              item.containerId,
-              item.containerName,
-              item.metricType,
-              item.currentValue,
-              getMetricWindow,
-            )
-          : await detectAnomalyAdaptive(
-              item.containerId,
-              item.containerName,
-              item.metricType,
-              item.currentValue,
-              method,
-              getMovingAverage,
-              getMovingAverageByHourOfDay,
-            );
+      const detection = robust
+        ? await detectAnomalyRobust(
+            item.containerId,
+            item.containerName,
+            item.metricType,
+            item.currentValue,
+            getMetricWindow!,
+            getMetricWindowByHourOfDay,
+          )
+        : await detectAnomalyAdaptive(
+            item.containerId,
+            item.containerName,
+            item.metricType,
+            item.currentValue,
+            fallbackMethod,
+            getMovingAverage,
+            getMovingAverageByHourOfDay,
+          );
       return { key: `${item.containerId}:${item.metricType}`, detection };
     }),
   );

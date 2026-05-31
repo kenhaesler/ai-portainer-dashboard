@@ -200,6 +200,42 @@ export async function getMovingAverageByHourOfDay(
   };
 }
 
+/**
+ * Raw hour-of-day window: metric values whose timestamp falls in the supplied
+ * UTC hour-of-day over the last N days, newest-first, EXCLUDING the most recent
+ * sample (the point under test). Robust detection (#1362) uses this to keep the
+ * #1295 seasonality handling while computing median + MAD instead of mean/std.
+ * Returns [] for an out-of-range hour, bad lookback, or empty bucket.
+ */
+export async function getMetricWindowByHourOfDay(
+  containerId: string,
+  metricType: string,
+  hourOfDay: number,
+  lookbackDays: number,
+): Promise<number[]> {
+  if (!Number.isInteger(hourOfDay) || hourOfDay < 0 || hourOfDay > 23) {
+    return [];
+  }
+  if (!Number.isFinite(lookbackDays) || lookbackDays <= 0) {
+    return [];
+  }
+  const db = await getMetricsDb();
+  const { rows } = await db.query(
+    `SELECT value FROM metrics
+     WHERE container_id = $1
+       AND metric_type = $2
+       AND timestamp >= NOW() - ($3::int * INTERVAL '1 day')
+       AND date_part('hour', timestamp AT TIME ZONE 'UTC') = $4
+       AND timestamp < (
+         SELECT MAX(timestamp) FROM metrics
+         WHERE container_id = $1 AND metric_type = $2
+       )
+     ORDER BY timestamp DESC`,
+    [containerId, metricType, lookbackDays, hourOfDay],
+  );
+  return (rows as Array<{ value: number }>).map((r) => Number(r.value));
+}
+
 export async function cleanOldMetrics(retentionDays: number): Promise<number> {
   // TimescaleDB retention is handled by policies, but this provides manual cleanup
   const db = await getMetricsDb();
