@@ -584,7 +584,6 @@ describe('scheduler/setup – runCleanup prunes the LLM canary registry (#1119)'
   });
 });
 
-<<<<<<< HEAD
 describe('scheduler/setup – warmCache (#1393)', () => {
   it('pre-warms per-endpoint stacks for Docker endpoints only, alongside containers', async () => {
     getEndpointsMock.mockResolvedValueOnce([
@@ -599,7 +598,9 @@ describe('scheduler/setup – warmCache (#1393)', () => {
     expect(getStacksByEndpointMock).not.toHaveBeenCalledWith(5);
     // Containers warm-up still happens for the Docker endpoint (unchanged).
     expect(getContainersMock).toHaveBeenCalledWith(1);
-=======
+  });
+});
+
 describe('runKpiSnapshotCollection', () => {
   it('inserts a KPI snapshot built from live fleet totals', async () => {
     vi.spyOn(liveFleet, 'collectFleetOverview').mockResolvedValue({
@@ -615,6 +616,5 @@ describe('runKpiSnapshotCollection', () => {
   it('does not throw if collectFleetOverview rejects', async () => {
     vi.spyOn(liveFleet, 'collectFleetOverview').mockRejectedValue(new Error('portainer down'));
     await expect(runKpiSnapshotCollection()).resolves.toBeUndefined();
->>>>>>> origin/dev
   });
 });
