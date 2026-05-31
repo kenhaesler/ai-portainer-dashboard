@@ -1,6 +1,23 @@
 import { beforeAll, afterAll, describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { setConfigForTest, resetConfig } from '@dashboard/core/config/index.js';
 
+// Kept: logger mock — lets us assert the scheduler's per-container failure
+// warning (#1389). createChildLogger returns a logger whose `warn` is a
+// stable, shared spy, so the scheduler's module-level `log.warn` is
+// observable in tests.
+const { warnSpy } = vi.hoisted(() => ({ warnSpy: vi.fn() }));
+vi.mock('@dashboard/core/utils/logger.js', () => {
+  const makeLogger = () => {
+    const l: Record<string, unknown> = {
+      trace: vi.fn(), debug: vi.fn(), info: vi.fn(),
+      warn: warnSpy, error: vi.fn(), fatal: vi.fn(),
+    };
+    l.child = () => l;
+    return l;
+  };
+  return { createChildLogger: () => makeLogger(), logger: makeLogger() };
+});
+
 // ---------------------------------------------------------------------------
 // Kept mocks — internal services the scheduler depends on
 // ---------------------------------------------------------------------------
@@ -346,6 +363,39 @@ describe('scheduler/setup – runMetricsCollection', () => {
     // Should still insert metrics for the 2 successful containers
     expect(insertMetricsMock).toHaveBeenCalledTimes(1);
     expect(insertMetricsMock.mock.calls[0][0]).toHaveLength(10); // 2 containers x 5 metrics
+  });
+
+  it('logs the failing container id, name, and reason — not just a count (#1389)', async () => {
+    warnSpy.mockClear();
+    getEndpointsMock.mockResolvedValueOnce([{ Id: 1, Name: 'ep1', Status: 1, Type: 1, URL: 'tcp://localhost' }] as any);
+    getContainersMock.mockResolvedValueOnce([
+      { Id: 'ok-1', Names: ['/app-a'], State: 'running' },
+      { Id: 'fail-1', Names: ['/app-b'], State: 'running' },
+    ] as any);
+    collectMetricsMock
+      .mockResolvedValueOnce({ cpu: 10, memory: 20, memoryBytes: 100, networkRxBytes: 0, networkTxBytes: 0 })
+      .mockRejectedValueOnce(new Error('container gone'));
+
+    await runMetricsCollection();
+
+    const failureWarn = warnSpy.mock.calls.find(
+      (call) => call[1] === 'Failed to collect metrics for some containers',
+    );
+    expect(failureWarn, 'expected a per-container failure warning to be logged').toBeDefined();
+
+    const payload = failureWarn![0] as {
+      endpointId: number;
+      failedContainers: number;
+      totalContainers: number;
+      failures: Array<{ containerId: string; containerName: string; reason: string }>;
+    };
+    expect(payload.endpointId).toBe(1);
+    expect(payload.failedContainers).toBe(1);
+    expect(payload.totalContainers).toBe(2);
+    // The whole point of #1389: the operator must see WHICH container failed and WHY.
+    expect(payload.failures).toEqual([
+      { containerId: 'fail-1', containerName: 'app-b', reason: 'container gone' },
+    ]);
   });
 
   it('handles entire endpoint failure gracefully', async () => {

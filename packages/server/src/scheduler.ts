@@ -51,25 +51,53 @@ async function collectEndpointMetrics(
   const running = containers.filter((c) => c.State === 'running');
 
   const containerLimit = pLimit(containerConcurrency);
+  // Catch per-container so a single failure carries its container identity
+  // through to the warn log below (#1389) — a bare Promise rejection would
+  // lose which container failed, leaving only an unactionable count.
   const results = await Promise.allSettled(
     running.map((container) =>
       containerLimit(async () => {
-        const stats = await collectMetrics(endpointId, container.Id);
         const containerName =
           container.Names?.[0]?.replace(/^\//, '') || container.Id.slice(0, 12);
-        return { stats, container, containerName };
+        try {
+          const stats = await collectMetrics(endpointId, container.Id);
+          return { ok: true as const, stats, container, containerName };
+        } catch (err) {
+          return {
+            ok: false as const,
+            container,
+            containerName,
+            reason: err instanceof Error ? err.message : String(err),
+          };
+        }
       }),
     ),
   );
 
   const metrics: MetricInsert[] = [];
-  let containerMetricsFailures = 0;
+  const failures: { containerId: string; containerName: string; reason: string }[] = [];
   for (const result of results) {
     if (result.status === 'rejected') {
-      containerMetricsFailures++;
+      // The mapped fn catches its own errors, so a rejection here is
+      // unexpected (e.g. the concurrency limiter itself threw) — record it
+      // without container identity rather than dropping it silently.
+      failures.push({
+        containerId: 'unknown',
+        containerName: 'unknown',
+        reason: result.reason instanceof Error ? result.reason.message : String(result.reason),
+      });
       continue;
     }
-    const { stats, container, containerName } = result.value;
+    const value = result.value;
+    if (!value.ok) {
+      failures.push({
+        containerId: value.container.Id,
+        containerName: value.containerName,
+        reason: value.reason,
+      });
+      continue;
+    }
+    const { stats, container, containerName } = value;
     // Feed in-memory rate tracker (works without TimescaleDB)
     recordNetworkSample(endpointId, container.Id, stats.networkRxBytes, stats.networkTxBytes);
     metrics.push(
@@ -110,9 +138,9 @@ async function collectEndpointMetrics(
       },
     );
   }
-  if (containerMetricsFailures > 0) {
+  if (failures.length > 0) {
     log.warn(
-      { failedContainers: containerMetricsFailures, totalContainers: running.length, endpointId },
+      { endpointId, failedContainers: failures.length, totalContainers: running.length, failures },
       'Failed to collect metrics for some containers',
     );
   }
