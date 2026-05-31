@@ -15,10 +15,10 @@ vi.mock('@dashboard/core/portainer/portainer-cache.js', async (importOriginal) =
   };
 });
 // Stub the edge live-query boundary so the route test can drive enrichment
-// outcomes without a real Portainer tunnel (issue #1249). The settings-store
-// is also stubbed so getEffectiveEdgeLiveQueryConfig doesn't try to hit the DB.
+// outcomes without a real Portainer tunnel. The settings-store is also stubbed
+// so getEffectiveEdgeLiveQueryConfig doesn't try to hit the DB.
 vi.mock('@dashboard/core/portainer/edge-live-query.js', () => ({
-  fetchEdgeLiveDockerInfo: vi.fn(),
+  fetchLiveDockerInfo: vi.fn(),
 }));
 vi.mock('@dashboard/core/services/settings-store.js', () => ({
   getEffectiveEdgeLiveQueryConfig: vi.fn().mockResolvedValue({
@@ -27,8 +27,8 @@ vi.mock('@dashboard/core/services/settings-store.js', () => ({
 }));
 
 import * as portainerClient from '@dashboard/core/portainer/portainer-client.js';
-import { fetchEdgeLiveDockerInfo } from '@dashboard/core/portainer/edge-live-query.js';
-const mockEdgeFetch = vi.mocked(fetchEdgeLiveDockerInfo);
+import { fetchLiveDockerInfo } from '@dashboard/core/portainer/edge-live-query.js';
+const mockLiveFetch = vi.mocked(fetchLiveDockerInfo);
 
 const fakeEndpoint = (id: number, name: string, type = 1, status = 1) => ({
   Id: id,
@@ -63,7 +63,8 @@ describe('Endpoints Routes', () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
-    mockEdgeFetch.mockReset();
+    mockLiveFetch.mockReset();
+    vi.spyOn(portainerClient, 'getStacks').mockResolvedValue([] as never);
   });
 
   describe('GET /api/endpoints', () => {
@@ -154,80 +155,39 @@ describe('Endpoints Routes', () => {
       expect(response.statusCode).toBe(502);
     });
 
-    // Issue #1249 — end-to-end: an Edge Standard endpoint with empty Snapshots[]
-    // must surface live counts via the enrichment path, not 0/0/0.
-    it('enriches Edge Standard endpoints with empty Snapshots[] via the live fallback', async () => {
-      vi.spyOn(portainerClient, 'getEndpoints').mockResolvedValue([
-        {
-          Id: 7,
-          Name: 'srv-edge-01',
-          Type: 4,
-          Status: 1,
-          Snapshots: [],
-          EdgeID: 'edge-abc',
-          // Recent check-in keeps the normalizer's heartbeat check happy
-          LastCheckInDate: Math.floor(Date.now() / 1000) - 5,
-          EdgeCheckinInterval: 5,
-        } as any,
-      ]);
-      mockEdgeFetch.mockResolvedValueOnce({
-        containers: 12, containersRunning: 9, containersStopped: 3, fetchedAt: 1_700_000_000_000,
-      });
-
-      const response = await app.inject({
-        method: 'GET',
-        url: '/api/endpoints',
-        headers: { authorization: 'Bearer test' },
-      });
-
-      expect(response.statusCode).toBe(200);
-      const body = JSON.parse(response.body);
-      expect(body).toHaveLength(1);
-      expect(body[0].id).toBe(7);
-      expect(body[0].snapshotSource).toBe('live');
-      expect(body[0].containersRunning).toBe(9);
-      expect(body[0].containersStopped).toBe(3);
-      expect(body[0].totalContainers).toBe(12);
-      expect(body[0].snapshotFetchedAt).toBe(1_700_000_000_000);
-      expect(mockEdgeFetch).toHaveBeenCalledTimes(1);
+    it('enriches up Docker endpoints with live counts and live stack counts', async () => {
+      vi.spyOn(portainerClient, 'getEndpoints').mockResolvedValue([fakeEndpoint(1, 'local', 1, 1)] as never);
+      vi.spyOn(portainerClient, 'getStacks').mockResolvedValue([{ EndpointId: 1 }, { EndpointId: 1 }] as never);
+      mockLiveFetch.mockResolvedValue({ containers: 12, containersRunning: 9, containersStopped: 3, ncpu: 8, memTotal: 16e9, fetchedAt: Date.now() });
+      const res = await app.inject({ method: 'GET', url: '/api/endpoints' });
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body[0]).toMatchObject({ snapshotSource: 'live', containersRunning: 9, containersStopped: 3, totalContainers: 12, totalCpu: 8, stackCount: 2 });
+      expect(mockLiveFetch).toHaveBeenCalledTimes(1);
     });
 
-    it('marks an Edge Standard endpoint as unavailable when live fetch returns null', async () => {
-      vi.spyOn(portainerClient, 'getEndpoints').mockResolvedValue([
-        {
-          Id: 8, Name: 'srv-edge-broken', Type: 4, Status: 1, Snapshots: [],
-          EdgeID: 'edge-broken',
-          LastCheckInDate: Math.floor(Date.now() / 1000) - 5,
-          EdgeCheckinInterval: 5,
-        } as any,
-      ]);
-      mockEdgeFetch.mockResolvedValueOnce(null);
-
-      const response = await app.inject({
-        method: 'GET',
-        url: '/api/endpoints',
-        headers: { authorization: 'Bearer test' },
-      });
-
-      expect(response.statusCode).toBe(200);
-      const body = JSON.parse(response.body);
-      expect(body[0].snapshotSource).toBe('unavailable');
-      expect(body[0].containersRunning).toBe(0);
-      expect(body[0].totalContainers).toBe(0);
+    it('marks an endpoint unavailable when the live fetch returns null', async () => {
+      vi.spyOn(portainerClient, 'getEndpoints').mockResolvedValue([fakeEndpoint(1, 'local', 1, 1)] as never);
+      vi.spyOn(portainerClient, 'getStacks').mockResolvedValue([] as never);
+      mockLiveFetch.mockResolvedValue(null);
+      const body = (await app.inject({ method: 'GET', url: '/api/endpoints' })).json();
+      expect(body[0]).toMatchObject({ snapshotSource: 'unavailable', containersRunning: 0, stackCount: 0 });
     });
 
-    it('does not call the live fetcher for non-Edge endpoints', async () => {
-      vi.spyOn(portainerClient, 'getEndpoints').mockResolvedValue([
-        { Id: 1, Name: 'local', Type: 1, Status: 1, Snapshots: [], EdgeID: null } as any,
-      ]);
+    it('still returns 200 with stackCount 0 when the stacks fetch fails', async () => {
+      vi.spyOn(portainerClient, 'getEndpoints').mockResolvedValue([fakeEndpoint(1, 'local', 1, 1)] as never);
+      vi.spyOn(portainerClient, 'getStacks').mockRejectedValue(new Error('stacks down'));
+      mockLiveFetch.mockResolvedValue({ containers: 2, containersRunning: 2, containersStopped: 0, ncpu: 1, memTotal: 1, fetchedAt: Date.now() });
+      const res = await app.inject({ method: 'GET', url: '/api/endpoints' });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()[0]).toMatchObject({ snapshotSource: 'live', containersRunning: 2, stackCount: 0 });
+    });
 
-      await app.inject({
-        method: 'GET',
-        url: '/api/endpoints',
-        headers: { authorization: 'Bearer test' },
-      });
-
-      expect(mockEdgeFetch).not.toHaveBeenCalled();
+    it('does not live-fetch K8s or down endpoints', async () => {
+      vi.spyOn(portainerClient, 'getEndpoints').mockResolvedValue([fakeEndpoint(5, 'k8s', 5, 1), fakeEndpoint(2, 'downdocker', 1, 2)] as never);
+      vi.spyOn(portainerClient, 'getStacks').mockResolvedValue([] as never);
+      await app.inject({ method: 'GET', url: '/api/endpoints' });
+      expect(mockLiveFetch).not.toHaveBeenCalled();
     });
 
     it('requires authentication', async () => {
