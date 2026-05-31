@@ -690,6 +690,86 @@ describe('Rate Limiting Verification', () => {
   });
 });
 
+// =====================================================================
+//  OBSERVER READ ALLOWLIST — startup 429 burst regression (#1386)
+// =====================================================================
+// The global rate limiter must NOT count read-only GET requests on these
+// prefixes against the API_RATE_LIMIT bucket, so that normal observer
+// activity on startup never triggers 429s.
+// Mutating verbs (POST/PUT/DELETE) on the same prefixes are still limited
+// because shouldBypassGlobalRateLimit() is GET-only.
+describe('Observer Read Allowlist — startup 429 prevention (#1386)', () => {
+  const OBSERVER_GET_PREFIXES: Array<{ route: string; url: string }> = [
+    { route: '/api/incidents/groups',       url: '/api/incidents/groups' },
+    { route: '/api/llm/feedback/stats',     url: '/api/llm/feedback/stats' },
+    { route: '/api/ebpf/coverage/summary',  url: '/api/ebpf/coverage/summary' },
+    { route: '/api/kubernetes/summary',     url: '/api/kubernetes/summary' },
+    { route: '/api/harbor/status',          url: '/api/harbor/status' },
+    { route: '/api/auth/oidc/status',       url: '/api/auth/oidc/status' },
+  ];
+
+  const BURST = 5; // more than the artificially low API_RATE_LIMIT below
+
+  it('GET requests on observer prefixes bypass the global rate limit (all return 200, never 429)', async () => {
+    setConfigForTest({ API_RATE_LIMIT: 3 });
+
+    try {
+      for (const { route, url } of OBSERVER_GET_PREFIXES) {
+        const app = Fastify({ logger: false });
+        await app.register(rateLimitPlugin);
+        app.get(route, async () => ({ ok: true }));
+        await app.ready();
+
+        try {
+          for (let i = 0; i < BURST; i++) {
+            const res = await app.inject({ method: 'GET', url });
+            expect(
+              res.statusCode,
+              `GET ${url} (attempt ${i + 1}) should not be rate-limited`,
+            ).toBe(200);
+          }
+        } finally {
+          await app.close();
+        }
+      }
+    } finally {
+      setConfigForTest({ API_RATE_LIMIT: 1200 });
+    }
+  });
+
+  it('POST on an observer-prefix path is still rate-limited (mutating verbs not exempt)', async () => {
+    setConfigForTest({ API_RATE_LIMIT: 3 });
+
+    try {
+      const app = Fastify({ logger: false });
+      await app.register(rateLimitPlugin);
+      // POST /api/harbor/sync — a mutating action on an observer-list prefix
+      app.post('/api/harbor/sync', async () => ({ ok: true }));
+      await app.ready();
+
+      try {
+        let rateLimitedResponse = null;
+        for (let i = 0; i <= BURST; i++) {
+          const res = await app.inject({ method: 'POST', url: '/api/harbor/sync' });
+          if (res.statusCode === 429) {
+            rateLimitedResponse = res;
+            break;
+          }
+        }
+        expect(
+          rateLimitedResponse,
+          'POST /api/harbor/sync must be rate-limited when the global limit is exceeded',
+        ).not.toBeNull();
+        expect(rateLimitedResponse!.statusCode).toBe(429);
+      } finally {
+        await app.close();
+      }
+    } finally {
+      setConfigForTest({ API_RATE_LIMIT: 1200 });
+    }
+  });
+});
+
 // ─── Trust Proxy & Client IP Identification (#1099) ───────────────────
 // Validates that Fastify is constructed with `trustProxy` enabled so that
 // `request.ip` reflects the real client IP from `X-Forwarded-For`, not the

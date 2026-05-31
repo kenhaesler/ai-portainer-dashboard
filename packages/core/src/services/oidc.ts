@@ -62,6 +62,18 @@ let cachedConfigExpiry = 0;
 const STATE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const CONFIG_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
+// Hard upper bound on the in-memory state store. `GET /api/auth/oidc/status` is
+// unauthenticated and — once OIDC is enabled — side-effecting: it calls
+// generateAuthorizationUrl(), which inserts a state entry here. #1386 exempted
+// that GET from the global rate limit (to stop a startup 429 burst), removing
+// its only throttle. Without this cap an attacker could hammer the status GET to
+// inflate the Map within the 5-minute TTL window = a memory-pressure DoS. The
+// cap is intentionally far above any realistic count of concurrent in-flight
+// logins, so legitimate flows are never evicted under normal load; on overflow
+// we evict the OLDEST entry (insertion order) — closest to TTL expiry — which
+// preserves freshly-created, in-flight login state.
+export const OIDC_STATE_STORE_MAX = 10_000;
+
 /**
  * Clean expired state entries. Called on each request.
  */
@@ -72,6 +84,44 @@ function cleanExpiredStates(): void {
       stateStore.delete(key);
     }
   }
+}
+
+/**
+ * Insert (or refresh) a state entry while enforcing the hard size cap.
+ *
+ * TTL cleanup runs first (cheap, removes naturally-expired entries). If the
+ * store is still at the cap, evict the oldest entries — Map preserves insertion
+ * order, so the first key in iteration is the oldest and nearest to TTL expiry.
+ * This guarantees the Map can never exceed OIDC_STATE_STORE_MAX regardless of
+ * request rate, while the just-created state (added last) always survives.
+ */
+function putState(state: string, entry: StateEntry): void {
+  cleanExpiredStates();
+
+  // Updating an existing key doesn't grow the Map, so only enforce the cap for
+  // genuinely new keys.
+  if (!stateStore.has(state)) {
+    while (stateStore.size >= OIDC_STATE_STORE_MAX) {
+      const oldest = stateStore.keys().next().value;
+      if (oldest === undefined) break;
+      stateStore.delete(oldest);
+    }
+  }
+
+  stateStore.set(state, entry);
+}
+
+/**
+ * Test-only introspection seam for the bounded in-memory state store. Not part
+ * of the public OIDC surface — exposes just enough to assert the size invariant
+ * and eviction policy without reaching into module internals.
+ */
+export function __getStateStoreStatsForTest() {
+  return {
+    size: () => stateStore.size,
+    has: (state: string) => stateStore.has(state),
+    clear: () => stateStore.clear(),
+  };
 }
 
 /**
@@ -220,8 +270,6 @@ export function invalidateOIDCCache(): void {
  * Generate an authorization URL with PKCE, state, and nonce.
  */
 export async function generateAuthorizationUrl(redirectUri: string, scopes: string): Promise<AuthUrlResult> {
-  cleanExpiredStates();
-
   const config = await getOrCreateConfiguration();
 
   const codeVerifier = client.randomPKCECodeVerifier();
@@ -229,8 +277,10 @@ export async function generateAuthorizationUrl(redirectUri: string, scopes: stri
   const state = client.randomState();
   const nonce = client.randomNonce();
 
-  // Store state → code_verifier + nonce mapping server-side
-  stateStore.set(state, {
+  // Store state → code_verifier + nonce mapping server-side. putState() runs TTL
+  // cleanup and enforces the OIDC_STATE_STORE_MAX hard cap so this unauthenticated,
+  // rate-limit-exempt insertion path can never grow the Map without bound (#1386).
+  putState(state, {
     codeVerifier,
     nonce,
     createdAt: Date.now(),
