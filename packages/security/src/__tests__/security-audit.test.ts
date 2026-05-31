@@ -102,6 +102,65 @@ describe('security-audit service', () => {
     expect(isIgnoredContainer('api', ['nginx*'])).toBe(false);
   });
 
+  describe('wildcard matcher prefix*suffix overlap (#1388)', () => {
+    // The pure-string matcher must stay semantically equivalent to the old
+    // `^prefix.*suffix$` regex. For a `prefix*suffix` shape matched against a
+    // SHORT value, the fixed prefix and fixed suffix must NOT consume
+    // overlapping characters — otherwise an over-matching ignore pattern
+    // silently suppresses a flagged container (security false-negative).
+
+    it('rejects a single char when prefix and suffix would overlap (a*a vs a)', () => {
+      // old `^a.*a$` against 'a' → false (needs >= 2 chars)
+      expect(isIgnoredContainer('a', ['a*a'])).toBe(false);
+      // sanity: a value long enough for both anchors still matches
+      expect(isIgnoredContainer('aba', ['a*a'])).toBe(true);
+      expect(isIgnoredContainer('aa', ['a*a'])).toBe(true);
+    });
+
+    it('rejects an overlapping realistic prefix*suffix (app*pp vs app)', () => {
+      // old `^app.*pp$` against 'app' → false (suffix `pp` overlaps prefix `app`)
+      expect(isIgnoredContainer('app', ['app*pp'])).toBe(false);
+      // non-overlapping value where both anchors fit → matches
+      expect(isIgnoredContainer('app-pp', ['app*pp'])).toBe(true);
+      expect(isIgnoredContainer('appxpp', ['app*pp'])).toBe(true);
+    });
+
+    it('rejects overlap for a hyphenated prefix*suffix (app*-prod vs approd)', () => {
+      // old `^app.*-prod$` against 'approd' → false; against 'app-prod' → true
+      expect(isIgnoredContainer('approd', ['app*-prod'])).toBe(false);
+      expect(isIgnoredContainer('app-prod', ['app*-prod'])).toBe(true);
+      expect(isIgnoredContainer('app-svc-prod', ['app*-prod'])).toBe(true);
+    });
+
+    it('preserves single-anchor wildcard shapes', () => {
+      // prefix-anchored: foo*
+      expect(isIgnoredContainer('nginx-proxy', ['nginx*'])).toBe(true);
+      expect(isIgnoredContainer('mynginx', ['nginx*'])).toBe(false);
+      // suffix-anchored: *foo
+      expect(isIgnoredContainer('my-sidecar', ['*sidecar'])).toBe(true);
+      expect(isIgnoredContainer('sidecar-proxy', ['*sidecar'])).toBe(false);
+      // contains: *foo*
+      expect(isIgnoredContainer('prometheus-node', ['*metheus*'])).toBe(true);
+      expect(isIgnoredContainer('grafana', ['*metheus*'])).toBe(false);
+      // exact, no wildcard
+      expect(isIgnoredContainer('traefik', ['traefik'])).toBe(true);
+      expect(isIgnoredContainer('traefik-2', ['traefik'])).toBe(false);
+    });
+
+    it('preserves default ignore-pattern behavior', () => {
+      const defaults = ['portainer', 'traefik', 'nginx*', 'caddy*', 'prometheus*', 'grafana*'];
+      expect(isIgnoredContainer('portainer', defaults)).toBe(true);
+      expect(isIgnoredContainer('traefik', defaults)).toBe(true);
+      expect(isIgnoredContainer('nginx-proxy', defaults)).toBe(true);
+      expect(isIgnoredContainer('caddy-1', defaults)).toBe(true);
+      expect(isIgnoredContainer('prometheus-node', defaults)).toBe(true);
+      expect(isIgnoredContainer('grafana', defaults)).toBe(true);
+      // an actual app must NOT be ignored by the defaults
+      expect(isIgnoredContainer('my-api', defaults)).toBe(false);
+      expect(isIgnoredContainer('mynginx', defaults)).toBe(false);
+    });
+  });
+
   it('returns audit entries with ignored visibility preserved', async () => {
     mockGetSetting.mockResolvedValue({ value: JSON.stringify(['portainer']) });
 

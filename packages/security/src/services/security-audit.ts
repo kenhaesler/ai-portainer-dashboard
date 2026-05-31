@@ -82,8 +82,13 @@ function matchesPattern(value: string, pattern: string): boolean {
       if (!v.startsWith(seg)) return false;
       cursor = seg.length;
     } else if (i === segments.length - 1 && endsFixed) {
-      // Last segment must match at the very end
-      if (!v.endsWith(seg)) return false;
+      // Last segment must match at the very end AND must start at or after the
+      // cursor advanced by the fixed prefix — otherwise the prefix and suffix
+      // could consume overlapping characters, over-matching where the old
+      // `^prefix.*suffix$` regex would not (e.g. `a*a` vs `a`). Anchor the
+      // suffix by index so it cannot reach back into already-consumed input.
+      const start = v.length - seg.length;
+      if (start < cursor || !v.startsWith(seg, start)) return false;
       cursor = v.length;  // consumed
     } else {
       const idx = v.indexOf(seg, cursor);
