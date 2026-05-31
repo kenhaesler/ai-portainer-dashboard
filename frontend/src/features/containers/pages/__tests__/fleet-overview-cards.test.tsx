@@ -51,8 +51,6 @@ function makeEndpoint(overrides: Partial<Endpoint> = {}): Endpoint {
     status: 'up',
     containersRunning: 3,
     containersStopped: 2,
-    containersHealthy: 3,
-    containersUnhealthy: 0,
     totalContainers: 5,
     stackCount: 2,
     totalCpu: 4,
