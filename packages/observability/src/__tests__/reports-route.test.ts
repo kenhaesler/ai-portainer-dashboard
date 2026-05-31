@@ -57,6 +57,11 @@ vi.mock('../services/metrics-store.js', () => ({
   isUndefinedTableError: vi.fn().mockReturnValue(false),
 }));
 
+const mockGetRunningIds = vi.fn().mockResolvedValue(null);
+vi.mock('../services/container-lifecycle-store.js', () => ({
+  getRunningContainerIds: (...a: unknown[]) => mockGetRunningIds(...a),
+}));
+
 describe('Reports routes', () => {
   const app = Fastify({ logger: false });
 
@@ -82,6 +87,7 @@ describe('Reports routes', () => {
       isRollup: false,
     });
     clearReportCache();
+    mockGetRunningIds.mockReset().mockResolvedValue(null);
   });
 
   describe('GET /api/reports/utilization', () => {
@@ -302,6 +308,47 @@ describe('Reports routes', () => {
       // Second request — cache hit, no new pool connection
       await app.inject({ method: 'GET', url: '/api/reports/utilization?timeRange=24h' });
       expect(mockConnect).toHaveBeenCalledTimes(1);
+    });
+
+    it('excludes non-running containers from fleet averages (#1394)', async () => {
+      mockGetRunningIds.mockResolvedValueOnce(new Set(['live']));
+      mockClientQuery
+        .mockResolvedValueOnce({ rows: [] }) // SET statement_timeout
+        .mockResolvedValueOnce({
+          rows: [
+            { container_id: 'live', container_name: 'web', endpoint_id: 1, metric_type: 'cpu', avg_value: 40, min_value: 10, max_value: 80, sample_count: 100 },
+            { container_id: 'dead', container_name: 'old', endpoint_id: 1, metric_type: 'cpu', avg_value: 0, min_value: 0, max_value: 0, sample_count: 100 },
+          ],
+        })
+        .mockResolvedValueOnce({ rows: [{ p50: 40, p95: 78, p99: 80 }] }) // percentile: live
+        .mockResolvedValueOnce({ rows: [{ p50: 0, p95: 0, p99: 0 }] });   // percentile: dead
+
+      const res = await app.inject({ method: 'GET', url: '/api/reports/utilization?timeRange=24h' });
+      const body = JSON.parse(res.payload);
+
+      expect(body.containers).toHaveLength(2);          // per-container rows unchanged
+      expect(body.fleetSummary.avgCpu).toBe(40);        // only the running one, not (40+0)/2=20
+      expect(body.fleetSummary.totalContainers).toBe(1);
+    });
+
+    it('fails open: averages over all containers when no lifecycle data (#1394)', async () => {
+      mockGetRunningIds.mockResolvedValueOnce(null);
+      mockClientQuery
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({
+          rows: [
+            { container_id: 'a', container_name: 'web', endpoint_id: 1, metric_type: 'cpu', avg_value: 40, min_value: 10, max_value: 80, sample_count: 100 },
+            { container_id: 'b', container_name: 'old', endpoint_id: 1, metric_type: 'cpu', avg_value: 0, min_value: 0, max_value: 0, sample_count: 100 },
+          ],
+        })
+        .mockResolvedValueOnce({ rows: [{ p50: 40, p95: 78, p99: 80 }] })
+        .mockResolvedValueOnce({ rows: [{ p50: 0, p95: 0, p99: 0 }] });
+
+      const res = await app.inject({ method: 'GET', url: '/api/reports/utilization?timeRange=24h' });
+      const body = JSON.parse(res.payload);
+
+      expect(body.fleetSummary.avgCpu).toBe(20);        // (40+0)/2
+      expect(body.fleetSummary.totalContainers).toBe(2);
     });
   });
 

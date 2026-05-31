@@ -9,6 +9,7 @@ import {
   matchesInfrastructurePattern,
 } from '../services/infrastructure-service-classifier.js';
 import { isUndefinedTableError } from '../services/metrics-store.js';
+import { getRunningContainerIds } from '../services/container-lifecycle-store.js';
 import { selectRollupTable } from '../services/metrics-rollup-selector.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 
@@ -330,11 +331,19 @@ export async function reportsRoutes(fastify: FastifyInstance) {
       }
 
       const containers = Array.from(containersMap.values());
-      const cpuEntries = containers.filter(c => c.cpu);
-      const memEntries = containers.filter(c => c.memory);
+
+      // Fleet summary counts only currently-running containers so dead/idle
+      // ones don't dilute the averages (#1394). Fail open: when the lifecycle
+      // table has no data for this scope, getRunningContainerIds returns null
+      // and every container is counted (prior behavior).
+      const runningIds = await getRunningContainerIds(endpointId);
+      const isRunning = (id: string) => runningIds === null || runningIds.has(id);
+      const fleetContainers = containers.filter(c => isRunning(c.container_id));
+      const cpuEntries = fleetContainers.filter(c => c.cpu);
+      const memEntries = fleetContainers.filter(c => c.memory);
 
       const fleetSummary = {
-        totalContainers: containers.length,
+        totalContainers: fleetContainers.length,
         avgCpu: cpuEntries.length > 0
           ? Math.round(cpuEntries.reduce((s, c) => s + c.cpu!.avg, 0) / cpuEntries.length * 100) / 100
           : 0,
