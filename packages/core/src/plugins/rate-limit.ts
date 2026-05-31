@@ -3,11 +3,21 @@ import fp from 'fastify-plugin';
 import rateLimit from '@fastify/rate-limit';
 import { getConfig } from '../config/index.js';
 
+// Read-only observer paths that bypass the global rate limit for GET requests.
+// Mutating verbs (POST/PUT/DELETE) on these paths remain rate-limited because
+// shouldBypassGlobalRateLimit() is GET-only. The six prefixes below were missing
+// from the original list and caused a 429 burst on startup (#1386).
 const OBSERVER_READ_PATH_PREFIXES = [
+  '/api/auth/oidc',
   '/api/containers',
   '/api/dashboard',
+  '/api/ebpf/coverage',
   '/api/endpoints',
+  '/api/harbor',
   '/api/images',
+  '/api/incidents',
+  '/api/kubernetes',
+  '/api/llm/feedback',
   '/api/llm/stats',
   '/api/llm/traces',
   '/api/logs',
