@@ -37,14 +37,17 @@ export function createFeedbackFetcher(
 ): FetchFeedbackFn {
   const lookbackDays = opts.lookbackDays ?? 30;
   return async ({ detector } = {}) => {
-    // `(? IS NULL OR detector = ?)` — the same value is bound twice so the
-    // detector filter is a no-op when none is supplied. `make_interval` keeps
-    // the lookback window parameterised (no string-built intervals).
+    // `(?::text IS NULL OR detector = ?)` — the same value is bound twice so the
+    // detector filter is a no-op when none is supplied. The `::text` cast is
+    // required: a bare `$n IS NULL` on a param used nowhere else gives Postgres
+    // no way to infer the type and throws "could not determine data type of
+    // parameter" when the value is NULL. `make_interval` keeps the lookback
+    // window parameterised (no string-built intervals).
     return db.query<FeedbackRow>(
       `SELECT anomaly_id, disposition, detector
          FROM anomaly_feedback
         WHERE created_at > NOW() - make_interval(days => ?)
-          AND (? IS NULL OR detector = ?)`,
+          AND (?::text IS NULL OR detector = ?)`,
       [lookbackDays, detector ?? null, detector ?? null],
     );
   };

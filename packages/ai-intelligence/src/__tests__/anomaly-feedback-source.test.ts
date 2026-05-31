@@ -39,6 +39,15 @@ describe('createFeedbackFetcher — reads anomaly_feedback rows (#1364)', () => 
     const [, params] = query.mock.calls[0];
     expect(params).toContain(null); // null detector → no filter
   });
+
+  it('type-casts the IS-NULL detector param so Postgres can infer its type', async () => {
+    // A bare `$n IS NULL` on a param used nowhere else throws "could not determine
+    // data type of parameter" on Postgres when the value is NULL. The cast fixes it.
+    const { db, query } = fakeDb([]);
+    await createFeedbackFetcher(db as any)({});
+    const [sql] = query.mock.calls[0];
+    expect(sql).toMatch(/\?::text\s+IS\s+NULL/i);
+  });
 });
 
 describe('measureFpRateFromDb — DB rows → measured FP rate + sample count', () => {
