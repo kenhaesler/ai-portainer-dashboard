@@ -266,6 +266,9 @@ export const envSchema = z.object({
   HARBOR_SYNC_ENABLED: z.coerce.boolean().default(false),
   HARBOR_SYNC_INTERVAL_MINUTES: z.coerce.number().int().min(5).max(1440).default(30),
   HARBOR_CONCURRENCY: z.coerce.number().int().min(1).max(50).default(5),
+  // Maximum pages fetched per Harbor sync (100 items/page → default 500 = 50k items).
+  // Raise this when your Harbor instance has more than 50k vulnerabilities.
+  HARBOR_MAX_PAGES: z.coerce.number().int().min(1).default(500),
 
   // Image Staleness
   IMAGE_STALENESS_CHECK_ENABLED: z.coerce.boolean().default(true),
