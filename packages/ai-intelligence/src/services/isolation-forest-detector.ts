@@ -44,6 +44,26 @@ function mulberry32(seed: number): () => number {
   };
 }
 
+/**
+ * Pair cpu + memory samples by timestamp into [cpu, memory] feature vectors.
+ * Replaces index-based pairing, which mis-aligns the two series on any gap or
+ * count mismatch — pairing cpu@t with memory@t+k and fabricating multivariate
+ * outliers (#1362). Unmatched samples on either side are dropped.
+ */
+export function pairByTimestamp(
+  cpuMetrics: Metric[],
+  memoryMetrics: Metric[],
+): number[][] {
+  const memByTs = new Map<string, number>();
+  for (const m of memoryMetrics) memByTs.set(String(m.timestamp), m.value);
+  const pairs: number[][] = [];
+  for (const c of cpuMetrics) {
+    const mem = memByTs.get(String(c.timestamp));
+    if (mem !== undefined) pairs.push([c.value, mem]);
+  }
+  return pairs;
+}
+
 type GetMetricsFn = (
   containerId: string,
   metricType: string,
@@ -83,13 +103,8 @@ export async function getOrTrainModel(
     return null;
   }
 
-  // Build training data: zip cpu + memory into [cpu, memory][] pairs by matching timestamps
-  // Use index-based pairing since metrics are collected together
-  const pairCount = Math.min(cpuMetrics.length, memoryMetrics.length);
-  const trainingData: number[][] = [];
-  for (let i = 0; i < pairCount; i++) {
-    trainingData.push([cpuMetrics[i].value, memoryMetrics[i].value]);
-  }
+  // Build training data by pairing cpu + memory on timestamp (#1362).
+  const trainingData = pairByTimestamp(cpuMetrics, memoryMetrics);
 
   if (trainingData.length < MIN_TRAINING_SAMPLES) {
     return null;

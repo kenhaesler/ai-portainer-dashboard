@@ -15,6 +15,8 @@ export {
   getMetrics,
   getMovingAverage,
   getMovingAverageByHourOfDay,
+  getMetricWindow,
+  getMetricWindowByHourOfDay,
   cleanOldMetrics,
   getLatestMetrics,
   getLatestMetricsBatch,

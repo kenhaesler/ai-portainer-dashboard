@@ -50,6 +50,29 @@ export interface MetricsInterface {
     lookbackDays: number,
   ): Promise<MovingAverageResult | null>;
 
+  /**
+   * Raw trailing window of metric values (newest-first), excluding the most
+   * recent sample. Powers robust median+MAD detection (#1362), which needs the
+   * actual values rather than pre-aggregated mean/std.
+   */
+  getMetricWindow?(
+    containerId: string,
+    metricType: string,
+    windowSize: number,
+  ): Promise<number[]>;
+
+  /**
+   * Raw hour-of-day window of metric values (newest-first), excluding the most
+   * recent sample. Lets robust median+MAD detection keep #1295's seasonality
+   * handling instead of comparing against a flat window.
+   */
+  getMetricWindowByHourOfDay?(
+    containerId: string,
+    metricType: string,
+    hourOfDay: number,
+    lookbackDays: number,
+  ): Promise<number[]>;
+
   /** Retrieve top-N capacity forecasts sorted by urgency. */
   getCapacityForecasts(topN: number): Promise<CapacityForecast[]>;
 

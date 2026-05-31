@@ -146,7 +146,7 @@ export interface MonitoringConfig {
   logAnalysisConcurrency: number;
   maxLlmHistoryMessages: number;
   // Anomaly detection
-  anomalyDetectionMethod: 'zscore' | 'bollinger' | 'adaptive';
+  anomalyDetectionMethod: 'zscore' | 'bollinger' | 'adaptive' | 'robust-mad';
   anomalyZscoreThreshold: number;
   anomalyMovingAverageWindow: number;
   anomalyMinSamples: number;
