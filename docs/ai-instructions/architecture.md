@@ -243,6 +243,18 @@ Metrics are dual-written: every collected sample lands in the app DB `metrics` t
 | `metrics_5min` / `metrics_1hour` / `metrics_1day` | Continuous aggregates (avg/min/max/stddev/count per bucket) — queried by range to keep charts cheap |
 | `kpi_snapshots` (hypertable) | Time-series fleet KPI snapshots for dashboard sparklines |
 
+#### Container lifecycle (`container_lifecycle`, TimescaleDB)
+
+The metrics scheduler upserts one row per `(endpoint_id, container_id)` each
+collection cycle from the full container list (all states), marking `running`
+true/false and reconciling vanished containers to `running = false`. Fleet-level
+CPU/memory averages (utilization `fleetSummary`, trends hourly average,
+management daily average) filter to `running = TRUE` so stopped/removed
+containers no longer dilute them (#1394). The filter is fail-open: if the table
+has no rows for the queried scope, all containers are counted. Per-container
+charts, forecasts, and the anomaly detector are unaffected. No metric rows are
+deleted — time-based retention is unchanged.
+
 ## Data Flows
 
 ### Container metrics (read path)

@@ -24,6 +24,12 @@ export {
   getAllNetworkRates,
 } from './services/metrics-store.js';
 
+export type { LifecycleContainer } from './services/container-lifecycle-store.js';
+export {
+  upsertContainerLifecycle,
+  getRunningContainerIds,
+} from './services/container-lifecycle-store.js';
+
 export type { RollupSelection } from './services/metrics-rollup-selector.js';
 export { selectRollupTable } from './services/metrics-rollup-selector.js';
 

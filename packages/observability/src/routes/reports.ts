@@ -9,6 +9,7 @@ import {
   matchesInfrastructurePattern,
 } from '../services/infrastructure-service-classifier.js';
 import { isUndefinedTableError } from '../services/metrics-store.js';
+import { getRunningContainerIds } from '../services/container-lifecycle-store.js';
 import { selectRollupTable } from '../services/metrics-rollup-selector.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 
@@ -163,6 +164,34 @@ function addInfrastructureSqlFilter(
   }
   conditions.push(`NOT (${infraClauses.join(' OR ')})`);
   return paramIdx;
+}
+
+/**
+ * Fail-open "running containers only" filter for fleet AVERAGE queries (#1394).
+ * If container_lifecycle has no rows for the scope (fresh deploy / not yet
+ * populated) the clause matches every row, preserving prior behavior. Reuses
+ * the same param placeholder twice (valid in PostgreSQL).
+ */
+function addLifecycleRunningFilter(
+  conditions: string[],
+  params: unknown[],
+  startParamIdx: number,
+  endpointId?: number,
+): number {
+  if (endpointId) {
+    const idx = startParamIdx;
+    params.push(endpointId);
+    conditions.push(
+      `(NOT EXISTS (SELECT 1 FROM container_lifecycle WHERE endpoint_id = $${idx})
+        OR container_id IN (SELECT container_id FROM container_lifecycle WHERE running = TRUE AND endpoint_id = $${idx}))`,
+    );
+    return idx + 1;
+  }
+  conditions.push(
+    `(NOT EXISTS (SELECT 1 FROM container_lifecycle)
+      OR container_id IN (SELECT container_id FROM container_lifecycle WHERE running = TRUE))`,
+  );
+  return startParamIdx;
 }
 
 export async function reportsRoutes(fastify: FastifyInstance) {
@@ -330,11 +359,19 @@ export async function reportsRoutes(fastify: FastifyInstance) {
       }
 
       const containers = Array.from(containersMap.values());
-      const cpuEntries = containers.filter(c => c.cpu);
-      const memEntries = containers.filter(c => c.memory);
+
+      // Fleet summary counts only currently-running containers so dead/idle
+      // ones don't dilute the averages (#1394). Fail open: when the lifecycle
+      // table has no data for this scope, getRunningContainerIds returns null
+      // and every container is counted (prior behavior).
+      const runningIds = await getRunningContainerIds(endpointId);
+      const isRunning = (id: string) => runningIds === null || runningIds.has(id);
+      const fleetContainers = containers.filter(c => isRunning(c.container_id));
+      const cpuEntries = fleetContainers.filter(c => c.cpu);
+      const memEntries = fleetContainers.filter(c => c.memory);
 
       const fleetSummary = {
-        totalContainers: containers.length,
+        totalContainers: fleetContainers.length,
         avgCpu: cpuEntries.length > 0
           ? Math.round(cpuEntries.reduce((s, c) => s + c.cpu!.avg, 0) / cpuEntries.length * 100) / 100
           : 0,
@@ -429,7 +466,8 @@ export async function reportsRoutes(fastify: FastifyInstance) {
         params.push(containerId);
         paramIdx++;
       }
-      addInfrastructureSqlFilter(conditions, params, paramIdx, excludeInfrastructure, infrastructurePatterns);
+      paramIdx = addInfrastructureSqlFilter(conditions, params, paramIdx, excludeInfrastructure, infrastructurePatterns);
+      paramIdx = addLifecycleRunningFilter(conditions, params, paramIdx, endpointId);
 
       const where = conditions.join(' AND ');
 
@@ -553,7 +591,8 @@ export async function reportsRoutes(fastify: FastifyInstance) {
         baseParams.push(containerId);
         paramIdx++;
       }
-      addInfrastructureSqlFilter(baseConditions, baseParams, paramIdx, excludeInfrastructure, infrastructurePatterns);
+      paramIdx = addInfrastructureSqlFilter(baseConditions, baseParams, paramIdx, excludeInfrastructure, infrastructurePatterns);
+      paramIdx = addLifecycleRunningFilter(baseConditions, baseParams, paramIdx, endpointId);
       const where = baseConditions.join(' AND ');
 
       // Top-services query: use rollup avg_value/max_value when available.
