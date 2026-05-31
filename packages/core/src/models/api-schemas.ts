@@ -166,8 +166,6 @@ export const NormalizedEndpointSchema = z.object({
   status: z.string(),
   containersRunning: z.number(),
   containersStopped: z.number(),
-  containersHealthy: z.number(),
-  containersUnhealthy: z.number(),
   totalContainers: z.number(),
   stackCount: z.number(),
   agentVersion: z.string().optional(),

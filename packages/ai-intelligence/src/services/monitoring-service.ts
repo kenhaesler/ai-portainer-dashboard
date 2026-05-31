@@ -4,6 +4,9 @@ import { getConfig } from '@dashboard/core/config/index.js';
 import { getEffectiveMonitoringConfig } from '@dashboard/core/services/settings-store.js';
 import type { MonitoringConfig } from '@dashboard/core/services/settings-store.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
+import { getCooldownStore } from '@dashboard/core/services/cooldown-store.js';
+import { confirmAnomaly, routeSeverity } from './anomaly-gate.js';
+import { hasMetricInsight } from './insight-dedup.js';
 import { getEndpoints, getContainers, isEndpointDegraded, isCircuitOpen } from '@dashboard/core/portainer/portainer-client.js';
 import { CircuitBreakerOpenError } from '@dashboard/core/portainer/circuit-breaker.js';
 import { cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
@@ -54,8 +57,10 @@ export interface MonitoringDeps {
   runTraceAnomalyCycle?: () => Promise<void>;
 }
 
-// Per-container+metric cooldown tracker: key = `${containerId}:${metricType}`, value = timestamp (ms)
-const anomalyCooldowns = new Map<string, number>();
+// Per-container+metric cooldown tracker (key = `${containerId}:${metricType}`),
+// backed by the shared cooldown store (#1361 fix 4) so suppression survives
+// restarts and is shared across replicas. Falls back to in-memory when Redis
+// is not configured.
 
 // Track previous cycle stats for delta-based logging
 let previousCycleStats: Record<string, number> | null = null;
@@ -65,27 +70,22 @@ export function resetPreviousCycleStats(): void {
   previousCycleStats = null;
 }
 
-/** Clear all cooldown entries (used in tests). */
+/** Clear all cooldown entries (used in tests). In-memory clears synchronously. */
 export function resetAnomalyCooldowns(): void {
-  anomalyCooldowns.clear();
+  void getCooldownStore().reset();
 }
 
 const COOLDOWN_SWEEP_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
 let cooldownSweepTimer: ReturnType<typeof setInterval> | undefined;
 
-/** Remove expired entries from the anomalyCooldowns map. */
-export function sweepExpiredCooldowns(cooldownMinutes: number): number {
-  const cooldownMs = cooldownMinutes * 60_000;
-  const now = Date.now();
-  let swept = 0;
-  for (const [key, timestamp] of anomalyCooldowns) {
-    if (now - timestamp >= cooldownMs) {
-      anomalyCooldowns.delete(key);
-      swept++;
-    }
-  }
+/**
+ * Remove expired cooldown entries. With the Redis-backed store entries
+ * self-expire via TTL (this returns 0); the in-memory fallback is swept here.
+ */
+export async function sweepExpiredCooldowns(cooldownMinutes: number): Promise<number> {
+  const swept = await getCooldownStore().sweep(cooldownMinutes * 60_000);
   if (swept > 0) {
-    log.debug({ swept, remaining: anomalyCooldowns.size }, 'Swept expired anomaly cooldowns');
+    log.debug({ swept }, 'Swept expired anomaly cooldowns');
   }
   return swept;
 }
@@ -96,7 +96,7 @@ export function startCooldownSweep(): void {
   cooldownSweepTimer = setInterval(() => {
     try {
       const config = getConfig();
-      sweepExpiredCooldowns(config.ANOMALY_COOLDOWN_MINUTES);
+      void sweepExpiredCooldowns(config.ANOMALY_COOLDOWN_MINUTES).catch(() => {});
     } catch {
       // Config may not be available during shutdown
     }
@@ -215,7 +215,7 @@ export function createMonitoringService(deps: MonitoringDeps) {
       await insertMonitoringSnapshot({
         containersRunning: normalizedContainers.filter((c) => c.state === 'running').length,
         containersStopped: normalizedContainers.filter((c) => c.state === 'stopped').length,
-        containersUnhealthy: endpoints.reduce((acc, endpoint) => acc + endpoint.containersUnhealthy, 0),
+        containersUnhealthy: normalizedContainers.filter((c) => c.healthStatus === 'unhealthy').length,
         endpointsUp: endpoints.filter((endpoint) => endpoint.status === 'up').length,
         endpointsDown: endpoints.filter((endpoint) => endpoint.status === 'down').length,
       });
@@ -335,26 +335,44 @@ export function createMonitoringService(deps: MonitoringDeps) {
         monCfg.anomalyDetectionMethod,
         deps.metrics.getMovingAverage,
         deps.metrics.getMovingAverageByHourOfDay,
+        deps.metrics.getMetricWindow,
+        deps.metrics.getMetricWindowByHourOfDay,
       );
 
       // Process batch results with cooldown checks
       for (const item of batchItems) {
         const key = `${item.containerId}:${item.metricType}`;
         const anomaly = batchResults.get(key);
-        if (!anomaly?.is_anomalous) continue;
+        if (!anomaly) continue; // insufficient data — no decision this cycle
+
+        // M-of-N persistence + multi-window gate (#1363). Record EVERY decision
+        // (incl. non-anomalous cycles) so the rolling window stays accurate, then
+        // surface only confirmed anomalies — a moderate anomaly must persist
+        // (>= M of N), while a severe single sample takes the fast-burn path.
+        const severity = anomaly.threshold > 0
+          ? Math.abs(anomaly.z_score) / anomaly.threshold
+          : Math.abs(anomaly.z_score);
+        const gate = await confirmAnomaly({ key, isAnomalous: anomaly.is_anomalous, severity });
+        if (!gate.emit) continue;
+        // Severity × confidence routing (#1363): low-confidence anomalies land
+        // in the quieter 'info' tier instead of warning/critical.
+        const anomalySeverity = routeSeverity(
+          gate.confidence,
+          anomaly.z_score,
+          getConfig().ANOMALY_CONFIDENCE_MIN_SURFACE,
+        );
 
         // Cooldown check: skip if this container+metric was recently flagged
         const cooldownKey = key;
         const cooldownMs = monCfg.anomalyCooldownMinutes * 60_000;
-        const lastAlerted = anomalyCooldowns.get(cooldownKey);
-        if (cooldownMs > 0 && lastAlerted && Date.now() - lastAlerted < cooldownMs) {
+        if (cooldownMs > 0 && (await getCooldownStore().isHot(cooldownKey, cooldownMs))) {
           log.debug(
             { containerId: item.containerId, metricType: item.metricType, cooldownMinutes: monCfg.anomalyCooldownMinutes },
             'Anomaly suppressed by cooldown',
           );
           continue;
         }
-        anomalyCooldowns.set(cooldownKey, Date.now());
+        await getCooldownStore().mark(cooldownKey);
 
         anomalyInsights.push({
           id: uuidv4(),
@@ -362,19 +380,24 @@ export function createMonitoringService(deps: MonitoringDeps) {
           endpoint_name: item.endpointName,
           container_id: item.containerId,
           container_name: item.containerName,
-          severity: Math.abs(anomaly.z_score) > 4 ? 'critical' : 'warning',
+          severity: anomalySeverity,
           category: 'anomaly',
           title: `Anomalous ${item.metricType} usage on "${item.containerName}"`,
           description:
             `Current ${item.metricType}: ${anomaly.current_value.toFixed(1)}% ` +
             `(mean: ${anomaly.mean.toFixed(1)}%, z-score: ${anomaly.z_score.toFixed(2)}, ` +
-            `method: ${anomaly.method ?? 'zscore'}). ` +
+            `method: ${anomaly.method ?? 'zscore'}, confidence: ${gate.confidence.toFixed(2)}). ` +
             `This is ${Math.abs(anomaly.z_score).toFixed(1)} standard deviations from the moving average.`,
           suggested_action: item.metricType === 'memory'
             ? 'Investigate memory usage patterns and check container configuration'
             : 'Investigate CPU usage patterns and check for process anomalies',
           metric_type: item.metricType as 'cpu' | 'memory',
           detection_method: 'ml-anomaly',
+          // Typed z-score (#1308) — mirrors the value already formatted into
+          // `description`. Threshold / isolation-forest / prediction inserts
+          // intentionally omit z_score (their descriptions carry none), so
+          // they keep passing through the Sensitivity filter.
+          z_score: anomaly.z_score,
         });
       }
 
@@ -391,17 +414,15 @@ export function createMonitoringService(deps: MonitoringDeps) {
             );
             if (!metric || metric.value <= monCfg.anomalyThresholdPct) continue;
 
-            // Skip if already flagged by statistical detection
-            if (anomalyInsights.some(
-              (a) => a.container_id === container.raw.Id && a.title.toLowerCase().includes(metricType),
-            )) continue;
+            // Skip if statistical detection already flagged this (container,
+            // metric) — real signature dedup, not a title substring (#1363).
+            if (hasMetricInsight(anomalyInsights, container.raw.Id, metricType)) continue;
 
             // Cooldown check
             const cooldownKey = `${container.raw.Id}:${metricType}:threshold`;
             const cooldownMs = monCfg.anomalyCooldownMinutes * 60_000;
-            const lastAlerted = anomalyCooldowns.get(cooldownKey);
-            if (cooldownMs > 0 && lastAlerted && Date.now() - lastAlerted < cooldownMs) continue;
-            anomalyCooldowns.set(cooldownKey, Date.now());
+            if (cooldownMs > 0 && (await getCooldownStore().isHot(cooldownKey, cooldownMs))) continue;
+            await getCooldownStore().mark(cooldownKey);
 
             anomalyInsights.push({
               id: uuidv4(),

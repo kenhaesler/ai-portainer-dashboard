@@ -6,6 +6,7 @@ import { dashboardRoutes } from '@dashboard/foundation';
 const mockGetKpiHistory = vi.fn();
 const mockGetSecurityAudit = vi.fn();
 const mockGetLatestMetricsBatch = vi.fn();
+const mockGetLatestKpiSnapshot = vi.fn();
 
 // Kept: kpi-store + metrics-store mock — avoids real DB lookup
 vi.mock('@dashboard/observability', async (importOriginal) => {
@@ -14,12 +15,22 @@ vi.mock('@dashboard/observability', async (importOriginal) => {
     ...orig,
     getKpiHistory: (...args: unknown[]) => mockGetKpiHistory(...args),
     getLatestMetricsBatch: (...args: unknown[]) => mockGetLatestMetricsBatch(...args),
+    getLatestKpiSnapshot: (...a: unknown[]) => mockGetLatestKpiSnapshot(...a),
   };
 });
+
+// Drive live container counts deterministically without hitting Portainer's
+// /docker/info proxy. The config mock keeps the live-query feature enabled.
+vi.mock('@dashboard/core/portainer/edge-live-query.js', () => ({ fetchLiveDockerInfo: vi.fn() }));
+vi.mock('@dashboard/core/services/settings-store.js', () => ({
+  getEffectiveEdgeLiveQueryConfig: vi.fn().mockResolvedValue({ enabled: true, concurrency: 2, intervalSeconds: 60, timeoutMs: 5000 }),
+}));
 
 // Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
 vi.mock('@dashboard/core/portainer/portainer-client.js', async (importOriginal) => await importOriginal());
 
+import { fetchLiveDockerInfo } from '@dashboard/core/portainer/edge-live-query.js';
+const mockLiveFetch = vi.mocked(fetchLiveDockerInfo);
 import * as portainerClient from '@dashboard/core/portainer/portainer-client.js';
 import { cache, waitForInFlight } from '@dashboard/core/portainer/portainer-cache.js';
 import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
@@ -44,21 +55,14 @@ vi.mock('@dashboard/security', () => ({
 // getLatestMetricsBatch mocked inside @dashboard/observability mock above
 
 function makeEndpoint(id: number, name: string, status: 'up' | 'down' = 'up'): any {
+  // No Snapshots[] — the route no longer reads them; counts come from the
+  // live /docker/info mock (mockLiveFetch). EndpointSchema defaults it to [].
   return {
     Id: id,
     Name: name,
     Type: 1,
     URL: 'tcp://localhost',
     Status: status === 'up' ? 1 : 2,
-    Snapshots: [{
-      RunningContainerCount: 1,
-      StoppedContainerCount: 0,
-      HealthyContainerCount: 1,
-      UnhealthyContainerCount: 0,
-      StackCount: 0,
-      TotalCPU: 0,
-      TotalMemory: 0,
-    }],
   };
 }
 
@@ -93,6 +97,12 @@ describe('Dashboard Routes', () => {
     vi.restoreAllMocks();
     mockGetEndpoints = vi.spyOn(portainerClient, 'getEndpoints');
     mockGetContainers = vi.spyOn(portainerClient, 'getContainers');
+    // Default live-data seams: no stacks, no live counts, no KPI snapshot.
+    vi.spyOn(portainerClient, 'getStacks').mockResolvedValue([] as never);
+    mockLiveFetch.mockReset();
+    mockLiveFetch.mockResolvedValue(null);
+    mockGetLatestKpiSnapshot.mockReset();
+    mockGetLatestKpiSnapshot.mockResolvedValue(null);
     mockGetSecurityAudit.mockResolvedValue([]);
   });
 
@@ -518,6 +528,8 @@ describe('Dashboard Routes', () => {
 
       mockGetEndpoints.mockResolvedValue(endpoints);
       mockGetContainers.mockResolvedValue(containers);
+      // /full sums running/stopped from live endpoint counts (#1249+).
+      mockLiveFetch.mockResolvedValue({ containers: 1, containersRunning: 1, containersStopped: 0, ncpu: 0, memTotal: 0, fetchedAt: Date.now() });
 
       const app = await buildApp();
       const res = await app.inject({ method: 'GET', url: '/api/dashboard/full' });

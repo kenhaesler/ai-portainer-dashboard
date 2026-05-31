@@ -282,6 +282,37 @@ describe('insights-store', () => {
     });
   });
 
+  describe('z_score column (#1308)', () => {
+    it('round-trips a typed z_score through insertInsight', async () => {
+      await insertInsight(makeInsight({ id: 'z-single', z_score: 3.42 }));
+      const [row] = await testDb.query<{ z_score: string | null }>(
+        'SELECT z_score FROM insights WHERE id = ?', ['z-single']);
+      expect(Number(row.z_score)).toBeCloseTo(3.42, 5);
+    });
+
+    it('stores NULL z_score when omitted (preserves filter pass-through)', async () => {
+      await insertInsight(makeInsight({ id: 'z-null' }));
+      const [row] = await testDb.query<{ z_score: string | null }>(
+        'SELECT z_score FROM insights WHERE id = ?', ['z-null']);
+      expect(row.z_score).toBeNull();
+    });
+
+    it('round-trips z_score through the batch insertInsights path', async () => {
+      await insertInsights([makeInsight({ id: 'z-batch', container_id: 'cb', z_score: -4.1 })]);
+      const [row] = await testDb.query<{ z_score: string | null }>(
+        'SELECT z_score FROM insights WHERE id = ?', ['z-batch']);
+      expect(Number(row.z_score)).toBeCloseTo(-4.1, 5);
+    });
+
+    it('persists z_score = 0 as 0, not NULL (?? null must not collapse zero)', async () => {
+      await insertInsight(makeInsight({ id: 'z-zero', z_score: 0 }));
+      const [row] = await testDb.query<{ z_score: string | null }>(
+        'SELECT z_score FROM insights WHERE id = ?', ['z-zero']);
+      expect(row.z_score).not.toBeNull();
+      expect(Number(row.z_score)).toBeCloseTo(0, 5);
+    });
+  });
+
   describe('getRecentInsights', () => {
     it('returns insights within the specified time window', async () => {
       await insertInsight(makeInsight({ id: 'recent-1' }));

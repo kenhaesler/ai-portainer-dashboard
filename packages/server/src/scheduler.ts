@@ -1,13 +1,16 @@
 import pLimit from 'p-limit';
 import { getConfig } from '@dashboard/core/config/index.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
-import { getEndpoints, getContainers, isEndpointDegraded, getImages } from '@dashboard/core/portainer/index.js';
+import { getEndpoints, getContainers, isEndpointDegraded, getImages, collectFleetOverview } from '@dashboard/core/portainer/index.js';
 import { isDockerEndpoint } from '@dashboard/core/models/portainer.js';
 import { cachedFetch, cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/index.js';
 import { normalizeEndpoint, type NormalizedEndpoint } from '@dashboard/core/portainer/index.js';
-import { getSetting, getEffectiveHarborConfig, getEffectiveMonitoringSchedulerConfig, cleanExpiredSessions, cleanExpiredStreamTickets } from '@dashboard/core/services/index.js';
+import { getSetting, setSetting, writeAuditLog, getEffectiveHarborConfig, getEffectiveMonitoringSchedulerConfig, cleanExpiredSessions, cleanExpiredStreamTickets } from '@dashboard/core/services/index.js';
+import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
 import { runWithTraceContext } from '@dashboard/core/tracing/index.js';
-import { startCooldownSweep, stopCooldownSweep, cleanupOldInsights, pruneCanaryRegistry, runDedupTelemetryCycle, cleanupOldDedupMetrics } from '@dashboard/ai';
+import { startCooldownSweep, stopCooldownSweep, cleanupOldInsights, pruneCanaryRegistry, runDedupTelemetryCycle, cleanupOldDedupMetrics, runAnomalyAutoTuneJob } from '@dashboard/ai';
+import { initCooldownStore } from '@dashboard/core/services/cooldown-store.js';
+import { initPersistenceStore } from '@dashboard/core/services/persistence-store.js';
 import { collectMetrics, insertMetrics, cleanOldMetrics, cleanOldSpans, type MetricInsert, recordNetworkSample, insertKpiSnapshot, cleanOldKpiSnapshots, pruneStaleEntries } from '@dashboard/observability';
 import { cleanupOldCaptures, cleanupOrphanedSidecars, runStalenessChecks, runHarborSync, isHarborSyncRunning, isHarborConfiguredAsync, cleanupOldVulnerabilities } from '@dashboard/security';
 import { createPortainerBackup, cleanupOldPortainerBackups, startWebhookListener, stopWebhookListener, processRetries } from '@dashboard/operations';
@@ -197,32 +200,21 @@ export async function runMetricsCollection(): Promise<void> {
   }
 }
 
-async function runKpiSnapshotCollection(): Promise<void> {
+export async function runKpiSnapshotCollection(): Promise<void> {
   log.debug('Running KPI snapshot collection');
   try {
-    const endpoints = await cachedFetchSWR(
-      getCacheKey('endpoints'),
-      TTL.ENDPOINTS,
-      () => getEndpoints(),
-    );
-    const normalized = endpoints.map(normalizeEndpoint);
-
-    const totals = normalized.reduce(
-      (acc, ep) => ({
-        endpoints: acc.endpoints + 1,
-        endpoints_up: acc.endpoints_up + (ep.status === 'up' ? 1 : 0),
-        endpoints_down: acc.endpoints_down + (ep.status === 'down' ? 1 : 0),
-        running: acc.running + ep.containersRunning,
-        stopped: acc.stopped + ep.containersStopped,
-        healthy: acc.healthy + ep.containersHealthy,
-        unhealthy: acc.unhealthy + ep.containersUnhealthy,
-        total: acc.total + ep.totalContainers,
-        stacks: acc.stacks + ep.stackCount,
-      }),
-      { endpoints: 0, endpoints_up: 0, endpoints_down: 0, running: 0, stopped: 0, healthy: 0, unhealthy: 0, total: 0, stacks: 0 },
-    );
-
-    await insertKpiSnapshot(totals);
+    const { totals } = await collectFleetOverview();
+    await insertKpiSnapshot({
+      endpoints: totals.endpoints,
+      endpoints_up: totals.endpointsUp,
+      endpoints_down: totals.endpointsDown,
+      running: totals.running,
+      stopped: totals.stopped,
+      healthy: totals.healthy,
+      unhealthy: totals.unhealthy,
+      total: totals.total,
+      stacks: totals.stacks,
+    });
     log.debug('KPI snapshot collected');
   } catch (err) {
     log.error({ err }, 'KPI snapshot collection failed');
@@ -430,6 +422,49 @@ export async function runCleanup(): Promise<void> {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Anomaly threshold auto-tune (#1364) — feedback → threshold loop
+// ---------------------------------------------------------------------------
+
+/** Measure the real FP rate from operator feedback and nudge the z-score/robust
+ *  threshold toward target. Always computes the recommendation; only APPLIES
+ *  (and audits) it when ANOMALY_AUTOTUNE_ENABLED is on. With the flag off it logs
+ *  what it would do so operators can preview the loop before opting in. */
+async function runAutoTuneCycle(): Promise<void> {
+  const cfg = getConfig();
+  try {
+    const result = await runAnomalyAutoTuneJob({
+      enabled: cfg.ANOMALY_AUTOTUNE_ENABLED,
+      envThreshold: cfg.ANOMALY_ZSCORE_THRESHOLD,
+      targetFpRate: cfg.ANOMALY_AUTOTUNE_TARGET_FP_RATE,
+      minSamples: cfg.ANOMALY_AUTOTUNE_MIN_SAMPLES,
+      lookbackDays: cfg.ANOMALY_AUTOTUNE_LOOKBACK_DAYS,
+      db: getDbForDomain('feedback'),
+      getSetting,
+      setSetting,
+      writeAuditLog,
+    });
+
+    if (result.applied) {
+      log.info(
+        { previous: result.previous, next: result.recommended, rate: result.rate, samples: result.sampleCount, reason: result.reason },
+        'Anomaly threshold auto-tuned',
+      );
+    } else if (result.skipped === 'disabled') {
+      // A change was recommended but the flag is off — surface it so operators
+      // can see the loop working before enabling auto-apply.
+      log.info(
+        { previous: result.previous, recommended: result.recommended, rate: result.rate, samples: result.sampleCount, reason: result.reason },
+        'Anomaly auto-tune suggests a threshold change (set ANOMALY_AUTOTUNE_ENABLED=true to apply)',
+      );
+    } else {
+      log.debug({ reason: result.reason, rate: result.rate, samples: result.sampleCount }, 'Anomaly auto-tune: no change');
+    }
+  } catch (err) {
+    log.error({ err }, 'Anomaly auto-tune cycle failed');
+  }
+}
+
 async function waitForPortainer(): Promise<boolean> {
   const maxRetries = 10;
   const retryDelayMs = 2000;
@@ -537,6 +572,32 @@ export async function startScheduler(runMonitoringCycle: () => Promise<void>): P
         'Starting dynamic monitoring scheduler (1-min poll)',
       );
     }).catch(() => {});
+  }
+
+  // Anomaly threshold auto-tune (#1364) — polls every minute, runs at
+  // ANOMALY_AUTOTUNE_INTERVAL_MINUTES cadence. `lastAutoTuneRunAt` starts at
+  // "now" so the first run is deferred a full interval (no tuning storm on
+  // restart loops). The job is internally gated by ANOMALY_AUTOTUNE_ENABLED.
+  {
+    let lastAutoTuneRunAt = Date.now();
+    const autoTuneInterval = setInterval(
+      () => runWithTraceContext({ source: 'scheduler' }, async () => {
+        try {
+          const intervalMs = getConfig().ANOMALY_AUTOTUNE_INTERVAL_MINUTES * 60 * 1000;
+          if (Date.now() - lastAutoTuneRunAt < intervalMs) return;
+          lastAutoTuneRunAt = Date.now();
+          await runAutoTuneCycle();
+        } catch (err) {
+          log.error({ err }, 'Anomaly auto-tune tick failed');
+        }
+      }),
+      60_000, // poll every minute; actual cadence controlled by interval-minutes
+    );
+    intervals.push(autoTuneInterval);
+    log.info(
+      { enabled: config.ANOMALY_AUTOTUNE_ENABLED, intervalMinutes: config.ANOMALY_AUTOTUNE_INTERVAL_MINUTES },
+      'Starting anomaly auto-tune scheduler (1-min poll)',
+    );
   }
 
   // Webhook retry processing
@@ -730,6 +791,14 @@ export async function startScheduler(runMonitoringCycle: () => Promise<void>): P
   );
   streamTicketCleanupInterval.unref();
   intervals.push(streamTicketCleanupInterval);
+
+  // Upgrade anomaly cooldown state to the shared Redis store (#1361 fix 4) so
+  // suppression survives restarts and is shared across replicas. Fire-and-forget:
+  // the store serves in-memory until this resolves, then stays in-memory if Redis
+  // is unavailable.
+  void initCooldownStore().catch((err) => log.warn({ err }, 'cooldown store init failed'));
+  // Upgrade the M-of-N decision-history store to Redis too (#1363).
+  void initPersistenceStore().catch((err) => log.warn({ err }, 'persistence store init failed'));
 
   // Periodic sweep of expired anomaly cooldowns (every 15 minutes)
   startCooldownSweep();

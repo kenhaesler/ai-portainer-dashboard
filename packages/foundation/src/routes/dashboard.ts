@@ -4,9 +4,9 @@ import pLimit from 'p-limit';
 import * as portainer from '@dashboard/core/portainer/portainer-client.js';
 import { cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
 import { normalizeEndpoint, normalizeContainer } from '@dashboard/core/portainer/portainer-normalizers.js';
-import { enrichEdgeStandardWithLiveInfo } from '../services/edge-live-enrichment.js';
+import { enrichEndpointsWithLiveDockerInfo, attachStackCounts, computeFleetTotals } from '@dashboard/core/portainer/live-fleet.js';
 import { isDockerEndpoint } from '@dashboard/core/models/portainer.js';
-import { getKpiHistory, getLatestMetricsBatch } from '@dashboard/observability';
+import { getKpiHistory, getLatestMetricsBatch, getLatestKpiSnapshot } from '@dashboard/observability';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { buildSecurityAuditSummary, getSecurityAudit } from '@dashboard/security';
 
@@ -27,6 +27,19 @@ async function timed<T>(label: string, fn: () => Promise<T>): Promise<{ result: 
   const result = await fn();
   const dur = Math.round((performance.now() - start) * 100) / 100;
   return { result, dur };
+}
+
+/**
+ * Best-effort fetch of the Portainer stacks list (SWR-cached). A stacks-API
+ * failure must never break the dashboard — stack counts just default to 0.
+ */
+async function fetchStacksSafe(): Promise<import('@dashboard/core/models/portainer.js').Stack[]> {
+  try {
+    return (await cachedFetchSWR(getCacheKey('stacks'), TTL.STACKS, () => portainer.getStacks())) ?? [];
+  } catch (err) {
+    log.warn({ err }, 'stacks fetch failed — stack counts default to 0');
+    return [];
+  }
 }
 
 export async function dashboardRoutes(fastify: FastifyInstance) {
@@ -61,34 +74,23 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
     }
 
     const normalized = endpoints.map(normalizeEndpoint);
-    // Fill Edge Standard endpoints with live counts before the totals reduce
-    // (issue #1249) — otherwise KPI cards under-report running container totals.
-    await enrichEdgeStandardWithLiveInfo(normalized);
+    // Live `/docker/info` is the primary source for per-endpoint counts —
+    // Portainer's Snapshots[] is no longer read (issue #1249+).
+    await enrichEndpointsWithLiveDockerInfo(normalized);
 
-    const totals = normalized.reduce(
-      (acc, ep) => ({
-        endpoints: acc.endpoints + 1,
-        endpointsUp: acc.endpointsUp + (ep.status === 'up' ? 1 : 0),
-        endpointsDown: acc.endpointsDown + (ep.status === 'down' ? 1 : 0),
-        running: acc.running + ep.containersRunning,
-        stopped: acc.stopped + ep.containersStopped,
-        healthy: acc.healthy + ep.containersHealthy,
-        unhealthy: acc.unhealthy + ep.containersUnhealthy,
-        total: acc.total + ep.totalContainers,
-        stacks: acc.stacks + ep.stackCount,
-      }),
-      {
-        endpoints: 0,
-        endpointsUp: 0,
-        endpointsDown: 0,
-        running: 0,
-        stopped: 0,
-        healthy: 0,
-        unhealthy: 0,
-        total: 0,
-        stacks: 0,
-      },
-    );
+    // Stack counts come from the live stacks list (best-effort).
+    const stacks = await fetchStacksSafe();
+    attachStackCounts(normalized, stacks);
+
+    // /summary stays container-free (#801): pass [] so healthy/unhealthy are
+    // 0 placeholders here, then source them from the latest KPI snapshot.
+    const base = computeFleetTotals(normalized, [], stacks.length);
+    const latestKpi = await getLatestKpiSnapshot().catch(() => null);
+    const kpis = {
+      ...base,
+      healthy: latestKpi?.healthy ?? 0,
+      unhealthy: latestKpi?.unhealthy ?? 0,
+    };
 
     // Await security audit that was started in parallel with endpoint fetch.
     const auditEntries = await securityPromise;
@@ -97,7 +99,7 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
       : { totalAudited: 0, flagged: 0, ignored: 0 };
 
     return {
-      kpis: totals,
+      kpis,
       security,
       timestamp: new Date().toISOString(),
     };
@@ -158,8 +160,9 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
     }
 
     const normalized = endpoints.map(normalizeEndpoint);
-    // Live-fetch for Edge Standard endpoints with empty Snapshots[] (issue #1249).
-    await enrichEdgeStandardWithLiveInfo(normalized);
+    // Live `/docker/info` is the primary source for per-endpoint counts (#1249+).
+    await enrichEndpointsWithLiveDockerInfo(normalized);
+    // /resources returns per-stack resource aggregates (from container labels), not endpoint stackCount — no attachStackCounts needed.
     const upEndpoints = normalized.filter((e) => e.status === 'up');
     // Only fetch Docker containers — K8s pods are served by /api/kubernetes/ routes
     const upDockerEndpoints = upEndpoints.filter((e) => isDockerEndpoint(e.type));
@@ -361,9 +364,12 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
     rawEndpoints = endpointTiming.result;
 
     const normalized = rawEndpoints.map(normalizeEndpoint);
-    // Live-fetch for Edge Standard endpoints with empty Snapshots[] (issue #1249).
+    // Live `/docker/info` is the primary source for per-endpoint counts (#1249+).
     // Run before container fan-out so totals/KPIs reflect live container counts.
-    await timed('edge-live', () => enrichEdgeStandardWithLiveInfo(normalized));
+    await timed('edge-live', () => enrichEndpointsWithLiveDockerInfo(normalized));
+    // Stack counts from the live stacks list (best-effort, defaults to 0).
+    const stackList = await fetchStacksSafe();
+    attachStackCounts(normalized, stackList);
     const upEndpoints = normalized.filter((e) => e.status === 'up');
     // Only fetch Docker containers — K8s pods are served by /api/kubernetes/ routes
     const upDockerEndpoints = upEndpoints.filter((e) => isDockerEndpoint(e.type));
@@ -402,29 +408,12 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
       }
 
       // --- Build summary ---
-      const totals = normalized.reduce(
-        (acc, ep) => ({
-          endpoints: acc.endpoints + 1,
-          endpointsUp: acc.endpointsUp + (ep.status === 'up' ? 1 : 0),
-          endpointsDown: acc.endpointsDown + (ep.status === 'down' ? 1 : 0),
-          running: acc.running + ep.containersRunning,
-          stopped: acc.stopped + ep.containersStopped,
-          healthy: acc.healthy + ep.containersHealthy,
-          unhealthy: acc.unhealthy + ep.containersUnhealthy,
-          total: acc.total + ep.totalContainers,
-          stacks: acc.stacks + ep.stackCount,
-        }),
-        {
-          endpoints: 0,
-          endpointsUp: 0,
-          endpointsDown: 0,
-          running: 0,
-          stopped: 0,
-          healthy: 0,
-          unhealthy: 0,
-          total: 0,
-          stacks: 0,
-        },
+      // Counts come from live-enriched endpoints; healthy/unhealthy derive from
+      // the container health statuses we just fetched; stacks from the stacks list.
+      const totals = computeFleetTotals(
+        normalized,
+        allNormalizedContainers.map((c) => c.container),
+        stackList.length,
       );
 
       // --- Build resources ---

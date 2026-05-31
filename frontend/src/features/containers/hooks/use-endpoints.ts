@@ -16,8 +16,6 @@ export interface Endpoint {
   status: 'up' | 'down';
   containersRunning: number;
   containersStopped: number;
-  containersHealthy: number;
-  containersUnhealthy: number;
   totalContainers: number;
   stackCount: number;
   totalCpu: number;
@@ -31,13 +29,11 @@ export interface Endpoint {
   lastCheckIn?: number;
   /**
    * Where container counts came from (issue #1249).
-   * `'snapshot'` is the default Portainer-cached path. `'live'` means we filled
-   * the counts via a live `/docker/info` call through the chisel tunnel (Edge
-   * Standard endpoints whose Snapshots[] never gets populated). `'unavailable'`
-   * means the live fallback was attempted but failed — UI should label this
-   * distinctly from a genuinely empty endpoint.
+   * `'live'` means the counts were filled via a live `/docker/info` call.
+   * `'unavailable'` means the live call was attempted but failed — UI should
+   * label this distinctly from a genuinely empty endpoint.
    */
-  snapshotSource: 'snapshot' | 'live' | 'unavailable';
+  snapshotSource: 'live' | 'unavailable';
   /** Epoch millis of the last live refresh. Set when `snapshotSource === 'live'`. */
   snapshotFetchedAt?: number;
 }

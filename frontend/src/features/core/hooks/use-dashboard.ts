@@ -24,8 +24,6 @@ export interface NormalizedEndpoint {
   status: 'up' | 'down';
   containersRunning: number;
   containersStopped: number;
-  containersHealthy: number;
-  containersUnhealthy: number;
   totalContainers: number;
   stackCount: number;
   totalCpu: number;

@@ -11,8 +11,11 @@ import {
   extractApiError,
   resolveChatCompletionsUrl,
   resolveModelsUrl,
+  buildInfrastructureContext,
   type LlmAuthType,
 } from '../services/llm-client.js';
+import type { NormalizedEndpoint, NormalizedContainer } from '@dashboard/core/portainer/portainer-normalizers.js';
+import type { Insight } from '@dashboard/core/models/monitoring.js';
 
 // Default LLM config used by tests — configured for the OpenAI-compatible API.
 const DEFAULT_LLM_CONFIG = {
@@ -436,5 +439,97 @@ describe('llm-client', () => {
       expect(Agent).toHaveBeenCalledWith({ connect: { rejectUnauthorized: false } });
       expect(process.env.NODE_TLS_REJECT_UNAUTHORIZED).not.toBe('0');
     });
+  });
+});
+
+// Helper builders — minimal valid shapes for type safety
+function makeEndpoint(id: number, name: string, status: 'up' | 'down' = 'up'): NormalizedEndpoint {
+  return {
+    id, name, type: 1, url: '', status,
+    containersRunning: 0, containersStopped: 0, totalContainers: 0, stackCount: 0,
+    totalCpu: 0, totalMemory: 0, isEdge: false, edgeMode: null,
+    snapshotAge: null, checkInInterval: null,
+    capabilities: { exec: true, realtimeLogs: true, liveStats: true, immediateActions: true },
+    snapshotSource: 'live',
+  };
+}
+
+function makeContainer(
+  id: string,
+  name: string,
+  endpointId: number,
+  state: NormalizedContainer['state'] = 'running',
+): NormalizedContainer {
+  return {
+    id, name, image: 'nginx:latest', state, status: state,
+    created: 0, endpointId, endpointName: 'ep',
+    ports: [], networks: [], networkIPs: {}, labels: {},
+  };
+}
+
+describe('buildInfrastructureContext', () => {
+  it('derives per-endpoint running/stopped counts from the containers argument, not endpoint fields', () => {
+    const ep1 = makeEndpoint(1, 'prod');
+    const ep2 = makeEndpoint(2, 'staging');
+
+    const containers: NormalizedContainer[] = [
+      makeContainer('c1', 'nginx', 1, 'running'),
+      makeContainer('c2', 'api', 1, 'running'),
+      makeContainer('c3', 'worker', 1, 'stopped'),
+      makeContainer('c4', 'redis', 2, 'running'),
+    ];
+
+    const result = buildInfrastructureContext([ep1, ep2], containers, []);
+
+    // ep1 (prod): 2 running, 1 stopped
+    expect(result).toContain('prod (up): 2 running, 1 stopped');
+    // ep2 (staging): 1 running, 0 stopped
+    expect(result).toContain('staging (up): 1 running, 0 stopped');
+  });
+
+  it('shows 0 running/0 stopped for an endpoint with no containers', () => {
+    const ep = makeEndpoint(5, 'empty-ep', 'down');
+    const result = buildInfrastructureContext([ep], [], []);
+    expect(result).toContain('empty-ep (down): 0 running, 0 stopped');
+  });
+
+  it('endpoint.containersRunning/Stopped fields are NOT used — only containers arg drives the counts', () => {
+    // Set stale snapshot counts on the endpoint that contradict the containers arg
+    const ep = makeEndpoint(10, 'stale-ep');
+    ep.containersRunning = 99;  // stale/wrong value
+    ep.containersStopped = 88;  // stale/wrong value
+
+    const containers: NormalizedContainer[] = [
+      makeContainer('cx1', 'app', 10, 'running'),
+    ];
+
+    const result = buildInfrastructureContext([ep], containers, []);
+    // Should reflect live containers (1 running, 0 stopped), not stale fields
+    expect(result).toContain('stale-ep (up): 1 running, 0 stopped');
+    expect(result).not.toContain('99 running');
+    expect(result).not.toContain('88 stopped');
+  });
+
+  it('includes insight severity and title in the output', () => {
+    const ep = makeEndpoint(1, 'ep1');
+    const insights: Insight[] = [
+      {
+        id: 'i1',
+        severity: 'critical',
+        title: 'CPU spike',
+        description: 'CPU is above 95%',
+        container_id: null,
+        container_name: null,
+        endpoint_id: 1,
+        endpoint_name: 'ep1',
+        category: 'performance',
+        suggested_action: null,
+        is_acknowledged: 0,
+        created_at: new Date().toISOString(),
+      } as Insight,
+    ];
+
+    const result = buildInfrastructureContext([ep], [], insights);
+    expect(result).toContain('[CRITICAL] CPU spike');
   });
 });

@@ -7,6 +7,8 @@ import {
   classifyCv,
   cvThresholdMultiplier,
   meanAndStd,
+  medianAndMad,
+  modifiedZScore,
   scaledThresholdForCv,
 } from '../services/anomaly-stats.js';
 
@@ -109,5 +111,43 @@ describe('meanAndStd', () => {
     const { mean, std } = meanAndStd([2, 4, 4, 4, 5, 5, 7, 9]);
     expect(mean).toBe(5);
     expect(std).toBeCloseTo(2.0, 9);
+  });
+});
+
+// #1362 — robust statistics core (median + MAD modified z-score).
+describe('medianAndMad', () => {
+  it('returns zeros for an empty array', () => {
+    expect(medianAndMad([])).toEqual({ median: 0, mad: 0 });
+  });
+
+  it('computes median (odd length) and MAD = median of absolute deviations', () => {
+    // [1,2,3,4,5] → median 3; |dev| [2,1,0,1,2] → MAD 1
+    expect(medianAndMad([1, 2, 3, 4, 5])).toEqual({ median: 3, mad: 1 });
+  });
+
+  it('averages the middle two for even length', () => {
+    expect(medianAndMad([1, 2, 3, 4]).median).toBe(2.5);
+  });
+
+  it('returns mad 0 for a constant series', () => {
+    expect(medianAndMad([5, 5, 5])).toEqual({ median: 5, mad: 0 });
+  });
+
+  it('is robust: one extreme outlier moves neither median nor MAD', () => {
+    // [10,10,10,10,1000] → median 10; |dev| [0,0,0,0,990] → MAD 0
+    // (mean/std would be wrecked; that is the whole point.)
+    expect(medianAndMad([10, 10, 10, 10, 1000])).toEqual({ median: 10, mad: 0 });
+  });
+});
+
+describe('modifiedZScore', () => {
+  it('is 0.6745 * (x - median) / MAD (Iglewicz–Hoaglin)', () => {
+    expect(modifiedZScore(13, 3, 1)).toBeCloseTo(0.6745 * 10, 9);
+    expect(modifiedZScore(-7, 3, 1)).toBeCloseTo(0.6745 * -10, 9);
+  });
+
+  it('returns 0 when MAD is 0 (zero-spread is handled by the detector)', () => {
+    expect(modifiedZScore(5, 5, 0)).toBe(0);
+    expect(modifiedZScore(99, 5, 0)).toBe(0);
   });
 });

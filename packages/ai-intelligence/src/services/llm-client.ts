@@ -364,7 +364,12 @@ export function buildInfrastructureContext(
   insights: Insight[],
 ): string {
   const endpointSummary = endpoints
-    .map((ep) => `- ${ep.name} (${ep.status}): ${ep.containersRunning} running, ${ep.containersStopped} stopped`)
+    .map((ep) => {
+      const epContainers = containers.filter((c) => c.endpointId === ep.id);
+      const running = epContainers.filter((c) => c.state === 'running').length;
+      const stopped = epContainers.filter((c) => c.state === 'stopped').length;
+      return `- ${ep.name} (${ep.status}): ${running} running, ${stopped} stopped`;
+    })
     .join('\n');
 
   const runningContainers = containers.filter((c) => c.state === 'running');

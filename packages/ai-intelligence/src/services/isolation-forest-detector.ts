@@ -16,6 +16,54 @@ const modelCache = new Map<string, CachedModel>();
 
 const MIN_TRAINING_SAMPLES = 50;
 
+/**
+ * Deterministic 32-bit seed from a container id (FNV-1a). Seeding per-container
+ * (and NOT per-time-window) makes the trained forest a pure function of the
+ * container + its training data: retrains on stable data reproduce the same
+ * model, so a point no longer flips anomalous↔normal between retrains (#1361).
+ * Mirrors scikit-learn's fixed `random_state` convention.
+ */
+function seedForContainer(containerId: string): number {
+  let h = 0x811c9dc5; // FNV offset basis
+  for (let i = 0; i < containerId.length; i++) {
+    h ^= containerId.charCodeAt(i);
+    h = Math.imul(h, 0x01000193); // FNV prime
+  }
+  return h >>> 0;
+}
+
+/** Mulberry32 seeded PRNG (see isolation-forest.test.ts for rationale). */
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return function () {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * Pair cpu + memory samples by timestamp into [cpu, memory] feature vectors.
+ * Replaces index-based pairing, which mis-aligns the two series on any gap or
+ * count mismatch — pairing cpu@t with memory@t+k and fabricating multivariate
+ * outliers (#1362). Unmatched samples on either side are dropped.
+ */
+export function pairByTimestamp(
+  cpuMetrics: Metric[],
+  memoryMetrics: Metric[],
+): number[][] {
+  const memByTs = new Map<string, number>();
+  for (const m of memoryMetrics) memByTs.set(String(m.timestamp), m.value);
+  const pairs: number[][] = [];
+  for (const c of cpuMetrics) {
+    const mem = memByTs.get(String(c.timestamp));
+    if (mem !== undefined) pairs.push([c.value, mem]);
+  }
+  return pairs;
+}
+
 type GetMetricsFn = (
   containerId: string,
   metricType: string,
@@ -55,13 +103,8 @@ export async function getOrTrainModel(
     return null;
   }
 
-  // Build training data: zip cpu + memory into [cpu, memory][] pairs by matching timestamps
-  // Use index-based pairing since metrics are collected together
-  const pairCount = Math.min(cpuMetrics.length, memoryMetrics.length);
-  const trainingData: number[][] = [];
-  for (let i = 0; i < pairCount; i++) {
-    trainingData.push([cpuMetrics[i].value, memoryMetrics[i].value]);
-  }
+  // Build training data by pairing cpu + memory on timestamp (#1362).
+  const trainingData = pairByTimestamp(cpuMetrics, memoryMetrics);
 
   if (trainingData.length < MIN_TRAINING_SAMPLES) {
     return null;
@@ -71,6 +114,7 @@ export async function getOrTrainModel(
     config.ISOLATION_FOREST_TREES,
     config.ISOLATION_FOREST_SAMPLE_SIZE,
     config.ISOLATION_FOREST_CONTAMINATION,
+    mulberry32(seedForContainer(containerId)),
   );
   forest.fit(trainingData);
 

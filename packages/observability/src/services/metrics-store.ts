@@ -1,6 +1,7 @@
 import { getMetricsDb } from '@dashboard/core/db/timescale.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import type { Metric } from '@dashboard/core/models/metrics.js';
+import { poolHourlyBuckets, type HourlyBucket } from './seasonal-baseline.js';
 
 const log = createChildLogger('metrics-store');
 
@@ -87,6 +88,13 @@ export async function getMovingAverage(
 ): Promise<MovingAverageResult | null> {
   const db = await getMetricsDb();
 
+  // #1361 fix 2 — exclude the point under test from its own baseline.
+  // `OFFSET 1` skips the most recent sample so the rolling window ends BEFORE
+  // the value being evaluated. Without it the current sample is part of the
+  // AVG/STDDEV it is compared against: a spike inflates the std that hides it
+  // (self-masking) and a sustained regression poisons the baseline within one
+  // window. The window therefore covers the `windowSize` samples immediately
+  // preceding the latest one.
   const { rows } = await db.query(
     `SELECT
        AVG(value) as mean,
@@ -96,7 +104,7 @@ export async function getMovingAverage(
        SELECT value FROM metrics
        WHERE container_id = $1 AND metric_type = $2
        ORDER BY timestamp DESC
-       LIMIT $3
+       LIMIT $3 OFFSET 1
      ) sub`,
     [containerId, metricType, windowSize],
   );
@@ -114,21 +122,56 @@ export async function getMovingAverage(
 }
 
 /**
- * Hour-of-day baseline statistics for a container metric (issue #1295).
+ * Raw trailing window of metric values, newest-first, EXCLUDING the most recent
+ * sample (the point under test — same `OFFSET 1` leakage exclusion as
+ * getMovingAverage, #1361 fix 2). Robust detectors (#1362) need the actual
+ * values to compute median + MAD, which cannot be derived from pre-aggregated
+ * mean/std.
+ */
+export async function getMetricWindow(
+  containerId: string,
+  metricType: string,
+  windowSize: number,
+): Promise<number[]> {
+  const db = await getMetricsDb();
+  const { rows } = await db.query(
+    `SELECT value FROM metrics
+     WHERE container_id = $1 AND metric_type = $2
+     ORDER BY timestamp DESC
+     LIMIT $3 OFFSET 1`,
+    [containerId, metricType, windowSize],
+  );
+  return (rows as Array<{ value: number }>).map((r) => Number(r.value));
+}
+
+/**
+ * Hour-of-day (optionally day-of-week) baseline statistics for a container
+ * metric (issue #1295; #1307 aggregate migration).
  *
- * Aggregates samples whose timestamp falls in the supplied UTC hour-of-day
- * (0..23) across the last `lookbackDays` days. Returns null when no samples
- * are available; callers should then fall back to the flat-window baseline.
+ * Reads TimescaleDB's `metrics_1hour` continuous aggregate — one pre-computed
+ * row per (container, metric, hour) — instead of scanning the raw `metrics`
+ * hypertable, then pools the matching per-day hourly buckets back into the
+ * population mean + stddev of the underlying raw samples via the law of total
+ * variance (`poolHourlyBuckets`). This is statistically equivalent to the old
+ * `AVG(value)` / `STDDEV_POP(value)` raw query but touches a few dozen rows
+ * rather than millions.
  *
- * The aggregation uses Postgres `date_part('hour', timestamp AT TIME ZONE
- * 'UTC')` so the bucket boundary is fixed and not influenced by the server
- * local timezone.
+ * When `dayOfWeek` (0=Sun..6=Sat, UTC) is supplied, buckets are additionally
+ * filtered to that weekday — week-aware seasonality (weekday vs weekend), the
+ * #1364 carry-over. The caller decides the lookback (a wider window is needed
+ * for day-of-week so each weekday has enough occurrences).
+ *
+ * The current, in-progress hour bucket is excluded (`bucket < date_trunc('hour',
+ * NOW())`) so the baseline cannot include / be poisoned by the value under test
+ * — the aggregate-era equivalent of the raw path's OFFSET 1. Returns null when
+ * no completed buckets match; callers then fall back to a coarser baseline.
  */
 export async function getMovingAverageByHourOfDay(
   containerId: string,
   metricType: string,
   hourOfDay: number,
   lookbackDays: number,
+  dayOfWeek?: number,
 ): Promise<MovingAverageResult | null> {
   if (!Number.isInteger(hourOfDay) || hourOfDay < 0 || hourOfDay > 23) {
     return null;
@@ -136,31 +179,85 @@ export async function getMovingAverageByHourOfDay(
   if (!Number.isFinite(lookbackDays) || lookbackDays <= 0) {
     return null;
   }
+  const filterByDow = Number.isInteger(dayOfWeek) && dayOfWeek! >= 0 && dayOfWeek! <= 6;
   const db = await getMetricsDb();
 
+  const params: unknown[] = [containerId, metricType, lookbackDays, hourOfDay];
+  if (filterByDow) params.push(dayOfWeek);
+
   const { rows } = await db.query(
-    `SELECT
-       AVG(value) as mean,
-       STDDEV_POP(value) as std_dev,
-       COUNT(*)::int as sample_count
-     FROM metrics
+    `SELECT avg_value, stddev_value, sample_count
+     FROM metrics_1hour
+     WHERE container_id = $1
+       AND metric_type = $2
+       AND bucket >= NOW() - ($3::int * INTERVAL '1 day')
+       AND date_part('hour', bucket AT TIME ZONE 'UTC') = $4
+       ${filterByDow ? `AND date_part('dow', bucket AT TIME ZONE 'UTC') = $5` : ''}
+       -- Exclude the current, in-progress hour (the point under test lives there)
+       -- so the seasonal baseline is built only from completed past hours.
+       AND bucket < date_trunc('hour', NOW())`,
+    params,
+  );
+
+  const buckets: HourlyBucket[] = (rows as Array<{ avg_value: number; stddev_value: number | null; sample_count: number }>)
+    .map((r) => ({
+      avg_value: Number(r.avg_value),
+      stddev_value: r.stddev_value == null ? null : Number(r.stddev_value),
+      sample_count: Number(r.sample_count),
+    }));
+
+  const pooled = poolHourlyBuckets(buckets);
+  if (!pooled) return null;
+  return { mean: pooled.mean, std_dev: pooled.std_dev, sample_count: pooled.sample_count };
+}
+
+/**
+ * Raw hour-of-day (optionally day-of-week) window: metric values whose timestamp
+ * falls in the supplied UTC hour-of-day over the last N days, newest-first,
+ * EXCLUDING the most recent sample (the point under test). Robust detection
+ * (#1362) uses this to keep #1295 seasonality while computing median + MAD.
+ *
+ * Unlike the mean/std path, this stays on the RAW `metrics` hypertable: median +
+ * MAD need the actual samples, and the `metrics_1hour` aggregate only stores
+ * mean/stddev — pooling daily hourly *averages* would understate the spread and
+ * over-flag. When `dayOfWeek` (0=Sun..6=Sat, UTC) is supplied the query is
+ * narrowed to that weekday (week-aware seasonality, #1307/#1364), which also
+ * scans *fewer* rows. Returns [] for an out-of-range hour, bad lookback, or
+ * empty bucket.
+ */
+export async function getMetricWindowByHourOfDay(
+  containerId: string,
+  metricType: string,
+  hourOfDay: number,
+  lookbackDays: number,
+  dayOfWeek?: number,
+): Promise<number[]> {
+  if (!Number.isInteger(hourOfDay) || hourOfDay < 0 || hourOfDay > 23) {
+    return [];
+  }
+  if (!Number.isFinite(lookbackDays) || lookbackDays <= 0) {
+    return [];
+  }
+  const filterByDow = Number.isInteger(dayOfWeek) && dayOfWeek! >= 0 && dayOfWeek! <= 6;
+  const db = await getMetricsDb();
+  const params: unknown[] = [containerId, metricType, lookbackDays, hourOfDay];
+  if (filterByDow) params.push(dayOfWeek);
+
+  const { rows } = await db.query(
+    `SELECT value FROM metrics
      WHERE container_id = $1
        AND metric_type = $2
        AND timestamp >= NOW() - ($3::int * INTERVAL '1 day')
-       AND date_part('hour', timestamp AT TIME ZONE 'UTC') = $4`,
-    [containerId, metricType, lookbackDays, hourOfDay],
+       AND date_part('hour', timestamp AT TIME ZONE 'UTC') = $4
+       ${filterByDow ? `AND date_part('dow', timestamp AT TIME ZONE 'UTC') = $5` : ''}
+       AND timestamp < (
+         SELECT MAX(timestamp) FROM metrics
+         WHERE container_id = $1 AND metric_type = $2
+       )
+     ORDER BY timestamp DESC`,
+    params,
   );
-
-  const result = rows[0];
-  if (!result || result.sample_count === 0 || result.mean === null) {
-    return null;
-  }
-
-  return {
-    mean: Number(result.mean),
-    std_dev: Number(result.std_dev ?? 0),
-    sample_count: result.sample_count,
-  };
+  return (rows as Array<{ value: number }>).map((r) => Number(r.value));
 }
 
 export async function cleanOldMetrics(retentionDays: number): Promise<number> {
