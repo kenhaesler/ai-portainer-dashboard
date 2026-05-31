@@ -8,6 +8,7 @@
  * threshold-independent summary that is the right headline for rare-event
  * detection (not ROC-AUC, which is optimistic under heavy imbalance).
  */
+import { meanAndStd, medianAndMad, modifiedZScore } from './anomaly-stats.js';
 
 export interface PrecisionRecallF1 {
   precision: number;
@@ -64,4 +65,59 @@ export function prAuc(scores: readonly number[], labels: readonly boolean[]): nu
     prevRecall = recall;
   }
   return ap;
+}
+
+/**
+ * Score each point of a series with the production ROBUST detector (#1362):
+ * one-sided modified z-score (median + MAD) over a trailing window that excludes
+ * the point under test. Drops score 0 (one-sided). The first `windowSize` points
+ * are warm-up (`null`). Used to replay labelled series through the eval rig.
+ */
+export function scoreSeriesRobust(
+  values: readonly number[],
+  windowSize: number,
+): Array<number | null> {
+  const scores: Array<number | null> = [];
+  for (let i = 0; i < values.length; i++) {
+    if (i < windowSize) {
+      scores.push(null);
+      continue;
+    }
+    const window = values.slice(i - windowSize, i);
+    const { median, mad } = medianAndMad(window);
+    if (mad === 0) {
+      const tol = Math.max(Math.abs(median) * 0.1, 0.01);
+      scores.push(Math.max(0, (values[i] - median) / tol));
+    } else {
+      scores.push(Math.max(0, modifiedZScore(values[i], median, mad)));
+    }
+  }
+  return scores;
+}
+
+/**
+ * Score each point with the legacy TWO-SIDED z-score (mean + std) — the
+ * pre-#1361/#1362 detector. Kept so the eval rig can quantify the improvement
+ * (and guard against regressing back toward it).
+ */
+export function scoreSeriesZScore(
+  values: readonly number[],
+  windowSize: number,
+): Array<number | null> {
+  const scores: Array<number | null> = [];
+  for (let i = 0; i < values.length; i++) {
+    if (i < windowSize) {
+      scores.push(null);
+      continue;
+    }
+    const window = values.slice(i - windowSize, i);
+    const { mean, std } = meanAndStd(window);
+    if (std === 0) {
+      const tol = Math.max(Math.abs(mean) * 0.1, 0.01);
+      scores.push(Math.abs(values[i] - mean) / tol);
+    } else {
+      scores.push(Math.abs((values[i] - mean) / std));
+    }
+  }
+  return scores;
 }
