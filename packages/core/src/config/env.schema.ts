@@ -43,8 +43,11 @@ export const envSchema = z.object({
   PORTAINER_CB_FAILURE_THRESHOLD: z.coerce.number().int().min(1).max(50).default(5),
   PORTAINER_CB_RESET_TIMEOUT_MS: z.coerce.number().int().min(1000).max(300000).default(30000),
 
-  // Edge Standard live-fetch fallback (issue #1249) — fills container counts for
-  // Edge Agent Standard endpoints whose Portainer Snapshots[] never gets populated.
+  // Live /docker/info — PRIMARY source for container counts + host CPU/memory on
+  // all up Docker endpoints (Portainer's per-endpoint Snapshots[] is no longer
+  // written back by edge agents). Env names kept for backward compatibility.
+  // ENABLED=false is a hard kill-switch: with no snapshot fallback, endpoints
+  // then render as "unavailable" (0 counts).
   EDGE_LIVE_QUERY_ENABLED: z.string().default('true').transform((v) => v === 'true' || v === '1'),
   EDGE_LIVE_QUERY_CONCURRENCY: z.coerce.number().int().min(1).max(20).default(2),
   EDGE_LIVE_QUERY_INTERVAL_SECONDS: z.coerce.number().int().min(15).max(3600).default(60),
