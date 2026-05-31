@@ -333,6 +333,7 @@ export function createMonitoringService(deps: MonitoringDeps) {
         monCfg.anomalyDetectionMethod,
         deps.metrics.getMovingAverage,
         deps.metrics.getMovingAverageByHourOfDay,
+        deps.metrics.getMetricWindow,
       );
 
       // Process batch results with cooldown checks

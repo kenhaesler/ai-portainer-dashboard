@@ -7,11 +7,24 @@ import {
   type GetMovingAverageByHourOfDayFn,
   type GetMovingAverageFn,
 } from './anomaly-detector.js';
-import { classifyCv, cvThresholdMultiplier, exceedsThreshold } from './anomaly-stats.js';
+import {
+  classifyCv,
+  cvThresholdMultiplier,
+  exceedsThreshold,
+  medianAndMad,
+  modifiedZScore,
+} from './anomaly-stats.js';
 
 const log = createChildLogger('adaptive-anomaly');
 
-export type DetectionMethod = 'zscore' | 'bollinger' | 'adaptive' | 'isolation-forest';
+export type DetectionMethod = 'zscore' | 'bollinger' | 'adaptive' | 'isolation-forest' | 'robust-mad';
+
+/** Fetches the raw trailing window (newest-first, excludes the point under test). */
+export type GetMetricWindowFn = (
+  containerId: string,
+  metricType: string,
+  windowSize: number,
+) => Promise<number[]>;
 
 interface BollingerBands {
   upper: number;
@@ -169,6 +182,75 @@ export async function detectAnomalyAdaptive(
 }
 
 /**
+ * Robust median+MAD detection (#1362). Uses the modified z-score
+ * (Iglewicz–Hoaglin) over the RAW trailing window so outliers in the baseline
+ * neither mask a real anomaly nor poison the band — unlike the mean/std
+ * detectors. One-sided by default (`ANOMALY_DETECTION_DIRECTION`). The window
+ * comes from `getMetricWindow`, which already excludes the point under test
+ * (#1361 fix 2).
+ */
+export async function detectAnomalyRobust(
+  containerId: string,
+  containerName: string,
+  metricType: string,
+  currentValue: number,
+  getMetricWindow: GetMetricWindowFn,
+  now: Date = new Date(),
+): Promise<AnomalyDetection | null> {
+  const config = getConfig();
+  const threshold = config.ANOMALY_ZSCORE_THRESHOLD;
+  const direction = config.ANOMALY_DETECTION_DIRECTION;
+  const windowSize = config.ANOMALY_MOVING_AVERAGE_WINDOW;
+  const minSamples = config.ANOMALY_MIN_SAMPLES;
+
+  const window = await getMetricWindow(containerId, metricType, windowSize);
+  if (window.length < minSamples) {
+    log.debug(
+      { containerId, metricType, sampleCount: window.length, minSamples },
+      'Insufficient samples for robust detection',
+    );
+    return null;
+  }
+
+  const { median, mad } = medianAndMad(window);
+
+  let zScore: number;
+  let isAnomalous: boolean;
+  if (mad === 0) {
+    // Perfectly stable baseline → modified z is undefined. Use a relative
+    // tolerance (mirrors the std === 0 path in the other detectors).
+    const tolerance = Math.max(Math.abs(median) * 0.1, 0.01);
+    const delta = currentValue - median;
+    isAnomalous = exceedsThreshold(delta, tolerance, direction);
+    zScore = isAnomalous ? delta / tolerance : 0;
+  } else {
+    zScore = modifiedZScore(currentValue, median, mad);
+    isAnomalous = exceedsThreshold(zScore, threshold, direction);
+  }
+
+  if (isAnomalous) {
+    log.warn(
+      { containerId, metricType, currentValue, median, mad, zScore, threshold },
+      'Anomaly detected (robust-mad)',
+    );
+  }
+
+  return {
+    container_id: containerId,
+    container_name: containerName,
+    metric_type: metricType,
+    current_value: currentValue,
+    mean: median, // robust center (median)
+    std_dev: mad, // robust spread (MAD)
+    z_score: Math.round(zScore * 100) / 100,
+    is_anomalous: isAnomalous,
+    threshold,
+    timestamp: now.toISOString(),
+    method: 'robust-mad',
+  };
+}
+
+/**
  * Select the best detection method based on data characteristics.
  */
 function selectMethod(mean: number, stdDev: number, sampleCount: number): DetectionMethod {
@@ -206,21 +288,33 @@ export async function detectAnomaliesBatch(
   method?: DetectionMethod,
   getMovingAverage?: GetMovingAverageFn,
   getMovingAverageByHourOfDay?: GetMovingAverageByHourOfDayFn,
+  getMetricWindow?: GetMetricWindowFn,
 ): Promise<Map<string, AnomalyDetection>> {
   const results = new Map<string, AnomalyDetection>();
   if (items.length === 0) return results;
 
   const settled = await Promise.allSettled(
     items.map(async (item) => {
-      const detection = await detectAnomalyAdaptive(
-        item.containerId,
-        item.containerName,
-        item.metricType,
-        item.currentValue,
-        method,
-        getMovingAverage,
-        getMovingAverageByHourOfDay,
-      );
+      // Route to robust median+MAD when selected (#1362); otherwise the
+      // mean/std adaptive path. Robust needs the raw window, not aggregates.
+      const detection =
+        method === 'robust-mad' && getMetricWindow
+          ? await detectAnomalyRobust(
+              item.containerId,
+              item.containerName,
+              item.metricType,
+              item.currentValue,
+              getMetricWindow,
+            )
+          : await detectAnomalyAdaptive(
+              item.containerId,
+              item.containerName,
+              item.metricType,
+              item.currentValue,
+              method,
+              getMovingAverage,
+              getMovingAverageByHourOfDay,
+            );
       return { key: `${item.containerId}:${item.metricType}`, detection };
     }),
   );

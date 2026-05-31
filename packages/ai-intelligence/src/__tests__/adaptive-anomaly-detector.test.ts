@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { setConfigForTest, resetConfig } from '@dashboard/core/config/index.js';
-import { calculateBollingerBands, detectAnomalyAdaptive } from '../services/adaptive-anomaly-detector.js';
+import { calculateBollingerBands, detectAnomalyAdaptive, detectAnomalyRobust } from '../services/adaptive-anomaly-detector.js';
 
 // DI pattern — getMovingAverage is passed as a parameter, no @dashboard/observability needed
 const mockGetMovingAverage = vi.fn();
@@ -158,6 +158,54 @@ describe('adaptive-anomaly-detector', () => {
       expect(result).not.toBeNull();
       expect(result!.is_anomalous).toBe(false);
       expect(result!.z_score).toBe(0);
+    });
+
+    // #1362 — robust median+MAD detection (one-sided, outlier-resistant).
+    describe('detectAnomalyRobust', () => {
+      // median 50, MAD 4 → modified-z threshold (2.5) is crossed at value > ~64.8.
+      const spread = () => [44, 46, 48, 50, 50, 52, 54, 56, 42, 58];
+
+      it('flags a spike beyond the modified-z threshold', async () => {
+        const getWindow = vi.fn().mockResolvedValue(spread());
+        const r = await detectAnomalyRobust('c1', 'web', 'cpu', 80, getWindow);
+        expect(r).not.toBeNull();
+        expect(r!.is_anomalous).toBe(true);
+        expect(r!.method).toBe('robust-mad');
+        expect(getWindow).toHaveBeenCalledWith('c1', 'cpu', 30);
+      });
+
+      it('does NOT flag a value within the robust band', async () => {
+        const getWindow = vi.fn().mockResolvedValue(spread());
+        const r = await detectAnomalyRobust('c1', 'web', 'cpu', 60, getWindow);
+        expect(r!.is_anomalous).toBe(false);
+      });
+
+      it('does NOT flag a drop (one-sided spike default)', async () => {
+        const getWindow = vi.fn().mockResolvedValue(spread());
+        const r = await detectAnomalyRobust('c1', 'web', 'cpu', 20, getWindow);
+        expect(r!.is_anomalous).toBe(false);
+      });
+
+      it('is robust: a prior spike in the window does not mask a real anomaly', async () => {
+        // The 200 wrecks mean/std (which would hide the 70); median/MAD ignore it.
+        const getWindow = vi.fn().mockResolvedValue([44, 46, 48, 50, 50, 52, 54, 56, 42, 200]);
+        const r = await detectAnomalyRobust('c1', 'web', 'cpu', 70, getWindow);
+        expect(r!.is_anomalous).toBe(true);
+      });
+
+      it('returns null below the minimum sample count', async () => {
+        const getWindow = vi.fn().mockResolvedValue([50, 50, 50]); // < ANOMALY_MIN_SAMPLES (10)
+        expect(await detectAnomalyRobust('c1', 'web', 'cpu', 80, getWindow)).toBeNull();
+      });
+
+      it('uses a relative tolerance when MAD is 0 (perfectly stable baseline)', async () => {
+        const flat = Array(12).fill(50);
+        const getWindow = vi.fn().mockResolvedValue(flat);
+        const spike = await detectAnomalyRobust('c1', 'web', 'cpu', 80, getWindow);
+        const tiny = await detectAnomalyRobust('c1', 'web', 'cpu', 50.2, getWindow);
+        expect(spike!.is_anomalous).toBe(true);
+        expect(tiny!.is_anomalous).toBe(false); // within 10% tolerance of median
+      });
     });
 
     it('falls back from bollinger to zscore when bollinger is disabled', async () => {
