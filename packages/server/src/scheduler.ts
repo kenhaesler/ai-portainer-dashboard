@@ -1,10 +1,10 @@
 import pLimit from 'p-limit';
 import { getConfig } from '@dashboard/core/config/index.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
-import { getEndpoints, getContainers, isEndpointDegraded, getImages } from '@dashboard/core/portainer/index.js';
+import { getEndpoints, getContainers, isEndpointDegraded, getImages, collectFleetOverview } from '@dashboard/core/portainer/index.js';
 import { isDockerEndpoint } from '@dashboard/core/models/portainer.js';
 import { cachedFetch, cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/index.js';
-import { normalizeEndpoint, type NormalizedEndpoint } from '@dashboard/core/portainer/index.js';
+import { normalizeEndpoint } from '@dashboard/core/portainer/index.js';
 import { getSetting, getEffectiveHarborConfig, getEffectiveMonitoringSchedulerConfig, cleanExpiredSessions, cleanExpiredStreamTickets } from '@dashboard/core/services/index.js';
 import { runWithTraceContext } from '@dashboard/core/tracing/index.js';
 import { startCooldownSweep, stopCooldownSweep, cleanupOldInsights, pruneCanaryRegistry, runDedupTelemetryCycle, cleanupOldDedupMetrics } from '@dashboard/ai';
@@ -199,32 +199,21 @@ export async function runMetricsCollection(): Promise<void> {
   }
 }
 
-async function runKpiSnapshotCollection(): Promise<void> {
+export async function runKpiSnapshotCollection(): Promise<void> {
   log.debug('Running KPI snapshot collection');
   try {
-    const endpoints = await cachedFetchSWR(
-      getCacheKey('endpoints'),
-      TTL.ENDPOINTS,
-      () => getEndpoints(),
-    );
-    const normalized = endpoints.map(normalizeEndpoint);
-
-    const totals = normalized.reduce(
-      (acc, ep) => ({
-        endpoints: acc.endpoints + 1,
-        endpoints_up: acc.endpoints_up + (ep.status === 'up' ? 1 : 0),
-        endpoints_down: acc.endpoints_down + (ep.status === 'down' ? 1 : 0),
-        running: acc.running + ep.containersRunning,
-        stopped: acc.stopped + ep.containersStopped,
-        healthy: acc.healthy + ep.containersHealthy,
-        unhealthy: acc.unhealthy + ep.containersUnhealthy,
-        total: acc.total + ep.totalContainers,
-        stacks: acc.stacks + ep.stackCount,
-      }),
-      { endpoints: 0, endpoints_up: 0, endpoints_down: 0, running: 0, stopped: 0, healthy: 0, unhealthy: 0, total: 0, stacks: 0 },
-    );
-
-    await insertKpiSnapshot(totals);
+    const { totals } = await collectFleetOverview();
+    await insertKpiSnapshot({
+      endpoints: totals.endpoints,
+      endpoints_up: totals.endpointsUp,
+      endpoints_down: totals.endpointsDown,
+      running: totals.running,
+      stopped: totals.stopped,
+      healthy: totals.healthy,
+      unhealthy: totals.unhealthy,
+      total: totals.total,
+      stacks: totals.stacks,
+    });
     log.debug('KPI snapshot collected');
   } catch (err) {
     log.error({ err }, 'KPI snapshot collection failed');
