@@ -6,13 +6,13 @@ import { createChildLogger } from '../utils/logger.js';
 import { withSpan } from '../tracing/trace-context.js';
 import { CircuitBreaker } from './circuit-breaker.js';
 import {
-  EndpointSchema, ContainerSchema, StackSchema,
+  EndpointSchema, StackSchema,
   ContainerStatsSchema, NetworkSchema, ImageSchema,
   EndpointArraySchema, ContainerArraySchema, StackArraySchema,
   NetworkArraySchema, ImageArraySchema,
   EdgeJobSchema, EdgeJobArraySchema, EdgeJobTaskArraySchema,
   K8sPodListSchema, K8sDeploymentListSchema, K8sServiceListSchema, K8sNamespaceListSchema,
-  isKubernetesEndpoint, isDockerEndpoint,
+  isKubernetesEndpoint, isDockerEndpoint, containerFromInspect,
   type Endpoint, type Container, type Stack,
   type ContainerStats, type Network, type DockerImage, type EdgeJob, type EdgeJobTask,
   type K8sPod, type K8sDeployment, type K8sService, type K8sNamespace,
@@ -527,10 +527,13 @@ export async function getContainers(endpointId: number, all = true): Promise<Con
 }
 
 export async function getContainer(endpointId: number, containerId: string): Promise<Container> {
+  // NB: this hits the Docker *inspect* endpoint, whose response shape differs
+  // from the list endpoint that ContainerSchema models — containerFromInspect
+  // bridges the two (see #1387).
   const raw = await portainerFetch<unknown>(
     `/api/endpoints/${endpointId}/docker/containers/${containerId}/json`,
   );
-  const container = ContainerSchema.parse(raw);
+  const container = containerFromInspect(raw);
   return {
     ...container,
     Labels: sanitizeContainerLabels(container.Labels ?? {}),

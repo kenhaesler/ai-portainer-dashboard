@@ -31,7 +31,9 @@ import {
   isEdgeTunnelNotActive,
   EDGE_TUNNEL_NOT_ACTIVE_TOKEN,
   getDockerInfo,
+  getContainer,
 } from './portainer-client.js';
+import { normalizeContainer } from './portainer-normalizers.js';
 import pLimit from 'p-limit';
 
 const mockFetch = vi.mocked(undiciFetch);
@@ -475,5 +477,115 @@ describe('getDockerInfo — narrow slice + defensive narrowing', () => {
       OSType: undefined,
       Architecture: undefined,
     });
+  });
+});
+
+// =====================================================================
+//  getContainer — Docker inspect-response normalization (#1387)
+//
+//  getContainer hits the INSPECT endpoint (/containers/{id}/json), whose
+//  shape differs from the LIST endpoint (/containers/json) that
+//  ContainerSchema models:
+//    - State is an OBJECT ({ Status, Running, Health, ... }), not a string
+//    - Created is an ISO-8601 STRING, not a unix number
+//    - the name is a single `Name` field, not `Names: string[]`
+//    - image tag + labels live under `Config`, not at the top level
+//  Parsing the inspect body with the list schema threw a ZodError and broke
+//  PCAP capture-status polling. getContainer must normalize inspect → the
+//  Container (list) contract both callers (pcap-service, container-detail
+//  route via normalizeContainer) depend on.
+// =====================================================================
+
+describe('getContainer — Docker inspect normalization (#1387)', () => {
+  beforeEach(() => {
+    _resetClientState();
+    mockFetch.mockReset();
+  });
+
+  afterEach(() => {
+    _resetClientState();
+  });
+
+  const inspectBody = {
+    Id: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+    Created: '2026-05-31T16:30:00.000Z',
+    Name: '/pcap-sidecar-xyz',
+    State: {
+      Status: 'running',
+      Running: true,
+      Paused: false,
+      Restarting: false,
+      Dead: false,
+      ExitCode: 0,
+      Health: { Status: 'healthy', FailingStreak: 0 },
+    },
+    Image: 'sha256:deadbeefcafe',
+    Config: {
+      Image: 'nicolaka/netshoot:latest',
+      Labels: {
+        'com.docker.compose.project': 'pcap',
+        'custom.path': '/var/lib/docker/volumes/secret',
+      },
+    },
+    HostConfig: { NetworkMode: 'container:target', Privileged: false },
+    NetworkSettings: {
+      Networks: { bridge: { NetworkID: 'net1', IPAddress: '172.17.0.5', Gateway: '172.17.0.1' } },
+    },
+    Mounts: [],
+  };
+
+  it('parses the inspect response without throwing (repro of the ZodError)', async () => {
+    mockFetch.mockResolvedValueOnce(buildJsonResponse(200, 'OK', inspectBody));
+    await expect(getContainer(4, inspectBody.Id)).resolves.toBeDefined();
+  });
+
+  it('exposes State as a plain status string (the shape pcap-service polls)', async () => {
+    mockFetch.mockResolvedValueOnce(buildJsonResponse(200, 'OK', inspectBody));
+    const c = await getContainer(4, inspectBody.Id);
+    expect(c.State).toBe('running');
+  });
+
+  it('maps the single inspect Name into Names[] so name resolution works', async () => {
+    mockFetch.mockResolvedValueOnce(buildJsonResponse(200, 'OK', inspectBody));
+    const c = await getContainer(4, inspectBody.Id);
+    expect(c.Names).toEqual(['/pcap-sidecar-xyz']);
+  });
+
+  it('converts the ISO Created timestamp to unix seconds (number)', async () => {
+    mockFetch.mockResolvedValueOnce(buildJsonResponse(200, 'OK', inspectBody));
+    const c = await getContainer(4, inspectBody.Id);
+    expect(c.Created).toBe(Math.floor(Date.parse('2026-05-31T16:30:00.000Z') / 1000));
+  });
+
+  it('uses the human-readable Config.Image tag, not the image digest', async () => {
+    mockFetch.mockResolvedValueOnce(buildJsonResponse(200, 'OK', inspectBody));
+    const c = await getContainer(4, inspectBody.Id);
+    expect(c.Image).toBe('nicolaka/netshoot:latest');
+  });
+
+  it('pulls labels from Config.Labels and sanitizes path-disclosing values', async () => {
+    mockFetch.mockResolvedValueOnce(buildJsonResponse(200, 'OK', inspectBody));
+    const c = await getContainer(4, inspectBody.Id);
+    expect(c.Labels?.['com.docker.compose.project']).toBe('pcap');
+    expect(c.Labels?.['custom.path']).toBe('[REDACTED]');
+  });
+
+  it('survives normalizeContainer end-to-end (state + health + name)', async () => {
+    mockFetch.mockResolvedValueOnce(buildJsonResponse(200, 'OK', inspectBody));
+    const c = await getContainer(4, inspectBody.Id);
+    const normalized = normalizeContainer(c, 4, 'prod');
+    expect(normalized.state).toBe('running');
+    expect(normalized.healthStatus).toBe('healthy');
+    expect(normalized.name).toBe('pcap-sidecar-xyz');
+  });
+
+  it('maps a stopped container State.Status through to normalizeContainer', async () => {
+    mockFetch.mockResolvedValueOnce(buildJsonResponse(200, 'OK', {
+      ...inspectBody,
+      State: { Status: 'exited', Running: false, Dead: false, ExitCode: 137 },
+    }));
+    const c = await getContainer(4, inspectBody.Id);
+    expect(c.State).toBe('exited');
+    expect(normalizeContainer(c, 4, 'prod').state).toBe('stopped');
   });
 });
