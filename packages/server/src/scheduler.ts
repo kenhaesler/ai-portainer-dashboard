@@ -1,7 +1,7 @@
 import pLimit from 'p-limit';
 import { getConfig } from '@dashboard/core/config/index.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
-import { getEndpoints, getContainers, isEndpointDegraded, getImages } from '@dashboard/core/portainer/index.js';
+import { getEndpoints, getContainers, getStacksByEndpoint, isEndpointDegraded, getImages } from '@dashboard/core/portainer/index.js';
 import { isDockerEndpoint } from '@dashboard/core/models/portainer.js';
 import { cachedFetch, cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/index.js';
 import { normalizeEndpoint, type NormalizedEndpoint } from '@dashboard/core/portainer/index.js';
@@ -452,24 +452,29 @@ async function waitForPortainer(): Promise<boolean> {
   return false;
 }
 
-async function warmCache(): Promise<void> {
-  log.info('Warming cache: endpoints + containers');
+export async function warmCache(): Promise<void> {
+  log.info('Warming cache: endpoints + containers + stacks');
   try {
     const endpoints = await cachedFetch(
       getCacheKey('endpoints'),
       TTL.ENDPOINTS,
       () => getEndpoints(),
     );
-    // Pre-fetch containers for Docker endpoints only (K8s endpoints use different API)
+    // Pre-fetch containers + stacks for Docker endpoints only (K8s endpoints use different API)
     const dockerEndpoints = endpoints.filter((ep) => isDockerEndpoint(ep.Type));
     await Promise.allSettled(
-      dockerEndpoints.map((ep) =>
+      dockerEndpoints.flatMap((ep) => [
         cachedFetch(
           getCacheKey('containers', ep.Id),
           TTL.CONTAINERS,
           () => getContainers(ep.Id),
         ),
-      ),
+        cachedFetch(
+          getCacheKey('stacks', ep.Id),
+          TTL.STACKS,
+          () => getStacksByEndpoint(ep.Id),
+        ),
+      ]),
     );
     log.info({ endpoints: endpoints.length, dockerEndpoints: dockerEndpoints.length }, 'Cache warmed successfully');
   } catch (err) {
