@@ -215,7 +215,7 @@ export function createMonitoringService(deps: MonitoringDeps) {
       await insertMonitoringSnapshot({
         containersRunning: normalizedContainers.filter((c) => c.state === 'running').length,
         containersStopped: normalizedContainers.filter((c) => c.state === 'stopped').length,
-        containersUnhealthy: endpoints.reduce((acc, endpoint) => acc + endpoint.containersUnhealthy, 0),
+        containersUnhealthy: normalizedContainers.filter((c) => c.healthStatus === 'unhealthy').length,
         endpointsUp: endpoints.filter((endpoint) => endpoint.status === 'up').length,
         endpointsDown: endpoints.filter((endpoint) => endpoint.status === 'down').length,
       });
