@@ -120,6 +120,7 @@ import {
   runKpiSnapshotCollection,
   isMetricsCycleRunning,
   _resetMetricsMutex,
+  warmCache,
 } from '../scheduler.js';
 
 // ---------------------------------------------------------------------------
@@ -128,6 +129,7 @@ import {
 let getEndpointsMock: any;
 let getContainersMock: any;
 let getImagesMock: any;
+let getStacksByEndpointMock: any;
 let cachedFetchSWRSpy: any;
 
 // ---------------------------------------------------------------------------
@@ -195,6 +197,7 @@ beforeEach(async () => {
   getEndpointsMock = vi.spyOn(portainerClient, 'getEndpoints').mockResolvedValue([] as any);
   getContainersMock = vi.spyOn(portainerClient, 'getContainers').mockResolvedValue([] as any);
   getImagesMock = vi.spyOn(portainerClient, 'getImages').mockResolvedValue([] as any);
+  getStacksByEndpointMock = vi.spyOn(portainerClient, 'getStacksByEndpoint').mockResolvedValue([] as any);
 });
 
 // ---------------------------------------------------------------------------
@@ -628,6 +631,23 @@ describe('scheduler/setup – runCleanup prunes the LLM canary registry (#1119)'
 
     expect(cleanExpiredSessionsMock).toHaveBeenCalledTimes(1);
     expect(cleanupOldInsightsMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('scheduler/setup – warmCache (#1393)', () => {
+  it('pre-warms per-endpoint stacks for Docker endpoints only, alongside containers', async () => {
+    getEndpointsMock.mockResolvedValueOnce([
+      { Id: 1, Name: 'docker-ep', Status: 1, Type: 1, URL: 'tcp://localhost' },
+      { Id: 5, Name: 'k8s-ep', Status: 1, Type: 5, URL: 'tcp://localhost' },
+    ] as any);
+
+    await warmCache();
+
+    // Stacks pre-warmed for the Docker endpoint, not the Kubernetes one.
+    expect(getStacksByEndpointMock).toHaveBeenCalledWith(1);
+    expect(getStacksByEndpointMock).not.toHaveBeenCalledWith(5);
+    // Containers warm-up still happens for the Docker endpoint (unchanged).
+    expect(getContainersMock).toHaveBeenCalledWith(1);
   });
 });
 
