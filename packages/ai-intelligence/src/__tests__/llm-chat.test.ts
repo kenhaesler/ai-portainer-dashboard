@@ -13,12 +13,14 @@ const {
   mockCollectAllTools,
   mockRouteToolCalls,
   mockGetEffectiveLlmConfig,
+  mockCollectFleetOverview,
 } = vi.hoisted(() => ({
   mockUndiciFetch: vi.fn(),
   mockParseToolCalls: vi.fn(),
   mockCollectAllTools: vi.fn(),
   mockRouteToolCalls: vi.fn(),
   mockGetEffectiveLlmConfig: vi.fn(),
+  mockCollectFleetOverview: vi.fn(),
 }));
 
 // ── Module mocks ──
@@ -62,6 +64,14 @@ vi.mock('../services/prompt-store.js', () => ({
   getEffectiveLlmConfig: mockGetEffectiveLlmConfig,
 }));
 
+// Mock collectFleetOverview (live fleet data) — the source builds the infra
+// context from its `totals`/`endpoints`. Passthrough everything else in the
+// live-fleet module so unrelated exports keep their real behavior.
+vi.mock('@dashboard/core/portainer/live-fleet.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@dashboard/core/portainer/live-fleet.js')>();
+  return { ...actual, collectFleetOverview: mockCollectFleetOverview };
+});
+
 import * as portainerClient from '@dashboard/core/portainer/portainer-client.js';
 import * as portainerCache from '@dashboard/core/portainer/portainer-cache.js';
 import { cache } from '@dashboard/core/portainer/portainer-cache.js';
@@ -97,6 +107,7 @@ import {
   CHAT_THROTTLE_MS,
   assembleBudgetedMessages,
   INFRA_TRUNCATION_MARKER,
+  __resetInfraContextCacheForTest,
 } from '../sockets/llm-chat.js';
 import { getAuthHeaders } from '../services/llm-client.js';
 import { getCanary, clearCanary } from '../services/prompt-guard.js';
@@ -849,6 +860,77 @@ describe('setupLlmNamespace — canary lifecycle (#1119)', () => {
     expect(after).toBeDefined();
     expect(after).not.toBe(before);
     expect(after!.startsWith('CANARY-')).toBe(true);
+  });
+});
+
+// ── Infrastructure context uses live fleet data (collectFleetOverview) ──
+
+describe('setupLlmNamespace — infrastructure context from live fleet data', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    chatThrottle.clearByUserId('test-user');
+    clearCanary('test-socket-id');
+    // The infra context is cached module-wide (2-min TTL); clear it so this
+    // test sees its own collectFleetOverview mock rather than a prior test's
+    // cached (possibly fallback) context.
+    __resetInfraContextCacheForTest();
+    mockCollectAllTools.mockReturnValue([]);
+    mockRouteToolCalls.mockResolvedValue([]);
+    mockParseToolCalls.mockReturnValue(null);
+  });
+
+  it('builds the ### Containers line from collectFleetOverview totals (live), not stale endpoint fields', async () => {
+    mockGetEffectiveLlmConfig.mockReturnValue(baseLlmConfig());
+
+    // Live fleet data: enriched endpoints + totals. The source must read
+    // totals.{running,stopped,unhealthy,stacks} — NOT endpoint snapshot fields.
+    mockCollectFleetOverview.mockResolvedValue({
+      endpoints: [
+        {
+          id: 1, name: 'prod', status: 'up',
+          containersRunning: 5, containersStopped: 2,
+          containersUnhealthy: 1, stackCount: 3,
+        },
+        {
+          id: 2, name: 'staging', status: 'up',
+          containersRunning: 2, containersStopped: 1,
+          containersUnhealthy: 0, stackCount: 1,
+        },
+      ],
+      containers: [],
+      stacks: [],
+      totals: {
+        endpoints: 2, endpointsUp: 2, endpointsDown: 0,
+        running: 7, stopped: 3, total: 10,
+        healthy: 9, unhealthy: 1, stacks: 4,
+      },
+    });
+
+    let observedSystemPrompt: string | undefined;
+    mockLlmFetchByRequest((messages) => {
+      const sys = messages.find((m) => m.role === 'system');
+      if (sys && observedSystemPrompt === undefined) {
+        observedSystemPrompt = sys.content;
+      }
+      return sseResponse('ok');
+    });
+
+    const { ns, socketHandlers, connect } = createMockSocketPair();
+    setupLlmNamespace(ns, mockInfraLogs);
+    connect();
+
+    const chatHandler = socketHandlers.get('chat:message');
+    await chatHandler!({ text: 'How many containers are running?' });
+
+    expect(mockCollectFleetOverview).toHaveBeenCalled();
+    expect(observedSystemPrompt).toBeDefined();
+    // Totals come straight from collectFleetOverview().totals
+    expect(observedSystemPrompt!).toContain(
+      'Running: 7, Stopped: 3, Unhealthy: 1, Stacks: 4',
+    );
+    // Per-endpoint summary still rendered from the (now-enriched) endpoints
+    expect(observedSystemPrompt!).toContain('prod (up): 5 running, 2 stopped');
+    expect(observedSystemPrompt!).toContain('staging (up): 2 running, 1 stopped');
   });
 });
 
