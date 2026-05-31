@@ -1,4 +1,4 @@
-import { getMetricsDb } from '@dashboard/core/db/timescale.js';
+import { getMetricsDb, getReportsDb } from '@dashboard/core/db/timescale.js';
 import { isUndefinedTableError } from './metrics-store.js';
 
 /** Minimal container shape needed for lifecycle tracking (subset of Portainer's Container). */
@@ -57,9 +57,15 @@ export async function upsertContainerLifecycle(
  * lifecycle table has no rows for this scope (fresh deploy / not yet populated)
  * or does not exist — so callers should NOT filter. An empty Set means the
  * scope is known but nothing is running.
+ *
+ * Runs on the isolated reports pool (`getReportsDb`) — the same pool the rest of
+ * the reports read path uses — so this read inherits the reports pool's 10 s
+ * `statement_timeout` and preserves read/write pool isolation from the metrics
+ * write pool (#1394). The write path (`upsertContainerLifecycle`) stays on the
+ * metrics write pool.
  */
 export async function getRunningContainerIds(endpointId?: number): Promise<Set<string> | null> {
-  const db = await getMetricsDb();
+  const db = await getReportsDb();
   try {
     const { rows } = endpointId
       ? await db.query(
