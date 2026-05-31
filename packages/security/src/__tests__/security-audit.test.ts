@@ -270,6 +270,19 @@ describe('security-audit service', () => {
     expect(entries).toEqual([]);
   });
 
+  it('does not throw when containers resolve undefined (#1388)', async () => {
+    // Regression: cachedFetch resolving containers as undefined previously made
+    // computeSecurityAudit call undefined.map() and throw a TypeError.
+    // The fix is to guard the containers assignment with `?? []`, mirroring
+    // the existing `?? []` guard on the endpoints assignment (#1270).
+    mockCachedFetch.mockImplementation((key: string, _ttl: number, fetcher: () => Promise<unknown>) => {
+      if (key.startsWith('containers:')) return Promise.resolve(undefined);
+      return fetcher();
+    });
+
+    await expect(getSecurityAudit()).resolves.toBeDefined();  // no throw; returns an array
+  });
+
   it('computes audit summary counts', () => {
     const summary = buildSecurityAuditSummary([
       {

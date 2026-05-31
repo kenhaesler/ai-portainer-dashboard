@@ -48,21 +48,50 @@ function normalizePattern(pattern: string): string {
   return pattern.trim().toLowerCase();
 }
 
-function escapeRegExp(input: string): string {
-  return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function wildcardToRegExp(pattern: string): RegExp {
-  const escaped = escapeRegExp(pattern).replace(/\\\*/g, '.*');
-  return new RegExp(`^${escaped}$`, 'i');
-}
-
+/**
+ * Pure-string wildcard match — supports only `*` as a multi-character glob.
+ * Splits the pattern on `*` and verifies each literal segment appears in the
+ * correct order inside `value` without constructing a dynamic RegExp
+ * (avoids CWE-1333 ReDoS).
+ *
+ * Examples:
+ *   matchesPattern('nginx-ingress', 'nginx*')  → true
+ *   matchesPattern('api',           'nginx*')  → false
+ *   matchesPattern('prometheus-1',  '*metheus*') → true
+ */
 function matchesPattern(value: string, pattern: string): boolean {
   if (!pattern) return false;
-  if (!pattern.includes('*')) {
-    return value.toLowerCase() === pattern.toLowerCase();
+
+  const v = value.toLowerCase();
+  const p = pattern.toLowerCase();
+
+  // Fast path: no wildcard → exact match.
+  if (!p.includes('*')) return v === p;
+
+  const segments = p.split('*');
+  const startsFixed = !p.startsWith('*');
+  const endsFixed   = !p.endsWith('*');
+
+  let cursor = 0;
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i];
+    if (seg === '') continue;   // consecutive or leading/trailing `*`
+
+    if (i === 0 && startsFixed) {
+      // First segment must match at position 0
+      if (!v.startsWith(seg)) return false;
+      cursor = seg.length;
+    } else if (i === segments.length - 1 && endsFixed) {
+      // Last segment must match at the very end
+      if (!v.endsWith(seg)) return false;
+      cursor = v.length;  // consumed
+    } else {
+      const idx = v.indexOf(seg, cursor);
+      if (idx === -1) return false;
+      cursor = idx + seg.length;
+    }
   }
-  return wildcardToRegExp(pattern).test(value);
+  return true;
 }
 
 export function resolveAuditSeverity(findings: SecurityFinding[]): SecurityAuditEntry['severity'] {
@@ -134,11 +163,11 @@ async function computeSecurityAudit(endpointId?: number): Promise<SecurityAuditE
   for (const endpoint of scopedEndpoints.filter((ep) => isDockerEndpoint(ep.Type))) {
     let containers: Awaited<ReturnType<typeof getContainers>>;
     try {
-      containers = await cachedFetch(
+      containers = (await cachedFetch(
         getCacheKey('containers', endpoint.Id),
         TTL.CONTAINERS,
         () => getContainers(endpoint.Id, true),
-      );
+      )) ?? [];
     } catch (err) {
       if (err instanceof CircuitBreakerOpenError) {
         log.debug({ endpointId: endpoint.Id }, 'Skipping security audit for endpoint with open circuit breaker');
