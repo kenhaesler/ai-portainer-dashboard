@@ -1,20 +1,17 @@
 /**
- * Edge Standard live Docker-info fallback (issue #1249).
+ * Primary live Docker-info source for all reachable Docker endpoints (issue #1249+).
  *
- * Portainer EE 2.39 does not write persistent `Snapshots[]` entries for Edge
- * Agent Standard endpoints (Type=4, AsyncMode=false). As a result, the
- * normalizer reports 0/0/0 container counts for those endpoints even when the
- * agent is fully connected and reachable via the chisel tunnel.
- *
- * This module fills that gap: when an Edge Standard endpoint has empty
- * `Snapshots[]`, the route layer can call `fetchEdgeLiveDockerInfo(id)` to
- * pull a live `/docker/info` summary through Portainer's tunnel proxy.
+ * This module is the authoritative source for per-endpoint container counts and
+ * host CPU/memory via Portainer's `/docker/info` proxy. It supersedes the
+ * per-endpoint `Snapshots[]` array, which may be stale or absent (e.g. Edge
+ * Agent Standard endpoints, Type=4, AsyncMode=false, where Portainer EE 2.39
+ * does not write persistent snapshot entries).
  *
  * Constraints (per issue #1249):
  *
  * - **Dedicated concurrency budget.** Separate `p-limit` so that a fleet of
- *   dozens of edge nodes never fans out simultaneously and stampedes the
- *   chisel tunnel. Sized by `EDGE_LIVE_QUERY_CONCURRENCY` (default 2).
+ *   dozens of endpoints never fans out simultaneously. Sized by
+ *   `EDGE_LIVE_QUERY_CONCURRENCY` (default 2).
  * - **SWR caching.** Wrapped in `cachedFetchSWR` keyed per endpoint, so the
  *   dashboard returns stale data instantly and revalidates in the background.
  *   TTL controlled by `EDGE_LIVE_QUERY_INTERVAL_SECONDS` (default 60s).
@@ -37,12 +34,16 @@ import { buildApiUrl, buildApiHeaders } from './portainer-client.js';
 const log = createChildLogger('edge-live-query');
 
 /** Minimal slice of Docker `/info` that we actually use. */
-export interface EdgeDockerInfo {
+export interface LiveDockerInfo {
   containers: number;
   containersRunning: number;
   containersStopped: number;
   /** Optional — Docker rarely has paused containers, and the normalizer doesn't use it today. */
   containersPaused?: number;
+  /** Docker NCPU — host CPU core count. */
+  ncpu: number;
+  /** Docker MemTotal — host memory in bytes. */
+  memTotal: number;
   fetchedAt: number;
 }
 
@@ -100,6 +101,8 @@ interface PortainerDockerInfoResponse {
   ContainersRunning?: number;
   ContainersStopped?: number;
   ContainersPaused?: number;
+  NCPU?: number;
+  MemTotal?: number;
 }
 
 /**
@@ -108,7 +111,7 @@ interface PortainerDockerInfoResponse {
  * tighter timeout, a separate concurrency budget, and no retry storm — a slow
  * or unreachable edge agent should fail fast and let the dashboard render.
  */
-async function fetchDockerInfoOnce(endpointId: number, timeoutMs: number): Promise<EdgeDockerInfo> {
+async function fetchDockerInfoOnce(endpointId: number, timeoutMs: number): Promise<LiveDockerInfo> {
   const url = buildApiUrl(`/api/endpoints/${endpointId}/docker/info`);
   const headers = buildApiHeaders(false);
 
@@ -131,6 +134,8 @@ async function fetchDockerInfoOnce(endpointId: number, timeoutMs: number): Promi
       containersRunning: running,
       containersStopped: stopped,
       containersPaused: paused,
+      ncpu: body.NCPU ?? 0,
+      memTotal: body.MemTotal ?? 0,
       fetchedAt: Date.now(),
     };
   } finally {
@@ -139,7 +144,7 @@ async function fetchDockerInfoOnce(endpointId: number, timeoutMs: number): Promi
 }
 
 /**
- * Fetch live Docker info for an Edge Standard endpoint, going through the
+ * Fetch live Docker info for an up Docker endpoint, going through the
  * dedicated concurrency limiter and SWR cache.
  *
  * Returns `null` when the live-query feature is disabled, or when the fetch
@@ -149,22 +154,26 @@ async function fetchDockerInfoOnce(endpointId: number, timeoutMs: number): Promi
  * @param endpointId Portainer endpoint id
  * @param cfg Effective runtime config (env merged with Settings overrides)
  */
-export async function fetchEdgeLiveDockerInfo(
+export async function fetchLiveDockerInfo(
   endpointId: number,
   cfg: EdgeLiveQueryConfig = getEdgeLiveQueryConfigFromEnv(),
-): Promise<EdgeDockerInfo | null> {
+): Promise<LiveDockerInfo | null> {
   if (!cfg.enabled) return null;
 
   const limit = getLimiter(cfg.concurrency);
 
   try {
-    return await cachedFetchSWR<EdgeDockerInfo>(
+    return await cachedFetchSWR<LiveDockerInfo>(
       edgeLiveQueryCacheKey(endpointId),
       cfg.intervalSeconds,
       () => limit(() => fetchDockerInfoOnce(endpointId, cfg.timeoutMs)),
     );
   } catch (err) {
-    log.warn({ endpointId, err }, 'Edge live Docker-info fetch failed');
+    log.warn({ endpointId, err }, 'Live Docker-info fetch failed');
     return null;
   }
 }
+
+// Back-compat aliases — existing importers keep compiling until they are migrated.
+export const fetchEdgeLiveDockerInfo = fetchLiveDockerInfo;
+export type EdgeDockerInfo = LiveDockerInfo;
