@@ -193,3 +193,24 @@ External (via Ref docs + Gemini research):
 - Hampel filter / MAD robustness for spiky signals: https://pubmed.ncbi.nlm.nih.gov/24715406/
 
 > **Provenance note:** External research was performed via the local Gemini CLI (two passes: ML methods; evaluation + alerting) and Ref documentation lookups, per the requested workflow. Code findings were verified directly against the files at the `file:line` anchors above.
+
+---
+
+## 9. Outcome (as shipped — 2026-05-31)
+
+The redesign shipped as epic **#1360** with four children plus a seasonality follow-up, all merged to `dev`:
+
+| Phase | Issue | Delivered |
+|---|---|---|
+| P0 — determinism | #1361 | Seeded Isolation Forest RNG (FNV-1a → Mulberry32), baseline-leakage fix (exclude point-under-test), one-sided detection (`ANOMALY_DETECTION_DIRECTION`), Redis-backed cooldown + persistence stores. |
+| P1 — robust statistics | #1362 | Median + MAD modified z-score (default `robust-mad`), one-sided, timestamp-joined IF features; hour-of-day seasonality preserved. |
+| P2 — alerting discipline | #1363 | M-of-N (3-of-5) + multi-window fast-burn, cross-detector dedup, severity × confidence routing, system-wide suppression floor. |
+| P3 — eval + feedback | #1364 | PR-AUC eval rig + CI regression guard; #1298 labels → measured FP rate → gated auto-tune (`ANOMALY_AUTOTUNE_ENABLED`, default off, audited). |
+| Seasonality | #1307 | day-of-week × hour-of-day baseline; mean/std path moved onto the `metrics_1hour` continuous aggregate (exact pop-stats via the law of total variance), robust path adds a day-of-week filter on its raw query. |
+
+**Measured (synthetic labelled benchmark, `scripts/anomaly-mad-ab-benchmark.mjs`, seed `0x9E3779B9`):**
+
+- Full pipeline (`robust-mad + 3-of-5`) vs the original `current-zscore`, pooled across 5 failure-mode scenarios: **false positives 77 → 14 (−82%)**, **F1 24.2% → 53.8%** (≈2.2×) — matching the projection that justified the epic.
+- Seasonality A/B (weekly-pattern series, baseline varied in isolation): a day-of-week × hour baseline cuts false alarms **183 → 41 (−78%)** vs a flat trailing window while preserving 100% spike recall. Production stacks persistence (P2) on top of this.
+
+The benchmark remains synthetic: the dev TimescaleDB `metrics` hypertable is empty, so the **production before/after audit** (`scripts/audit-anomaly-detectors.ts`) against real history is the **one open item** on epic #1360 — it needs a prod data export or a live deploy. The CI eval-rig guards (`packages/ai-intelligence/src/services/anomaly-eval.ts`) assert both the robust-vs-z-score and the seasonal-vs-flat improvements on every PR.
