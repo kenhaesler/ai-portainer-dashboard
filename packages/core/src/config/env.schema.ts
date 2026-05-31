@@ -126,6 +126,17 @@ export const envSchema = z.object({
   // raise it in noisy environments. Severe fast-burn anomalies (confidence 1.0)
   // are never dropped here.
   ANOMALY_SUPPRESS_BELOW_CONFIDENCE: z.coerce.number().min(0).max(1).default(0),
+  // Feedback → threshold auto-tune (#1364). A scheduled job measures the real
+  // per-detector false-positive rate from operator feedback (#1298) and nudges
+  // ANOMALY_ZSCORE_THRESHOLD toward the target rate, one bounded step at a time.
+  // OFF by default — auto-mutating a detection threshold is opt-in (observer-
+  // first); with the flag off the job still logs what it WOULD change. Every
+  // applied change is written to the audit log.
+  ANOMALY_AUTOTUNE_ENABLED: z.coerce.boolean().default(false),
+  ANOMALY_AUTOTUNE_INTERVAL_MINUTES: z.coerce.number().int().min(5).default(360),
+  ANOMALY_AUTOTUNE_TARGET_FP_RATE: z.coerce.number().min(0).max(1).default(0.05),
+  ANOMALY_AUTOTUNE_MIN_SAMPLES: z.coerce.number().int().min(1).default(20),
+  ANOMALY_AUTOTUNE_LOOKBACK_DAYS: z.coerce.number().int().min(1).default(30),
   BOLLINGER_BANDS_ENABLED: z.coerce.boolean().default(true),
   // Hour-of-day baseline (issue #1295): compare the recent sample against the
   // baseline for the same hour-of-day across the last N days, rather than a

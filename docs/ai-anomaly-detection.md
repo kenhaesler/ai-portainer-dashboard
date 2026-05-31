@@ -48,6 +48,11 @@ Instead of a single flat 24h baseline, the detector compares each observation ag
 | `ANOMALY_CONFIDENCE_MIN_SURFACE` | `0.7` | Severity × confidence routing (#1363). A confirmed anomaly with confidence (max of persistence ratio and burn magnitude) below this is routed to `info` (a quieter log tier) instead of warning/critical. `0` surfaces everything. |
 | `ANOMALY_SUPPRESS_BELOW_CONFIDENCE` | `0` | System-wide detection-time suppression floor (#1363). Below this confidence an anomaly is **dropped entirely** (never inserted), keeping the shared table/correlator/notifications clean for everyone — complements the per-user Sensitivity preset (a read-time filter). `0` drops nothing; fast-burn anomalies are never dropped. |
 | `ANOMALY_COOLDOWN_MINUTES` | `30` | Per-container/metric cooldown to prevent alert spam |
+| `ANOMALY_AUTOTUNE_ENABLED` | `false` | Feedback → threshold auto-tune (#1364). A scheduled job measures the real per-detector false-positive rate from operator feedback (#1298) and nudges `ANOMALY_ZSCORE_THRESHOLD` toward target, one bounded step at a time. **Off by default** (opt-in); with the flag off it still *logs* what it would change. Applied changes are audited. |
+| `ANOMALY_AUTOTUNE_INTERVAL_MINUTES` | `360` | Auto-tune cadence (default 6h). First run is deferred a full interval after startup. |
+| `ANOMALY_AUTOTUNE_TARGET_FP_RATE` | `0.05` | Target false-positive rate. Above target + 0.02 → raise the threshold; below target − 0.02 → lower it; inside the band → hold. |
+| `ANOMALY_AUTOTUNE_MIN_SAMPLES` | `20` | Minimum conclusively-labelled anomalies before tuning acts (avoids chasing noise). |
+| `ANOMALY_AUTOTUNE_LOOKBACK_DAYS` | `30` | Feedback window the measured rate is computed over. |
 | `BOLLINGER_BANDS_ENABLED` | `true` | Enable the Bollinger method |
 
 ## Isolation Forest (ML)
@@ -133,6 +138,16 @@ Any authenticated user can flag an anomaly as a false positive; the row is alway
 
 - `POST /api/monitoring/anomaly-feedback` — body `{ anomalyId, disposition?, detector? }`. The `detector` field is restricted to an allowlist (`threshold`, `ml-anomaly`, `prediction`, `health-check`, `log-pattern`, `security-scan`, `correlated-zscore`, `isolation-forest`) so client input can't pollute the per-detector breakdown.
 - `GET /api/monitoring/anomaly-feedback/rates` — per-detector false-positive rates. Admins receive **fleet-wide** aggregates (counts per detector only, never individual user dispositions); `?scope=mine` returns caller-scoped data. Non-admins are always caller-scoped, even if they pass `?scope=fleet`.
+
+### Closing the loop: feedback → threshold auto-tune (#1364)
+
+Feedback isn't only a read-time view filter — it can drive the threshold. The aggregation is layered so each stage is pure and independently tested:
+
+1. **Labels** (`anomaly-labels.ts`) — dispositions per anomaly are aggregated into a ground-truth label (FP votes vs TP votes; ties/unsure → inconclusive), and `measuredFpRate` is the false-positive fraction of *conclusively* labelled anomalies. This retires the old `is_acknowledged` proxy.
+2. **Recommendation** (`anomaly-threshold-tuner.ts`) — `recommendThreshold` maps the measured rate to a conservative, one-step threshold change: above target → raise (stricter), well below → lower (recover sensitivity), inside the deadband or below `minSamples` → hold. Always bounded to `[min, max]`.
+3. **Gated apply** (`anomaly-autotune.ts` + `anomaly-autotune-job.ts`) — a scheduled job (`ANOMALY_AUTOTUNE_INTERVAL_MINUTES`) measures the rate for the `ml-anomaly` detector, computes the recommendation, and — **only when `ANOMALY_AUTOTUNE_ENABLED` is on** — writes the new value to the `ai_tuning.anomaly_zscore_threshold` setting (read fresh each detection cycle) and records an `anomaly_threshold_autotuned` audit entry. With the flag off it logs what it *would* do, so operators can preview the loop before opting in (observer-first).
+
+The recommendation/eval logic is validated by a CI regression guard (`anomaly-eval.ts`): robust median+MAD must beat the legacy z-score on PR-AUC for a labelled scenario.
 
 ## Per-User Sensitivity Presets (#1297)
 
