@@ -243,7 +243,8 @@ describe('anomaly-feedback routes (#1298)', () => {
       const anomalyId = randomUUID();
       await seedInsight(anomalyId);
 
-      // The detector field is constrained to ANOMALY_FEEDBACK_DETECTORS.
+      // The detector field is constrained to ANOMALY_DETECTORS (the shared
+      // allowlist from @dashboard/core/models/monitoring.ts).
       // An attacker-controlled label like '<script>' or 'totally-fake-detector'
       // must be rejected at the API boundary so it never reaches the
       // rate breakdown.

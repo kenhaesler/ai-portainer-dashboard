@@ -1,8 +1,6 @@
 import { Namespace } from 'socket.io';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
-import * as portainer from '@dashboard/core/portainer/portainer-client.js';
-import { normalizeEndpoint, normalizeContainer } from '@dashboard/core/portainer/portainer-normalizers.js';
-import { cachedFetch, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
+import { collectFleetOverview } from '@dashboard/core/portainer/live-fleet.js';
 import { getEffectivePrompt, getEffectiveLlmConfig } from '../services/prompt-store.js';
 import { insertLlmTrace } from '../services/llm-trace-store.js';
 import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
@@ -360,6 +358,11 @@ const sessions = new Map<string, ChatMessage[]>();
 let cachedInfraContext: { text: string; expiresAt: number } | null = null;
 const INFRA_CONTEXT_TTL_MS = 120_000; // 2 minutes — reduces Portainer API pressure
 
+/** Test-only: clear the shared infrastructure-context cache so each test starts fresh. */
+export function __resetInfraContextCacheForTest(): void {
+  cachedInfraContext = null;
+}
+
 async function buildInfrastructureContext(): Promise<string> {
   if (cachedInfraContext && Date.now() < cachedInfraContext.expiresAt) {
     return cachedInfraContext.text;
@@ -372,25 +375,13 @@ async function buildInfrastructureContext(): Promise<string> {
 
 async function buildInfrastructureContextUncached(): Promise<string> {
   try {
-    // Fetch infrastructure data
-    const endpoints = await cachedFetch(
-      getCacheKey('endpoints'),
-      TTL.ENDPOINTS,
-      () => portainer.getEndpoints(),
-    );
-    const normalizedEndpoints = endpoints.map(normalizeEndpoint);
-
-    // Count containers by state across all endpoints (lightweight summary)
-    let totalRunning = 0;
-    let totalStopped = 0;
-    let totalUnhealthy = 0;
-    let totalStacks = 0;
-    for (const ep of normalizedEndpoints) {
-      totalRunning += ep.containersRunning;
-      totalStopped += ep.containersStopped;
-      totalUnhealthy += ep.containersUnhealthy;
-      totalStacks += ep.stackCount;
-    }
+    // Live fleet data — enriched endpoints + fleet-wide totals (running/stopped/
+    // unhealthy/stacks). Replaces stale per-endpoint snapshot fields.
+    const { endpoints: normalizedEndpoints, totals } = await collectFleetOverview();
+    const totalRunning = totals.running;
+    const totalStopped = totals.stopped;
+    const totalUnhealthy = totals.unhealthy;
+    const totalStacks = totals.stacks;
 
     // Fetch only top 5 critical/warning insights (lightweight)
     const db = getDbForDomain('insights');

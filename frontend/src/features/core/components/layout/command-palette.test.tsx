@@ -2,7 +2,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { CommandPalette } from './command-palette';
+import { CommandPalette, pages } from './command-palette';
 import { useUiStore } from '@/stores/ui-store';
 import { useSearchStore } from '@/stores/search-store';
 import { SearchProvider } from '@/providers/search-provider';
@@ -163,6 +163,20 @@ describe('CommandPalette (Spotlight Style)', () => {
     const input = screen.getByPlaceholderText('Search or Ask Neural AI...');
     fireEvent.change(input, { target: { value: 'nginx' } });
     expect(screen.queryByText('Neural Run')).toBeNull();
+  });
+
+  it('orders the Intelligence pages directly after Monitoring and before Diagnostics, mirroring the sidebar', () => {
+    const order = pages.map((p) => p.to);
+    const metrics = order.indexOf('/metrics'); // last Monitoring view
+    const assistant = order.indexOf('/assistant'); // Intelligence
+    const llmObservability = order.indexOf('/llm-observability'); // Intelligence
+    const traces = order.indexOf('/traces'); // first Diagnostics view
+
+    // Intelligence sits between Monitoring and Diagnostics, matching the
+    // sidebar nav order (Monitoring -> Intelligence -> Diagnostics).
+    expect(metrics).toBeLessThan(assistant);
+    expect(assistant).toBeLessThan(llmObservability);
+    expect(llmObservability).toBeLessThan(traces);
   });
 
   it('does not include deprecated backups page in static page entries', () => {

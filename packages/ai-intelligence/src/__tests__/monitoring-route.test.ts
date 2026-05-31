@@ -306,10 +306,10 @@ describe('GET /api/monitoring/insights/container/:containerId', () => {
   });
 
   it('returns null aiExplanation when no AI analysis in description', async () => {
-    // NOTE: description deliberately has no parseable z-score — the
-    // Sensitivity post-filter (#1297) would otherwise drop this record under
-    // the Default preset (env-default threshold is 3.5, this is below).
-    // The aiExplanation parsing logic is what's under test here.
+    // NOTE: this row deliberately has no z_score column value — the
+    // Sensitivity post-filter (#1297) reads the typed z_score column (#1308),
+    // so a null value passes the record through under every preset. The
+    // aiExplanation parsing logic is what's under test here.
     mockQuery.mockResolvedValueOnce([
       {
         id: 'a2',

@@ -7,7 +7,7 @@ vi.mock('@dashboard/core/db/timescale.js', () => ({
   getMetricsDb: vi.fn().mockResolvedValue({ query: (...args: unknown[]) => mockQuery(...args) }),
 }));
 
-import { insertKpiSnapshot, getKpiHistory, cleanOldKpiSnapshots } from '../services/kpi-store.js';
+import { insertKpiSnapshot, getKpiHistory, cleanOldKpiSnapshots, getLatestKpiSnapshot } from '../services/kpi-store.js';
 
 describe('KPI Store', () => {
   beforeEach(() => {
@@ -80,6 +80,26 @@ describe('KPI Store', () => {
 
       const deleted = await cleanOldKpiSnapshots(7);
       expect(deleted).toBe(0);
+    });
+  });
+
+  describe('getLatestKpiSnapshot', () => {
+    it('returns the most recent snapshot row', async () => {
+      mockQuery.mockResolvedValue({ rows: [
+        { endpoints: 2, endpoints_up: 2, endpoints_down: 0, running: 9, stopped: 1, healthy: 5, unhealthy: 1, total: 10, stacks: 3, timestamp: '2026-05-31T10:00:00Z' },
+      ] });
+      const snap = await getLatestKpiSnapshot();
+      expect(snap?.healthy).toBe(5);
+      expect(snap?.unhealthy).toBe(1);
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('ORDER BY timestamp DESC'),
+        [],
+      );
+    });
+
+    it('returns null when there are no snapshots', async () => {
+      mockQuery.mockResolvedValue({ rows: [] });
+      expect(await getLatestKpiSnapshot()).toBeNull();
     });
   });
 });

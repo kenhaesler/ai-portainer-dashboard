@@ -194,6 +194,7 @@ describe('GET /api/monitoring/insights — per-user Sensitivity post-filter', ()
       title: `anomaly ${idx}`,
       description: `cpu spike (mean: 40.0%, z-score: ${z.toFixed(2)})`,
       suggested_action: null,
+      z_score: z,
     }));
 
     for (const row of rows) {
@@ -201,9 +202,9 @@ describe('GET /api/monitoring/insights — per-user Sensitivity post-filter', ()
         `INSERT INTO insights (
           id, endpoint_id, endpoint_name, container_id, container_name,
           severity, category, title, description, suggested_action,
-          is_acknowledged, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, false, NOW())`,
-        [row.id, 1, 'local', 'c1', 'web', row.severity, row.category, row.title, row.description, row.suggested_action],
+          is_acknowledged, created_at, z_score
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, false, NOW(), ?)`,
+        [row.id, 1, 'local', 'c1', 'web', row.severity, row.category, row.title, row.description, row.suggested_action, row.z_score],
       );
     }
   }

@@ -65,6 +65,14 @@ vi.mock('@dashboard/ai', () => ({
   startCooldownSweep: vi.fn(),
   stopCooldownSweep: vi.fn(),
   cleanupOldInsights: vi.fn().mockResolvedValue(0),
+  runAnomalyAutoTuneJob: vi.fn().mockResolvedValue({ applied: false, skipped: 'no-change', reason: 'within-target', previous: 3.5, recommended: 3.5, rate: 0, sampleCount: 0, detector: 'ml-anomaly' }),
+}));
+// initCooldownStore would otherwise attempt a real Redis connect at startup.
+vi.mock('@dashboard/core/services/cooldown-store.js', () => ({
+  initCooldownStore: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock('@dashboard/core/services/persistence-store.js', () => ({
+  initPersistenceStore: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('@dashboard/infrastructure', () => ({

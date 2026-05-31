@@ -1,4 +1,4 @@
-import { beforeAll, afterAll, describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeAll, afterAll, describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { setConfigForTest, resetConfig } from '@dashboard/core/config/index.js';
 import { detectAnomaly } from '../services/anomaly-detector.js';
 
@@ -20,6 +20,12 @@ afterAll(() => {
 describe('anomaly-detector', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  // Reset the detection direction after each test so per-test overrides
+  // ('both' / 'drop') do not bleed into the spike-default cases.
+  afterEach(() => {
+    setConfigForTest({ ANOMALY_DETECTION_DIRECTION: 'spike' });
   });
 
   describe('detectAnomaly', () => {
@@ -85,19 +91,49 @@ describe('anomaly-detector', () => {
       expect(result?.z_score).toBe(1.0);
     });
 
-    it('should detect negative z-score anomaly', async () => {
+    // #1361 fix 3 — one-sided detection. Resource/latency metrics care about
+    // spikes; a benign DROP below baseline should not be flagged by default.
+    it('does NOT flag a drop (negative z-score) under the default spike direction', async () => {
       mockGetMovingAverage.mockResolvedValue({
         mean: 50,
         std_dev: 10,
         sample_count: 10,
       });
 
-      // Value of 20 gives z-score of (20-50)/10 = -3.0, absolute value exceeds 2.5
+      // Value of 20 → z = (20-50)/10 = -3.0 (a drop). Default direction is
+      // 'spike', so this is NOT anomalous (was a false positive pre-#1361).
       const result = await detectAnomaly('container-1', 'test-container', 'cpu', 20, mockGetMovingAverage);
 
       expect(result).not.toBeNull();
+      expect(result?.is_anomalous).toBe(false);
+      expect(result?.z_score).toBe(-3.0); // z-score still reported
+    });
+
+    it('flags a drop when direction is "both"', async () => {
+      setConfigForTest({ ANOMALY_DETECTION_DIRECTION: 'both' });
+      mockGetMovingAverage.mockResolvedValue({ mean: 50, std_dev: 10, sample_count: 10 });
+
+      const result = await detectAnomaly('container-1', 'test', 'cpu', 20, mockGetMovingAverage);
+
       expect(result?.is_anomalous).toBe(true);
       expect(result?.z_score).toBe(-3.0);
+    });
+
+    it('with direction "drop", flags a drop but not a spike', async () => {
+      setConfigForTest({ ANOMALY_DETECTION_DIRECTION: 'drop' });
+      mockGetMovingAverage.mockResolvedValue({ mean: 50, std_dev: 10, sample_count: 10 });
+
+      const drop = await detectAnomaly('c1', 'test', 'cpu', 20, mockGetMovingAverage); // z=-3
+      const spike = await detectAnomaly('c1', 'test', 'cpu', 80, mockGetMovingAverage); // z=+3
+
+      expect(drop?.is_anomalous).toBe(true);
+      expect(spike?.is_anomalous).toBe(false);
+    });
+
+    it('still flags a spike under the default spike direction', async () => {
+      mockGetMovingAverage.mockResolvedValue({ mean: 50, std_dev: 10, sample_count: 10 });
+      const result = await detectAnomaly('c1', 'test', 'cpu', 80, mockGetMovingAverage); // z=+3
+      expect(result?.is_anomalous).toBe(true);
     });
 
     it('should handle zero standard deviation with same value as mean', async () => {

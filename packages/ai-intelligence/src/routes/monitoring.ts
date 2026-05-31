@@ -5,6 +5,7 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod/v4';
 import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
 import { InsightsQuerySchema, InsightIdParamsSchema, SuccessResponseSchema } from '@dashboard/core/models/api-schemas.js';
+import { ANOMALY_DETECTORS } from '@dashboard/core/models/monitoring.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import {
   SensitivityPutBodySchema,
@@ -20,36 +21,15 @@ const log = createChildLogger('route:monitoring');
 // Currently only 'false-positive' is accepted at the API surface; the
 // DB CHECK constraint reserves 'true-positive' and 'unsure' for future
 // dispositions so they can be added without another migration.
-//
-// Allowlist of detector identifiers a client may submit. Mirrors:
-//   * the persisted detector enum from `packages/core/src/models/monitoring.ts`
-//     (`detection_method`: 'threshold' | 'ml-anomaly' | 'prediction' |
-//     'health-check' | 'log-pattern' | 'security-scan'), plus
-//   * the in-memory detectors that produce correlated anomalies
-//     (`correlated-zscore` for `detectCorrelatedAnomalies`, and the
-//     `isolation-forest` raw detector used by the trace/IF service).
-// Restricting the column to this allowlist prevents callers polluting
-// the per-detector rate breakdown with attacker-supplied labels.
-export const ANOMALY_FEEDBACK_DETECTORS = [
-  'threshold',
-  'ml-anomaly',
-  'prediction',
-  'health-check',
-  'log-pattern',
-  'security-scan',
-  'correlated-zscore',
-  'isolation-forest',
-] as const;
-
 const AnomalyFeedbackBodySchema = z.object({
   anomalyId: z.string().min(1).max(200),
   disposition: z.literal('false-positive').optional().default('false-positive'),
   // Detector source — denormalised onto the feedback row so the rate
-  // calculation works for correlated anomalies (which never appear in
-  // the `insights` table). Optional: caller may omit when the
-  // anomalyId matches an insights.id and the detector can be JOINed.
-  // Constrained to a known allowlist (see ANOMALY_FEEDBACK_DETECTORS).
-  detector: z.enum(ANOMALY_FEEDBACK_DETECTORS).optional(),
+  // calculation works for correlated anomalies (which never appear in the
+  // `insights` table). Optional. Constrained to the canonical allowlist
+  // ANOMALY_DETECTORS (persisted + in-memory) from
+  // packages/core/src/models/monitoring.ts — single source of truth (#1314).
+  detector: z.enum(ANOMALY_DETECTORS).optional(),
 });
 
 const AnomalyFeedbackResponseSchema = z.object({
@@ -165,14 +145,17 @@ export async function monitoringRoutes(fastify: FastifyInstance, opts: Monitorin
       // Per-user Sensitivity post-filter (issue #1297).
       // Detectors write every anomaly to the shared table; the read path
       // hides records below the user's effective z-score threshold. Items
-      // without a parseable z-score (e.g. predictive forecasts) always
+      // without a z-score column value (e.g. predictive forecasts) always
       // pass through.
       const userId = request.user?.sub;
       const preset = userId ? await getUserPreset(userId) : 'default';
       const defaults = getDefaultThresholds();
       const filteredItems = items.filter((i) =>
         shouldIncludeAnomaly(
-          { description: String(i.description ?? ''), category: i.category as string | null | undefined },
+          {
+            z_score: i.z_score as number | string | null,
+            category: i.category as string | null | undefined,
+          },
           preset,
           defaults,
         ),
@@ -261,8 +244,9 @@ export async function monitoringRoutes(fastify: FastifyInstance, opts: Monitorin
         description: string;
         suggested_action: string | null;
         created_at: string;
+        z_score: number | string | null;
       }>(`
-        SELECT id, severity, category, title, description, suggested_action, created_at
+        SELECT id, severity, category, title, description, suggested_action, created_at, z_score
         FROM insights
         WHERE ${where}
         ORDER BY created_at DESC
@@ -271,12 +255,12 @@ export async function monitoringRoutes(fastify: FastifyInstance, opts: Monitorin
 
       // Per-user Sensitivity post-filter (issue #1297) — drop anomaly
       // explanations below the user's effective z-score threshold before
-      // returning. Non-anomaly rows (no parseable z-score) pass through.
+      // returning. Rows without a z-score column value pass through.
       const userId = request.user?.sub;
       const preset = userId ? await getUserPreset(userId) : 'default';
       const defaults = getDefaultThresholds();
       const visibleRows = rows.filter((row) =>
-        shouldIncludeAnomaly({ description: row.description, category: row.category }, preset, defaults),
+        shouldIncludeAnomaly({ z_score: row.z_score, category: row.category }, preset, defaults),
       );
 
       // Parse out AI Analysis from description field

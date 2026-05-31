@@ -49,6 +49,11 @@ export { isLlmAvailable, chatStream, buildInfrastructureContext } from './servic
 // Services — insights
 export { cleanupOldInsights } from './services/insights-store.js';
 
+// Services — anomaly auto-tune (feedback → threshold loop, #1364)
+export { runAnomalyAutoTuneJob, ANOMALY_THRESHOLD_SETTING_KEY } from './services/anomaly-autotune-job.js';
+export type { AutoTuneJobPrimitives } from './services/anomaly-autotune-job.js';
+export type { AutoTuneResult } from './services/anomaly-autotune.js';
+
 // Services — dedup-engine telemetry (#1200)
 export { runDedupTelemetryCycle, collectDedupMetrics, cleanupOldDedupMetrics } from './services/dedup-telemetry.js';
 export type { DedupMetricRow, DedupTelemetryCycleResult } from './services/dedup-telemetry.js';

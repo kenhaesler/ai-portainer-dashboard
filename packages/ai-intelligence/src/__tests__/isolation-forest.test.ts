@@ -104,3 +104,52 @@ describe('IsolationForest', () => {
     expect(() => forest.fit([])).not.toThrow();
   });
 });
+
+/** Deterministic Mulberry32 — two streams seeded alike yield identical output. */
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return function () {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+describe('IsolationForest determinism (injected RNG)', () => {
+  // Fixed data drawn from a SEPARATE deterministic stream so the only source of
+  // variation between the two forests is their own internal RNG.
+  function fixedData(): number[][] {
+    const gen = mulberry32(123);
+    const data: number[][] = [];
+    for (let i = 0; i < 200; i++) data.push([gen() * 10, gen() * 10]);
+    return data;
+  }
+
+  it('produces identical scores for two forests fit with the same seed and data', () => {
+    const data = fixedData();
+    const a = new IsolationForest(50, 128, 0.1, mulberry32(42));
+    const b = new IsolationForest(50, 128, 0.1, mulberry32(42));
+    a.fit(data);
+    b.fit(data);
+
+    const point = [5, 5];
+    expect(a.anomalyScore(point)).toBe(b.anomalyScore(point));
+    expect(a.predict(point)).toBe(b.predict(point));
+  });
+
+  it('produces different models for different seeds (RNG is actually used)', () => {
+    const data = fixedData();
+    const a = new IsolationForest(50, 128, 0.1, mulberry32(1));
+    const b = new IsolationForest(50, 128, 0.1, mulberry32(999));
+    a.fit(data);
+    b.fit(data);
+
+    // Two distinct seeds should partition differently → scores should differ
+    // for at least one of a set of probe points.
+    const probes = [[5, 5], [1, 9], [8, 2], [3, 7]];
+    const anyDifferent = probes.some((p) => a.anomalyScore(p) !== b.anomalyScore(p));
+    expect(anyDifferent).toBe(true);
+  });
+});

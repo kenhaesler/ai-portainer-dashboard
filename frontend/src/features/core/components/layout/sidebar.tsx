@@ -46,8 +46,8 @@ interface NavGroup {
   items: NavItem[];
 }
 
-// Grouped by operator intent: what's running -> is it healthy -> why ->
-// ask the AI -> security posture -> act. Remediation is the one mutating
+// Grouped by operator intent: what's running -> is it healthy -> ask the AI ->
+// why -> security posture -> act. Remediation is the one mutating
 // workflow and lives alone under Operations to keep the observer-first
 // separation between looking and acting. Settings is pinned separately
 // (see `settingsItem`), out of the themed groups.
@@ -69,6 +69,13 @@ const navigation: NavGroup[] = [
     ],
   },
   {
+    title: 'Intelligence',
+    items: [
+      { label: 'LLM Assistant', to: '/assistant', icon: MessageSquare },
+      { label: 'LLM Observability', to: '/llm-observability', icon: Activity },
+    ],
+  },
+  {
     title: 'Diagnostics',
     items: [
       { label: 'Trace Explorer', to: '/traces', icon: GitBranch },
@@ -77,13 +84,6 @@ const navigation: NavGroup[] = [
       { label: 'Packet Capture', to: '/packet-capture', icon: Radio },
       { label: 'Log Viewer', to: '/logs', icon: ScrollText },
       { label: 'Edge Agent Logs', to: '/edge-logs', icon: FileSearch },
-    ],
-  },
-  {
-    title: 'Intelligence',
-    items: [
-      { label: 'LLM Assistant', to: '/assistant', icon: MessageSquare },
-      { label: 'LLM Observability', to: '/llm-observability', icon: Activity },
     ],
   },
   {

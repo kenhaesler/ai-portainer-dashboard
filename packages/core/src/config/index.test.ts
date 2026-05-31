@@ -242,6 +242,45 @@ describe('config validation', () => {
       expect(getConfig().ANOMALY_MIN_SAMPLES).toBe(10);
     });
 
+    it('defaults ANOMALY_DETECTION_DIRECTION to spike (#1361 — one-sided)', async () => {
+      const { getConfig } = await import('./index.js');
+      expect(getConfig().ANOMALY_DETECTION_DIRECTION).toBe('spike');
+    });
+
+    it('defaults ANOMALY_DETECTION_METHOD to robust-mad (#1362)', async () => {
+      const { getConfig } = await import('./index.js');
+      expect(getConfig().ANOMALY_DETECTION_METHOD).toBe('robust-mad');
+    });
+
+    it('defaults the persistence gate to 3-of-5 with a 2x fast-burn (#1363)', async () => {
+      const { getConfig } = await import('./index.js');
+      const c = getConfig();
+      expect(c.ANOMALY_PERSISTENCE_ENABLED).toBe(true);
+      expect(c.ANOMALY_PERSISTENCE_M).toBe(3);
+      expect(c.ANOMALY_PERSISTENCE_N).toBe(5);
+      expect(c.ANOMALY_FAST_BURN_MULTIPLIER).toBe(2);
+      expect(c.ANOMALY_CONFIDENCE_MIN_SURFACE).toBe(0.7);
+      expect(c.ANOMALY_SUPPRESS_BELOW_CONFIDENCE).toBe(0);
+    });
+
+    it('defaults day-of-week seasonality to ON, 28d lookback, 3-sample warm-up (#1307)', async () => {
+      const { getConfig } = await import('./index.js');
+      const c = getConfig();
+      expect(c.ANOMALY_DAYOFWEEK_ENABLED).toBe(true);
+      expect(c.ANOMALY_DAYOFWEEK_LOOKBACK_DAYS).toBe(28);
+      expect(c.ANOMALY_DAYOFWEEK_MIN_SAMPLES).toBe(3);
+    });
+
+    it('defaults the feedback auto-tune to OFF, 6h cadence, 5% target (#1364)', async () => {
+      const { getConfig } = await import('./index.js');
+      const c = getConfig();
+      expect(c.ANOMALY_AUTOTUNE_ENABLED).toBe(false); // opt-in (observer-first)
+      expect(c.ANOMALY_AUTOTUNE_INTERVAL_MINUTES).toBe(360);
+      expect(c.ANOMALY_AUTOTUNE_TARGET_FP_RATE).toBe(0.05);
+      expect(c.ANOMALY_AUTOTUNE_MIN_SAMPLES).toBe(20);
+      expect(c.ANOMALY_AUTOTUNE_LOOKBACK_DAYS).toBe(30);
+    });
+
     it('defaults ANOMALY_MOVING_AVERAGE_WINDOW to 60', async () => {
       // Raised 20 → 60 in #1294 (epic #1291): the previous ~20-min window
       // over-reacted to traffic ramps and short-lived bursts.

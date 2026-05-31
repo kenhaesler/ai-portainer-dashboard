@@ -15,6 +15,8 @@ export {
   getMetrics,
   getMovingAverage,
   getMovingAverageByHourOfDay,
+  getMetricWindow,
+  getMetricWindowByHourOfDay,
   cleanOldMetrics,
   getLatestMetrics,
   getLatestMetricsBatch,
@@ -46,6 +48,7 @@ export type { KpiSnapshot } from './services/kpi-store.js';
 export {
   insertKpiSnapshot,
   getKpiHistory,
+  getLatestKpiSnapshot,
   cleanOldKpiSnapshots,
 } from './services/kpi-store.js';
 
