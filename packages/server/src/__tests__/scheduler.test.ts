@@ -84,6 +84,9 @@ vi.mock('@dashboard/ai', () => ({
 vi.mock('@dashboard/core/services/cooldown-store.js', () => ({
   initCooldownStore: vi.fn().mockResolvedValue(undefined),
 }));
+vi.mock('@dashboard/core/services/persistence-store.js', () => ({
+  initPersistenceStore: vi.fn().mockResolvedValue(undefined),
+}));
 
 import * as portainerClient from '@dashboard/core/portainer/portainer-client.js';
 import * as portainerCache from '@dashboard/core/portainer/portainer-cache.js';
