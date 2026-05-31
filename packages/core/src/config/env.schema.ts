@@ -89,7 +89,10 @@ export const envSchema = z.object({
   // preserving sensitivity to sustained shifts.
   ANOMALY_MOVING_AVERAGE_WINDOW: z.coerce.number().int().min(5).default(60),
   ANOMALY_MIN_SAMPLES: z.coerce.number().int().min(3).default(10),
-  ANOMALY_DETECTION_METHOD: z.enum(['zscore', 'bollinger', 'adaptive', 'robust-mad']).default('adaptive'),
+  // Default is robust median+MAD (#1362) — outlier-resistant, so a spike no
+  // longer inflates the baseline that should catch it. 'adaptive'/'zscore'/
+  // 'bollinger' (mean/std based) remain available for rollback.
+  ANOMALY_DETECTION_METHOD: z.enum(['zscore', 'bollinger', 'adaptive', 'robust-mad']).default('robust-mad'),
   // #1361 fix 3 — one-sided detection. Resource/latency metrics flag spikes
   // only by default; a drop below baseline is rarely an incident and flagging
   // it (two-sided) roughly doubled the false-positive rate. 'both' restores
