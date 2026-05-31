@@ -145,14 +145,17 @@ export async function monitoringRoutes(fastify: FastifyInstance, opts: Monitorin
       // Per-user Sensitivity post-filter (issue #1297).
       // Detectors write every anomaly to the shared table; the read path
       // hides records below the user's effective z-score threshold. Items
-      // without a parseable z-score (e.g. predictive forecasts) always
+      // without a z-score column value (e.g. predictive forecasts) always
       // pass through.
       const userId = request.user?.sub;
       const preset = userId ? await getUserPreset(userId) : 'default';
       const defaults = getDefaultThresholds();
       const filteredItems = items.filter((i) =>
         shouldIncludeAnomaly(
-          { description: String(i.description ?? ''), category: i.category as string | null | undefined },
+          {
+            z_score: i.z_score as number | string | null,
+            category: i.category as string | null | undefined,
+          },
           preset,
           defaults,
         ),
@@ -241,8 +244,9 @@ export async function monitoringRoutes(fastify: FastifyInstance, opts: Monitorin
         description: string;
         suggested_action: string | null;
         created_at: string;
+        z_score: number | string | null;
       }>(`
-        SELECT id, severity, category, title, description, suggested_action, created_at
+        SELECT id, severity, category, title, description, suggested_action, created_at, z_score
         FROM insights
         WHERE ${where}
         ORDER BY created_at DESC
@@ -251,12 +255,12 @@ export async function monitoringRoutes(fastify: FastifyInstance, opts: Monitorin
 
       // Per-user Sensitivity post-filter (issue #1297) — drop anomaly
       // explanations below the user's effective z-score threshold before
-      // returning. Non-anomaly rows (no parseable z-score) pass through.
+      // returning. Rows without a z-score column value pass through.
       const userId = request.user?.sub;
       const preset = userId ? await getUserPreset(userId) : 'default';
       const defaults = getDefaultThresholds();
       const visibleRows = rows.filter((row) =>
-        shouldIncludeAnomaly({ description: row.description, category: row.category }, preset, defaults),
+        shouldIncludeAnomaly({ z_score: row.z_score, category: row.category }, preset, defaults),
       );
 
       // Parse out AI Analysis from description field

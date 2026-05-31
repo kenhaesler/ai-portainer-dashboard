@@ -66,6 +66,13 @@ export const InsightSchema = z.object({
   metric_type: z.enum(['cpu', 'memory', 'disk', 'network', 'restart', 'latency_p95', 'error_rate']).optional(),
   detection_method: z.enum(PERSISTED_ANOMALY_DETECTORS).optional(),
   /**
+   * Typed z-score for anomaly insights (#1308). Replaces regex-scraping the
+   * value out of `description`. NULL for records that never carried a z-score
+   * (isolation-forest, threshold, prediction, error-rate-only trace anomalies).
+   * pg returns NUMERIC as a string, so coerce on read.
+   */
+  z_score: z.coerce.number().nullable().optional(),
+  /**
    * When set, this insight collapses multiple co-occurring signals (e.g.
    * latency p95 + error-rate spiking in the same minute for the same
    * service). The legacy `metric_type` field still carries the dominant /

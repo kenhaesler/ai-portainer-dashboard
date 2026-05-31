@@ -393,6 +393,11 @@ export function createMonitoringService(deps: MonitoringDeps) {
             : 'Investigate CPU usage patterns and check for process anomalies',
           metric_type: item.metricType as 'cpu' | 'memory',
           detection_method: 'ml-anomaly',
+          // Typed z-score (#1308) — mirrors the value already formatted into
+          // `description`. Threshold / isolation-forest / prediction inserts
+          // intentionally omit z_score (their descriptions carry none), so
+          // they keep passing through the Sensitivity filter.
+          z_score: anomaly.z_score,
         });
       }
 

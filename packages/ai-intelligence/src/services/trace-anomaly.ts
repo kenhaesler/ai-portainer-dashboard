@@ -263,6 +263,18 @@ interface AnomalyCandidate {
 }
 
 /**
+ * The typed z_score persisted on an insight for a given dimension (#1308).
+ *
+ * Only `latency_p95` formats a `z-score:` substring into its description, so
+ * historically only it was visible to the Sensitivity post-filter. Other
+ * dimensions (error_rate) never carried a parseable z-score and passed the
+ * filter through; returning `null` for them preserves that behaviour exactly.
+ */
+export function persistedDimensionZScore(dim: AnomalyDimension): number | null {
+  return dim.type === 'latency_p95' ? dim.zScore : null;
+}
+
+/**
  * Normalised "how anomalous is this" score in threshold units. A value of
  * 1.0 means the signal just crossed threshold; 2.0 means twice the threshold;
  * etc. Used by correlated-suppression tie-breaking so latency (z-score in
@@ -539,6 +551,7 @@ export async function runTraceAnomalyCycle(deps: TraceAnomalyDeps): Promise<void
           suggested_action: c.suggestedAction,
           metric_type: c.dimension.type,
           detection_method: 'ml-anomaly',
+          z_score: persistedDimensionZScore(c.dimension),
         });
         continue;
       }
@@ -615,6 +628,11 @@ export async function runTraceAnomalyCycle(deps: TraceAnomalyDeps): Promise<void
         metric_type: primary.dimension.type,
         detection_method: 'ml-anomaly',
         dimensions,
+        // persistedDimensionZScore returns non-null only for latency_p95, so
+        // find(non-null) yields the latency z-score regardless of candidate
+        // order within the group (null when the group is error_rate-only).
+        // This matches what the legacy description-regex recovered (#1308).
+        z_score: group.map((c) => persistedDimensionZScore(c.dimension)).find((z) => z !== null) ?? null,
       });
     }
   }
