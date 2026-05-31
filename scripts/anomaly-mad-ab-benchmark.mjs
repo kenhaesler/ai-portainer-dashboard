@@ -115,6 +115,38 @@ function detectRobustMad(values) {
   return out;
 }
 
+/**
+ * Seasonal robust median+MAD (#1307): instead of a flat trailing window, compare
+ * each point against the RAW prior samples in its (day-of-week × hour-of-day)
+ * bucket — faithful to the production robust path, which narrows its raw query by
+ * day-of-week rather than pooling hourly averages. The point under test is
+ * excluded (added to its bucket only after scoring). Points whose bucket has
+ * < minHistory prior samples are warm-up (null). One-sided, like the flat robust
+ * detector. (One sample per weekly phase would give an unstable MAD — the very
+ * "buckets too small" problem #1307 fixes with a wider lookback + raw samples.)
+ */
+function detectSeasonalBucketMad(values, dow, hod, minHistory = 8) {
+  const out = new Array(values.length).fill(null);
+  const buckets = new Map(); // (dow*24+hod) → prior raw samples
+  for (let i = 0; i < values.length; i++) {
+    const key = dow[i] * 24 + hod[i];
+    const hist = buckets.get(key);
+    if (hist && hist.length >= minHistory) {
+      const med = median(hist);
+      const mad = median(hist.map((x) => Math.abs(x - med)));
+      if (mad === 0) {
+        const tol = Math.max(Math.abs(med) * 0.1, 0.01);
+        out[i] = values[i] - med > tol;
+      } else {
+        out[i] = (0.6745 * (values[i] - med)) / mad > MAD_THRESHOLD;
+      }
+    }
+    if (hist) hist.push(values[i]);
+    else buckets.set(key, [values[i]]);
+  }
+  return out;
+}
+
 // ── scenarios: { name, why, values[], labels[] } (label=true → real anomaly) ─
 function buildScenarios() {
   const rng = mulberry32(0x9e3779b9);
@@ -260,3 +292,52 @@ for (const [name] of detectors) {
   console.log(row(name, m));
 }
 console.log('');
+
+// ── Seasonality A/B (#1307): flat window vs same-phase weekly baseline ────────
+// A strongly weekly-seasonal series (weekday high, weekend low). The flat
+// trailing window mistakes the regular weekday↔weekend steps for anomalies; the
+// same-phase (day-of-week × hour) baseline sees them as normal. Only the injected
+// weekday spikes are real. Both detectors scored on the indices where BOTH
+// produced a decision, for a fair comparison.
+function buildWeeklySeasonalScenario() {
+  const rng = mulberry32(0x51ed_5eed);
+  const PER_HOUR = 4;            // 15-minute samples → multiple raw points per (dow,hour) bucket
+  const PER_DAY = 24 * PER_HOUR; // 96
+  const PER_WEEK = 7 * PER_DAY;  // 672
+  const WEEKS = 8;
+  const N = WEEKS * PER_WEEK;
+  const values = [], labels = [], dow = [], hod = [];
+  // Real weekday spikes in later weeks (after the bucket warm-up).
+  const spikeAt = new Set([
+    6 * PER_WEEK + PER_DAY * 1 + 40, 6 * PER_WEEK + PER_DAY * 1 + 41, // Mon
+    6 * PER_WEEK + PER_DAY * 3 + 52,                                  // Wed
+    7 * PER_WEEK + PER_DAY * 2 + 36, 7 * PER_WEEK + PER_DAY * 2 + 37, // Tue
+  ]);
+  for (let i = 0; i < N; i++) {
+    const d = Math.floor(i / PER_DAY) % 7;       // 0=Sun … 6=Sat
+    const h = Math.floor((i % PER_DAY) / PER_HOUR);
+    dow.push(d); hod.push(h);
+    const weekend = d === 0 || d === 6;
+    const base = weekend ? 15 : 50;              // strong weekly pattern
+    if (spikeAt.has(i)) { values.push(base + 40 + gauss(rng, 0, 1)); labels.push(true); continue; }
+    values.push(base + gauss(rng, 0, 1.2)); labels.push(false);
+  }
+  return { values, labels, dow, hod };
+}
+
+{
+  const { values, labels, dow, hod } = buildWeeklySeasonalScenario();
+  // Vary ONLY the baseline (flat trailing window vs day-of-week × hour bucket) so
+  // the difference is purely the #1307 seasonality contribution. No persistence
+  // here — M-of-N would suppress the isolated spikes for BOTH and obscure it.
+  const flat = detectRobustMad(values);
+  const seasonal = detectSeasonalBucketMad(values, dow, hod);
+  // Score on indices where BOTH detectors produced a decision (fair denominator).
+  const mask = (a, b) => a.map((v, i) => (a[i] === null || b[i] === null ? null : v));
+  const anomalies = labels.filter(Boolean).length;
+  console.log(`▶ weekly_seasonal  (${values.length} pts @ 15-min, ${anomalies} true-anomaly pts) — #1307 day-of-week`);
+  console.log('    weekday/weekend steps look anomalous to a flat window; a day-of-week × hour baseline sees them as normal');
+  console.log(row('robust-mad (flat window)', score(mask(flat, seasonal), labels)));
+  console.log(row('robust-mad (seasonal dow×hr)', score(mask(seasonal, flat), labels)));
+  console.log('');
+}
