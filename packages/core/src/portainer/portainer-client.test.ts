@@ -31,7 +31,9 @@ import {
   isEdgeTunnelNotActive,
   EDGE_TUNNEL_NOT_ACTIVE_TOKEN,
   getDockerInfo,
+  getContainer,
 } from './portainer-client.js';
+import { normalizeContainer } from './portainer-normalizers.js';
 import pLimit from 'p-limit';
 
 const mockFetch = vi.mocked(undiciFetch);
@@ -475,5 +477,197 @@ describe('getDockerInfo — narrow slice + defensive narrowing', () => {
       OSType: undefined,
       Architecture: undefined,
     });
+  });
+});
+
+// =====================================================================
+//  getContainer — Docker inspect-response normalization (#1387)
+//
+//  getContainer hits the INSPECT endpoint (/containers/{id}/json), whose
+//  shape differs from the LIST endpoint (/containers/json) that
+//  ContainerSchema models:
+//    - State is an OBJECT ({ Status, Running, Health, ... }), not a string
+//    - Created is an ISO-8601 STRING, not a unix number
+//    - the name is a single `Name` field, not `Names: string[]`
+//    - image tag + labels live under `Config`, not at the top level
+//  Parsing the inspect body with the list schema threw a ZodError and broke
+//  PCAP capture-status polling. getContainer must normalize inspect → the
+//  Container (list) contract both callers (pcap-service, container-detail
+//  route via normalizeContainer) depend on.
+// =====================================================================
+
+describe('getContainer — Docker inspect normalization (#1387)', () => {
+  beforeEach(() => {
+    _resetClientState();
+    mockFetch.mockReset();
+  });
+
+  afterEach(() => {
+    _resetClientState();
+  });
+
+  const inspectBody = {
+    Id: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+    Created: '2026-05-31T16:30:00.000Z',
+    Name: '/pcap-sidecar-xyz',
+    State: {
+      Status: 'running',
+      Running: true,
+      Paused: false,
+      Restarting: false,
+      Dead: false,
+      ExitCode: 0,
+      Health: { Status: 'healthy', FailingStreak: 0 },
+    },
+    Image: 'sha256:deadbeefcafe',
+    Config: {
+      Image: 'nicolaka/netshoot:latest',
+      Labels: {
+        'com.docker.compose.project': 'pcap',
+        'custom.path': '/var/lib/docker/volumes/secret',
+      },
+    },
+    HostConfig: { NetworkMode: 'container:target', Privileged: false },
+    NetworkSettings: {
+      Networks: { bridge: { NetworkID: 'net1', IPAddress: '172.17.0.5', Gateway: '172.17.0.1' } },
+    },
+    Mounts: [],
+  };
+
+  it('parses the inspect response without throwing (repro of the ZodError)', async () => {
+    mockFetch.mockResolvedValueOnce(buildJsonResponse(200, 'OK', inspectBody));
+    await expect(getContainer(4, inspectBody.Id)).resolves.toBeDefined();
+  });
+
+  it('exposes State as a plain status string (the shape pcap-service polls)', async () => {
+    mockFetch.mockResolvedValueOnce(buildJsonResponse(200, 'OK', inspectBody));
+    const c = await getContainer(4, inspectBody.Id);
+    expect(c.State).toBe('running');
+  });
+
+  it('maps the single inspect Name into Names[] so name resolution works', async () => {
+    mockFetch.mockResolvedValueOnce(buildJsonResponse(200, 'OK', inspectBody));
+    const c = await getContainer(4, inspectBody.Id);
+    expect(c.Names).toEqual(['/pcap-sidecar-xyz']);
+  });
+
+  it('converts the ISO Created timestamp to unix seconds (number)', async () => {
+    mockFetch.mockResolvedValueOnce(buildJsonResponse(200, 'OK', inspectBody));
+    const c = await getContainer(4, inspectBody.Id);
+    expect(c.Created).toBe(Math.floor(Date.parse('2026-05-31T16:30:00.000Z') / 1000));
+  });
+
+  it('uses the human-readable Config.Image tag, not the image digest', async () => {
+    mockFetch.mockResolvedValueOnce(buildJsonResponse(200, 'OK', inspectBody));
+    const c = await getContainer(4, inspectBody.Id);
+    expect(c.Image).toBe('nicolaka/netshoot:latest');
+  });
+
+  it('pulls labels from Config.Labels and sanitizes path-disclosing values', async () => {
+    mockFetch.mockResolvedValueOnce(buildJsonResponse(200, 'OK', inspectBody));
+    const c = await getContainer(4, inspectBody.Id);
+    expect(c.Labels?.['com.docker.compose.project']).toBe('pcap');
+    expect(c.Labels?.['custom.path']).toBe('[REDACTED]');
+  });
+
+  it('survives normalizeContainer end-to-end (state + health + name)', async () => {
+    mockFetch.mockResolvedValueOnce(buildJsonResponse(200, 'OK', inspectBody));
+    const c = await getContainer(4, inspectBody.Id);
+    const normalized = normalizeContainer(c, 4, 'prod');
+    expect(normalized.state).toBe('running');
+    expect(normalized.healthStatus).toBe('healthy');
+    expect(normalized.name).toBe('pcap-sidecar-xyz');
+  });
+
+  it('maps a stopped container State.Status through to normalizeContainer', async () => {
+    mockFetch.mockResolvedValueOnce(buildJsonResponse(200, 'OK', {
+      ...inspectBody,
+      State: { Status: 'exited', Running: false, Dead: false, ExitCode: 137 },
+    }));
+    const c = await getContainer(4, inspectBody.Id);
+    expect(c.State).toBe('exited');
+    expect(normalizeContainer(c, 4, 'prod').state).toBe('stopped');
+  });
+
+  // Docker inspect for a paused container reports Running=true, Paused=true,
+  // Status="paused". The synthesized human-readable Status keyed off Running
+  // alone, so it read "Up" with no paused indicator — masking the pause in any
+  // UI that shows the status text. State must still resolve to 'paused'.
+  it('synthesizes a paused-aware Status string while keeping State=paused', async () => {
+    mockFetch.mockResolvedValueOnce(buildJsonResponse(200, 'OK', {
+      ...inspectBody,
+      State: {
+        Status: 'paused',
+        Running: true,
+        Paused: true,
+        Restarting: false,
+        Dead: false,
+        ExitCode: 0,
+      },
+    }));
+    const c = await getContainer(4, inspectBody.Id);
+    // State (used for normalizeContainer's state mapping) stays correct.
+    expect(c.State).toBe('paused');
+    expect(normalizeContainer(c, 4, 'prod').state).toBe('paused');
+    // The human-readable status must reflect the pause, not read a bare "Up".
+    expect(c.Status).toContain('Paused');
+    expect(c.Status).not.toBe('Up');
+  });
+
+  // NetworkSettings.Ports (inspect shape) maps to the list-shaped Ports[].
+  // Keys are "<port>/<proto>"; the value is either an array of host bindings
+  // or `null` for an exposed-but-unpublished port. Both must round-trip:
+  // bound → PublicPort set; null → PublicPort undefined (still listed).
+  it('maps NetworkSettings.Ports (bound + null bindings) into Ports[]', async () => {
+    mockFetch.mockResolvedValueOnce(buildJsonResponse(200, 'OK', {
+      ...inspectBody,
+      NetworkSettings: {
+        ...inspectBody.NetworkSettings,
+        Ports: {
+          '80/tcp': [{ HostIp: '0.0.0.0', HostPort: '8080' }],
+          '53/udp': null,
+        },
+      },
+    }));
+    const c = await getContainer(4, inspectBody.Id);
+    const tcp = c.Ports?.find((p) => p.PrivatePort === 80);
+    const udp = c.Ports?.find((p) => p.PrivatePort === 53);
+
+    expect(tcp).toBeDefined();
+    expect(tcp?.PublicPort).toBe(8080);
+    expect(tcp?.Type).toBe('tcp');
+
+    expect(udp).toBeDefined();
+    expect(udp?.PublicPort).toBeUndefined();
+    expect(udp?.Type).toBe('udp');
+
+    // normalizeContainer consumes the mapped Ports[] — verify it survives.
+    const ports = normalizeContainer(c, 4, 'prod').ports;
+    expect(ports).toContainEqual({ private: 80, public: 8080, type: 'tcp' });
+    expect(ports).toContainEqual({ private: 53, public: undefined, type: 'udp' });
+  });
+
+  // Security (CLAUDE.md §5): Mounts[].Source carries raw host filesystem
+  // paths. The detail route returns the raw Container, so those paths must
+  // never pass through. normalizeContainer drops Mounts entirely and no
+  // consumer reads them, so containerFromInspect omits them.
+  it('does not expose raw Mounts[].Source host paths on the mapped Container', async () => {
+    mockFetch.mockResolvedValueOnce(buildJsonResponse(200, 'OK', {
+      ...inspectBody,
+      Mounts: [
+        {
+          Type: 'bind',
+          Source: '/home/simon/secret-host-path',
+          Destination: '/data',
+          Mode: 'rw',
+          RW: true,
+        },
+      ],
+    }));
+    const c = await getContainer(4, inspectBody.Id);
+    const sources = (c.Mounts ?? []).map((m) => m.Source).filter(Boolean);
+    // Either no Mounts at all, or every Source redacted — never the raw path.
+    expect(sources).not.toContain('/home/simon/secret-host-path');
+    expect(JSON.stringify(c)).not.toContain('/home/simon/secret-host-path');
   });
 });

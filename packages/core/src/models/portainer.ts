@@ -71,6 +71,138 @@ export const ContainerSchema = z.object({
   }).optional(),
 }).passthrough();
 
+/**
+ * Docker container *inspect* response (`/containers/{id}/json`).
+ *
+ * This is a different shape from {@link ContainerSchema}, which models the
+ * *list* endpoint (`/containers/json`): here `State` is an object, `Created`
+ * is an ISO-8601 string, the name is a single `Name`, and the image tag +
+ * labels live under `Config`. Lenient on purpose — Docker returns dozens of
+ * fields we don't consume, so unknown keys pass through and everything we
+ * map is optional.
+ */
+export const ContainerInspectSchema = z.object({
+  Id: z.string(),
+  Name: z.string().optional(),
+  Created: z.string().optional(),
+  State: z.object({
+    Status: z.string().optional(),
+    Running: z.boolean().optional(),
+    Paused: z.boolean().optional(),
+    Restarting: z.boolean().optional(),
+    Dead: z.boolean().optional(),
+    ExitCode: z.number().optional(),
+    Health: z.object({ Status: z.string().optional() }).passthrough().optional(),
+  }).passthrough().optional(),
+  Image: z.string().optional(),
+  Config: z.object({
+    Image: z.string().optional(),
+    Labels: z.record(z.string(), z.string()).nullish(),
+  }).passthrough().optional(),
+  HostConfig: z.object({
+    NetworkMode: z.string().optional(),
+    Privileged: z.boolean().optional(),
+    CapAdd: z.array(z.string()).nullish(),
+    PidMode: z.string().optional(),
+  }).passthrough().optional(),
+  NetworkSettings: z.object({
+    Networks: z.record(z.string(), z.object({
+      NetworkID: z.string().optional(),
+      IPAddress: z.string().optional(),
+      Gateway: z.string().optional(),
+    }).passthrough()).nullish(),
+    Ports: z.record(
+      z.string(),
+      z.array(z.object({
+        HostIp: z.string().optional(),
+        HostPort: z.string().optional(),
+      }).passthrough()).nullable(),
+    ).nullish(),
+  }).passthrough().optional(),
+  Mounts: z.array(z.object({
+    Type: z.string().optional(),
+    Name: z.string().optional(),
+    Source: z.string().optional(),
+    Destination: z.string().optional(),
+    Mode: z.string().optional(),
+    RW: z.boolean().optional(),
+  }).passthrough()).nullish(),
+}).passthrough();
+
+export type ContainerInspect = z.infer<typeof ContainerInspectSchema>;
+
+/**
+ * Normalize a Docker *inspect* response into the list-shaped {@link Container}
+ * contract that the rest of the codebase consumes (`normalizeContainer`,
+ * PCAP capture-status polling). The list endpoint's human-readable `Status`
+ * string is synthesized from the inspect endpoint's structured `State.Health`
+ * so health parsing (`"(healthy)"` / `"(unhealthy)"` / `"(health: starting)"`)
+ * keeps working. Labels are returned as-is; callers apply path sanitization.
+ * `Mounts` is dropped because `Mounts[].Source` exposes raw host paths and no
+ * consumer reads it (see the inline note at the mapping below).
+ */
+export function containerFromInspect(raw: unknown): Container {
+  const i = ContainerInspectSchema.parse(raw);
+
+  const stateStatus = i.State?.Status ?? 'unknown';
+  const health = i.State?.Health?.Status;
+  // A paused container reports Running=true AND Paused=true; Docker's own list
+  // endpoint surfaces this as "Up … (Paused)". Key off Paused first so the
+  // human-readable status reflects the pause instead of a bare "Up".
+  const base = i.State?.Paused
+    ? 'Up (Paused)'
+    : i.State?.Running
+      ? 'Up'
+      : stateStatus === 'exited'
+        ? `Exited (${i.State?.ExitCode ?? 0})`
+        : stateStatus.charAt(0).toUpperCase() + stateStatus.slice(1);
+  const healthSuffix =
+    health === 'healthy' ? ' (healthy)'
+    : health === 'unhealthy' ? ' (unhealthy)'
+    : health === 'starting' ? ' (health: starting)'
+    : '';
+  const status = `${base}${healthSuffix}`;
+
+  const createdMs = i.Created ? Date.parse(i.Created) : NaN;
+  const created = Number.isFinite(createdMs) ? Math.floor(createdMs / 1000) : 0;
+
+  const ports = Object.entries(i.NetworkSettings?.Ports ?? {}).flatMap(([key, bindings]) => {
+    const [portStr, type] = key.split('/');
+    const privatePort = Number(portStr);
+    if (!Number.isFinite(privatePort)) return [];
+    const hostPort = bindings?.[0]?.HostPort ? Number(bindings[0].HostPort) : undefined;
+    return [{
+      PrivatePort: privatePort,
+      PublicPort: hostPort !== undefined && Number.isFinite(hostPort) ? hostPort : undefined,
+      Type: type ?? 'tcp',
+    }];
+  });
+
+  // Re-parse through ContainerSchema so the returned object is guaranteed to
+  // conform to the Container contract (applies defaults, strips extras).
+  return ContainerSchema.parse({
+    Id: i.Id,
+    Names: i.Name ? [i.Name] : [],
+    Image: i.Config?.Image ?? i.Image ?? '',
+    ImageID: i.Image,
+    Created: created,
+    State: stateStatus,
+    Status: status,
+    Ports: ports,
+    Labels: i.Config?.Labels ?? {},
+    NetworkSettings: i.NetworkSettings?.Networks
+      ? { Networks: i.NetworkSettings.Networks }
+      : undefined,
+    // Mounts intentionally omitted: Mounts[].Source carries raw host
+    // filesystem paths (CLAUDE.md §5 — strip sensitive metadata before it
+    // reaches the frontend). The detail route returns this Container verbatim,
+    // normalizeContainer discards Mounts, and no consumer reads them, so we
+    // drop the array here rather than leak host paths. ContainerSchema's
+    // `.default([])` keeps the field contract-compliant.
+    HostConfig: i.HostConfig,
+  });
+}
+
 export const StackSchema = z.object({
   Id: z.number(),
   Name: z.string(),
