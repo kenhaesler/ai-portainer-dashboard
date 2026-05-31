@@ -128,8 +128,8 @@ describe('Sidebar', () => {
     expect(getNavGroups().map((g) => g.title)).toEqual([
       'Overview',
       'Monitoring',
-      'Diagnostics',
       'Intelligence',
+      'Diagnostics',
       'Security',
       'Operations',
     ]);
