@@ -8,7 +8,7 @@ import { normalizeEndpoint, type NormalizedEndpoint } from '@dashboard/core/port
 import { getSetting, getEffectiveHarborConfig, getEffectiveMonitoringSchedulerConfig, cleanExpiredSessions, cleanExpiredStreamTickets } from '@dashboard/core/services/index.js';
 import { runWithTraceContext } from '@dashboard/core/tracing/index.js';
 import { startCooldownSweep, stopCooldownSweep, cleanupOldInsights, pruneCanaryRegistry, runDedupTelemetryCycle, cleanupOldDedupMetrics } from '@dashboard/ai';
-import { collectMetrics, insertMetrics, cleanOldMetrics, cleanOldSpans, type MetricInsert, recordNetworkSample, insertKpiSnapshot, cleanOldKpiSnapshots, pruneStaleEntries } from '@dashboard/observability';
+import { collectMetrics, insertMetrics, cleanOldMetrics, cleanOldSpans, type MetricInsert, recordNetworkSample, insertKpiSnapshot, cleanOldKpiSnapshots, pruneStaleEntries, upsertContainerLifecycle } from '@dashboard/observability';
 import { cleanupOldCaptures, cleanupOrphanedSidecars, runStalenessChecks, runHarborSync, isHarborSyncRunning, isHarborConfiguredAsync, cleanupOldVulnerabilities } from '@dashboard/security';
 import { createPortainerBackup, cleanupOldPortainerBackups, startWebhookListener, stopWebhookListener, processRetries } from '@dashboard/operations';
 import { startElasticsearchLogForwarder, stopElasticsearchLogForwarder } from '@dashboard/infrastructure';
@@ -116,6 +116,15 @@ async function collectEndpointMetrics(
       'Failed to collect metrics for some containers',
     );
   }
+  // Record container lifecycle (full list, all states) so fleet aggregates can
+  // exclude stopped/removed containers (#1394). Best-effort — never abort the
+  // metrics cycle on a lifecycle write failure.
+  try {
+    await upsertContainerLifecycle(endpointId, containers);
+  } catch (err) {
+    log.warn({ err, endpointId }, 'Failed to upsert container lifecycle');
+  }
+
   return metrics;
 }
 

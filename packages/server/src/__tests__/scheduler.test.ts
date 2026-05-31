@@ -34,10 +34,12 @@ vi.mock('@dashboard/observability', async (importOriginal) => {
     insertKpiSnapshot: vi.fn(),
     cleanOldKpiSnapshots: vi.fn(),
     recordNetworkSample: vi.fn(),
+    upsertContainerLifecycle: (...args: unknown[]) => upsertLifecycleMock(...args),
   };
 });
 
 const insertMetricsMock = vi.fn().mockResolvedValue(undefined);
+const upsertLifecycleMock = vi.fn().mockResolvedValue(undefined);
 
 // pcap-service mock consolidated into @dashboard/security above
 // Kept: portainer-backup mock
@@ -140,6 +142,7 @@ beforeEach(async () => {
     networkTxBytes: 3000,
   });
   insertMetricsMock.mockResolvedValue(undefined);
+  upsertLifecycleMock.mockReset().mockResolvedValue(undefined);
   cleanExpiredSessionsMock.mockReturnValue(0);
   cleanupOldInsightsMock.mockReturnValue(0);
   pruneCanaryRegistryMock.mockReturnValue(0);
@@ -375,6 +378,31 @@ describe('scheduler/setup – runMetricsCollection', () => {
 
     expect(collectMetricsMock).not.toHaveBeenCalled();
     expect(insertMetricsMock).not.toHaveBeenCalled();
+  });
+
+  it('records container lifecycle with the full list (all states) per endpoint (#1394)', async () => {
+    getEndpointsMock.mockResolvedValueOnce([{ Id: 1, Name: 'ep1', Status: 1, Type: 1, URL: 'tcp://localhost' }] as any);
+    getContainersMock.mockResolvedValueOnce([
+      { Id: 'run-1', Names: ['/web'], State: 'running' },
+      { Id: 'dead-1', Names: ['/old'], State: 'exited' },
+    ] as any);
+
+    await runMetricsCollection();
+
+    expect(upsertLifecycleMock).toHaveBeenCalledWith(1, [
+      { Id: 'run-1', Names: ['/web'], State: 'running' },
+      { Id: 'dead-1', Names: ['/old'], State: 'exited' },
+    ]);
+  });
+
+  it('still inserts metrics when the lifecycle upsert throws (#1394)', async () => {
+    upsertLifecycleMock.mockRejectedValueOnce(new Error('lifecycle db down'));
+    getEndpointsMock.mockResolvedValueOnce([{ Id: 1, Name: 'ep1', Status: 1, Type: 1, URL: 'tcp://localhost' }] as any);
+    getContainersMock.mockResolvedValueOnce([{ Id: 'run-1', Names: ['/web'], State: 'running' }] as any);
+
+    await runMetricsCollection();
+
+    expect(insertMetricsMock).toHaveBeenCalledTimes(1);
   });
 });
 
