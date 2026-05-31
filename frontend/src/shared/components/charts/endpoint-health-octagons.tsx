@@ -18,7 +18,7 @@ export interface EndpointHealthOctagonsProps {
      * from "no containers" so an operator can tell whether Portainer is just empty
      * vs the live-fallback fetch failed.
      */
-    snapshotSource?: 'snapshot' | 'live' | 'unavailable';
+    snapshotSource?: 'live' | 'unavailable';
     /** Epoch millis of last live refresh (only set when source === 'live'). */
     snapshotFetchedAt?: number;
   }>;
@@ -51,7 +51,7 @@ function getHealthLevel(
   running: number,
   total: number,
   status?: 'up' | 'down',
-  snapshotSource?: 'snapshot' | 'live' | 'unavailable',
+  snapshotSource?: 'live' | 'unavailable',
 ): HealthLevel {
   if (status === 'down') return 'offline';
   if (snapshotSource === 'unavailable') return 'unavailable';
@@ -148,7 +148,7 @@ interface HexagonCardProps {
   running: number;
   total: number;
   level: HealthLevel;
-  snapshotSource?: 'snapshot' | 'live' | 'unavailable';
+  snapshotSource?: 'live' | 'unavailable';
   snapshotFetchedAt?: number;
   onClick: () => void;
   index: number;
@@ -172,7 +172,7 @@ function getCardTitle(
   level: HealthLevel,
   running: number,
   total: number,
-  snapshotSource?: 'snapshot' | 'live' | 'unavailable',
+  snapshotSource?: 'live' | 'unavailable',
   snapshotFetchedAt?: number,
 ): string {
   if (level === 'offline') {

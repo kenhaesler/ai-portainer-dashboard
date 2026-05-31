@@ -378,7 +378,7 @@ describe('InfrastructurePage — fleet section', () => {
 
     expect(screen.getByText(/Edge Agent Standard/)).toBeInTheDocument();
     expect(screen.getByText(/Check-in:/)).toBeInTheDocument();
-    expect(screen.getByText(/Snapshot:/)).toBeInTheDocument();
+    expect(screen.getByText(/Updated:/)).toBeInTheDocument();
   });
 
   it('renders Edge Agent Async badge for async endpoints', () => {

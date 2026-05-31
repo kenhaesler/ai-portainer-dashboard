@@ -214,7 +214,7 @@ describe('EndpointCard — compact 3-row layout', () => {
     renderPage();
 
     expect(screen.getByText(/Check-in:/)).toBeInTheDocument();
-    expect(screen.getByText(/Snapshot:/)).toBeInTheDocument();
+    expect(screen.getByText(/Updated:/)).toBeInTheDocument();
   });
 
   it('"View stacks" link works and calls onViewStacks', () => {

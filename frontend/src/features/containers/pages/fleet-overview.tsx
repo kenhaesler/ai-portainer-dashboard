@@ -148,7 +148,7 @@ function EndpointCard({ endpoint, onClick, onViewStacks }: { endpoint: Endpoint;
             Check-in: {formatRelativeTime(endpoint.lastCheckIn ? Date.now() - endpoint.lastCheckIn * 1000 : null)}
           </span>
           <span className={cn(getSnapshotAgeColor(endpoint.snapshotAge))}>
-            Snapshot: {formatRelativeTime(endpoint.snapshotAge)}
+            Updated: {formatRelativeTime(endpoint.snapshotAge)}
           </span>
         </div>
       )}
@@ -718,8 +718,8 @@ export default function InfrastructurePage() {
     },
     {
       id: 'snapshotAge',
-      header: 'Snapshot Age',
-      cell: ({ row }) => row.original.isEdge ? (
+      header: 'Data Age',
+      cell: ({ row }) => row.original.snapshotAge != null ? (
         <span className={cn('text-xs', getSnapshotAgeColor(row.original.snapshotAge))}>
           {formatRelativeTime(row.original.snapshotAge)}
         </span>
