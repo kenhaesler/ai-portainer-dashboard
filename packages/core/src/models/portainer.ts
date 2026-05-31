@@ -138,17 +138,24 @@ export type ContainerInspect = z.infer<typeof ContainerInspectSchema>;
  * string is synthesized from the inspect endpoint's structured `State.Health`
  * so health parsing (`"(healthy)"` / `"(unhealthy)"` / `"(health: starting)"`)
  * keeps working. Labels are returned as-is; callers apply path sanitization.
+ * `Mounts` is dropped because `Mounts[].Source` exposes raw host paths and no
+ * consumer reads it (see the inline note at the mapping below).
  */
 export function containerFromInspect(raw: unknown): Container {
   const i = ContainerInspectSchema.parse(raw);
 
   const stateStatus = i.State?.Status ?? 'unknown';
   const health = i.State?.Health?.Status;
-  const base = i.State?.Running
-    ? 'Up'
-    : stateStatus === 'exited'
-      ? `Exited (${i.State?.ExitCode ?? 0})`
-      : stateStatus.charAt(0).toUpperCase() + stateStatus.slice(1);
+  // A paused container reports Running=true AND Paused=true; Docker's own list
+  // endpoint surfaces this as "Up … (Paused)". Key off Paused first so the
+  // human-readable status reflects the pause instead of a bare "Up".
+  const base = i.State?.Paused
+    ? 'Up (Paused)'
+    : i.State?.Running
+      ? 'Up'
+      : stateStatus === 'exited'
+        ? `Exited (${i.State?.ExitCode ?? 0})`
+        : stateStatus.charAt(0).toUpperCase() + stateStatus.slice(1);
   const healthSuffix =
     health === 'healthy' ? ' (healthy)'
     : health === 'unhealthy' ? ' (unhealthy)'
@@ -186,7 +193,12 @@ export function containerFromInspect(raw: unknown): Container {
     NetworkSettings: i.NetworkSettings?.Networks
       ? { Networks: i.NetworkSettings.Networks }
       : undefined,
-    Mounts: i.Mounts ?? [],
+    // Mounts intentionally omitted: Mounts[].Source carries raw host
+    // filesystem paths (CLAUDE.md §5 — strip sensitive metadata before it
+    // reaches the frontend). The detail route returns this Container verbatim,
+    // normalizeContainer discards Mounts, and no consumer reads them, so we
+    // drop the array here rather than leak host paths. ContainerSchema's
+    // `.default([])` keeps the field contract-compliant.
     HostConfig: i.HostConfig,
   });
 }
