@@ -1,4 +1,4 @@
-import { beforeAll, afterAll, describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeAll, afterAll, describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { setConfigForTest, resetConfig } from '@dashboard/core/config/index.js';
 
 vi.mock('@dashboard/core/tracing/trace-context.js', () => ({
@@ -394,6 +394,26 @@ describe('harbor-sync', () => {
       // Result must not indicate an error
       const result = vi.mocked(store.completeSyncStatus).mock.results;
       expect(result.length).toBeGreaterThan(0);
+    });
+
+    it('HARBOR_MAX_PAGES=0 disables the cap (paginates until Harbor total is reached)', async () => {
+      setConfigForTest({ HARBOR_MAX_PAGES: 0 });
+
+      // Always-full pages; termination must come from the Harbor total, not the
+      // cap. With the old min(1) + `page > maxPages` guard, maxPages=0 would have
+      // broken after page 1 (1 > 0); the `maxPages > 0` guard disables it.
+      vi.mocked(harborClient.listVulnerabilities).mockResolvedValue({
+        items: makeFullPageItems(100, 0),
+        total: 300,
+      });
+
+      await runFullSync();
+
+      // 3 full pages (300) reach total=300 → no cap hit, no truncation.
+      expect(vi.mocked(harborClient.listVulnerabilities).mock.calls.length).toBe(3);
+      const lastCall = vi.mocked(store.completeSyncStatus).mock.calls.at(-1)!;
+      expect(lastCall[3]).toBe(300); // expectedTotal
+      expect(lastCall[1]).toBe(300); // synced === total → not truncated
     });
   });
 
