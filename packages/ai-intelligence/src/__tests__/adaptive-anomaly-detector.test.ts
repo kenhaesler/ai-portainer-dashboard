@@ -165,6 +165,10 @@ describe('adaptive-anomaly-detector', () => {
       // median 50, MAD 4 → modified-z threshold (2.5) is crossed at value > ~64.8.
       const spread = () => [44, 46, 48, 50, 50, 52, 54, 56, 42, 58];
 
+      // These tests focus on the hour-of-day → flat fallback; disable the
+      // day-of-week layer so the call shapes stay 4-arg (covered separately).
+      beforeEach(() => setConfigForTest({ ANOMALY_DAYOFWEEK_ENABLED: false }));
+
       it('flags a spike beyond the modified-z threshold', async () => {
         const getWindow = vi.fn().mockResolvedValue(spread());
         const r = await detectAnomalyRobust('c1', 'web', 'cpu', 80, getWindow);
@@ -231,6 +235,49 @@ describe('adaptive-anomaly-detector', () => {
         const r = await detectAnomalyRobust('c1', 'web', 'cpu', 80, flat);
         expect(flat).toHaveBeenCalledWith('c1', 'cpu', 30);
         expect(r!.method).toBe('robust-mad');
+      });
+
+      // #1307 — day-of-week × hour-of-day seasonality, with dow → hour → flat fallback.
+      describe('day-of-week seasonality (#1307)', () => {
+        const NOW = new Date('2026-05-25T09:30:00Z');
+        const DOW = NOW.getUTCDay();
+        const HOUR = NOW.getUTCHours(); // 9
+
+        beforeEach(() => setConfigForTest({
+          ANOMALY_DAYOFWEEK_ENABLED: true,
+          ANOMALY_DAYOFWEEK_LOOKBACK_DAYS: 28,
+          ANOMALY_DAYOFWEEK_MIN_SAMPLES: 3,
+        }));
+
+        it('prefers the day-of-week × hour window when it has enough samples', async () => {
+          const flat = vi.fn().mockResolvedValue(spread());
+          const seasonal = vi.fn().mockResolvedValue(spread());
+          const r = await detectAnomalyRobust('c1', 'web', 'cpu', 80, flat, seasonal, NOW);
+          // First call narrows to the weekday over the wider dow lookback.
+          expect(seasonal).toHaveBeenCalledWith('c1', 'cpu', HOUR, 28, DOW);
+          expect(flat).not.toHaveBeenCalled();
+          expect(r!.is_anomalous).toBe(true);
+        });
+
+        it('falls back to the hour-of-day window when the weekday bucket is too sparse', async () => {
+          const flat = vi.fn().mockResolvedValue(spread());
+          const seasonal = vi.fn()
+            .mockResolvedValueOnce([50, 50])   // dow×hour → sparse (< 3)
+            .mockResolvedValueOnce(spread());  // hour-of-day → enough
+          const r = await detectAnomalyRobust('c1', 'web', 'cpu', 80, flat, seasonal, NOW);
+          expect(seasonal).toHaveBeenNthCalledWith(1, 'c1', 'cpu', HOUR, 28, DOW);
+          expect(seasonal).toHaveBeenNthCalledWith(2, 'c1', 'cpu', HOUR, 14); // hour-only, no dow
+          expect(flat).not.toHaveBeenCalled();
+          expect(r!.is_anomalous).toBe(true);
+        });
+
+        it('falls back to the flat window when both seasonal buckets are sparse', async () => {
+          const flat = vi.fn().mockResolvedValue(spread());
+          const seasonal = vi.fn().mockResolvedValue([50, 50]); // both sparse
+          const r = await detectAnomalyRobust('c1', 'web', 'cpu', 80, flat, seasonal, NOW);
+          expect(flat).toHaveBeenCalledWith('c1', 'cpu', 30);
+          expect(r!.is_anomalous).toBe(true);
+        });
       });
     });
 

@@ -263,6 +263,14 @@ describe('config validation', () => {
       expect(c.ANOMALY_SUPPRESS_BELOW_CONFIDENCE).toBe(0);
     });
 
+    it('defaults day-of-week seasonality to ON, 28d lookback, 3-sample warm-up (#1307)', async () => {
+      const { getConfig } = await import('./index.js');
+      const c = getConfig();
+      expect(c.ANOMALY_DAYOFWEEK_ENABLED).toBe(true);
+      expect(c.ANOMALY_DAYOFWEEK_LOOKBACK_DAYS).toBe(28);
+      expect(c.ANOMALY_DAYOFWEEK_MIN_SAMPLES).toBe(3);
+    });
+
     it('defaults the feedback auto-tune to OFF, 6h cadence, 5% target (#1364)', async () => {
       const { getConfig } = await import('./index.js');
       const c = getConfig();

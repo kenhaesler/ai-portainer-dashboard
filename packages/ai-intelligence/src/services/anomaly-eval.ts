@@ -96,6 +96,43 @@ export function scoreSeriesRobust(
 }
 
 /**
+ * Score each point with the ROBUST detector against a SEASONAL same-phase
+ * baseline (#1307): instead of the flat trailing window, compare the point to
+ * the values at the same phase in prior cycles — `values[i-period]`,
+ * `values[i-2·period]`, … For hourly samples, `period = 24` is the hour-of-day
+ * baseline and `period = 24·7` is the day-of-week × hour-of-day baseline. This
+ * is the eval-rig analogue of the detector's seasonal window, so the rig can
+ * prove (and CI can guard) that seasonality lifts PR-AUC on periodic series
+ * where a flat window mistakes the cycle itself for anomalies.
+ *
+ * Points with fewer than `minHistory` prior same-phase samples are warm-up
+ * (`null`). One-sided (drops score 0), mirroring `scoreSeriesRobust`.
+ */
+export function scoreSeriesSeasonalRobust(
+  values: readonly number[],
+  period: number,
+  minHistory = 3,
+): Array<number | null> {
+  const scores: Array<number | null> = [];
+  for (let i = 0; i < values.length; i++) {
+    const history: number[] = [];
+    for (let j = i - period; j >= 0; j -= period) history.push(values[j]);
+    if (history.length < minHistory) {
+      scores.push(null);
+      continue;
+    }
+    const { median, mad } = medianAndMad(history);
+    if (mad === 0) {
+      const tol = Math.max(Math.abs(median) * 0.1, 0.01);
+      scores.push(Math.max(0, (values[i] - median) / tol));
+    } else {
+      scores.push(Math.max(0, modifiedZScore(values[i], median, mad)));
+    }
+  }
+  return scores;
+}
+
+/**
  * Score each point with the legacy TWO-SIDED z-score (mean + std) — the
  * pre-#1361/#1362 detector. Kept so the eval rig can quantify the improvement
  * (and guard against regressing back toward it).

@@ -41,25 +41,63 @@ describe('getMovingAverage — baseline leakage (#1361 fix 2)', () => {
   });
 });
 
-describe('getMovingAverageByHourOfDay — baseline leakage (#1361 fix 2)', () => {
+describe('getMovingAverageByHourOfDay — reads metrics_1hour aggregate (#1307)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockQuery.mockResolvedValue({ rows: [{ mean: 50, std_dev: 5, sample_count: 40 }] });
+    // metrics_1hour rows: per-day hourly buckets (avg + sample stddev + count).
+    mockQuery.mockResolvedValue({
+      rows: [
+        { avg_value: 50, stddev_value: 5, sample_count: 60 },
+        { avg_value: 54, stddev_value: 3, sample_count: 60 },
+      ],
+    });
   });
 
-  it('excludes the point under test (the latest sample) from the hour bucket', async () => {
+  it('queries the metrics_1hour continuous aggregate, not the raw hypertable', async () => {
     await getMovingAverageByHourOfDay('c1', 'cpu', 9, 14);
     const sql: string = mockQuery.mock.calls[0][0];
-    // The current observation is the most recent sample; exclude it so the
-    // hour-of-day baseline cannot include / be poisoned by the value under test.
-    expect(sql).toMatch(/timestamp\s*<\s*\(\s*SELECT\s+MAX\(timestamp\)/i);
+    expect(sql).toMatch(/from\s+metrics_1hour/i);
+    expect(sql).toMatch(/date_part\('hour'.*bucket/i);
   });
 
-  it('still aggregates the requested hour bucket over the lookback window', async () => {
+  it('excludes the current (incomplete) hour bucket — the point under test', async () => {
     await getMovingAverageByHourOfDay('c1', 'cpu', 9, 14);
     const sql: string = mockQuery.mock.calls[0][0];
-    expect(sql).toMatch(/date_part\('hour'/i);
+    // Only completed past hours form the baseline; the in-progress hour is dropped.
+    expect(sql).toMatch(/bucket\s*<\s*date_trunc\('hour'/i);
+  });
+
+  it('pools the hourly buckets into population mean + std over the raw samples', async () => {
+    const result = await getMovingAverageByHourOfDay('c1', 'cpu', 9, 14);
+    // Two equal-count buckets (avg 50±5, avg 54±3, n=60 each): pooled mean 52,
+    // pooled population variance = (5²·59 + 3²·59)/120 + (2²·60 + 2²·60)/120.
+    expect(result!.mean).toBeCloseTo(52, 9);
+    expect(result!.sample_count).toBe(120);
+    const within = (25 * 59 + 9 * 59) / 120;
+    const between = (60 * 4 + 60 * 4) / 120;
+    expect(result!.std_dev).toBeCloseTo(Math.sqrt(within + between), 9);
+  });
+
+  it('passes container/metric/lookback/hour params (hour-of-day only)', async () => {
+    await getMovingAverageByHourOfDay('c1', 'cpu', 9, 14);
     expect(mockQuery).toHaveBeenCalledWith(expect.any(String), ['c1', 'cpu', 14, 9]);
+  });
+
+  it('filters by day-of-week and passes it as a param when supplied', async () => {
+    await getMovingAverageByHourOfDay('c1', 'cpu', 9, 28, 1 /* Monday */);
+    const sql: string = mockQuery.mock.calls[0][0];
+    expect(sql).toMatch(/date_part\('dow'.*bucket/i);
+    expect(mockQuery).toHaveBeenCalledWith(expect.any(String), ['c1', 'cpu', 28, 9, 1]);
+  });
+
+  it('returns null when the aggregate has no matching buckets', async () => {
+    mockQuery.mockResolvedValue({ rows: [] });
+    expect(await getMovingAverageByHourOfDay('c1', 'cpu', 9, 14)).toBeNull();
+  });
+
+  it('returns null without querying for an out-of-range hour', async () => {
+    expect(await getMovingAverageByHourOfDay('c1', 'cpu', 24, 14)).toBeNull();
+    expect(mockQuery).not.toHaveBeenCalled();
   });
 });
 
@@ -103,5 +141,21 @@ describe('getMetricWindowByHourOfDay — robust hour-of-day window (#1362)', () 
   it('returns [] for an out-of-range hour without querying', async () => {
     expect(await getMetricWindowByHourOfDay('c1', 'cpu', 24, 14)).toEqual([]);
     expect(mockQuery).not.toHaveBeenCalled();
+  });
+
+  it('filters raw samples by day-of-week and passes it as a param when supplied (#1307)', async () => {
+    await getMetricWindowByHourOfDay('c1', 'cpu', 9, 28, 1 /* Monday */);
+    const sql: string = mockQuery.mock.calls[0][0];
+    // Still RAW samples (median+MAD needs them) — just narrowed to the weekday.
+    expect(sql).toMatch(/from\s+metrics\b/i);
+    expect(sql).toMatch(/date_part\('dow'/i);
+    expect(mockQuery).toHaveBeenCalledWith(expect.any(String), ['c1', 'cpu', 28, 9, 1]);
+  });
+
+  it('does not add a day-of-week filter when none is given', async () => {
+    await getMetricWindowByHourOfDay('c1', 'cpu', 9, 14);
+    const sql: string = mockQuery.mock.calls[0][0];
+    expect(sql).not.toMatch(/date_part\('dow'/i);
+    expect(mockQuery).toHaveBeenCalledWith(expect.any(String), ['c1', 'cpu', 14, 9]);
   });
 });

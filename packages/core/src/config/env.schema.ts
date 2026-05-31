@@ -149,6 +149,18 @@ export const envSchema = z.object({
   // the legacy flat-baseline behavior. Prevents erratic alerts during the
   // warm-up window.
   ANOMALY_HOUROFDAY_MIN_SAMPLES: z.coerce.number().int().min(1).max(100).default(3),
+  // Day-of-week × hour-of-day seasonality (#1307, carried over from #1364).
+  // Refines the hour-of-day baseline so e.g. Monday 09:00 is compared against
+  // previous Mondays 09:00, not every day's 09:00 — catching weekly patterns
+  // (weekday vs weekend traffic). The detector tries day-of-week × hour first,
+  // falls back to hour-of-day, then to the flat window, so cold-start and sparse
+  // weekday buckets degrade gracefully. A wider lookback (default 28d ≈ 4 same-
+  // weekday occurrences) is needed for the weekly bucket to be stable. The
+  // mean/std path reads this from the metrics_1hour aggregate; the robust path
+  // narrows its raw query (median+MAD needs raw samples).
+  ANOMALY_DAYOFWEEK_ENABLED: z.coerce.boolean().default(true),
+  ANOMALY_DAYOFWEEK_LOOKBACK_DAYS: z.coerce.number().int().min(7).max(120).default(28),
+  ANOMALY_DAYOFWEEK_MIN_SAMPLES: z.coerce.number().int().min(1).max(1000).default(3),
 
   // Predictive Alerting
   PREDICTIVE_ALERTING_ENABLED: z.coerce.boolean().default(true),
