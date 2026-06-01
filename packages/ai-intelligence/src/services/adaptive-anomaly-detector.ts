@@ -11,6 +11,7 @@ import {
   classifyCv,
   cvThresholdMultiplier,
   exceedsThreshold,
+  isEffectivelyConstant,
   medianAndMad,
   modifiedZScore,
 } from './anomaly-stats.js';
@@ -160,8 +161,12 @@ export async function detectAnomalyAdaptive(
     isAnomalous = exceedsThreshold(zScore, threshold, direction);
   }
 
-  // Handle zero std_dev
-  if (stats.std_dev === 0) {
+  // Handle zero / near-zero std_dev (#1391). A near-constant baseline yields a
+  // floating-point std_dev (e.g. ~5.6e-17) that slips past a strict `=== 0`
+  // check; the raw (value - mean)/std_dev above then explodes. Treat any
+  // effectively-constant baseline like a zero-spread one and use the
+  // percentage-tolerance rule instead.
+  if (isEffectivelyConstant(stats.mean, stats.std_dev)) {
     const absMean = Math.abs(stats.mean);
     // Use a percentage-based tolerance for stable workloads to avoid tiny-value false positives.
     const tolerance = absMean > 0
@@ -272,9 +277,11 @@ export async function detectAnomalyRobust(
 
   let zScore: number;
   let isAnomalous: boolean;
-  if (mad === 0) {
-    // Perfectly stable baseline → modified z is undefined. Use a relative
-    // tolerance (mirrors the std === 0 path in the other detectors).
+  if (isEffectivelyConstant(median, mad)) {
+    // Perfectly stable — or near-constant (#1391) — baseline → the modified z is
+    // undefined / numerically explosive. A tiny non-zero MAD (e.g. ±1e-5 jitter)
+    // slips past a strict `mad === 0` check and makes 0.6745·Δ/MAD blow up, so
+    // use a relative tolerance instead (mirrors the std === 0 path above).
     const tolerance = Math.max(Math.abs(median) * 0.1, 0.01);
     const delta = currentValue - median;
     isAnomalous = exceedsThreshold(delta, tolerance, direction);
