@@ -117,6 +117,38 @@ describe('LlmObservabilityPage', () => {
     expect(screen.getByText('Error Rate')).toBeTruthy();
   });
 
+  it('spaces the KPI cards with a gap-6 grid', () => {
+    vi.mocked(useLlmStats).mockReturnValue({
+      data: mockStats,
+      isLoading: false,
+      refetch: vi.fn(),
+    } as ReturnType<typeof useLlmStats>);
+
+    const { container } = renderPage();
+    // The KPI grid wraps the four metric cards; it must use the wider gap-6
+    // spacing so the cards are not cramped together (gap-4 was too tight).
+    const grids = container.querySelectorAll('div.grid.md\\:grid-cols-4');
+    expect(grids.length).toBeGreaterThan(0);
+    grids.forEach((grid) => {
+      expect(grid.className).toContain('gap-6');
+      expect(grid.className).not.toContain('gap-4');
+    });
+  });
+
+  it('spaces the loading skeleton KPI grid with the same gap-6', () => {
+    vi.mocked(useLlmStats).mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      refetch: vi.fn(),
+    } as unknown as ReturnType<typeof useLlmStats>);
+
+    const { container } = renderPage();
+    const grid = container.querySelector('div.grid.md\\:grid-cols-4');
+    expect(grid).not.toBeNull();
+    expect(grid?.className).toContain('gap-6');
+    expect(grid?.className).not.toContain('gap-4');
+  });
+
   it('renders model breakdown table with data', () => {
     vi.mocked(useLlmStats).mockReturnValue({
       data: mockStats,
