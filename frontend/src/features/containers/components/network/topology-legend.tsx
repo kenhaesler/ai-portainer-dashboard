@@ -13,7 +13,7 @@ export function TopologyLegend() {
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="absolute bottom-14 left-3 z-10">
+    <div className="absolute bottom-4 left-16 z-10">
       {open && (
         <div className="mb-2 rounded-lg border bg-card/95 backdrop-blur-sm p-3 shadow-lg">
           <p className="text-xs font-semibold text-foreground mb-2">Edge Load</p>

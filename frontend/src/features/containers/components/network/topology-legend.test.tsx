@@ -8,6 +8,19 @@ describe('TopologyLegend', () => {
     expect(screen.getByRole('button', { name: /legend/i })).toBeTruthy();
   });
 
+  it('positions clear of the diagram controls (offset right and down)', () => {
+    // The React Flow zoom controls sit in the bottom-left corner; the legend
+    // must be offset right and toward the bottom so it does not overlap them.
+    const { container } = render(<TopologyLegend />);
+    const wrapper = container.firstChild as HTMLElement;
+    expect(wrapper.className).toContain('absolute');
+    expect(wrapper.className).toContain('left-16');
+    expect(wrapper.className).toContain('bottom-4');
+    // Guard against regressing onto the controls' bottom-left position.
+    expect(wrapper.className).not.toContain('left-3');
+    expect(wrapper.className).not.toContain('bottom-14');
+  });
+
   it('hides legend entries by default', () => {
     render(<TopologyLegend />);
     expect(screen.queryByText('Edge Load')).toBeNull();
