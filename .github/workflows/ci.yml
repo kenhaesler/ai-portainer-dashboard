@@ -119,7 +119,7 @@ jobs:
         run: npm run test -w backend -- --coverage
         env:
           DASHBOARD_USERNAME: admin
-          DASHBOARD_PASSWORD: changeme12345
+          DASHBOARD_PASSWORD: e2e-Sm0ke!Pw-7x2qD
           JWT_SECRET: test-secret-ci-e2e-do-not-use-in-prod-0123456789ab
           POSTGRES_TEST_URL: postgresql://app_user:changeme-postgres-app@localhost:5433/portainer_dashboard_test
           REDIS_URL: redis://localhost:6379
@@ -291,9 +291,12 @@ jobs:
     needs: [build]
     # Test credentials only — never used outside the disposable CI runner.
     # JWT_SECRET is 48 chars to satisfy the production 32+ char guard in env.schema.ts.
+    # The backend runs with NODE_ENV=production here, so DASHBOARD_PASSWORD must NOT
+    # be on the WEAK_DASHBOARD_PASSWORDS blocklist in packages/core/src/config/index.ts
+    # (the old `changeme12345` was, which crash-looped the backend → unhealthy → E2E fail).
     env:
       DASHBOARD_USERNAME: admin
-      DASHBOARD_PASSWORD: changeme12345
+      DASHBOARD_PASSWORD: e2e-Sm0ke!Pw-7x2qD
       JWT_SECRET: test-secret-ci-e2e-do-not-use-in-prod-0123456789ab
       POSTGRES_APP_PASSWORD: changeme-postgres-app
       TIMESCALE_PASSWORD: changeme-timescale
@@ -364,7 +367,8 @@ jobs:
         env:
           E2E_BASE_URL: http://localhost:8080
           E2E_USERNAME: admin
-          E2E_PASSWORD: changeme12345
+          # Must match DASHBOARD_PASSWORD above — this is the credential Playwright logs in with.
+          E2E_PASSWORD: e2e-Sm0ke!Pw-7x2qD
 
       - name: Dump service logs on failure
         if: failure()
