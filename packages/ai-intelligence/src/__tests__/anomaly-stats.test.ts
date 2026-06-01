@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import {
   classifyCv,
   cvThresholdMultiplier,
+  isEffectivelyConstant,
   meanAndStd,
   medianAndMad,
   modifiedZScore,
@@ -149,5 +150,33 @@ describe('modifiedZScore', () => {
   it('returns 0 when MAD is 0 (zero-spread is handled by the detector)', () => {
     expect(modifiedZScore(5, 5, 0)).toBe(0);
     expect(modifiedZScore(99, 5, 0)).toBe(0);
+  });
+});
+
+// #1391 — boundary pin for the near-constant guard. If you change the floors,
+// update both this block and the doc comment on `isEffectivelyConstant`.
+describe('isEffectivelyConstant', () => {
+  it('treats exact zero and the floating-point-noise std-dev from the bug report as constant', () => {
+    expect(isEffectivelyConstant(0.16, 0)).toBe(true);
+    expect(isEffectivelyConstant(0.16, 5.6e-17)).toBe(true); // the reported ~1.78e14 z-score case
+  });
+
+  it('catches a tiny variance that is negligible relative to the centre (0.1% floor)', () => {
+    expect(isEffectivelyConstant(0.16, 1e-5)).toBe(true); // cv 6.25e-5 ≪ 1e-3
+    expect(isEffectivelyConstant(100, 0.05)).toBe(true); // cv 5e-4 < 1e-3
+  });
+
+  it('leaves a legitimate low-variance series on the z-score path', () => {
+    expect(isEffectivelyConstant(100, 5)).toBe(false); // cv 0.05 — lowest CV the ladder handles
+    expect(isEffectivelyConstant(0.16, 0.02)).toBe(false); // cv 0.125
+  });
+
+  it('uses the absolute floor when the centre is ~zero (relative floor degenerate)', () => {
+    expect(isEffectivelyConstant(0, 1e-12)).toBe(true);
+    expect(isEffectivelyConstant(0, 0.5)).toBe(false);
+  });
+
+  it('treats a non-finite spread as constant (safe fallback to tolerance)', () => {
+    expect(isEffectivelyConstant(0.16, Number.NaN)).toBe(true);
   });
 });
