@@ -1,5 +1,5 @@
 import { getEndpoints, getContainers, getContainerHostConfig } from '@dashboard/core/portainer/portainer-client.js';
-import { cachedFetch, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
+import { cache, cachedFetch, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
 import { type Container, isDockerEndpoint } from '@dashboard/core/models/portainer.js';
 import { getSetting, setSetting } from '@dashboard/core/services/settings-store.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
@@ -133,6 +133,14 @@ export async function setSecurityAuditIgnoreList(patterns: string[]): Promise<st
     .filter((value) => value.length > 0);
 
   await setSetting(SECURITY_AUDIT_IGNORE_KEY, JSON.stringify(cleaned), 'security');
+
+  // Each entry's `ignored` flag is baked in when the audit is computed and the
+  // whole result is cached for SECURITY_AUDIT_TTL (5 min). Without busting that
+  // cache here, the Home "Security Findings" KPI and the Audit page keep
+  // counting now-ignored containers until the TTL expires. Pattern-invalidate
+  // every variant (`security-audit:all` + per-endpoint `security-audit:<id>`).
+  await cache.invalidatePattern('security-audit').catch(() => undefined);
+
   return cleaned;
 }
 
