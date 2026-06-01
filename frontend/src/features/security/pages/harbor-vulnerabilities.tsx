@@ -256,7 +256,6 @@ export default function HarborVulnerabilitiesPage() {
             icon={ShieldAlert}
             className="text-red-600 dark:text-red-400"
             highlight={summary.critical > 0}
-            gif="https://media1.tenor.com/m/hwTQtfoXjB8AAAAC/wewew-minions.gif"
           />
           <SummaryCard
             label="In-Use Critical"
@@ -381,14 +380,12 @@ function SummaryCard({
   icon: Icon,
   className,
   highlight,
-  gif,
 }: {
   label: string;
   value: number;
   icon: React.ComponentType<{ className?: string }>;
   className?: string;
   highlight?: boolean;
-  gif?: string;
 }) {
   return (
     <SpotlightCard className="h-full">
@@ -398,18 +395,11 @@ function SummaryCard({
           highlight && 'border-red-500/30 bg-red-500/5',
         )}
       >
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex-1">
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-medium text-muted-foreground">{label}</p>
-              <Icon className={cn('h-5 w-5', className)} />
-            </div>
-            <p className={cn('mt-2 text-3xl font-bold tracking-tight', className)}>{value.toLocaleString()}</p>
-          </div>
-          {gif && (
-            <img src={gif} alt="" aria-hidden="true" className="h-12 w-12 rounded object-cover shrink-0" />
-          )}
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-medium text-muted-foreground">{label}</p>
+          <Icon className={cn('h-5 w-5', className)} />
         </div>
+        <p className={cn('mt-2 text-3xl font-bold tracking-tight', className)}>{value.toLocaleString()}</p>
       </div>
     </SpotlightCard>
   );
