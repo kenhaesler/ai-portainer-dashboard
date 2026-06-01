@@ -291,16 +291,19 @@ jobs:
     needs: [build]
     # Test credentials only — never used outside the disposable CI runner.
     # JWT_SECRET is 48 chars to satisfy the production 32+ char guard in env.schema.ts.
-    # The backend runs with NODE_ENV=production here, so DASHBOARD_PASSWORD must NOT
-    # be on the WEAK_DASHBOARD_PASSWORDS blocklist in packages/core/src/config/index.ts
-    # (the old `changeme12345` was, which crash-looped the backend → unhealthy → E2E fail).
+    # The backend runs with NODE_ENV=production here, so DASHBOARD_PASSWORD *and* the
+    # service passwords (REDIS_PASSWORD, TIMESCALE_PASSWORD) must NOT be on the weak
+    # blocklists in packages/core/src/config/index.ts — validateDashboardCredentials /
+    # validateServicePasswords throw on startup otherwise, crash-looping the backend →
+    # unhealthy → E2E fails (the old `changeme*` values were all blocklisted).
+    # Service passwords are kept URL-safe (no @ : / #) since they go into connection URLs.
     env:
       DASHBOARD_USERNAME: admin
       DASHBOARD_PASSWORD: e2e-Sm0ke!Pw-7x2qD
       JWT_SECRET: test-secret-ci-e2e-do-not-use-in-prod-0123456789ab
       POSTGRES_APP_PASSWORD: changeme-postgres-app
-      TIMESCALE_PASSWORD: changeme-timescale
-      REDIS_PASSWORD: changeme-redis
+      TIMESCALE_PASSWORD: e2e-timescale-pw-7x2qD
+      REDIS_PASSWORD: e2e-redis-pw-7x2qD
       DASHBOARD_DOMAIN: localhost
       PORTAINER_API_URL: http://127.0.0.1:9999
       PORTAINER_API_KEY: e2e-dummy-key
