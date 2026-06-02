@@ -33,3 +33,25 @@ describe('DEFAULT_SETTINGS — monitoring.scheduler_interval_minutes', () => {
     expect(enabledSetting!.type).toBe('boolean');
   });
 });
+
+describe('DEFAULT_SETTINGS — oidc.allow_unmapped_viewer', () => {
+  const setting = DEFAULT_SETTINGS.authentication.find(
+    (s) => s.key === 'oidc.allow_unmapped_viewer',
+  );
+
+  it('exists in the authentication category', () => {
+    expect(setting).toBeDefined();
+  });
+
+  it('is a boolean toggle', () => {
+    expect(setting!.type).toBe('boolean');
+  });
+
+  it('defaults to false (restrictive — only defined groups get access)', () => {
+    expect(setting!.defaultValue).toBe('false');
+  });
+
+  it('is mapped to the authentication category in SETTING_CATEGORY_BY_KEY', () => {
+    expect(SETTING_CATEGORY_BY_KEY['oidc.allow_unmapped_viewer']).toBe('authentication');
+  });
+});

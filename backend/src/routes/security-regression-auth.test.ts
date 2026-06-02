@@ -52,6 +52,7 @@ vi.mock('@dashboard/core/services/session-store.js', () => ({
   createSession: vi.fn(() => ({ id: 'sess-1', user_id: 'u1', username: 'admin' })),
   getSession: vi.fn(() => null),
   invalidateSession: vi.fn(),
+  invalidateAllUserSessions: vi.fn(async () => 0),
   refreshSession: vi.fn(() => null),
 }));
 
@@ -1037,5 +1038,78 @@ describe('OIDC Group-to-Role Mapping Security', () => {
       const role = resolveRoleFromGroups(groups, { 'G-Admin': 'superadmin' as never });
       expect(role).toBeUndefined();
     });
+  });
+});
+
+// =====================================================================
+//  OIDC RESTRICT-TO-MAPPED-GROUPS ENFORCEMENT (route-level)
+// =====================================================================
+// Regression for the `oidc.allow_unmapped_viewer` switch: when disabled, an
+// OIDC callback that resolves to no mapped role (and no '*' wildcard) must be
+// denied outright — no session is issued and the denial is audited. Without
+// the gate the historic `|| 'viewer'` fallback would silently admit anyone.
+describe('OIDC Restrict-to-Mapped-Groups Enforcement', () => {
+  let app: FastifyInstance;
+  let getOIDCConfig: ReturnType<typeof vi.fn>;
+  let exchangeCode: ReturnType<typeof vi.fn>;
+  let createSession: ReturnType<typeof vi.fn>;
+  let writeAuditLog: ReturnType<typeof vi.fn>;
+
+  const restrictiveConfig = {
+    enabled: true,
+    issuer_url: 'https://idp.example.com',
+    client_id: 'client',
+    client_secret: 'secret',
+    redirect_uri: 'https://app.example.com/auth/callback',
+    scopes: 'openid profile email',
+    local_auth_enabled: true,
+    groups_claim: 'groups',
+    group_role_mappings: { Admins: 'admin' as const },
+    auto_provision: true,
+    allow_unmapped_viewer: false, // restrictive: deny unmapped logins
+    allow_insecure_transport: false,
+  };
+
+  beforeAll(async () => {
+    const result = await buildFullApp();
+    app = result.app;
+    const oidc = await import('@dashboard/core/services/oidc.js');
+    const sessions = await import('@dashboard/core/services/session-store.js');
+    const audit = await import('@dashboard/core/services/audit-logger.js');
+    getOIDCConfig = vi.mocked(oidc.getOIDCConfig) as unknown as ReturnType<typeof vi.fn>;
+    exchangeCode = vi.mocked(oidc.exchangeCode) as unknown as ReturnType<typeof vi.fn>;
+    createSession = vi.mocked(sessions.createSession) as unknown as ReturnType<typeof vi.fn>;
+    writeAuditLog = vi.mocked(audit.writeAuditLog) as unknown as ReturnType<typeof vi.fn>;
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  beforeEach(() => {
+    createSession.mockClear();
+    writeAuditLog.mockClear();
+  });
+
+  it('denies an OIDC login whose groups match no mapping — no session, denial audited', async () => {
+    getOIDCConfig.mockResolvedValue(restrictiveConfig);
+    exchangeCode.mockResolvedValue({
+      sub: 'contractor-1', email: 'c@e.com', name: 'C', groups: ['Contractors'],
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/auth/oidc/callback',
+      payload: {
+        callbackUrl: 'https://app.example.com/auth/callback?code=c&state=s',
+        state: 's',
+      },
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(createSession).not.toHaveBeenCalled();
+    expect(writeAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'oidc_login_denied' }),
+    );
   });
 });

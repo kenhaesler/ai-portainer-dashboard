@@ -81,6 +81,18 @@ vi.mock('../db/app-db-router.js', () => {
         }
         return { changes: 0 };
       }
+      if (sql.includes('UPDATE sessions SET is_valid = false') && sql.includes('user_id')) {
+        // invalidateAllUserSessions — invalidate every valid row for the user.
+        const userId = params[0] as string;
+        let changed = 0;
+        for (const row of sessionStore.values()) {
+          if (row.user_id === userId && row.is_valid === 1) {
+            row.is_valid = 0;
+            changed++;
+          }
+        }
+        return { changes: changed };
+      }
       if (sql.includes('UPDATE sessions SET is_valid = false')) {
         const id = params[0] as string;
         const existing = sessionStore.get(id);
@@ -151,6 +163,7 @@ import {
   createSession,
   getSession,
   invalidateSession,
+  invalidateAllUserSessions,
   refreshSession,
   cleanExpiredSessions,
 } from './session-store.js';
@@ -626,4 +639,35 @@ describe('session-store max concurrent sessions (#1107)', () => {
       expect(valid).toHaveLength(2);
     },
   );
+});
+
+describe('invalidateAllUserSessions', () => {
+  beforeEach(() => {
+    sessionStore.clear();
+    auditLogCalls.length = 0;
+    setConfigForTest({ MAX_CONCURRENT_SESSIONS_PER_USER: 100 });
+  });
+
+  afterEach(() => {
+    resetConfig();
+  });
+
+  it('invalidates every active session for the target user only', async () => {
+    const a1 = await createSession('user-a', 'alice');
+    const a2 = await createSession('user-a', 'alice');
+    const b1 = await createSession('user-b', 'bob');
+
+    const count = await invalidateAllUserSessions('user-a');
+
+    expect(count).toBe(2);
+    expect(await getSession(a1.id)).toBeUndefined();
+    expect(await getSession(a2.id)).toBeUndefined();
+    // Other users are untouched.
+    expect(await getSession(b1.id)).toBeDefined();
+  });
+
+  it('returns 0 when the user has no active sessions', async () => {
+    const count = await invalidateAllUserSessions('nobody');
+    expect(count).toBe(0);
+  });
 });

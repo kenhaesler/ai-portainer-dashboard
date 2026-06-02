@@ -27,6 +27,11 @@ export interface OIDCConfig {
   groups_claim: string;
   group_role_mappings: Record<string, Role>;
   auto_provision: boolean;
+  // When true, an OIDC user whose groups match no group→role mapping (and no
+  // '*' wildcard) is still granted `viewer` access — the historic behavior.
+  // When false (default), such a login is denied outright, so only members of
+  // a defined group may sign in. Local auth is unaffected.
+  allow_unmapped_viewer: boolean;
   // Opt-in: allow openid-client to talk to a plain-HTTP issuer. Disabled by
   // default; enable only for local dev/staging where TLS is not yet wired up.
   // The library normally refuses non-HTTPS discovery and token-exchange to
@@ -162,6 +167,7 @@ export async function getOIDCConfig(): Promise<OIDCConfig> {
     groups_claim: settings['oidc.groups_claim'] || 'groups',
     group_role_mappings: groupRoleMappings,
     auto_provision: settings['oidc.auto_provision'] !== 'false',
+    allow_unmapped_viewer: settings['oidc.allow_unmapped_viewer'] === 'true',
     allow_insecure_transport: settings['oidc.allow_insecure_transport'] === 'true',
   };
 }
@@ -341,7 +347,10 @@ export function resolveRoleFromGroups(
   groups: string[],
   mappings: Record<string, Role>,
 ): Role | undefined {
-  if (!groups.length || !Object.keys(mappings).length) {
+  // Note: an empty `groups` list is NOT short-circuited here — a '*' wildcard
+  // mapping must still apply to a user who presents no groups (the loop below
+  // simply finds no explicit match, and the wildcard fallback takes over).
+  if (!Object.keys(mappings).length) {
     return undefined;
   }
 

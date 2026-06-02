@@ -149,6 +149,24 @@ export async function invalidateSession(sessionId: string): Promise<void> {
   log.info({ sessionId }, 'Session invalidated');
 }
 
+/**
+ * Invalidate every active session belonging to a user. Used to revoke a user's
+ * access immediately — e.g. when an OIDC login is denied because the user no
+ * longer matches any group→role mapping, so a lingering pre-existing session
+ * cannot outlive the revocation. Returns the number of sessions invalidated.
+ */
+export async function invalidateAllUserSessions(userId: string): Promise<number> {
+  const db = getDbForDomain('auth');
+  const result = await db.execute(
+    'UPDATE sessions SET is_valid = false WHERE user_id = ? AND is_valid = true',
+    [userId],
+  );
+  if (result.changes > 0) {
+    log.info({ userId, count: result.changes }, 'All user sessions invalidated');
+  }
+  return result.changes;
+}
+
 export async function refreshSession(sessionId: string): Promise<Session | undefined> {
   const db = getDbForDomain('auth');
   const expiresAt = new Date(Date.now() + getSessionTtlMs()).toISOString();
