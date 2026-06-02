@@ -32,6 +32,9 @@ vi.mock('@dashboard/core/services/oidc-group-tracking.js', () => ({
 
 import * as oidcService from '@dashboard/core/services/oidc.js';
 import * as groupTracking from '@dashboard/core/services/oidc-group-tracking.js';
+import * as sessionStore from '@dashboard/core/services/session-store.js';
+import * as auditLogger from '@dashboard/core/services/audit-logger.js';
+import * as userStore from '@dashboard/core/services/user-store.js';
 import { setConfigForTest, resetConfig } from '@dashboard/core/config/index.js';
 import { oidcRoutes } from '../routes/oidc.js';
 
@@ -39,6 +42,9 @@ const mockedGetConfig = vi.mocked(oidcService.getOIDCConfig);
 const mockedGenerateAuthUrl = vi.mocked(oidcService.generateAuthorizationUrl);
 const mockedExchangeCode = vi.mocked(oidcService.exchangeCode);
 const mockedSyncUserGroups = vi.mocked(groupTracking.syncUserGroups);
+const mockedCreateSession = vi.mocked(sessionStore.createSession);
+const mockedWriteAuditLog = vi.mocked(auditLogger.writeAuditLog);
+const mockedGetUserById = vi.mocked(userStore.getUserById);
 
 const baseOidcConfig = {
   enabled: true,
@@ -51,6 +57,10 @@ const baseOidcConfig = {
   groups_claim: 'groups',
   group_role_mappings: {},
   auto_provision: true,
+  // Permissive by default in this fixture so the pre-existing callback tests
+  // (which rely on the viewer fallback) stay green. Restrictive-mode tests
+  // override this to false explicitly.
+  allow_unmapped_viewer: true,
   allow_insecure_transport: false,
 };
 
@@ -275,6 +285,121 @@ describe('OIDC Routes', () => {
       });
 
       expect(mockedSyncUserGroups).toHaveBeenCalledWith('user-44', []);
+    });
+  });
+
+  describe('POST /api/auth/oidc/callback restrict-to-mapped-groups', () => {
+    beforeEach(() => {
+      mockedCreateSession.mockClear();
+      mockedWriteAuditLog.mockClear();
+      mockedGetUserById.mockReset();
+      mockedGetUserById.mockResolvedValue(null);
+    });
+
+    it('denies login with 403 and no session when restrictive and no group matches', async () => {
+      mockedGetConfig.mockResolvedValue({
+        ...baseOidcConfig,
+        allow_unmapped_viewer: false,
+        group_role_mappings: { Admins: 'admin' },
+      });
+      mockedExchangeCode.mockResolvedValue({
+        sub: 'new-user', email: 'n@e.com', name: 'N', groups: ['Contractors'],
+      } as any);
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/auth/oidc/callback',
+        payload: { callbackUrl: 'https://x/callback?code=c&state=s', state: 's' },
+      });
+
+      expect(response.statusCode).toBe(403);
+      expect(response.json().error).toMatch(/not in a group authorized/i);
+      expect(mockedCreateSession).not.toHaveBeenCalled();
+      expect(mockedWriteAuditLog).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'oidc_login_denied' }),
+      );
+    });
+
+    it('allows login when restrictive and a group maps to a role', async () => {
+      mockedGetConfig.mockResolvedValue({
+        ...baseOidcConfig,
+        allow_unmapped_viewer: false,
+        group_role_mappings: { Admins: 'admin' },
+      });
+      mockedExchangeCode.mockResolvedValue({
+        sub: 'mapped-user', email: 'm@e.com', name: 'M', groups: ['Admins'],
+      } as any);
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/auth/oidc/callback',
+        payload: { callbackUrl: 'https://x/callback?code=c&state=s', state: 's' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(mockedCreateSession).toHaveBeenCalledTimes(1);
+    });
+
+    it('allows login when restrictive and a "*" wildcard mapping exists', async () => {
+      mockedGetConfig.mockResolvedValue({
+        ...baseOidcConfig,
+        allow_unmapped_viewer: false,
+        group_role_mappings: { '*': 'viewer' },
+      });
+      mockedExchangeCode.mockResolvedValue({
+        sub: 'wild-user', email: 'w@e.com', name: 'W', groups: ['Anything'],
+      } as any);
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/auth/oidc/callback',
+        payload: { callbackUrl: 'https://x/callback?code=c&state=s', state: 's' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(mockedCreateSession).toHaveBeenCalledTimes(1);
+    });
+
+    it('denies an EXISTING user whose groups no longer match (enforce for everyone)', async () => {
+      mockedGetConfig.mockResolvedValue({
+        ...baseOidcConfig,
+        allow_unmapped_viewer: false,
+        group_role_mappings: { Admins: 'admin' },
+      });
+      // User already exists with an operator role from a prior login.
+      mockedGetUserById.mockResolvedValue({ id: 'existing', role: 'operator' } as any);
+      mockedExchangeCode.mockResolvedValue({
+        sub: 'existing', email: 'ex@e.com', name: 'Ex', groups: ['Contractors'],
+      } as any);
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/auth/oidc/callback',
+        payload: { callbackUrl: 'https://x/callback?code=c&state=s', state: 's' },
+      });
+
+      expect(response.statusCode).toBe(403);
+      expect(mockedCreateSession).not.toHaveBeenCalled();
+    });
+
+    it('still grants viewer to unmatched users when permissive (switch on)', async () => {
+      mockedGetConfig.mockResolvedValue({
+        ...baseOidcConfig,
+        allow_unmapped_viewer: true,
+        group_role_mappings: { Admins: 'admin' },
+      });
+      mockedExchangeCode.mockResolvedValue({
+        sub: 'perm-user', email: 'p@e.com', name: 'P', groups: ['Contractors'],
+      } as any);
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/auth/oidc/callback',
+        payload: { callbackUrl: 'https://x/callback?code=c&state=s', state: 's' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(mockedCreateSession).toHaveBeenCalledTimes(1);
     });
   });
 

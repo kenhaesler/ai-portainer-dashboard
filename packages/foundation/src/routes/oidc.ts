@@ -93,6 +93,7 @@ export async function oidcRoutes(fastify: FastifyInstance) {
       response: {
         200: LoginResponseSchema,
         400: ErrorResponseSchema,
+        403: ErrorResponseSchema,
         500: ErrorResponseSchema,
       },
     },
@@ -125,6 +126,31 @@ export async function oidcRoutes(fastify: FastifyInstance) {
         claims.groups || [],
         oidcConfig.group_role_mappings,
       );
+
+      // Restrictive mode: when the implicit viewer fallback is disabled, an OIDC
+      // login that resolves to no mapped role (and no '*' wildcard) is denied
+      // outright. Applies to new AND existing users — the role derives only from
+      // current group membership, so IDP group removal revokes access at next
+      // login. Local auth is unaffected (this path only runs for OIDC).
+      if (!resolvedRole && !oidcConfig.allow_unmapped_viewer) {
+        writeAuditLog({
+          user_id: claims.sub,
+          username,
+          action: 'oidc_login_denied',
+          target_type: 'user',
+          target_id: claims.sub,
+          details: { reason: 'no_matching_group', groups: claims.groups },
+          request_id: request.requestId,
+          ip_address: request.ip,
+        });
+        log.warn(
+          { sub: claims.sub, groups: claims.groups },
+          'OIDC login denied: no matching group mapping (restrictive mode)',
+        );
+        return reply.code(403).send({
+          error: 'Access denied: your account is not in a group authorized for this dashboard.',
+        });
+      }
 
       // Check if user already exists to get their current role
       const existingUser = await getUserById(claims.sub);
