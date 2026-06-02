@@ -126,12 +126,22 @@ Settings → Security → Authentication. No new component required.
 - `backend/src/routes/security-regression-auth.test.ts`: regression
   asserting restrictive mode blocks an unmapped IDP login (security rule 6).
 
+## Wildcard applies to zero-group users (review follow-up)
+
+`resolveRoleFromGroups` previously short-circuited `return undefined` whenever
+`groups` was empty — *before* the `*` wildcard check — so a `*` mapping did not
+admit a user whose IdP sends an empty/absent groups claim. Under restrictive
+mode that became a hard lockout despite an explicit wildcard, contradicting the
+help text. Fixed by short-circuiting only on empty *mappings*; an empty groups
+list now falls through to the wildcard fallback. Benefits permissive mode too
+(such users get the wildcard role instead of the implicit viewer fallback).
+
 ## Docs
 
 - `CLAUDE.md` — Security / OIDC behavior note.
-- `docs/architecture.md` — OIDC role-resolution behavior.
 - No new `.env.example` variable: this is a DB-stored Settings-UI value
-  like the rest of `oidc.*`.
+  like the rest of `oidc.*`. (`docs/architecture.md` has no OIDC section, so
+  the behavior note lives in `CLAUDE.md` and `docs/api-reference.md`.)
 
 ## Session revocation on denial (follow-up, implemented)
 

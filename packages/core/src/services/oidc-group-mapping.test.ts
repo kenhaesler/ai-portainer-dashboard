@@ -104,6 +104,19 @@ describe('resolveRoleFromGroups', () => {
     expect(result).toBe('operator');
   });
 
+  it('should apply the wildcard to a user who presents no groups', () => {
+    // A `*` mapping means "any authenticated user" — it must hold even when the
+    // IdP sends an empty/absent groups claim, otherwise such users are locked
+    // out in restrictive mode despite an explicit wildcard.
+    const result = resolveRoleFromGroups([], { '*': 'viewer' });
+    expect(result).toBe('viewer');
+  });
+
+  it('should still return undefined for no groups when there is no wildcard', () => {
+    const result = resolveRoleFromGroups([], { Admins: 'admin' });
+    expect(result).toBeUndefined();
+  });
+
   it('should return operator when one group is operator and another is viewer', () => {
     const result = resolveRoleFromGroups(
       ['Team-A', 'Team-B'],

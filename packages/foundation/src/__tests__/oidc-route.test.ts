@@ -363,6 +363,27 @@ describe('OIDC Routes', () => {
       expect(mockedCreateSession).toHaveBeenCalledTimes(1);
     });
 
+    it('admits a user with NO groups when a "*" wildcard mapping exists (no lockout)', async () => {
+      mockedGetConfig.mockResolvedValue({
+        ...baseOidcConfig,
+        allow_unmapped_viewer: false,
+        group_role_mappings: { '*': 'viewer' },
+      });
+      // IdP sends an empty/absent groups claim — the wildcard must still admit them.
+      mockedExchangeCode.mockResolvedValue({
+        sub: 'no-groups-user', email: 'ng@e.com', name: 'NG', groups: [],
+      } as any);
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/auth/oidc/callback',
+        payload: { callbackUrl: 'https://x/callback?code=c&state=s', state: 's' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(mockedCreateSession).toHaveBeenCalledTimes(1);
+    });
+
     it('denies an EXISTING user whose groups no longer match (enforce for everyone)', async () => {
       mockedGetConfig.mockResolvedValue({
         ...baseOidcConfig,

@@ -347,7 +347,10 @@ export function resolveRoleFromGroups(
   groups: string[],
   mappings: Record<string, Role>,
 ): Role | undefined {
-  if (!groups.length || !Object.keys(mappings).length) {
+  // Note: an empty `groups` list is NOT short-circuited here — a '*' wildcard
+  // mapping must still apply to a user who presents no groups (the loop below
+  // simply finds no explicit match, and the wildcard fallback takes over).
+  if (!Object.keys(mappings).length) {
     return undefined;
   }
 
