@@ -83,6 +83,22 @@ Graceful: `—` while loading, `unknown` on error.
 - `docs/api-reference.md` — add the `/api/admin/system-info` row.
 - No `.env.example` change (Approach A reads package.json; no new env var).
 
+## Correction (post-merge): app version in the Docker runtime
+
+The original "read `process.cwd()/package.json`" plan was **wrong for the
+production image**. The runtime stage intentionally ships
+`@dashboard/server`'s `package.json` (version `1.0.0`) as `/app/package.json`
+for ESM module resolution (see `backend/Dockerfile`), and the product root
+`package.json` (`2.0.0`) is never copied in — so `cwd/package.json` yielded
+`1.0.0`. Caught by running the rebuilt image and hitting
+`GET /api/admin/system-info` (returned `"app":"1.0.0"`).
+
+Fix: the Docker build **bakes** the product version into the server dist
+(`packages/server/dist/product-version`), read at runtime relative to the
+module. Resolution cascade (`resolveProductVersion`, pure + unit-tested):
+`APP_VERSION` env override → baked file (prod) → `cwd/package.json` (dev) →
+`'unknown'`.
+
 ## Non-goals
 
 - Live PostgreSQL / TimescaleDB / Redis / Docker / Portainer version queries.

@@ -137,24 +137,54 @@ export function resolveTrustProxy(value: string | undefined): boolean | string[]
 }
 
 /**
- * Read the product version from the working-directory package.json.
- *
- * In dev the process runs from the repo root, and the Docker image sets
- * WORKDIR `/app` where the product package.json is copied — both place the
- * product version (2.0.0) at `process.cwd()/package.json`. (Resolving relative
- * to this module would instead hit `packages/server/package.json`, which is
- * versioned independently.) Falls back to `'unknown'` so a missing/unreadable
- * file never blocks startup.
+ * Pure resolution cascade for the product version. Kept separate from the IO so
+ * every branch is unit-testable. First non-blank source wins:
+ *   1. `env`  — explicit `APP_VERSION` override (set at build/deploy time).
+ *   2. `bakedFile` — contents of the version file baked into the server dist by
+ *      the Docker build (the runtime image ships @dashboard/server's
+ *      package.json as /app/package.json, so the product version isn't in cwd).
+ *   3. `cwdPackageVersion` — version field of the working-dir package.json,
+ *      which is the product root in dev (the process runs from the repo root).
+ * Falls back to `'unknown'` so a missing source never blocks startup.
+ */
+export function resolveProductVersion(sources: {
+  env?: string;
+  bakedFile?: string;
+  cwdPackageVersion?: string;
+}): string {
+  const candidates = [sources.env, sources.bakedFile, sources.cwdPackageVersion];
+  for (const candidate of candidates) {
+    const trimmed = candidate?.trim();
+    if (trimmed) return trimmed;
+  }
+  return 'unknown';
+}
+
+/**
+ * Read the product version from its build/runtime sources (see
+ * {@link resolveProductVersion}). Each read is guarded so a missing file never
+ * throws during startup.
  */
 export function readProductVersion(): string {
+  let bakedFile: string | undefined;
+  try {
+    // Baked next to this module by the Docker build (see backend/Dockerfile).
+    bakedFile = readFileSync(new URL('./product-version', import.meta.url), 'utf8');
+  } catch {
+    /* not baked (e.g. local dev) — fall through to the cwd package.json */
+  }
+
+  let cwdPackageVersion: string | undefined;
   try {
     const parsed = JSON.parse(readFileSync(`${process.cwd()}/package.json`, 'utf8')) as {
       version?: unknown;
     };
-    return typeof parsed.version === 'string' && parsed.version ? parsed.version : 'unknown';
+    if (typeof parsed.version === 'string') cwdPackageVersion = parsed.version;
   } catch {
-    return 'unknown';
+    /* ignore */
   }
+
+  return resolveProductVersion({ env: process.env.APP_VERSION, bakedFile, cwdPackageVersion });
 }
 
 export async function buildApp() {
