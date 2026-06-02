@@ -27,6 +27,7 @@ import {
   networksRoutes,
   searchRoutes,
   cacheAdminRoutes,
+  systemInfoRoutes,
   userRoutes,
   kubernetesRoutes,
 } from '@dashboard/foundation';
@@ -135,6 +136,27 @@ export function resolveTrustProxy(value: string | undefined): boolean | string[]
   return valid;
 }
 
+/**
+ * Read the product version from the working-directory package.json.
+ *
+ * In dev the process runs from the repo root, and the Docker image sets
+ * WORKDIR `/app` where the product package.json is copied — both place the
+ * product version (2.0.0) at `process.cwd()/package.json`. (Resolving relative
+ * to this module would instead hit `packages/server/package.json`, which is
+ * versioned independently.) Falls back to `'unknown'` so a missing/unreadable
+ * file never blocks startup.
+ */
+export function readProductVersion(): string {
+  try {
+    const parsed = JSON.parse(readFileSync(`${process.cwd()}/package.json`, 'utf8')) as {
+      version?: unknown;
+    };
+    return typeof parsed.version === 'string' && parsed.version ? parsed.version : 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
 export async function buildApp() {
   const isDev = process.env.NODE_ENV !== 'production';
   const app = Fastify({
@@ -202,6 +224,7 @@ export async function buildApp() {
   await app.register(networksRoutes);
   await app.register(searchRoutes);
   await app.register(cacheAdminRoutes);
+  await app.register(systemInfoRoutes, { appVersion: readProductVersion() });
   await app.register(userRoutes);
   await app.register(kubernetesRoutes);
 

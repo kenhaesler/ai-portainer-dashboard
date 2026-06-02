@@ -259,6 +259,7 @@ import {
   networksRoutes,
   searchRoutes,
   cacheAdminRoutes,
+  systemInfoRoutes,
   userRoutes,
 } from '@dashboard/foundation';
 import {
@@ -362,6 +363,7 @@ async function buildFullApp(): Promise<{ app: FastifyInstance; registeredRoutes:
   await app.register(searchRoutes);
   await app.register(notificationRoutes);
   await app.register(cacheAdminRoutes);
+  await app.register(systemInfoRoutes, { appVersion: 'test-version' });
   const mockLlm: LLMInterface = { isAvailable: vi.fn(), chatStream: vi.fn(), getEffectivePrompt: vi.fn(), buildInfrastructureContext: vi.fn() };
   await app.register(securityRoutes, { llm: mockLlm });
   await app.register(webhookRoutes);

@@ -1,8 +1,9 @@
-import { useMemo } from 'react';
+import { useMemo, version as reactVersion } from 'react';
 import { type ColumnDef } from '@tanstack/react-table';
 import { Loader2, RefreshCw, Settings2 } from 'lucide-react';
 import { DataTable } from '@/shared/components/tables/data-table';
 import { useCacheStats, useCacheClear } from '@/features/core/hooks/use-cache-admin';
+import { useSystemInfo } from '@/features/core/hooks/use-system-info';
 
 interface CacheEntryRow {
   key: string;
@@ -40,6 +41,7 @@ interface GeneralTabProps {
 
 export function GeneralTab({ theme }: GeneralTabProps) {
   const { data: cacheStats } = useCacheStats();
+  const { data: systemInfo } = useSystemInfo();
   const cacheClear = useCacheClear();
   const redisSystemInfo = getRedisSystemInfo(cacheStats);
 
@@ -92,11 +94,23 @@ export function GeneralTab({ theme }: GeneralTabProps) {
           </div>
           <div className="rounded-lg bg-muted/50 p-4">
             <p className="text-xs text-muted-foreground">Version</p>
-            <p className="font-medium mt-1">1.0.0</p>
+            <p className="font-medium mt-1">{systemInfo?.app ?? '—'}</p>
           </div>
           <div className="rounded-lg bg-muted/50 p-4">
             <p className="text-xs text-muted-foreground">Mode</p>
             <p className="font-medium mt-1">Observer Only</p>
+          </div>
+          <div className="rounded-lg bg-muted/50 p-4">
+            <p className="text-xs text-muted-foreground">Node.js</p>
+            <p className="font-medium mt-1">{systemInfo?.node ?? '—'}</p>
+          </div>
+          <div className="rounded-lg bg-muted/50 p-4">
+            <p className="text-xs text-muted-foreground">Fastify</p>
+            <p className="font-medium mt-1">{systemInfo?.fastify ?? '—'}</p>
+          </div>
+          <div className="rounded-lg bg-muted/50 p-4">
+            <p className="text-xs text-muted-foreground">React</p>
+            <p className="font-medium mt-1">{reactVersion}</p>
           </div>
           <div className="rounded-lg bg-muted/50 p-4">
             <p className="text-xs text-muted-foreground">Theme</p>
