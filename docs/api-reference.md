@@ -202,6 +202,7 @@ See [AI & Anomaly Detection](ai-anomaly-detection.md) for detector semantics and
 | `POST` | `/api/users` | [ADMIN] | Create a user |
 | `PATCH` | `/api/users/:id` | [ADMIN] | Update a user |
 | `DELETE` | `/api/users/:id` | [ADMIN] | Delete a user (cannot delete self) |
+| `GET` | `/api/admin/system-info` | [ADMIN] | Key component versions (app, Node.js, Fastify) shown in Settings → General |
 | `GET` | `/api/admin/cache/stats` | [ADMIN] | Cache statistics + active entries |
 | `POST` | `/api/admin/cache/clear` | [ADMIN] | Clear all cache entries |
 | `POST` | `/api/admin/cache/invalidate` | [ADMIN] | Invalidate cache by resource pattern |
