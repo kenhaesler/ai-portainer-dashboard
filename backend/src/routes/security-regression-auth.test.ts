@@ -52,6 +52,7 @@ vi.mock('@dashboard/core/services/session-store.js', () => ({
   createSession: vi.fn(() => ({ id: 'sess-1', user_id: 'u1', username: 'admin' })),
   getSession: vi.fn(() => null),
   invalidateSession: vi.fn(),
+  invalidateAllUserSessions: vi.fn(async () => 0),
   refreshSession: vi.fn(() => null),
 }));
 

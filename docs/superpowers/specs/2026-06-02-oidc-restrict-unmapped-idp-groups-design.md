@@ -133,8 +133,16 @@ Settings → Security → Authentication. No new component required.
 - No new `.env.example` variable: this is a DB-stored Settings-UI value
   like the rest of `oidc.*`.
 
-## Non-goals / known limitations
+## Session revocation on denial (follow-up, implemented)
 
-- Denial is enforced **at login only**. An already-issued session for a
-  now-unmatched user keeps working until it expires; we do not proactively
-  purge sessions. Per-user session revocation can be added later.
+When a login is denied, the route also calls
+`invalidateAllUserSessions(claims.sub)` (new in
+`packages/core/src/services/session-store.ts`) to invalidate any lingering
+server-side session for that user, so a prior login cannot outlive the
+revocation. It is best-effort: a failure to revoke is logged but never turns
+the `403` denial into a `400`/`500`.
+
+**Remaining limitation:** revocation fires on the *next denied login*. A user
+who was removed from their IDP group but never re-authenticates keeps their
+existing session until it expires — closing that gap fully would require
+re-validating group membership on every request (out of scope).

@@ -22,6 +22,7 @@ vi.mock('@dashboard/core/services/user-store.js', () => ({
 vi.mock('@dashboard/core/services/session-store.js', () => ({
   createSession: vi.fn().mockResolvedValue({ id: 'sess-1', expires_at: '2099-01-01T00:00:00Z' }),
   invalidateSession: vi.fn(),
+  invalidateAllUserSessions: vi.fn().mockResolvedValue(0),
 }));
 vi.mock('@dashboard/core/services/audit-logger.js', () => ({ writeAuditLog: vi.fn() }));
 vi.mock('@dashboard/core/utils/crypto.js', () => ({ signJwt: vi.fn().mockResolvedValue('signed.jwt.token') }));
@@ -43,6 +44,7 @@ const mockedGenerateAuthUrl = vi.mocked(oidcService.generateAuthorizationUrl);
 const mockedExchangeCode = vi.mocked(oidcService.exchangeCode);
 const mockedSyncUserGroups = vi.mocked(groupTracking.syncUserGroups);
 const mockedCreateSession = vi.mocked(sessionStore.createSession);
+const mockedInvalidateAll = vi.mocked(sessionStore.invalidateAllUserSessions);
 const mockedWriteAuditLog = vi.mocked(auditLogger.writeAuditLog);
 const mockedGetUserById = vi.mocked(userStore.getUserById);
 
@@ -291,6 +293,7 @@ describe('OIDC Routes', () => {
   describe('POST /api/auth/oidc/callback restrict-to-mapped-groups', () => {
     beforeEach(() => {
       mockedCreateSession.mockClear();
+      mockedInvalidateAll.mockClear();
       mockedWriteAuditLog.mockClear();
       mockedGetUserById.mockReset();
       mockedGetUserById.mockResolvedValue(null);
@@ -380,6 +383,8 @@ describe('OIDC Routes', () => {
 
       expect(response.statusCode).toBe(403);
       expect(mockedCreateSession).not.toHaveBeenCalled();
+      // Lingering sessions for the now-unmatched user are revoked.
+      expect(mockedInvalidateAll).toHaveBeenCalledWith('existing');
     });
 
     it('still grants viewer to unmatched users when permissive (switch on)', async () => {
