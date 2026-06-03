@@ -350,7 +350,8 @@ jobs:
           docker compose -f docker/docker-compose.yml -f docker/docker-compose.e2e.yml up -d portainer-mock postgres-app timescaledb
 
           echo "Waiting for portainer-mock..."
-          timeout 60 bash -c 'until curl -sf http://localhost:9000/__admin/mappings > /dev/null 2>&1; do sleep 2; done'
+          timeout 90 bash -c 'until curl -sf http://localhost:9000/__admin/mappings > /dev/null 2>&1; do sleep 2; done'
+          echo "portainer-mock ready"
           echo "Waiting for postgres-app..."
           timeout 90 bash -c 'until docker compose -f docker/docker-compose.yml -f docker/docker-compose.e2e.yml exec -T postgres-app pg_isready -U app_user -d portainer_dashboard > /dev/null 2>&1; do sleep 3; done'
           echo "Waiting for timescaledb..."
