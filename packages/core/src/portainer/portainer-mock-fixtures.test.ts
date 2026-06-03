@@ -42,14 +42,14 @@ describe('portainer-mock fixtures match the backend contract', () => {
 
   it('docker-info.json drives live container counts', () => {
     const info = readFixture('docker-info.json') as {
-      Containers: number; ContainersRunning: number; ContainersStopped: number;
+      Containers: number; ContainersRunning: number; ContainersStopped: number; ContainersPaused: number;
     };
     const base = normalizeEndpoint(EndpointArraySchema.parse(readFixture('endpoints.json'))[0]);
     const live = applyLiveDockerInfo(base, {
       containers: info.Containers,
       containersRunning: info.ContainersRunning,
       containersStopped: info.ContainersStopped,
-      containersPaused: 0,
+      containersPaused: info.ContainersPaused,
       ncpu: 4,
       memTotal: 8_000_000_000,
       fetchedAt: Date.now(),
@@ -77,12 +77,15 @@ describe('portainer-mock fixtures match the backend contract', () => {
   it('container-inspect.json parses with the inspect schema', () => {
     const inspect = ContainerInspectSchema.parse(readFixture('container-inspect.json'));
     expect(inspect.Id).toBeTruthy();
+    expect(inspect.State?.Running).toBe(true);
+    expect(inspect.Config?.Labels?.['com.docker.compose.project']).toBe('shop');
   });
 
   it('stacks.json parses, normalizes, and links to endpoint 1', () => {
     const stacks = z.array(StackSchema).parse(readFixture('stacks.json')).map(normalizeStack);
     expect(stacks.length).toBeGreaterThanOrEqual(1);
     expect(stacks.some((s) => s.endpointId === 1)).toBe(true);
+    expect(stacks.map((s) => s.name)).toEqual(expect.arrayContaining(['shop', 'infra']));
   });
 
   it('networks.json and images.json parse', () => {
