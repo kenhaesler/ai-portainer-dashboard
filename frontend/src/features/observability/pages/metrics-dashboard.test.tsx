@@ -153,6 +153,8 @@ vi.mock('@/shared/components/ui/refresh-controls', () => ({
 }));
 
 import MetricsDashboardPage from './metrics-dashboard';
+import { useEndpoints } from '@/features/containers/hooks/use-endpoints';
+import { useContainers } from '@/features/containers/hooks/use-containers';
 
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -542,5 +544,44 @@ describe('MetricsDashboardPage', () => {
       const fallbacks = screen.getAllByText('Narrative unavailable');
       expect(fallbacks.length).toBeGreaterThanOrEqual(1);
     });
+  });
+});
+
+// ── Empty / unavailable fleet (#1420) ───────────────────────────────────────
+
+describe('MetricsDashboardPage — empty/unavailable fleet (#1420)', () => {
+  it('renders without throwing when endpoints and containers return empty arrays', () => {
+    vi.mocked(useEndpoints).mockReturnValue({ data: [], isLoading: false } as any);
+    vi.mocked(useContainers).mockReturnValue({
+      data: [],
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+      isFetching: false,
+    } as any);
+
+    expect(() => renderPage()).not.toThrow();
+    expect(screen.getByText('Metrics Dashboard')).toBeTruthy();
+  });
+
+  it('renders without throwing when endpoints query returns an error', () => {
+    vi.mocked(useEndpoints).mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error('Portainer unreachable'),
+    } as any);
+    vi.mocked(useContainers).mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error('Portainer unreachable'),
+      refetch: vi.fn(),
+      isFetching: false,
+    } as any);
+
+    expect(() => renderPage()).not.toThrow();
+    expect(screen.getByText('Metrics Dashboard')).toBeTruthy();
   });
 });
