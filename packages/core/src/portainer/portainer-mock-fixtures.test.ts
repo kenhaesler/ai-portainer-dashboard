@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { z } from 'zod/v4';
@@ -91,5 +91,92 @@ describe('portainer-mock fixtures match the backend contract', () => {
   it('networks.json and images.json parse', () => {
     expect(z.array(NetworkSchema).parse(readFixture('networks.json')).length).toBeGreaterThanOrEqual(1);
     expect(z.array(ImageSchema).parse(readFixture('images.json')).length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+const mappingsDir = join(here, '../../../../docker/portainer-mock/mappings');
+
+// Hardcoded regex literals for every urlPathPattern used in the WireMock mappings.
+// Using a lookup table of literals avoids new RegExp(variable), which semgrep flags as a
+// potential ReDoS vector (CWE-1333). The patterns are our own controlled fixture strings,
+// but the rule fires on any dynamic construction, so literals are required.
+const PATTERN_TABLE: Record<string, RegExp> = {
+  '/api/endpoints/[0-9]+':                                     /^\/api\/endpoints\/[0-9]+$/,
+  '/api/endpoints/[0-9]+/docker/_ping':                        /^\/api\/endpoints\/[0-9]+\/docker\/_ping$/,
+  '/api/endpoints/[0-9]+/docker/info':                         /^\/api\/endpoints\/[0-9]+\/docker\/info$/,
+  '/api/endpoints/[0-9]+/docker/containers/json':              /^\/api\/endpoints\/[0-9]+\/docker\/containers\/json$/,
+  '/api/endpoints/[0-9]+/docker/containers/[a-f0-9]+/json':   /^\/api\/endpoints\/[0-9]+\/docker\/containers\/[a-f0-9]+\/json$/,
+  '/api/endpoints/[0-9]+/docker/networks':                     /^\/api\/endpoints\/[0-9]+\/docker\/networks$/,
+  '/api/endpoints/[0-9]+/docker/images/json':                  /^\/api\/endpoints\/[0-9]+\/docker\/images\/json$/,
+};
+
+interface MappingRaw {
+  request: { method: string; urlPath?: string; urlPathPattern?: string };
+  response: { status: number; bodyFileName?: string; body?: string };
+}
+
+interface Mapping {
+  request: { method: string; urlPath?: string; compiledPattern?: RegExp };
+  response: { status: number; bodyFileName?: string; body?: string };
+}
+
+function loadMappings(): Mapping[] {
+  return readdirSync(mappingsDir)
+    .filter((f) => f.endsWith('.json'))
+    .map((f) => {
+      const raw = JSON.parse(readFileSync(join(mappingsDir, f), 'utf8')) as MappingRaw;
+      const compiledPattern = raw.request.urlPathPattern
+        ? PATTERN_TABLE[raw.request.urlPathPattern]
+        : undefined;
+      if (raw.request.urlPathPattern && !compiledPattern) {
+        throw new Error(
+          `Unknown urlPathPattern "${raw.request.urlPathPattern}" in ${f} — add it to PATTERN_TABLE`,
+        );
+      }
+      return {
+        request: { method: raw.request.method, urlPath: raw.request.urlPath, compiledPattern },
+        response: raw.response,
+      };
+    });
+}
+
+function matches(m: Mapping, method: string, path: string): boolean {
+  if (m.request.method !== method) return false;
+  if (m.request.urlPath) return m.request.urlPath === path;
+  if (m.request.compiledPattern) return m.request.compiledPattern.test(path);
+  return false;
+}
+
+describe('portainer-mock WireMock mappings', () => {
+  const mappings = loadMappings();
+
+  it('every mapping is well-formed and its bodyFileName exists', () => {
+    expect(mappings.length).toBeGreaterThanOrEqual(8);
+    for (const m of mappings) {
+      expect(m.request.method).toBe('GET');
+      expect(Boolean(m.request.urlPath) || Boolean(m.request.compiledPattern)).toBe(true);
+      expect(m.response.status).toBe(200);
+      if (m.response.bodyFileName) {
+        readFixture(m.response.bodyFileName); // throws if the referenced body file is missing
+      }
+    }
+  });
+
+  it('covers every read path the E2E pages need (exactly one match each)', () => {
+    const required: Array<[string, string]> = [
+      ['GET', '/api/endpoints'],
+      ['GET', '/api/endpoints/1'],
+      ['GET', '/api/endpoints/1/docker/_ping'],
+      ['GET', '/api/endpoints/1/docker/info'],
+      ['GET', '/api/endpoints/1/docker/containers/json'],
+      ['GET', '/api/endpoints/1/docker/containers/a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2/json'],
+      ['GET', '/api/stacks'],
+      ['GET', '/api/endpoints/1/docker/networks'],
+      ['GET', '/api/endpoints/1/docker/images/json'],
+    ];
+    for (const [method, path] of required) {
+      const hits = mappings.filter((m) => matches(m, method, path));
+      expect(hits.length, `${method} ${path} should match exactly one mapping`).toBe(1);
+    }
   });
 });
