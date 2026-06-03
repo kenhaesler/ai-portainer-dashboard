@@ -96,54 +96,25 @@ describe('portainer-mock fixtures match the backend contract', () => {
 
 const mappingsDir = join(here, '../../../../docker/portainer-mock/mappings');
 
-// Hardcoded regex literals for every urlPathPattern used in the WireMock mappings.
-// Using a lookup table of literals avoids new RegExp(variable), which semgrep flags as a
-// potential ReDoS vector (CWE-1333). The patterns are our own controlled fixture strings,
-// but the rule fires on any dynamic construction, so literals are required.
-const PATTERN_TABLE: Record<string, RegExp> = {
-  '/api/endpoints/[0-9]+':                                     /^\/api\/endpoints\/[0-9]+$/,
-  '/api/endpoints/[0-9]+/docker/_ping':                        /^\/api\/endpoints\/[0-9]+\/docker\/_ping$/,
-  '/api/endpoints/[0-9]+/docker/info':                         /^\/api\/endpoints\/[0-9]+\/docker\/info$/,
-  '/api/endpoints/[0-9]+/docker/containers/json':              /^\/api\/endpoints\/[0-9]+\/docker\/containers\/json$/,
-  '/api/endpoints/[0-9]+/docker/containers/[a-f0-9]+/json':   /^\/api\/endpoints\/[0-9]+\/docker\/containers\/[a-f0-9]+\/json$/,
-  '/api/endpoints/[0-9]+/docker/networks':                     /^\/api\/endpoints\/[0-9]+\/docker\/networks$/,
-  '/api/endpoints/[0-9]+/docker/images/json':                  /^\/api\/endpoints\/[0-9]+\/docker\/images\/json$/,
-};
-
-interface MappingRaw {
-  request: { method: string; urlPath?: string; urlPathPattern?: string };
-  response: { status: number; bodyFileName?: string; body?: string };
-}
-
 interface Mapping {
-  request: { method: string; urlPath?: string; compiledPattern?: RegExp };
+  request: { method: string; urlPath?: string; urlPathPattern?: string };
   response: { status: number; bodyFileName?: string; body?: string };
 }
 
 function loadMappings(): Mapping[] {
   return readdirSync(mappingsDir)
     .filter((f) => f.endsWith('.json'))
-    .map((f) => {
-      const raw = JSON.parse(readFileSync(join(mappingsDir, f), 'utf8')) as MappingRaw;
-      const compiledPattern = raw.request.urlPathPattern
-        ? PATTERN_TABLE[raw.request.urlPathPattern]
-        : undefined;
-      if (raw.request.urlPathPattern && !compiledPattern) {
-        throw new Error(
-          `Unknown urlPathPattern "${raw.request.urlPathPattern}" in ${f} — add it to PATTERN_TABLE`,
-        );
-      }
-      return {
-        request: { method: raw.request.method, urlPath: raw.request.urlPath, compiledPattern },
-        response: raw.response,
-      };
-    });
+    .map((f) => JSON.parse(readFileSync(join(mappingsDir, f), 'utf8')) as Mapping);
 }
 
 function matches(m: Mapping, method: string, path: string): boolean {
   if (m.request.method !== method) return false;
   if (m.request.urlPath) return m.request.urlPath === path;
-  if (m.request.compiledPattern) return m.request.compiledPattern.test(path);
+  if (m.request.urlPathPattern) {
+    // Patterns are our own fixed in-repo mapping strings, not user input — ReDoS risk is nil.
+    // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
+    return new RegExp(`^${m.request.urlPathPattern}$`).test(path);
+  }
   return false;
 }
 
@@ -154,7 +125,7 @@ describe('portainer-mock WireMock mappings', () => {
     expect(mappings.length).toBeGreaterThanOrEqual(8);
     for (const m of mappings) {
       expect(m.request.method).toBe('GET');
-      expect(Boolean(m.request.urlPath) || Boolean(m.request.compiledPattern)).toBe(true);
+      expect(Boolean(m.request.urlPath) || Boolean(m.request.urlPathPattern)).toBe(true);
       expect(m.response.status).toBe(200);
       if (m.response.bodyFileName) {
         readFixture(m.response.bodyFileName); // throws if the referenced body file is missing
