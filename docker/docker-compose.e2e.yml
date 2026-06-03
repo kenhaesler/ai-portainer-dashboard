@@ -9,8 +9,8 @@ services:
     volumes:
       - ./portainer-mock/mappings:/home/wiremock/mappings:ro
       - ./portainer-mock/__files:/home/wiremock/__files:ro
-    # Admin port published to the host so the CI wait-loop can poll readiness.
-    # The backend reaches the mock via the service name on dashboard-net.
+    # Published to the host so the CI wait-loop can poll readiness (/__admin/mappings).
+    # The backend reaches the mock via service DNS (portainer-mock:8080) on dashboard-net.
     ports:
       - "127.0.0.1:9000:8080"
     networks:
