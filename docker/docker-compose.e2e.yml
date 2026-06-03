@@ -1,0 +1,28 @@
+# CI-only override: a canned Portainer (WireMock) so the E2E stack has fleet
+# data. Layer it AFTER the base file:
+#   docker compose -f docker/docker-compose.yml -f docker/docker-compose.e2e.yml ...
+# The production compose file is never modified. (#1420)
+services:
+  portainer-mock:
+    image: wiremock/wiremock:3.13.1
+    command: ["--port", "8080", "--disable-banner", "--local-response-templating"]
+    volumes:
+      - ./portainer-mock/mappings:/home/wiremock/mappings:ro
+      - ./portainer-mock/__files:/home/wiremock/__files:ro
+    # Admin port published to the host so the CI wait-loop can poll readiness.
+    # The backend reaches the mock via the service name on dashboard-net.
+    ports:
+      - "127.0.0.1:9000:8080"
+    networks:
+      - dashboard-net
+
+  backend:
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres-app:
+        condition: service_healthy
+      timescaledb:
+        condition: service_healthy
+      portainer-mock:
+        condition: service_started
