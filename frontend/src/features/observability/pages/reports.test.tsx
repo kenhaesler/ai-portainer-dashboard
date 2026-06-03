@@ -3,6 +3,8 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import ReportsPage from './reports';
+import { useEndpoints } from '@/features/containers/hooks/use-endpoints';
+import { useContainers } from '@/features/containers/hooks/use-containers';
 
 const mockExportToCsv = vi.fn();
 const mockExportManagementPdf = vi.fn();
@@ -453,5 +455,44 @@ describe('ReportsPage', () => {
     expect(payload.includeInfrastructure).toBe(true);
     expect(payload.containers).toHaveLength(2);
     expect(filename).toMatch(/^management-report-24h-all-endpoints-\d{4}-\d{2}-\d{2}\.pdf$/);
+  });
+});
+
+// ── Empty / unavailable fleet (#1420) ───────────────────────────────────────
+
+describe('ReportsPage — empty/unavailable fleet (#1420)', () => {
+  function renderPage() {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter><ReportsPage /></MemoryRouter>
+      </QueryClientProvider>,
+    );
+  }
+
+  it('renders without throwing when endpoints and containers return empty arrays', () => {
+    vi.mocked(useEndpoints).mockReturnValue({ data: [], isLoading: false } as any);
+    vi.mocked(useContainers).mockReturnValue({
+      data: [],
+      isLoading: false,
+      isError: false,
+      error: null,
+    } as any);
+
+    expect(() => renderPage()).not.toThrow();
+    expect(screen.getByRole('heading', { name: /Resource Reports/i })).toBeInTheDocument();
+  });
+
+  it('renders without throwing when endpoints and containers return undefined (error state)', () => {
+    vi.mocked(useEndpoints).mockReturnValue({ data: undefined, isLoading: false } as any);
+    vi.mocked(useContainers).mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error('Portainer unreachable'),
+    } as any);
+
+    expect(() => renderPage()).not.toThrow();
+    expect(screen.getByRole('heading', { name: /Resource Reports/i })).toBeInTheDocument();
   });
 });
