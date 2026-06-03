@@ -461,15 +461,6 @@ describe('ReportsPage', () => {
 // ── Empty / unavailable fleet (#1420) ───────────────────────────────────────
 
 describe('ReportsPage — empty/unavailable fleet (#1420)', () => {
-  function renderPage() {
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    return render(
-      <QueryClientProvider client={qc}>
-        <MemoryRouter><ReportsPage /></MemoryRouter>
-      </QueryClientProvider>,
-    );
-  }
-
   it('renders without throwing when endpoints and containers return empty arrays', () => {
     vi.mocked(useEndpoints).mockReturnValue({ data: [], isLoading: false } as any);
     vi.mocked(useContainers).mockReturnValue({
@@ -479,7 +470,7 @@ describe('ReportsPage — empty/unavailable fleet (#1420)', () => {
       error: null,
     } as any);
 
-    expect(() => renderPage()).not.toThrow();
+    expect(() => renderWithProviders(<ReportsPage />)).not.toThrow();
     expect(screen.getByRole('heading', { name: /Resource Reports/i })).toBeInTheDocument();
   });
 
@@ -492,7 +483,7 @@ describe('ReportsPage — empty/unavailable fleet (#1420)', () => {
       error: new Error('Portainer unreachable'),
     } as any);
 
-    expect(() => renderPage()).not.toThrow();
+    expect(() => renderWithProviders(<ReportsPage />)).not.toThrow();
     expect(screen.getByRole('heading', { name: /Resource Reports/i })).toBeInTheDocument();
   });
 });
