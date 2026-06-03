@@ -305,8 +305,10 @@ jobs:
       TIMESCALE_PASSWORD: e2e-timescale-pw-7x2qD
       REDIS_PASSWORD: e2e-redis-pw-7x2qD
       DASHBOARD_DOMAIN: localhost
-      PORTAINER_API_URL: http://127.0.0.1:9999
-      PORTAINER_API_KEY: e2e-dummy-key
+      # Backend talks to the WireMock Portainer (docker-compose.e2e.yml) over
+      # dashboard-net by service name. (#1420)
+      PORTAINER_API_URL: http://portainer-mock:8080
+      PORTAINER_API_KEY: e2e-mock-key
       OLLAMA_BASE_URL: http://127.0.0.1:11434
       LOG_LEVEL: info
     steps:
@@ -341,23 +343,25 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Build application images
-        run: docker compose -f docker/docker-compose.yml build backend frontend
+        run: docker compose -f docker/docker-compose.yml -f docker/docker-compose.e2e.yml build backend frontend
 
       - name: Start databases (phase 1)
         run: |
-          docker compose -f docker/docker-compose.yml up -d postgres-app timescaledb
+          docker compose -f docker/docker-compose.yml -f docker/docker-compose.e2e.yml up -d portainer-mock postgres-app timescaledb
 
+          echo "Waiting for portainer-mock..."
+          timeout 60 bash -c 'until curl -sf http://localhost:9000/__admin/mappings > /dev/null 2>&1; do sleep 2; done'
           echo "Waiting for postgres-app..."
-          timeout 90 bash -c 'until docker compose -f docker/docker-compose.yml exec -T postgres-app pg_isready -U app_user -d portainer_dashboard > /dev/null 2>&1; do sleep 3; done'
+          timeout 90 bash -c 'until docker compose -f docker/docker-compose.yml -f docker/docker-compose.e2e.yml exec -T postgres-app pg_isready -U app_user -d portainer_dashboard > /dev/null 2>&1; do sleep 3; done'
           echo "Waiting for timescaledb..."
-          timeout 120 bash -c 'until docker compose -f docker/docker-compose.yml exec -T timescaledb pg_isready -U metrics_user -d metrics > /dev/null 2>&1; do sleep 3; done'
+          timeout 120 bash -c 'until docker compose -f docker/docker-compose.yml -f docker/docker-compose.e2e.yml exec -T timescaledb pg_isready -U metrics_user -d metrics > /dev/null 2>&1; do sleep 3; done'
           echo "Databases ready"
 
       - name: Start application (phase 2)
         run: |
           # Compose `depends_on: condition: service_healthy` blocks `up` until
           # redis + DBs are healthy and the backend healthcheck passes.
-          docker compose -f docker/docker-compose.yml up -d redis backend frontend
+          docker compose -f docker/docker-compose.yml -f docker/docker-compose.e2e.yml up -d redis backend frontend
 
           echo "Waiting for backend /health..."
           timeout 180 bash -c 'until curl -sf http://localhost:3051/health > /dev/null 2>&1; do sleep 3; done'
@@ -379,11 +383,11 @@ jobs:
           mkdir -p e2e-logs
           {
             echo "=== docker compose ps ==="
-            docker compose -f docker/docker-compose.yml ps
-            for svc in backend frontend redis postgres-app timescaledb; do
+            docker compose -f docker/docker-compose.yml -f docker/docker-compose.e2e.yml ps
+            for svc in portainer-mock backend frontend redis postgres-app timescaledb; do
               echo
               echo "=== ${svc} logs ==="
-              docker compose -f docker/docker-compose.yml logs --tail 200 "${svc}" || true
+              docker compose -f docker/docker-compose.yml -f docker/docker-compose.e2e.yml logs --tail 200 "${svc}" || true
             done
           } > e2e-logs/compose.log 2>&1
 
@@ -405,4 +409,4 @@ jobs:
 
       - name: Stop application
         if: always()
-        run: docker compose -f docker/docker-compose.yml down -v
+        run: docker compose -f docker/docker-compose.yml -f docker/docker-compose.e2e.yml down -v
