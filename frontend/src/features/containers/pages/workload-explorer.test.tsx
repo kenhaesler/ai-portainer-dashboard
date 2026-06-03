@@ -1178,3 +1178,45 @@ describe('WorkloadExplorerPage — columns (#1288)', () => {
     expect(wlWrap?.className).toContain('bg-slate-100');
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Empty / unavailable fleet (#1420)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('WorkloadExplorerPage — empty/unavailable fleet (#1420)', () => {
+  beforeEach(() => {
+    mockQueryString = '';
+    mockSetSearchParams.mockReset();
+    mockNavigate.mockReset();
+  });
+
+  it('renders without throwing when all queries return empty arrays', () => {
+    mockUseContainers.mockReturnValue({
+      data: [],
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+      isFetching: false,
+    });
+
+    expect(() => render(<WorkloadExplorerPage />)).not.toThrow();
+    // The workload table still mounts (empty)
+    expect(screen.getByTestId('workloads-table')).toBeInTheDocument();
+  });
+
+  it('renders without throwing when containers query returns an error', () => {
+    mockUseContainers.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error('Portainer unreachable'),
+      refetch: vi.fn(),
+      isFetching: false,
+    });
+
+    expect(() => render(<WorkloadExplorerPage />)).not.toThrow();
+    // Page heading still visible
+    expect(screen.getByRole('heading', { name: /Workload Explorer/i })).toBeInTheDocument();
+  });
+});
