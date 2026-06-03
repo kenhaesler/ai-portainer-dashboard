@@ -745,3 +745,35 @@ describe('AiMonitorPage — false-positive feedback (#1298)', () => {
     expect(screen.queryByTestId('anomaly-feedback-rate-row')).toBeNull();
   });
 });
+
+// ── Empty / unavailable fleet (#1420) ───────────────────────────────────────
+
+describe('AiMonitorPage — empty/unavailable fleet (#1420)', () => {
+  it('renders without throwing when containers query returns empty array', () => {
+    vi.mocked(useContainers).mockReturnValue({
+      data: [],
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+      isFetching: false,
+    } as unknown as ReturnType<typeof useContainers>);
+
+    expect(() => renderPage()).not.toThrow();
+    expect(screen.getByText('Health & Monitoring')).toBeTruthy();
+  });
+
+  it('renders without throwing when containers query returns an error', () => {
+    vi.mocked(useContainers).mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error('Portainer unreachable'),
+      refetch: vi.fn(),
+      isFetching: false,
+    } as unknown as ReturnType<typeof useContainers>);
+
+    expect(() => renderPage()).not.toThrow();
+    expect(screen.getByText('Health & Monitoring')).toBeTruthy();
+  });
+});
