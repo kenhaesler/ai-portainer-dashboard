@@ -25,6 +25,10 @@ All per-endpoint container counts, host CPU/memory, and stack totals are obtaine
 
 **Kill-switch:** Setting `EDGE_LIVE_QUERY_ENABLED=false` disables all live queries; affected endpoints remain `unavailable` with no snapshot fallback.
 
+## CI E2E Portainer fixture
+
+The opt-in `e2e` CI job runs the production compose stack with a CI-only override (`docker/docker-compose.e2e.yml`) that adds a **WireMock `portainer-mock`** service serving canned fleet data from `docker/portainer-mock/{mappings,__files}`, with the backend's `PORTAINER_API_URL` pointed at it. This lets the data-dependent E2E specs (container list/detail, the #1310 dropdown-anchor regression guard) run against real data instead of timing out. The fixtures are contract-tested against the backend's actual Zod schemas + normalizers in `packages/core/src/portainer/portainer-mock-fixtures.test.ts`, so they fail loudly if a parser changes. See #1420.
+
 ## UI notes
 
 - Global themed scrollbar styling lives in `frontend/src/index.css` (see the comment block `GLOBAL THEMED SCROLLBAR`). It applies to `html`/`body` and any element with the `.scrollbar-themed` opt-in class, reading `--color-foreground` via `color-mix` so all 16 themes share one rule. The sidebar (`aside nav`) keeps its hover-reveal behavior via cascade order.
