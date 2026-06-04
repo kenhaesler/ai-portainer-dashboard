@@ -1,5 +1,5 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 
@@ -555,11 +555,13 @@ describe('MetricsDashboardPage', () => {
     fireEvent.click(containerSelect);
     fireEvent.click(screen.getByRole('option', { name: 'worker-1' }));
 
-    expect(screen.queryByText('Container')).toBeNull();
+    const kpiGrid = screen.getByTestId('metrics-kpi-grid');
+    expect(within(kpiGrid).queryByText('Container')).toBeNull();
+    expect(kpiGrid.children).toHaveLength(3);
     expect(screen.getByText('Avg CPU')).toBeInTheDocument();
     expect(screen.getByText('Avg Memory')).toBeInTheDocument();
     expect(screen.getByText('Peak Memory')).toBeInTheDocument();
-    expect(screen.getByTestId('metrics-kpi-grid').className).toContain('md:grid-cols-3');
+    expect(kpiGrid.className).toContain('md:grid-cols-3');
   });
 
   it('publishes the selected container name to the header store and clears on unmount', async () => {

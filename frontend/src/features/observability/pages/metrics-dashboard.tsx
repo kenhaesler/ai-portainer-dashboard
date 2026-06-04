@@ -202,6 +202,7 @@ export default function MetricsDashboardPage() {
     }
   }, [selectedContainerData, setMetricsContainerName, clearMetricsContainerName]);
 
+  // Also clear on page unmount in case a container is still selected.
   useEffect(() => () => clearMetricsContainerName(), [clearMetricsContainerName]);
 
   const networkTrafficData = useMemo(() => {
