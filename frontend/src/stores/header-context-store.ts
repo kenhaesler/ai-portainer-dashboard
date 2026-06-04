@@ -7,7 +7,7 @@ import { create } from 'zustand';
  */
 interface HeaderContextState {
   metricsContainerName: string | null;
-  setMetricsContainerName: (name: string | null) => void;
+  setMetricsContainerName: (name: string) => void;
   clearMetricsContainerName: () => void;
 }
 
