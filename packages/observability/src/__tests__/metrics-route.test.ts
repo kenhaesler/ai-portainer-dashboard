@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vites
 import Fastify, { FastifyInstance } from 'fastify';
 import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
 import type { LLMInterface } from '@dashboard/contracts';
+import type { ContainerStats } from '@dashboard/core/models/portainer.js';
 import { metricsRoutes } from '../routes/metrics.js';
 
 const mockQuery = vi.fn().mockResolvedValue({ rows: [] });
@@ -409,7 +410,7 @@ describe('metrics routes', () => {
         cpu_stats: { cpu_usage: { total_usage: 0 }, system_cpu_usage: 0, online_cpus: 4 },
         precpu_stats: { cpu_usage: { total_usage: 0 }, system_cpu_usage: 0 },
         memory_stats: { usage: 400 * 1024 * 1024, limit: 512 * 1024 * 1024, stats: { cache: 64 * 1024 * 1024 } },
-      } as never);
+      } as ContainerStats);
 
       const response = await app.inject({ method: 'GET', url: '/api/metrics/1/abc123/meta' });
 
@@ -419,6 +420,22 @@ describe('metrics routes', () => {
       expect(body.onlineCpus).toBe(4);
       expect(body.usedBytes).toBe(336 * 1024 * 1024); // 400MB usage − 64MB cache
       expect(mockGetContainerStats).toHaveBeenCalledWith(1, 'abc123');
+    });
+
+    it('reports null memoryLimitBytes when Docker reports an unset (0) limit', async () => {
+      mockGetContainerStats.mockResolvedValue({
+        cpu_stats: { cpu_usage: { total_usage: 0 }, system_cpu_usage: 0, online_cpus: 2 },
+        precpu_stats: { cpu_usage: { total_usage: 0 }, system_cpu_usage: 0 },
+        memory_stats: { usage: 100 * 1024 * 1024, limit: 0, stats: { cache: 0 } },
+      } as ContainerStats);
+
+      const response = await app.inject({ method: 'GET', url: '/api/metrics/1/abc123/meta' });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+      expect(body.memoryLimitBytes).toBeNull();
+      expect(body.onlineCpus).toBe(2);
+      expect(body.usedBytes).toBe(100 * 1024 * 1024);
     });
 
     it('degrades to nulls when stats are unavailable', async () => {

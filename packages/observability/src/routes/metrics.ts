@@ -157,7 +157,10 @@ export async function metricsRoutes(fastify: FastifyInstance, opts: { llm?: LLMI
         stats.memory_stats.stats?.total_cache ??
         0;
       return {
-        memoryLimitBytes: stats.memory_stats.limit ?? null,
+        // `|| null` (not `??`): Docker reports limit 0 for unconstrained/unavailable
+        // memory in some setups; treat that as "unknown", matching the collector's
+        // `if (memoryLimit > 0)` guard so we never render a "/ 0 MB" label downstream.
+        memoryLimitBytes: stats.memory_stats.limit || null,
         onlineCpus: stats.cpu_stats.online_cpus ?? null,
         usedBytes: Math.max(0, usage - cache),
       };
