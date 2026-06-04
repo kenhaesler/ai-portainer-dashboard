@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { Header } from './header';
+import { useHeaderContextStore } from '@/stores/header-context-store';
 
 vi.mock('@/providers/auth-provider', () => ({
   useAuth: () => ({
@@ -57,6 +58,7 @@ describe('Header', () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.restoreAllMocks();
+    useHeaderContextStore.setState({ metricsContainerName: null });
   });
 
   it('renders commit hash in the top header', async () => {
@@ -114,5 +116,25 @@ describe('Header', () => {
 
     expect(await screen.findByText(/(DEV|BUILD) 20260213.7/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/Build (DEV|BUILD) 20260213.7/i)).toBeInTheDocument();
+  });
+
+  it('renders the metrics container name when set', () => {
+    useHeaderContextStore.setState({ metricsContainerName: 'nginx-proxy' });
+    render(
+      <MemoryRouter>
+        <Header />
+      </MemoryRouter>
+    );
+    expect(screen.getByTestId('header-context-name')).toHaveTextContent('nginx-proxy');
+  });
+
+  it('renders no container name when unset', () => {
+    useHeaderContextStore.setState({ metricsContainerName: null });
+    render(
+      <MemoryRouter>
+        <Header />
+      </MemoryRouter>
+    );
+    expect(screen.queryByTestId('header-context-name')).toBeNull();
   });
 });
