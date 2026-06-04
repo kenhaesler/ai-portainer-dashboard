@@ -61,8 +61,10 @@ test.describe('Container List (Workload Explorer)', () => {
     const firstRow = table.locator('tbody tr').first();
     await expect(firstRow).toBeVisible();
 
-    // Click the container name link (first link/button in the row)
-    const containerLink = firstRow.locator('button, a').first();
+    // The name cell is the first column; it holds a FavoriteButton (star) and
+    // then the container-name button that navigates to the detail page. Click
+    // the name button (the last button in that cell), not the star.
+    const containerLink = firstRow.locator('td').first().getByRole('button').last();
     await containerLink.click();
 
     // Should navigate to a container detail page
