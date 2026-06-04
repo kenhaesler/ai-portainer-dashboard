@@ -641,7 +641,7 @@ describe('MetricsDashboardPage', () => {
     expect(screen.queryByText(/no limit set/)).toBeNull();
   });
 
-  it('filters the container dropdown options via the search box', async () => {
+  it('filters the container dropdown options via the search box', () => {
     renderPage();
     const endpointSelect = screen.getAllByRole('combobox')[0];
     fireEvent.click(endpointSelect);
@@ -651,12 +651,11 @@ describe('MetricsDashboardPage', () => {
     fireEvent.change(search, { target: { value: 'worker' } });
 
     const containerSelect = screen.getAllByRole('combobox')[2];
-    await waitFor(() => {
-      fireEvent.click(containerSelect);
-      expect(screen.getByRole('option', { name: 'worker-1' })).toBeInTheDocument();
-    });
+    fireEvent.click(containerSelect);
+    expect(screen.getByRole('option', { name: 'worker-1' })).toBeInTheDocument();
     expect(screen.queryByRole('option', { name: 'api-1' })).not.toBeInTheDocument();
     expect(screen.queryByRole('option', { name: 'beta-api-1' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'standalone-1' })).not.toBeInTheDocument();
   });
 
   it('publishes the selected container name to the header store and clears on unmount', async () => {

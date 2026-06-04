@@ -567,6 +567,7 @@ export default function MetricsDashboardPage() {
                 setSelectedStack(val);
               }
               setSelectedContainer(null);
+              setContainerQuery('');
             }}
             placeholder="All stacks"
             disabled={!selectedEndpoint || containersLoading}
@@ -581,16 +582,15 @@ export default function MetricsDashboardPage() {
         </div>
 
         {/* Container Selector */}
-        <div className="flex flex-col gap-2">
-          <div className="min-w-[16rem]">
-            <FleetSearch
-              label="Search containers"
-              placeholder="Search containers..."
-              onSearch={setContainerQuery}
-              totalCount={filteredContainers.length}
-              filteredCount={searchedContainers.length}
-            />
-          </div>
+        <div className="flex flex-col gap-2 min-w-[16rem]">
+          <FleetSearch
+            key={`${selectedEndpoint ?? 'none'}-${selectedStack ?? 'all'}`}
+            label="Search containers"
+            placeholder="Search containers..."
+            onSearch={setContainerQuery}
+            totalCount={filteredContainers.length}
+            filteredCount={searchedContainers.length}
+          />
           <div className="flex items-center gap-2">
             <Box className="h-4 w-4 text-muted-foreground" />
             <ThemedSelect
