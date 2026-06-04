@@ -45,10 +45,17 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
 
+    /* Smoke tests drive the login *form*, so they must NOT use cached auth. */
+    {
+      name: 'smoke',
+      testMatch: /smoke\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'] },
+    },
+
     /* All other specs reuse the cached auth state */
     {
       name: 'chromium',
-      testIgnore: [/auth\.spec\.ts/, /global-setup\.ts/],
+      testIgnore: [/auth\.spec\.ts/, /global-setup\.ts/, /smoke\.spec\.ts/],
       dependencies: ['setup'],
       use: {
         ...devices['Desktop Chrome'],

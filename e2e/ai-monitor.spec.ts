@@ -43,12 +43,13 @@ test.describe('AI Monitor (Health & Monitoring)', () => {
     await page.goto('/health');
     await expect(page.locator('[data-testid="sidebar"]')).toBeVisible();
 
-    // The page renders four stat cards (Total / Critical / Warning / Info) once
-    // loading completes, or an empty-state copy if no insights exist.
+    // The page renders the stat cards (Total / Critical / Warning / Info) AND,
+    // when no insights exist, an empty-state copy — both can be present at once,
+    // so assert at least one is visible (.first() avoids a strict-mode match of 2).
     const statsHeading = page.getByText(/total insights/i);
     const emptyHeading = page.getByRole('heading', { name: /no insights/i });
 
-    await expect(statsHeading.or(emptyHeading)).toBeVisible({
+    await expect(statsHeading.or(emptyHeading).first()).toBeVisible({
       timeout: 15_000,
     });
   });
