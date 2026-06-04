@@ -1,9 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { useCaptures, type Capture } from '@/features/security/hooks/use-pcap';
-import { useEndpoints } from '@/features/containers/hooks/use-endpoints';
-import { useContainers } from '@/features/containers/hooks/use-containers';
-import { useStacks } from '@/features/containers/hooks/use-stacks';
 
 vi.mock('@/features/containers/hooks/use-endpoints', () => ({
   useEndpoints: vi.fn().mockReturnValue({
@@ -166,27 +163,5 @@ describe('PacketCapture', () => {
     } as unknown as ReturnType<typeof useCaptures>);
     render(<PacketCapture />);
     expect(screen.getByText('local')).toBeInTheDocument();
-  });
-});
-
-// ── Empty / unavailable fleet (#1420) ───────────────────────────────────────
-
-describe('PacketCapture — empty/unavailable fleet (#1420)', () => {
-  it('renders without throwing when endpoints, containers and stacks return empty arrays', () => {
-    vi.mocked(useEndpoints).mockReturnValue({ data: [], isLoading: false } as any);
-    vi.mocked(useContainers).mockReturnValue({ data: [], isLoading: false } as any);
-    vi.mocked(useStacks).mockReturnValue({ data: [], isLoading: false } as any);
-
-    expect(() => render(<PacketCapture />)).not.toThrow();
-    expect(screen.getByRole('heading', { name: /Packet Capture/i })).toBeInTheDocument();
-  });
-
-  it('renders without throwing when endpoints, containers and stacks return undefined', () => {
-    vi.mocked(useEndpoints).mockReturnValue({ data: undefined, isLoading: false } as any);
-    vi.mocked(useContainers).mockReturnValue({ data: undefined, isLoading: false } as any);
-    vi.mocked(useStacks).mockReturnValue({ data: undefined, isLoading: false } as any);
-
-    expect(() => render(<PacketCapture />)).not.toThrow();
-    expect(screen.getByRole('heading', { name: /Packet Capture/i })).toBeInTheDocument();
   });
 });

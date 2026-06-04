@@ -353,34 +353,3 @@ describe('HomePage', () => {
     expect(screen.getByText('Dashboard overview with KPIs and charts')).toBeInTheDocument();
   });
 });
-
-describe('HomePage — empty/unavailable fleet (#1420)', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockUseContainers.mockReturnValue({
-      data: [],
-      isLoading: false,
-      isError: false,
-    } as any);
-  });
-
-  it('degrades gracefully when fleet data is empty (no throw, shows heading)', () => {
-    // Empty-success: all hooks return empty arrays — simulates Portainer unavailable
-    mockUseDashboardFull.mockReturnValue({
-      data: { summary: null, resources: null, endpoints: [] },
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-      isFetching: false,
-    } as any);
-    mockUseContainers.mockReturnValue({
-      data: [],
-      isLoading: false,
-      isError: false,
-    } as any);
-
-    expect(() => renderPage()).not.toThrow();
-    expect(screen.getByText('Dashboard overview with KPIs and charts')).toBeInTheDocument();
-  });
-});

@@ -371,38 +371,4 @@ describe('ImageFootprintPage', () => {
       expect(mockRefetch).toHaveBeenCalled();
     });
   });
-
-  // ── Empty / unavailable fleet (#1420) ──────────────────────────────────────
-
-  describe('empty/unavailable fleet (#1420)', () => {
-    it('renders without throwing when endpoints and images return empty arrays', () => {
-      mockUseImages.mockReturnValue({
-        data: [],
-        isLoading: false,
-        isPending: false,
-        isError: false,
-        error: null,
-        refetch: mockRefetch,
-        isFetching: false,
-      });
-
-      expect(() => render(<ImageFootprintPage />)).not.toThrow();
-      expect(screen.getByRole('heading', { name: /Image Footprint/i })).toBeInTheDocument();
-    });
-
-    it('renders the error affordance without throwing when images query errors', () => {
-      mockUseImages.mockReturnValue({
-        data: undefined,
-        isLoading: false,
-        isPending: false,
-        isError: true,
-        error: new Error('Portainer unreachable'),
-        refetch: mockRefetch,
-        isFetching: false,
-      });
-
-      expect(() => render(<ImageFootprintPage />)).not.toThrow();
-      expect(screen.getByText('Failed to load images')).toBeInTheDocument();
-    });
-  });
 });

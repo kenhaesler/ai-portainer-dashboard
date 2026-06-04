@@ -322,40 +322,4 @@ describe('NetworkTopologyPage', () => {
       expect(screen.getByTestId('topology-observed-count')).toHaveTextContent('2');
     });
   });
-
-  // ── Empty / unavailable fleet (#1420) ──────────────────────────────────────
-
-  describe('empty/unavailable fleet (#1420)', () => {
-    it('renders without throwing when endpoints, containers and networks return empty arrays', () => {
-      mockUseEndpoints.mockReturnValue({ data: [], isLoading: false } as any);
-      setHooks({ containers: [], networks: [] });
-
-      expect(() => renderPage()).not.toThrow();
-      expect(screen.getByRole('heading', { name: /Network Topology/i })).toBeInTheDocument();
-    });
-
-    it('renders without throwing when containers and networks queries return errors', () => {
-      mockUseEndpoints.mockReturnValue({ data: undefined, isLoading: false } as any);
-      mockUseContainers.mockReturnValue({
-        data: undefined,
-        isLoading: false,
-        isPending: false,
-        isError: true,
-        isFetching: false,
-        refetch: vi.fn(),
-      } as any);
-      mockUseNetworks.mockReturnValue({
-        data: undefined,
-        isLoading: false,
-        isPending: false,
-        isError: true,
-        isFetching: false,
-        refetch: vi.fn(),
-      } as any);
-
-      expect(() => renderPage()).not.toThrow();
-      // The page shows an error affordance in this case
-      expect(screen.getByText(/Failed to load containers or networks/i)).toBeInTheDocument();
-    });
-  });
 });

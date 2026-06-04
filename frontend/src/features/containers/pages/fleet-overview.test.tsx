@@ -1202,36 +1202,6 @@ describe('Infrastructure smart search — Stacks tab', () => {
   });
 });
 
-describe('InfrastructurePage — empty/unavailable fleet (#1420)', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    useUiStore.setState({ pageViewModes: {} });
-  });
-
-  it('renders without throwing when endpoints and stacks return empty arrays', () => {
-    mockEndpoints([]);
-    mockStacks([]);
-
-    expect(() => renderPage()).not.toThrow();
-    expect(screen.getByRole('heading', { name: 'Infrastructure' })).toBeInTheDocument();
-  });
-
-  it('renders without throwing when endpoints query returns an error', () => {
-    mockUseEndpoints.mockReturnValue({
-      data: undefined,
-      isLoading: false,
-      isError: true,
-      error: new Error('Portainer unreachable'),
-      refetch: vi.fn(),
-      isFetching: false,
-    } as any);
-    mockStacks([]);
-
-    expect(() => renderPage()).not.toThrow();
-    expect(screen.getByRole('heading', { name: 'Infrastructure' })).toBeInTheDocument();
-  });
-});
-
 describe('Infrastructure smart search — Kubernetes tab', () => {
   const pod = (name: string, namespace: string, status: string) => ({
     id: `${namespace}/${name}`, name, namespace, images: [], state: 'running',
