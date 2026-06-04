@@ -5,10 +5,14 @@ import { MemoryRouter } from 'react-router-dom';
 
 const mockUseForecasts = vi.fn();
 const mockUseNetworkRates = vi.fn();
+const mockUseContainerMetricsMeta = vi.fn();
 
 // Mock all hooks
 vi.mock('@/features/containers/hooks/use-endpoints', () => ({
-  useEndpoints: vi.fn().mockReturnValue({ data: [{ id: 1, name: 'local' }], isLoading: false }),
+  useEndpoints: vi.fn().mockReturnValue({
+    data: [{ id: 1, name: 'local', totalCpu: 4, totalMemory: 34359738368 }], // 32 GiB
+    isLoading: false,
+  }),
 }));
 
 vi.mock('@/features/containers/hooks/use-containers', () => ({
@@ -84,6 +88,7 @@ vi.mock('@/features/containers/hooks/use-stacks', () => ({
 
 vi.mock('@/features/observability/hooks/use-metrics', () => ({
   useContainerMetrics: vi.fn().mockReturnValue({ data: null, isLoading: false, isError: false }),
+  useContainerMetricsMeta: (...args: unknown[]) => mockUseContainerMetricsMeta(...args),
   useAnomalies: vi.fn().mockReturnValue({ data: null }),
   useNetworkRates: (...args: unknown[]) => mockUseNetworkRates(...args),
   useAnomalyExplanations: vi.fn().mockReturnValue({ data: null }),
@@ -169,6 +174,9 @@ function renderPage() {
 describe('MetricsDashboardPage', () => {
   beforeEach(() => {
     useHeaderContextStore.setState({ metricsContainerName: null });
+    mockUseContainerMetricsMeta.mockReturnValue({
+      data: { memoryLimitBytes: 536870912, onlineCpus: 4, usedBytes: 337641472 },
+    });
     mockUseForecasts.mockReturnValue({
       data: [],
       isLoading: false,
@@ -562,6 +570,46 @@ describe('MetricsDashboardPage', () => {
     expect(screen.getByText('Avg Memory')).toBeInTheDocument();
     expect(screen.getByText('Peak Memory')).toBeInTheDocument();
     expect(kpiGrid.className).toContain('md:grid-cols-3');
+  });
+
+  it('shows the CPU core-count clarification sub-label', () => {
+    renderPage();
+    const endpointSelect = screen.getAllByRole('combobox')[0];
+    fireEvent.click(endpointSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'local' }));
+    const containerSelect = screen.getAllByRole('combobox')[2];
+    fireEvent.click(containerSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'worker-1' }));
+
+    expect(screen.getByText(/of 4 cores/)).toBeInTheDocument();
+    expect(screen.getByText(/max 400%/)).toBeInTheDocument();
+  });
+
+  it('shows the memory denominator with the container limit', () => {
+    renderPage();
+    const endpointSelect = screen.getAllByRole('combobox')[0];
+    fireEvent.click(endpointSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'local' }));
+    const containerSelect = screen.getAllByRole('combobox')[2];
+    fireEvent.click(containerSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'worker-1' }));
+
+    expect(screen.getByText(/512 MB limit/)).toBeInTheDocument();
+  });
+
+  it('labels memory as host-total when no limit is set', () => {
+    mockUseContainerMetricsMeta.mockReturnValue({
+      data: { memoryLimitBytes: 34359738368, onlineCpus: 4, usedBytes: 2791728742 }, // limit == host RAM
+    });
+    renderPage();
+    const endpointSelect = screen.getAllByRole('combobox')[0];
+    fireEvent.click(endpointSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'local' }));
+    const containerSelect = screen.getAllByRole('combobox')[2];
+    fireEvent.click(containerSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'worker-1' }));
+
+    expect(screen.getByText(/no limit set/)).toBeInTheDocument();
   });
 
   it('publishes the selected container name to the header store and clears on unmount', async () => {

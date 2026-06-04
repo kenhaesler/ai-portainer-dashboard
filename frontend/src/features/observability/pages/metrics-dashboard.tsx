@@ -22,7 +22,7 @@ import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { useEndpoints } from '@/features/containers/hooks/use-endpoints';
 import { useContainers } from '@/features/containers/hooks/use-containers';
 import { useStacks } from '@/features/containers/hooks/use-stacks';
-import { useContainerMetrics, useAnomalies, useNetworkRates, useAnomalyExplanations } from '@/features/observability/hooks/use-metrics';
+import { useContainerMetrics, useAnomalies, useNetworkRates, useAnomalyExplanations, useContainerMetricsMeta } from '@/features/observability/hooks/use-metrics';
 import { useHeaderContextStore } from '@/stores/header-context-store';
 import { useContainerForecast, useForecasts, useAiForecastNarrative, type CapacityForecast } from '@/features/observability/hooks/use-forecasts';
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
@@ -80,6 +80,12 @@ const DEFAULT_MAX_POINTS = 240;
 function formatBytes(bytes: number): string {
   const mb = bytes / (1024 * 1024);
   return mb.toFixed(1);
+}
+
+function formatMemSize(bytes: number): string {
+  const mb = bytes / (1024 * 1024);
+  if (mb >= 1024) return `${(mb / 1024).toFixed(1)} GB`;
+  return `${Math.round(mb)} MB`;
 }
 
 function exportToCSV(data: Array<{ timestamp: string; value: number }>, filename: string) {
@@ -258,6 +264,11 @@ export default function MetricsDashboardPage() {
     timeRange
   );
 
+  const { data: containerMeta } = useContainerMetricsMeta(
+    selectedEndpoint ?? undefined,
+    selectedContainer ?? undefined,
+  );
+
   // Fetch anomalies
   const { data: anomaliesData } = useAnomalies();
 
@@ -344,6 +355,29 @@ export default function MetricsDashboardPage() {
       memoryBytes: calcStats(memoryBytesData),
     };
   }, [cpuData, memoryData, memoryBytesData]);
+
+  const selectedEndpointData = useMemo(
+    () => endpoints?.find((ep) => ep.id === selectedEndpoint) ?? null,
+    [endpoints, selectedEndpoint],
+  );
+
+  const cpuCoresLabel = useMemo(() => {
+    const cores = containerMeta?.onlineCpus ?? selectedEndpointData?.totalCpu ?? null;
+    if (!cores) return null;
+    const used = stats.cpu.avg / 100;
+    return `≈${used.toFixed(1)} of ${cores} core${cores === 1 ? '' : 's'} (max ${cores * 100}%)`;
+  }, [containerMeta, selectedEndpointData, stats.cpu.avg]);
+
+  const memoryDenominatorLabel = useMemo(() => {
+    const limit = containerMeta?.memoryLimitBytes ?? null;
+    const used = containerMeta?.usedBytes ?? null;
+    const hostTotal = selectedEndpointData?.totalMemory ?? null;
+    if (limit == null || used == null) return null;
+    const isHostTotal = hostTotal != null && limit >= hostTotal * 0.99;
+    return isHostTotal
+      ? `${formatMemSize(used)} / ${formatMemSize(limit)} host (no limit set)`
+      : `${formatMemSize(used)} / ${formatMemSize(limit)} limit`;
+  }, [containerMeta, selectedEndpointData]);
 
   const rankedForecasts = useMemo<RankedForecast[]>(() => {
     const forecasts = forecastOverviewQuery.data ?? [];
@@ -685,6 +719,14 @@ export default function MetricsDashboardPage() {
                 <div className="rounded-lg border bg-card p-6 shadow-sm">
                   <p className="text-sm font-medium text-muted-foreground">Avg CPU</p>
                   <p className="mt-2 text-3xl font-bold tracking-tight">{stats.cpu.avg.toFixed(1)}%</p>
+                  {cpuCoresLabel && (
+                    <p
+                      className="text-xs text-muted-foreground mt-1"
+                      title="Docker docker stats convention — 100% = one full CPU core, so this peaks at 100% × online cores."
+                    >
+                      {cpuCoresLabel}
+                    </p>
+                  )}
                   <AnomalySparkline
                     values={cpuData.map((d) => d.value)}
                     anomalyIndices={cpuAnomalyIndices}
@@ -696,6 +738,14 @@ export default function MetricsDashboardPage() {
                 <div className="rounded-lg border bg-card p-6 shadow-sm">
                   <p className="text-sm font-medium text-muted-foreground">Avg Memory</p>
                   <p className="mt-2 text-3xl font-bold tracking-tight">{stats.memory.avg.toFixed(1)}%</p>
+                  {memoryDenominatorLabel && (
+                    <p
+                      className="text-xs text-muted-foreground mt-1"
+                      title="memory% = (usage − cache) ÷ limit. Unconstrained containers report the host's total RAM as the limit."
+                    >
+                      {memoryDenominatorLabel}
+                    </p>
+                  )}
                   <AnomalySparkline
                     values={memoryData.map((d) => d.value)}
                     anomalyIndices={memoryAnomalyIndices}
