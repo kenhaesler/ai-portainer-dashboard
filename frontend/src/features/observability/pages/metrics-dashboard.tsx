@@ -816,7 +816,7 @@ export default function MetricsDashboardPage() {
               description="No metrics have been recorded for this container in the selected time range. Containers record metrics every 60 seconds — try a wider time range or wait for collection."
             />
           ) : (
-            <div className="space-y-6">
+            <div className="grid gap-6 lg:grid-cols-2" data-testid="metrics-charts-grid">
               {/* CPU Chart */}
               <SpotlightCard>
               <div className="rounded-lg border bg-card p-6 shadow-sm">

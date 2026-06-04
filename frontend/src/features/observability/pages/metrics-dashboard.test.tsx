@@ -658,6 +658,34 @@ describe('MetricsDashboardPage', () => {
     expect(screen.queryByRole('option', { name: 'standalone-1' })).not.toBeInTheDocument();
   });
 
+  it('renders the three metric charts in a 2-up grid', async () => {
+    const { useContainerMetrics } = await import('@/features/observability/hooks/use-metrics');
+    vi.mocked(useContainerMetrics).mockReturnValue({
+      data: { data: [{ timestamp: '2024-01-01T00:00:00Z', value: 50 }] },
+      isLoading: false,
+      isError: false,
+    } as never);
+
+    renderPage();
+    const endpointSelect = screen.getAllByRole('combobox')[0];
+    fireEvent.click(endpointSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'local' }));
+    const containerSelect = screen.getAllByRole('combobox')[2];
+    fireEvent.click(containerSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'worker-1' }));
+
+    const grid = screen.getByTestId('metrics-charts-grid');
+    expect(grid.className).toContain('lg:grid-cols-2');
+    expect(within(grid).getAllByTestId('metrics-chart')).toHaveLength(3);
+
+    // Restore the default mock so subsequent tests see the empty-data behaviour
+    vi.mocked(useContainerMetrics).mockReturnValue({
+      data: null,
+      isLoading: false,
+      isError: false,
+    } as never);
+  });
+
   it('publishes the selected container name to the header store and clears on unmount', async () => {
     const { unmount } = renderPage();
     const endpointSelect = screen.getAllByRole('combobox')[0];
