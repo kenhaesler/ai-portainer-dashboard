@@ -1,0 +1,5 @@
+[
+  { "Id": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2", "Names": ["/shop-web"], "Image": "nginx:1.27", "Created": 1730000000, "State": "running", "Status": "Up 2 hours (healthy)", "Ports": [{ "PrivatePort": 80, "PublicPort": 8080, "Type": "tcp" }], "Labels": { "com.docker.compose.project": "shop" }, "NetworkSettings": { "Networks": { "bridge": { "IPAddress": "172.17.0.2", "NetworkID": "n1", "Gateway": "172.17.0.1" } } } },
+  { "Id": "b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3", "Names": ["/shop-api"], "Image": "node:22-alpine", "Created": 1730000100, "State": "running", "Status": "Up 1 hour", "Ports": [], "Labels": { "com.docker.compose.project": "shop" }, "NetworkSettings": { "Networks": {} } },
+  { "Id": "c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4", "Names": ["/infra-db"], "Image": "postgres:17-alpine", "Created": 1730000200, "State": "exited", "Status": "Exited (0) 5 minutes ago", "Ports": [], "Labels": { "com.docker.compose.project": "infra" }, "NetworkSettings": { "Networks": {} } }
+]

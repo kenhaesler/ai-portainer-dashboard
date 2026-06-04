@@ -1,0 +1,34 @@
+# CI-only override: a canned Portainer (WireMock) so the E2E stack has fleet
+# data. Layer it AFTER the base file:
+#   docker compose -f docker/docker-compose.yml -f docker/docker-compose.e2e.yml ...
+# The production compose file is never modified. (#1420)
+services:
+  portainer-mock:
+    image: wiremock/wiremock:3.13.1
+    command: ["--port", "8080", "--disable-banner", "--local-response-templating"]
+    volumes:
+      - ./portainer-mock/mappings:/home/wiremock/mappings:ro
+      - ./portainer-mock/__files:/home/wiremock/__files:ro
+    # Published to the host so the CI wait-loop can poll readiness (/__admin/mappings).
+    # The backend reaches the mock via service DNS (portainer-mock:8080) on dashboard-net.
+    ports:
+      - "127.0.0.1:9000:8080"
+    networks:
+      - dashboard-net
+
+  backend:
+    # The E2E suite performs many real logins (smoke specs ×3 + Playwright
+    # retries + auth.spec + global-setup), all from one runner IP. The prod
+    # default LOGIN_RATE_LIMIT is 5/min, which throttles the suite ("Rate limit
+    # exceeded"). Raise it for the disposable CI stack only. (#1420)
+    environment:
+      - LOGIN_RATE_LIMIT=1000
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres-app:
+        condition: service_healthy
+      timescaledb:
+        condition: service_healthy
+      portainer-mock:
+        condition: service_started
