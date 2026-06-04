@@ -61,10 +61,12 @@ test.describe('Container List (Workload Explorer)', () => {
     const firstRow = table.locator('tbody tr').first();
     await expect(firstRow).toBeVisible();
 
-    // The name cell is the first column; it holds a FavoriteButton (star) and
-    // then the container-name button that navigates to the detail page. Click
-    // the name button (the last button in that cell), not the star.
-    const containerLink = firstRow.locator('td').first().getByRole('button').last();
+    // The table has row selection enabled, so the first td is the selection
+    // checkbox cell (an <input>/<label>, no buttons). The name cell is the
+    // SECOND td: it holds a FavoriteButton (star) and then the container-name
+    // button that navigates to the detail page. Click the name button (the
+    // last button in that cell), not the star.
+    const containerLink = firstRow.locator('td').nth(1).getByRole('button').last();
     await containerLink.click();
 
     // Should navigate to a container detail page
