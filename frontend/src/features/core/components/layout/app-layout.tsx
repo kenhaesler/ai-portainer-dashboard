@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import type { ReactNode } from 'react';
 import { Navigate, Outlet, useLocation, useNavigate, useNavigationType, useOutlet } from 'react-router-dom';
 import { useAuth } from '@/providers/auth-provider';
 import { Sidebar } from '@/features/core/components/layout/sidebar';
@@ -15,6 +16,18 @@ import { useEntrancePlayed } from '@/shared/hooks/use-entrance-played';
 import { useKeyChord } from '@/shared/hooks/use-key-chord';
 import type { ChordBinding } from '@/shared/hooks/use-key-chord';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { ErrorBoundary } from '@/shared/components/feedback/error-boundary';
+
+/**
+ * Catches render errors thrown by the active page so one failing route
+ * degrades to an inline error card instead of unmounting the whole shell
+ * (sidebar + header). It sits BELOW AppLayout in the tree, so the chrome
+ * survives, and renders inside the route-keyed wrapper, so it resets
+ * automatically on navigation. (#1420)
+ */
+function PageBoundary({ children }: { children: ReactNode }) {
+  return <ErrorBoundary>{children}</ErrorBoundary>;
+}
 
 /**
  * Freezes the Outlet content at mount-time so that during AnimatePresence exit
@@ -234,7 +247,9 @@ export function AppLayout() {
         >
           {disableVisualMotion ? (
             <div key={location.pathname} className="h-auto">
-              <Outlet />
+              <PageBoundary>
+                <Outlet />
+              </PageBoundary>
             </div>
           ) : (
             <AnimatePresence mode="wait" initial={false}>
@@ -262,7 +277,9 @@ export function AppLayout() {
                   }),
                 }}
               >
-                <FrozenOutlet />
+                <PageBoundary>
+                  <FrozenOutlet />
+                </PageBoundary>
               </motion.div>
             </AnimatePresence>
           )}
