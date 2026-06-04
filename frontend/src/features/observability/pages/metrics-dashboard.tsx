@@ -383,14 +383,20 @@ export default function MetricsDashboardPage() {
 
   const memoryDenominatorLabel = useMemo(() => {
     const limit = containerMeta?.memoryLimitBytes ?? null;
-    const used = containerMeta?.usedBytes ?? null;
     const hostTotal = selectedEndpointData?.totalMemory ?? null;
+    // Numerator matches the "Avg Memory %" headline above this label: use the
+    // range-average used bytes (memoryBytesData is in MB → ×1MiB) when the series
+    // has data, falling back to the live `/meta` sample only when it's empty.
+    const avgUsedBytes = memoryBytesData.length > 0
+      ? stats.memoryBytes.avg * 1024 * 1024
+      : null;
+    const used = avgUsedBytes ?? containerMeta?.usedBytes ?? null;
     if (limit == null || used == null) return null;
     const isHostTotal = hostTotal != null && limit >= hostTotal * 0.99;
     return isHostTotal
       ? `${formatMemSize(used)} / ${formatMemSize(limit)} host (no limit set)`
       : `${formatMemSize(used)} / ${formatMemSize(limit)} limit`;
-  }, [containerMeta, selectedEndpointData]);
+  }, [containerMeta, selectedEndpointData, stats.memoryBytes.avg, memoryBytesData]);
 
   const rankedForecasts = useMemo<RankedForecast[]>(() => {
     const forecasts = forecastOverviewQuery.data ?? [];

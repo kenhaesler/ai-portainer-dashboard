@@ -611,6 +611,28 @@ describe('MetricsDashboardPage', () => {
     expect(screen.getByText(/512 MB limit/)).toBeInTheDocument();
   });
 
+  it('uses the range-average used bytes for the memory numerator when the series has data', () => {
+    // memory_bytes series averages 256 MB; the live /meta sample (322 MB from the
+    // default mock) must NOT be used, so the numerator matches the avg-% headline.
+    vi.mocked(useContainerMetrics).mockImplementation(
+      (_endpointId, _containerId, metricType) =>
+        (metricType === 'memory_bytes'
+          ? { data: { data: [{ timestamp: '2024-01-01T00:00:00Z', value: 268435456 }] }, isLoading: false, isError: false }
+          : { data: null, isLoading: false, isError: false }) as never,
+    );
+
+    renderPage();
+    const endpointSelect = screen.getAllByRole('combobox')[0];
+    fireEvent.click(endpointSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'local' }));
+    const containerSelect = screen.getAllByRole('combobox')[2];
+    fireEvent.click(containerSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'worker-1' }));
+
+    expect(screen.getByText(/256 MB \/ 512 MB limit/)).toBeInTheDocument();
+    expect(screen.queryByText(/322 MB/)).toBeNull();
+  });
+
   it('labels memory as host-total when no limit is set', () => {
     mockUseContainerMetricsMeta.mockReturnValue({
       data: { memoryLimitBytes: 34359738368, onlineCpus: 4, usedBytes: 2791728742 }, // limit == host RAM
