@@ -23,6 +23,7 @@ import { useEndpoints } from '@/features/containers/hooks/use-endpoints';
 import { useContainers } from '@/features/containers/hooks/use-containers';
 import { useStacks } from '@/features/containers/hooks/use-stacks';
 import { useContainerMetrics, useAnomalies, useNetworkRates, useAnomalyExplanations } from '@/features/observability/hooks/use-metrics';
+import { useHeaderContextStore } from '@/stores/header-context-store';
 import { useContainerForecast, useForecasts, useAiForecastNarrative, type CapacityForecast } from '@/features/observability/hooks/use-forecasts';
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
 import { MetricsLineChart } from '@/shared/components/charts/metrics-line-chart';
@@ -188,6 +189,21 @@ export default function MetricsDashboardPage() {
     if (!allContainers || !selectedContainer) return null;
     return allContainers.find((c) => c.id === selectedContainer);
   }, [allContainers, selectedContainer]);
+
+  const setMetricsContainerName = useHeaderContextStore((s) => s.setMetricsContainerName);
+  const clearMetricsContainerName = useHeaderContextStore((s) => s.clearMetricsContainerName);
+
+  // Feed the selected container name to the shared header; clear on deselect/unmount.
+  useEffect(() => {
+    if (selectedContainerData?.name) {
+      setMetricsContainerName(selectedContainerData.name);
+    } else {
+      clearMetricsContainerName();
+    }
+  }, [selectedContainerData, setMetricsContainerName, clearMetricsContainerName]);
+
+  useEffect(() => () => clearMetricsContainerName(), [clearMetricsContainerName]);
+
   const networkTrafficData = useMemo(() => {
     if (!selectedContainerData) return [];
     const connectedNetworks = selectedContainerData.networks ?? [];
@@ -663,13 +679,7 @@ export default function MetricsDashboardPage() {
         <>
           {/* Container Info & Stats */}
           {selectedContainerData && (
-            <div className="grid gap-4 md:grid-cols-4">
-              <SpotlightCard>
-                <div className="rounded-lg border bg-card p-6 shadow-sm">
-                  <p className="text-sm font-medium text-muted-foreground">Container</p>
-                  <p className="mt-2 text-3xl font-bold tracking-tight truncate">{selectedContainerData.name}</p>
-                </div>
-              </SpotlightCard>
+            <div className="grid gap-4 md:grid-cols-3" data-testid="metrics-kpi-grid">
               <SpotlightCard>
                 <div className="rounded-lg border bg-card p-6 shadow-sm">
                   <p className="text-sm font-medium text-muted-foreground">Avg CPU</p>

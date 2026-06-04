@@ -1,5 +1,5 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 
@@ -153,6 +153,7 @@ vi.mock('@/shared/components/ui/refresh-controls', () => ({
 }));
 
 import MetricsDashboardPage from './metrics-dashboard';
+import { useHeaderContextStore } from '@/stores/header-context-store';
 
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -167,6 +168,7 @@ function renderPage() {
 
 describe('MetricsDashboardPage', () => {
   beforeEach(() => {
+    useHeaderContextStore.setState({ metricsContainerName: null });
     mockUseForecasts.mockReturnValue({
       data: [],
       isLoading: false,
@@ -542,5 +544,38 @@ describe('MetricsDashboardPage', () => {
       const fallbacks = screen.getAllByText('Narrative unavailable');
       expect(fallbacks.length).toBeGreaterThanOrEqual(1);
     });
+  });
+
+  it('removes the Container KPI card and keeps three metric cards', () => {
+    renderPage();
+    const endpointSelect = screen.getAllByRole('combobox')[0];
+    fireEvent.click(endpointSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'local' }));
+    const containerSelect = screen.getAllByRole('combobox')[2];
+    fireEvent.click(containerSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'worker-1' }));
+
+    expect(screen.queryByText('Container')).toBeNull();
+    expect(screen.getByText('Avg CPU')).toBeInTheDocument();
+    expect(screen.getByText('Avg Memory')).toBeInTheDocument();
+    expect(screen.getByText('Peak Memory')).toBeInTheDocument();
+    expect(screen.getByTestId('metrics-kpi-grid').className).toContain('md:grid-cols-3');
+  });
+
+  it('publishes the selected container name to the header store and clears on unmount', async () => {
+    const { unmount } = renderPage();
+    const endpointSelect = screen.getAllByRole('combobox')[0];
+    fireEvent.click(endpointSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'local' }));
+    const containerSelect = screen.getAllByRole('combobox')[2];
+    fireEvent.click(containerSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'worker-1' }));
+
+    await waitFor(() =>
+      expect(useHeaderContextStore.getState().metricsContainerName).toBe('worker-1'),
+    );
+
+    unmount();
+    expect(useHeaderContextStore.getState().metricsContainerName).toBeNull();
   });
 });
