@@ -30,6 +30,7 @@ import { MetricsLineChart } from '@/shared/components/charts/metrics-line-chart'
 import { AnomalySparkline } from '@/shared/components/charts/anomaly-sparkline';
 import { NetworkTrafficTooltip } from '@/shared/components/charts/network-traffic-tooltip';
 import { RefreshControls } from '@/shared/components/ui/refresh-controls';
+import { FleetSearch } from '@/features/containers/components/fleet/fleet-search';
 import { EmptyState } from '@/shared/components/feedback/empty-state';
 import { SkeletonText, SkeletonChart, SkeletonTableRow } from '@/shared/components/feedback/skeleton';
 import { DataTable } from '@/shared/components/tables/data-table';
@@ -145,6 +146,7 @@ export default function MetricsDashboardPage() {
   const [selectedEndpoint, setSelectedEndpoint] = useState<number | null>(null);
   const [selectedStack, setSelectedStack] = useState<string | null>(null);
   const [selectedContainer, setSelectedContainer] = useState<string | null>(null);
+  const [containerQuery, setContainerQuery] = useState('');
   const [timeRange, setTimeRange] = useState('1h');
   const [zoomLevel, setZoomLevel] = useState(1);
   const [chatOpen, setChatOpen] = useState(false);
@@ -189,9 +191,17 @@ export default function MetricsDashboardPage() {
       return resolvedStack === selectedStack;
     });
   }, [containers, selectedStack, stackNamesForEndpoint]);
+  const searchedContainers = useMemo(() => {
+    const q = containerQuery.trim().toLowerCase();
+    if (!q) return filteredContainers;
+    return filteredContainers.filter((container) => {
+      const stack = resolveContainerStackName(container, stackNamesForEndpoint) ?? NO_STACK_LABEL;
+      return container.name.toLowerCase().includes(q) || stack.toLowerCase().includes(q);
+    });
+  }, [filteredContainers, containerQuery, stackNamesForEndpoint]);
   const groupedContainerOptions = useMemo(
-    () => buildStackGroupedContainerOptions(filteredContainers, stackNamesForEndpoint),
-    [filteredContainers, stackNamesForEndpoint],
+    () => buildStackGroupedContainerOptions(searchedContainers, stackNamesForEndpoint),
+    [searchedContainers, stackNamesForEndpoint],
   );
   // Get selected container details
   const selectedContainerData = useMemo(() => {
@@ -413,6 +423,7 @@ export default function MetricsDashboardPage() {
     setSelectedEndpoint(endpointId);
     setSelectedStack(null);
     setSelectedContainer(null);
+    setContainerQuery('');
   };
 
   const handleRefresh = () => {
@@ -570,18 +581,29 @@ export default function MetricsDashboardPage() {
         </div>
 
         {/* Container Selector */}
-        <div className="flex items-center gap-2">
-          <Box className="h-4 w-4 text-muted-foreground" />
-          <ThemedSelect
-            value={selectedContainer ?? '__placeholder__'}
-            onValueChange={(val) => val !== '__placeholder__' && setSelectedContainer(val)}
-            placeholder="Select container..."
-            disabled={!selectedEndpoint || containersLoading}
-            options={[
-              { value: '__placeholder__', label: 'Select container...', disabled: true },
-              ...groupedContainerOptions,
-            ]}
-          />
+        <div className="flex flex-col gap-2">
+          <div className="min-w-[16rem]">
+            <FleetSearch
+              label="Search containers"
+              placeholder="Search containers..."
+              onSearch={setContainerQuery}
+              totalCount={filteredContainers.length}
+              filteredCount={searchedContainers.length}
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <Box className="h-4 w-4 text-muted-foreground" />
+            <ThemedSelect
+              value={selectedContainer ?? '__placeholder__'}
+              onValueChange={(val) => val !== '__placeholder__' && setSelectedContainer(val)}
+              placeholder="Select container..."
+              disabled={!selectedEndpoint || containersLoading}
+              options={[
+                { value: '__placeholder__', label: 'Select container...', disabled: true },
+                ...groupedContainerOptions,
+              ]}
+            />
+          </div>
         </div>
 
         {/* Time Range Selector */}

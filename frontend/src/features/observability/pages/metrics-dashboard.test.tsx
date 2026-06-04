@@ -157,6 +157,18 @@ vi.mock('@/shared/components/ui/refresh-controls', () => ({
   RefreshControls: () => <div data-testid="mock-auto-refresh" />,
 }));
 
+// Stub FleetSearch to call onSearch synchronously (no 300ms debounce) so tests
+// can assert filtered dropdown options without fake-timer juggling.
+vi.mock('@/features/containers/components/fleet/fleet-search', () => ({
+  FleetSearch: ({ label, onSearch, placeholder }: { label: string; onSearch: (q: string) => void; placeholder?: string }) => (
+    <input
+      aria-label={label}
+      placeholder={placeholder}
+      onChange={(e) => onSearch(e.target.value)}
+    />
+  ),
+}));
+
 import MetricsDashboardPage from './metrics-dashboard';
 import { useHeaderContextStore } from '@/stores/header-context-store';
 
@@ -627,6 +639,24 @@ describe('MetricsDashboardPage', () => {
     // Memory denominator requires meta → absent
     expect(screen.queryByText(/limit/)).toBeNull();
     expect(screen.queryByText(/no limit set/)).toBeNull();
+  });
+
+  it('filters the container dropdown options via the search box', async () => {
+    renderPage();
+    const endpointSelect = screen.getAllByRole('combobox')[0];
+    fireEvent.click(endpointSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'local' }));
+
+    const search = screen.getByLabelText('Search containers');
+    fireEvent.change(search, { target: { value: 'worker' } });
+
+    const containerSelect = screen.getAllByRole('combobox')[2];
+    await waitFor(() => {
+      fireEvent.click(containerSelect);
+      expect(screen.getByRole('option', { name: 'worker-1' })).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('option', { name: 'api-1' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'beta-api-1' })).not.toBeInTheDocument();
   });
 
   it('publishes the selected container name to the header store and clears on unmount', async () => {
