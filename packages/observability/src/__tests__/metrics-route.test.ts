@@ -28,8 +28,21 @@ vi.mock('../services/metrics-rollup-selector.js', () => ({
   }),
 }));
 
+// Kept: portainer client/cache mocks — no Portainer in CI. cachedFetch runs the factory directly.
+vi.mock('@dashboard/core/portainer/portainer-client.js', () => ({
+  getContainerStats: vi.fn(),
+}));
+vi.mock('@dashboard/core/portainer/portainer-cache.js', () => ({
+  cachedFetch: (_key: string, _ttl: number, fn: () => unknown) => fn(),
+  getCacheKey: (...parts: unknown[]) => parts.join(':'),
+  TTL: { STATS: 5 },
+}));
+
 import { getNetworkRates } from '../services/metrics-store.js';
 const mockGetNetworkRates = vi.mocked(getNetworkRates);
+
+import { getContainerStats } from '@dashboard/core/portainer/portainer-client.js';
+const mockGetContainerStats = vi.mocked(getContainerStats);
 
 // Mock LLM passed via opts — replaces ai-intelligence module mocks
 const mockChatStream = vi.fn();
@@ -387,6 +400,50 @@ describe('metrics routes', () => {
 
       expect(response.statusCode).toBe(200);
       expect(response.body).toContain('"error"');
+    });
+  });
+
+  describe('GET /api/metrics/:endpointId/:containerId/meta', () => {
+    it('returns memory limit, online CPUs, and used bytes', async () => {
+      mockGetContainerStats.mockResolvedValue({
+        cpu_stats: { cpu_usage: { total_usage: 0 }, system_cpu_usage: 0, online_cpus: 4 },
+        precpu_stats: { cpu_usage: { total_usage: 0 }, system_cpu_usage: 0 },
+        memory_stats: { usage: 400 * 1024 * 1024, limit: 512 * 1024 * 1024, stats: { cache: 64 * 1024 * 1024 } },
+      } as never);
+
+      const response = await app.inject({ method: 'GET', url: '/api/metrics/1/abc123/meta' });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+      expect(body.memoryLimitBytes).toBe(512 * 1024 * 1024);
+      expect(body.onlineCpus).toBe(4);
+      expect(body.usedBytes).toBe(336 * 1024 * 1024); // 400MB usage − 64MB cache
+      expect(mockGetContainerStats).toHaveBeenCalledWith(1, 'abc123');
+    });
+
+    it('degrades to nulls when stats are unavailable', async () => {
+      mockGetContainerStats.mockRejectedValue(new Error('endpoint down'));
+
+      const response = await app.inject({ method: 'GET', url: '/api/metrics/1/abc123/meta' });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+      expect(body).toEqual({ memoryLimitBytes: null, onlineCpus: null, usedBytes: null });
+    });
+
+    it('requires authentication (preHandler wired)', async () => {
+      const guarded = Fastify();
+      guarded.setValidatorCompiler(validatorCompiler);
+      guarded.setSerializerCompiler(serializerCompiler);
+      guarded.decorate('authenticate', async (_req: unknown, reply: { code: (n: number) => { send: (b: unknown) => void } }) => {
+        reply.code(401).send({ error: 'Unauthorized' });
+      });
+      guarded.register(metricsRoutes, {});
+      await guarded.ready();
+
+      const response = await guarded.inject({ method: 'GET', url: '/api/metrics/1/abc123/meta' });
+      expect(response.statusCode).toBe(401);
+      await guarded.close();
     });
   });
 });

@@ -6,6 +6,8 @@ import { ContainerParamsSchema, MetricsQuerySchema, MetricsResponseSchema, Anoma
 import { getNetworkRates, getAllNetworkRates, isUndefinedTableError } from '../services/metrics-store.js';
 import { getRatesForEndpoint, getAllRates } from '../services/network-rate-tracker.js';
 import { selectRollupTable } from '../services/metrics-rollup-selector.js';
+import { getContainerStats } from '@dashboard/core/portainer/portainer-client.js';
+import { cachedFetch, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
 import { decimateLTTB } from '../services/lttb-decimator.js';
 import type { LLMInterface } from '@dashboard/contracts';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
@@ -127,6 +129,41 @@ export async function metricsRoutes(fastify: FastifyInstance, opts: { llm?: LLMI
       }
       log.error({ err, endpointId, containerId }, 'Failed to query metrics');
       return (reply as any).code(500).send({ error: 'Failed to query metrics', details: err instanceof Error ? err.message : 'Unknown error' });
+    }
+  });
+
+  // Per-container resource ceilings for the dashboard's %-clarification labels.
+  // Reuses the same cached Docker stats the collector fetches — no extra Portainer load,
+  // no persisted data. Read-only (authenticate only), observer-safe.
+  fastify.get('/api/metrics/:endpointId/:containerId/meta', {
+    schema: {
+      tags: ['Metrics'],
+      summary: 'Get per-container memory limit and online CPU count (label denominators)',
+      security: [{ bearerAuth: [] }],
+      params: ContainerParamsSchema,
+    },
+    preHandler: [fastify.authenticate],
+  }, async (request) => {
+    const { endpointId, containerId } = request.params as { endpointId: number; containerId: string };
+    try {
+      const stats = await cachedFetch(
+        getCacheKey('stats', endpointId, containerId),
+        TTL.STATS,
+        () => getContainerStats(endpointId, containerId),
+      );
+      const usage = stats.memory_stats.usage ?? 0;
+      const cache =
+        stats.memory_stats.stats?.cache ??
+        stats.memory_stats.stats?.total_cache ??
+        0;
+      return {
+        memoryLimitBytes: stats.memory_stats.limit ?? null,
+        onlineCpus: stats.cpu_stats.online_cpus ?? null,
+        usedBytes: Math.max(0, usage - cache),
+      };
+    } catch (err) {
+      log.debug({ err, endpointId, containerId }, 'Container meta unavailable');
+      return { memoryLimitBytes: null, onlineCpus: null, usedBytes: null };
     }
   });
 
