@@ -660,6 +660,24 @@ describe('MetricsDashboardPage', () => {
     expect(screen.queryByRole('option', { name: 'standalone-1' })).not.toBeInTheDocument();
   });
 
+  it('filters the container dropdown by stack name, not just container name', () => {
+    renderPage();
+    const endpointSelect = screen.getAllByRole('combobox')[0];
+    fireEvent.click(endpointSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'local' }));
+
+    // "alpha" is a STACK name; neither api-1 nor worker-1 has it in their container name.
+    const search = screen.getByLabelText('Search containers');
+    fireEvent.change(search, { target: { value: 'alpha' } });
+
+    const containerSelect = screen.getAllByRole('combobox')[2];
+    fireEvent.click(containerSelect);
+    expect(screen.getByRole('option', { name: 'api-1' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'worker-1' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'beta-api-1' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'standalone-1' })).not.toBeInTheDocument();
+  });
+
   it('renders the three metric charts in a 2-up grid', () => {
     vi.mocked(useContainerMetrics).mockReturnValue({
       data: { data: [{ timestamp: '2024-01-01T00:00:00Z', value: 50 }] },
