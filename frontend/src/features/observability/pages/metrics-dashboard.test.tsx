@@ -171,6 +171,7 @@ vi.mock('@/features/containers/components/fleet/fleet-search', () => ({
 
 import MetricsDashboardPage from './metrics-dashboard';
 import { useHeaderContextStore } from '@/stores/header-context-store';
+import { useContainerMetrics } from '@/features/observability/hooks/use-metrics';
 
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -186,6 +187,7 @@ function renderPage() {
 describe('MetricsDashboardPage', () => {
   beforeEach(() => {
     useHeaderContextStore.setState({ metricsContainerName: null });
+    vi.mocked(useContainerMetrics).mockReturnValue({ data: null, isLoading: false, isError: false } as never);
     mockUseContainerMetricsMeta.mockReturnValue({
       data: { memoryLimitBytes: 536870912, onlineCpus: 4, usedBytes: 337641472 },
     });
@@ -658,8 +660,7 @@ describe('MetricsDashboardPage', () => {
     expect(screen.queryByRole('option', { name: 'standalone-1' })).not.toBeInTheDocument();
   });
 
-  it('renders the three metric charts in a 2-up grid', async () => {
-    const { useContainerMetrics } = await import('@/features/observability/hooks/use-metrics');
+  it('renders the three metric charts in a 2-up grid', () => {
     vi.mocked(useContainerMetrics).mockReturnValue({
       data: { data: [{ timestamp: '2024-01-01T00:00:00Z', value: 50 }] },
       isLoading: false,
@@ -677,13 +678,6 @@ describe('MetricsDashboardPage', () => {
     const grid = screen.getByTestId('metrics-charts-grid');
     expect(grid.className).toContain('lg:grid-cols-2');
     expect(within(grid).getAllByTestId('metrics-chart')).toHaveLength(3);
-
-    // Restore the default mock so subsequent tests see the empty-data behaviour
-    vi.mocked(useContainerMetrics).mockReturnValue({
-      data: null,
-      isLoading: false,
-      isError: false,
-    } as never);
   });
 
   it('publishes the selected container name to the header store and clears on unmount', async () => {
