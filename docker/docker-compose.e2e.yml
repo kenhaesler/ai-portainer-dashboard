@@ -17,6 +17,12 @@ services:
       - dashboard-net
 
   backend:
+    # The E2E suite performs many real logins (smoke specs ×3 + Playwright
+    # retries + auth.spec + global-setup), all from one runner IP. The prod
+    # default LOGIN_RATE_LIMIT is 5/min, which throttles the suite ("Rate limit
+    # exceeded"). Raise it for the disposable CI stack only. (#1420)
+    environment:
+      - LOGIN_RATE_LIMIT=1000
     depends_on:
       redis:
         condition: service_healthy
