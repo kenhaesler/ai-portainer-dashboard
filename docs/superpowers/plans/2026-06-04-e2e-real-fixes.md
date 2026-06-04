@@ -177,10 +177,11 @@ The name cell renders `<FavoriteButton>` (a star `<button>`) **then** the naviga
 ```
 with:
 ```ts
-    // The name cell is the first column; it holds a FavoriteButton (star) and
-    // then the container-name button that navigates to the detail page. Click
-    // the name button (the last button in that cell), not the star.
-    const containerLink = firstRow.locator('td').first().getByRole('button').last();
+    // The DataTable prepends a row-selection checkbox column, so td[0] is the
+    // checkbox cell and the name column is td[1]. The name cell holds a
+    // FavoriteButton (star) then the container-name button that navigates.
+    // Click the name button (last button in that cell), not the star.
+    const containerLink = firstRow.locator('td').nth(1).getByRole('button').last();
     await containerLink.click();
 ```
 
