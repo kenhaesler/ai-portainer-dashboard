@@ -82,6 +82,9 @@ function formatBytes(bytes: number): string {
   return mb.toFixed(1);
 }
 
+// Compact MB/GB formatter for the memory denominator label. Intentionally simpler
+// than shared/lib/utils.ts:formatBytes — whole-MB rounding, no sub-MB units — to keep
+// the "used / limit" label terse.
 function formatMemSize(bytes: number): string {
   const mb = bytes / (1024 * 1024);
   if (mb >= 1024) return `${(mb / 1024).toFixed(1)} GB`;
@@ -722,7 +725,7 @@ export default function MetricsDashboardPage() {
                   {cpuCoresLabel && (
                     <p
                       className="text-xs text-muted-foreground mt-1"
-                      title="Docker docker stats convention — 100% = one full CPU core, so this peaks at 100% × online cores."
+                      title="Docker stats convention — 100% = one full CPU core, so this peaks at 100% × online cores."
                     >
                       {cpuCoresLabel}
                     </p>

@@ -612,6 +612,23 @@ describe('MetricsDashboardPage', () => {
     expect(screen.getByText(/no limit set/)).toBeInTheDocument();
   });
 
+  it('hides the memory denominator when meta is unavailable but still shows CPU cores from the endpoint', () => {
+    mockUseContainerMetricsMeta.mockReturnValue({ data: null });
+    renderPage();
+    const endpointSelect = screen.getAllByRole('combobox')[0];
+    fireEvent.click(endpointSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'local' }));
+    const containerSelect = screen.getAllByRole('combobox')[2];
+    fireEvent.click(containerSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'worker-1' }));
+
+    // CPU label falls back to endpoint.totalCpu (4 cores)
+    expect(screen.getByText(/of 4 cores/)).toBeInTheDocument();
+    // Memory denominator requires meta → absent
+    expect(screen.queryByText(/limit/)).toBeNull();
+    expect(screen.queryByText(/no limit set/)).toBeNull();
+  });
+
   it('publishes the selected container name to the header store and clears on unmount', async () => {
     const { unmount } = renderPage();
     const endpointSelect = screen.getAllByRole('combobox')[0];
