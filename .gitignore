@@ -51,6 +51,9 @@ temp/
 # Load test reports
 loadtests/reports/
 
+# Security scan output (Semgrep findings + generated report)
+.semgrep-report/
+
 # Python
 __pycache__/
 *.pyc
