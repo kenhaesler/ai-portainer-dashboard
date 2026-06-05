@@ -3,6 +3,7 @@ import { Sun, Moon, Search, LogOut, User, Keyboard } from 'lucide-react';
 import { useAuth } from '@/providers/auth-provider';
 import { useThemeStore } from '@/stores/theme-store';
 import { useUiStore } from '@/stores/ui-store';
+import { useHeaderContextStore } from '@/stores/header-context-store';
 import { cn } from '@/shared/lib/utils';
 import { useState, useRef, useEffect } from 'react';
 import { ConnectionOrb } from '@/shared/components/ui/connection-orb';
@@ -31,6 +32,7 @@ export function Header() {
   const setCommandPaletteOpen = useUiStore((s) => s.setCommandPaletteOpen);
   const potatoMode = useUiStore((s) => s.potatoMode);
   const setPotatoMode = useUiStore((s) => s.setPotatoMode);
+  const metricsContainerName = useHeaderContextStore((s) => s.metricsContainerName);
   const hasAnimatedBg = dashboardBackground !== 'none';
   const [appBuildRef, setAppBuildRef] = useState(
     import.meta.env.DEV
@@ -135,6 +137,14 @@ export function Header() {
             )}
           </span>
         ))}
+        {metricsContainerName && (
+          <span className="flex items-center gap-1.5">
+            <span className="text-muted-foreground">/</span>
+            <span className="font-medium text-foreground" data-testid="header-context-name">
+              {metricsContainerName}
+            </span>
+          </span>
+        )}
         {(appBuildRef || buildChannel) && (
           <span
             className="ml-2 inline-flex items-center rounded-full border border-border/60 bg-muted/60 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"

@@ -29,6 +29,10 @@ All per-endpoint container counts, host CPU/memory, and stack totals are obtaine
 
 The opt-in `e2e` CI job runs the production compose stack with a CI-only override (`docker/docker-compose.e2e.yml`) that adds a **WireMock `portainer-mock`** service serving canned fleet data from `docker/portainer-mock/{mappings,__files}`, with the backend's `PORTAINER_API_URL` pointed at it. This lets the data-dependent E2E specs (container list/detail, the #1310 dropdown-anchor regression guard) run against real data instead of timing out. The fixtures are contract-tested against the backend's actual Zod schemas + normalizers in `packages/core/src/portainer/portainer-mock-fixtures.test.ts`, so they fail loudly if a parser changes. See #1420.
 
+## Metrics Dashboard resource labels (#1429)
+
+The Metrics Dashboard (`/metrics`) clarifies its per-container CPU% and memory% figures with denominator sub-labels. CPU% keeps the Docker `docker stats` convention (100% = one full core) and is annotated with the host's online-core count and cap (`of N cores (max N×100%)`); memory% shows `used / limit` and flags host-total when the container has no explicit limit. The limit and online-CPU count come from a read-only endpoint, `GET /api/metrics/:endpointId/:containerId/meta` (`packages/observability/src/routes/metrics.ts`), which projects the already-cached Docker container stats into `{ memoryLimitBytes, onlineCpus, usedBytes }` — no new persisted data, `authenticate`-only (observer-safe), and degrades to nulls when stats are unavailable (a Docker-reported `0` limit is treated as unset). The selected container name also appears in the global header via the ephemeral `useHeaderContextStore` slice (`frontend/src/stores/header-context-store.ts`), set by the page and cleared on unmount.
+
 ## UI notes
 
 - Global themed scrollbar styling lives in `frontend/src/index.css` (see the comment block `GLOBAL THEMED SCROLLBAR`). It applies to `html`/`body` and any element with the `.scrollbar-themed` opt-in class, reading `--color-foreground` via `color-mix` so all 16 themes share one rule. The sidebar (`aside nav`) keeps its hover-reveal behavior via cascade order.
