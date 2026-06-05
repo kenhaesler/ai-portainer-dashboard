@@ -14,6 +14,7 @@ AI-powered container monitoring dashboard extending Portainer with real-time ins
 4. **Never commit secrets** — No `.env`, API keys, passwords, or credentials.
 5. **Never work on `NO AI` issues** — Refuse and explain.
 6. **Ask before assuming** — If ambiguous, ask for clarification before proceeding.
+7. **Never wipe persistent data without explicit user authorization** — Do not run `docker volume rm`, `docker volume prune`, `docker compose down -v`, `docker compose rm -v`, `DROP DATABASE`, `TRUNCATE` on app tables, or any other action that destroys shared dev/test infrastructure (e.g. the `docker_postgres-app-data`, `docker_timescale-data`, `docker_redis-data` volumes). The dev DB carries the developer's working users, settings, history, and seeded data — wiping it is **not** an acceptable shortcut for fixing a stale password, a broken row, or a CI-only test issue. If a problem looks solvable by destroying data: (a) propose the targeted alternative instead (reset only the affected user's password via `UPDATE`, fix the specific row, etc.), and (b) ask first if destruction really is the only path. **This rule applies to subagents and parallel work too** — when dispatching a subagent that may touch docker volumes or databases, restate this rule explicitly in the brief.
 
 ## Build Commands
 
