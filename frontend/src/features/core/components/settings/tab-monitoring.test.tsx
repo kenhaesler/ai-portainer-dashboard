@@ -122,7 +122,9 @@ describe('NotificationHistoryPanel', () => {
       status: 'sent' as const,
       error: null,
       container_name: 'web-1',
-      created_at: '2026-05-29T10:00:00.000Z',
+      // Relative to now: the panel's default date filter is 7d, so fixed
+      // dates age out of the window and the table silently goes empty.
+      created_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
     },
     {
       id: 2,
@@ -134,7 +136,7 @@ describe('NotificationHistoryPanel', () => {
       status: 'failed' as const,
       error: 'SMTP connection refused',
       container_name: 'api-2',
-      created_at: '2026-05-29T09:30:00.000Z',
+      created_at: new Date(Date.now() - 90 * 60 * 1000).toISOString(),
     },
   ];
 
