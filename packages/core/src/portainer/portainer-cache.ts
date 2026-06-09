@@ -10,7 +10,11 @@ const gunzipAsync = promisify(gunzip);
 const COMPRESSION_THRESHOLD = 10_000; // 10 KB
 
 const log = createChildLogger('portainer-cache');
-type RedisClient = ReturnType<typeof createClient>;
+// ReturnType of the uninstantiated createClient signature resolves the RESP
+// generic to its constraint (2 | 3), but redis v6 infers the literal default
+// 3 at the call site and the client type is invariant in RESP — instantiate
+// explicitly so the alias matches what createClient({ ... }) returns.
+type RedisClient = ReturnType<typeof createClient<{}, {}, {}, 3, {}>>;
 
 interface CacheEntry<T> {
   data: T;
