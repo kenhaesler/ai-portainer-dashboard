@@ -1,14 +1,18 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 
 const mockUseForecasts = vi.fn();
 const mockUseNetworkRates = vi.fn();
+const mockUseContainerMetricsMeta = vi.fn();
 
 // Mock all hooks
 vi.mock('@/features/containers/hooks/use-endpoints', () => ({
-  useEndpoints: vi.fn().mockReturnValue({ data: [{ id: 1, name: 'local' }], isLoading: false }),
+  useEndpoints: vi.fn().mockReturnValue({
+    data: [{ id: 1, name: 'local', totalCpu: 4, totalMemory: 34359738368 }], // 32 GiB
+    isLoading: false,
+  }),
 }));
 
 vi.mock('@/features/containers/hooks/use-containers', () => ({
@@ -84,6 +88,7 @@ vi.mock('@/features/containers/hooks/use-stacks', () => ({
 
 vi.mock('@/features/observability/hooks/use-metrics', () => ({
   useContainerMetrics: vi.fn().mockReturnValue({ data: null, isLoading: false, isError: false }),
+  useContainerMetricsMeta: (...args: unknown[]) => mockUseContainerMetricsMeta(...args),
   useAnomalies: vi.fn().mockReturnValue({ data: null }),
   useNetworkRates: (...args: unknown[]) => mockUseNetworkRates(...args),
   useAnomalyExplanations: vi.fn().mockReturnValue({ data: null }),
@@ -152,7 +157,21 @@ vi.mock('@/shared/components/ui/refresh-controls', () => ({
   RefreshControls: () => <div data-testid="mock-auto-refresh" />,
 }));
 
+// Stub FleetSearch to call onSearch synchronously (no 300ms debounce) so tests
+// can assert filtered dropdown options without fake-timer juggling.
+vi.mock('@/features/containers/components/fleet/fleet-search', () => ({
+  FleetSearch: ({ label, onSearch, placeholder }: { label: string; onSearch: (q: string) => void; placeholder?: string }) => (
+    <input
+      aria-label={label}
+      placeholder={placeholder}
+      onChange={(e) => onSearch(e.target.value)}
+    />
+  ),
+}));
+
 import MetricsDashboardPage from './metrics-dashboard';
+import { useHeaderContextStore } from '@/stores/header-context-store';
+import { useContainerMetrics } from '@/features/observability/hooks/use-metrics';
 
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -167,6 +186,11 @@ function renderPage() {
 
 describe('MetricsDashboardPage', () => {
   beforeEach(() => {
+    useHeaderContextStore.setState({ metricsContainerName: null });
+    vi.mocked(useContainerMetrics).mockReturnValue({ data: null, isLoading: false, isError: false } as never);
+    mockUseContainerMetricsMeta.mockReturnValue({
+      data: { memoryLimitBytes: 536870912, onlineCpus: 4, usedBytes: 337641472 },
+    });
     mockUseForecasts.mockReturnValue({
       data: [],
       isLoading: false,
@@ -542,5 +566,174 @@ describe('MetricsDashboardPage', () => {
       const fallbacks = screen.getAllByText('Narrative unavailable');
       expect(fallbacks.length).toBeGreaterThanOrEqual(1);
     });
+  });
+
+  it('removes the Container KPI card and keeps three metric cards', () => {
+    renderPage();
+    const endpointSelect = screen.getAllByRole('combobox')[0];
+    fireEvent.click(endpointSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'local' }));
+    const containerSelect = screen.getAllByRole('combobox')[2];
+    fireEvent.click(containerSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'worker-1' }));
+
+    const kpiGrid = screen.getByTestId('metrics-kpi-grid');
+    expect(within(kpiGrid).queryByText('Container')).toBeNull();
+    expect(kpiGrid.children).toHaveLength(3);
+    expect(screen.getByText('Avg CPU')).toBeInTheDocument();
+    expect(screen.getByText('Avg Memory')).toBeInTheDocument();
+    expect(screen.getByText('Peak Memory')).toBeInTheDocument();
+    expect(kpiGrid.className).toContain('md:grid-cols-3');
+  });
+
+  it('shows the CPU core-count clarification sub-label', () => {
+    renderPage();
+    const endpointSelect = screen.getAllByRole('combobox')[0];
+    fireEvent.click(endpointSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'local' }));
+    const containerSelect = screen.getAllByRole('combobox')[2];
+    fireEvent.click(containerSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'worker-1' }));
+
+    expect(screen.getByText(/of 4 cores/)).toBeInTheDocument();
+    expect(screen.getByText(/max 400%/)).toBeInTheDocument();
+  });
+
+  it('shows the memory denominator with the container limit', () => {
+    renderPage();
+    const endpointSelect = screen.getAllByRole('combobox')[0];
+    fireEvent.click(endpointSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'local' }));
+    const containerSelect = screen.getAllByRole('combobox')[2];
+    fireEvent.click(containerSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'worker-1' }));
+
+    expect(screen.getByText(/512 MB limit/)).toBeInTheDocument();
+  });
+
+  it('uses the range-average used bytes for the memory numerator when the series has data', () => {
+    // memory_bytes series averages 256 MB; the live /meta sample (322 MB from the
+    // default mock) must NOT be used, so the numerator matches the avg-% headline.
+    vi.mocked(useContainerMetrics).mockImplementation(
+      (_endpointId, _containerId, metricType) =>
+        (metricType === 'memory_bytes'
+          ? { data: { data: [{ timestamp: '2024-01-01T00:00:00Z', value: 268435456 }] }, isLoading: false, isError: false }
+          : { data: null, isLoading: false, isError: false }) as never,
+    );
+
+    renderPage();
+    const endpointSelect = screen.getAllByRole('combobox')[0];
+    fireEvent.click(endpointSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'local' }));
+    const containerSelect = screen.getAllByRole('combobox')[2];
+    fireEvent.click(containerSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'worker-1' }));
+
+    expect(screen.getByText(/256 MB \/ 512 MB limit/)).toBeInTheDocument();
+    expect(screen.queryByText(/322 MB/)).toBeNull();
+  });
+
+  it('labels memory as host-total when no limit is set', () => {
+    mockUseContainerMetricsMeta.mockReturnValue({
+      data: { memoryLimitBytes: 34359738368, onlineCpus: 4, usedBytes: 2791728742 }, // limit == host RAM
+    });
+    renderPage();
+    const endpointSelect = screen.getAllByRole('combobox')[0];
+    fireEvent.click(endpointSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'local' }));
+    const containerSelect = screen.getAllByRole('combobox')[2];
+    fireEvent.click(containerSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'worker-1' }));
+
+    expect(screen.getByText(/no limit set/)).toBeInTheDocument();
+  });
+
+  it('hides the memory denominator when meta is unavailable but still shows CPU cores from the endpoint', () => {
+    mockUseContainerMetricsMeta.mockReturnValue({ data: null });
+    renderPage();
+    const endpointSelect = screen.getAllByRole('combobox')[0];
+    fireEvent.click(endpointSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'local' }));
+    const containerSelect = screen.getAllByRole('combobox')[2];
+    fireEvent.click(containerSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'worker-1' }));
+
+    // CPU label falls back to endpoint.totalCpu (4 cores)
+    expect(screen.getByText(/of 4 cores/)).toBeInTheDocument();
+    // Memory denominator requires meta → absent
+    expect(screen.queryByText(/limit/)).toBeNull();
+    expect(screen.queryByText(/no limit set/)).toBeNull();
+  });
+
+  it('filters the container dropdown options via the search box', () => {
+    renderPage();
+    const endpointSelect = screen.getAllByRole('combobox')[0];
+    fireEvent.click(endpointSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'local' }));
+
+    const search = screen.getByLabelText('Search containers');
+    fireEvent.change(search, { target: { value: 'worker' } });
+
+    const containerSelect = screen.getAllByRole('combobox')[2];
+    fireEvent.click(containerSelect);
+    expect(screen.getByRole('option', { name: 'worker-1' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'api-1' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'beta-api-1' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'standalone-1' })).not.toBeInTheDocument();
+  });
+
+  it('filters the container dropdown by stack name, not just container name', () => {
+    renderPage();
+    const endpointSelect = screen.getAllByRole('combobox')[0];
+    fireEvent.click(endpointSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'local' }));
+
+    // "alpha" is a STACK name; neither api-1 nor worker-1 has it in their container name.
+    const search = screen.getByLabelText('Search containers');
+    fireEvent.change(search, { target: { value: 'alpha' } });
+
+    const containerSelect = screen.getAllByRole('combobox')[2];
+    fireEvent.click(containerSelect);
+    expect(screen.getByRole('option', { name: 'api-1' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'worker-1' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'beta-api-1' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'standalone-1' })).not.toBeInTheDocument();
+  });
+
+  it('renders the three metric charts in a 2-up grid', () => {
+    vi.mocked(useContainerMetrics).mockReturnValue({
+      data: { data: [{ timestamp: '2024-01-01T00:00:00Z', value: 50 }] },
+      isLoading: false,
+      isError: false,
+    } as never);
+
+    renderPage();
+    const endpointSelect = screen.getAllByRole('combobox')[0];
+    fireEvent.click(endpointSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'local' }));
+    const containerSelect = screen.getAllByRole('combobox')[2];
+    fireEvent.click(containerSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'worker-1' }));
+
+    const grid = screen.getByTestId('metrics-charts-grid');
+    expect(grid.className).toContain('lg:grid-cols-2');
+    expect(within(grid).getAllByTestId('metrics-chart')).toHaveLength(3);
+  });
+
+  it('publishes the selected container name to the header store and clears on unmount', async () => {
+    const { unmount } = renderPage();
+    const endpointSelect = screen.getAllByRole('combobox')[0];
+    fireEvent.click(endpointSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'local' }));
+    const containerSelect = screen.getAllByRole('combobox')[2];
+    fireEvent.click(containerSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'worker-1' }));
+
+    await waitFor(() =>
+      expect(useHeaderContextStore.getState().metricsContainerName).toBe('worker-1'),
+    );
+
+    unmount();
+    expect(useHeaderContextStore.getState().metricsContainerName).toBeNull();
   });
 });

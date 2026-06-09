@@ -100,6 +100,32 @@ export function scaledThresholdForCv(
   return { threshold: baseThreshold * multiplier, regime, multiplier };
 }
 
+/**
+ * Is a baseline effectively constant? A spread (population std-dev or MAD) that
+ * is a negligible fraction of its centre — or negligibly small in absolute
+ * terms — means the series is flat to within floating-point noise. Dividing by
+ * such a spread yields astronomical, meaningless z-scores (#1391): a
+ * near-constant memory series at ~0.16 accumulates a std-dev of ~5.6e-17, so
+ * (0.17 − 0.16) / 5.6e-17 ≈ 1.8e14 — a false-positive anomaly with a garbage
+ * score. Detectors must treat this like a zero-spread baseline and fall back to
+ * the percentage-tolerance rule instead of dividing.
+ *
+ *   absolute floor: spread ≤ 1e-9           (pure FP noise / exact zero)
+ *   relative floor: spread ≤ |centre|·1e-3  (a genuinely tiny variance that is
+ *                                            still negligible vs the centre)
+ *
+ * The 0.1% relative floor sits far below the lowest CV the z-score path is meant
+ * to handle (the CV→multiplier ladder only starts distinguishing regimes at
+ * 10%), so legitimate low-variance series keep using the z-score path.
+ */
+export function isEffectivelyConstant(centre: number, spread: number): boolean {
+  const ABSOLUTE_FLOOR = 1e-9;
+  const RELATIVE_FLOOR = 1e-3;
+  if (!Number.isFinite(spread) || spread <= ABSOLUTE_FLOOR) return true;
+  if (!Number.isFinite(centre)) return false;
+  return spread <= Math.abs(centre) * RELATIVE_FLOOR;
+}
+
 /** Population mean and standard deviation. Empty/short series → zero std. */
 export function meanAndStd(values: number[]): { mean: number; std: number } {
   if (values.length === 0) return { mean: 0, std: 0 };

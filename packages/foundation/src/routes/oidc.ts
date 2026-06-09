@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { getOIDCConfig, generateAuthorizationUrl, exchangeCode, resolveRoleFromGroups, getEffectiveRedirectUri, isOIDCConfigEnabled } from '@dashboard/core/services/oidc.js';
 import { syncUserGroups, listDiscoveredGroups } from '@dashboard/core/services/oidc-group-tracking.js';
-import { createSession, invalidateSession } from '@dashboard/core/services/session-store.js';
+import { createSession, invalidateSession, invalidateAllUserSessions } from '@dashboard/core/services/session-store.js';
 import { signJwt } from '@dashboard/core/utils/crypto.js';
 import { writeAuditLog } from '@dashboard/core/services/audit-logger.js';
 import { upsertOIDCUser, getUserById, getUserDefaultLandingPage } from '@dashboard/core/services/user-store.js';
@@ -93,6 +93,7 @@ export async function oidcRoutes(fastify: FastifyInstance) {
       response: {
         200: LoginResponseSchema,
         400: ErrorResponseSchema,
+        403: ErrorResponseSchema,
         500: ErrorResponseSchema,
       },
     },
@@ -125,6 +126,42 @@ export async function oidcRoutes(fastify: FastifyInstance) {
         claims.groups || [],
         oidcConfig.group_role_mappings,
       );
+
+      // Restrictive mode: when the implicit viewer fallback is disabled, an OIDC
+      // login that resolves to no mapped role (and no '*' wildcard) is denied
+      // outright. Applies to new AND existing users — the role derives only from
+      // current group membership, so IDP group removal revokes access at next
+      // login. Local auth is unaffected (this path only runs for OIDC).
+      if (!resolvedRole && !oidcConfig.allow_unmapped_viewer) {
+        // Revoke any lingering session so a prior login cannot outlive the
+        // access revocation. Best-effort — a failure here must not turn the
+        // denial into a 400/500; we still deny.
+        try {
+          await invalidateAllUserSessions(claims.sub);
+        } catch (revokeErr) {
+          log.warn(
+            { err: (revokeErr as Error).message, sub: claims.sub },
+            'Failed to revoke existing sessions for denied OIDC user',
+          );
+        }
+        writeAuditLog({
+          user_id: claims.sub,
+          username,
+          action: 'oidc_login_denied',
+          target_type: 'user',
+          target_id: claims.sub,
+          details: { reason: 'no_matching_group', groups: claims.groups },
+          request_id: request.requestId,
+          ip_address: request.ip,
+        });
+        log.warn(
+          { sub: claims.sub, groups: claims.groups },
+          'OIDC login denied: no matching group mapping (restrictive mode)',
+        );
+        return reply.code(403).send({
+          error: 'Access denied: your account is not in a group authorized for this dashboard.',
+        });
+      }
 
       // Check if user already exists to get their current role
       const existingUser = await getUserById(claims.sub);

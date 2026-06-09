@@ -1,0 +1,1 @@
+{ "request": { "method": "GET", "urlPathPattern": "/api/endpoints/[0-9]+/docker/_ping" }, "response": { "status": 200, "headers": { "Content-Type": "text/plain" }, "body": "OK" } }
