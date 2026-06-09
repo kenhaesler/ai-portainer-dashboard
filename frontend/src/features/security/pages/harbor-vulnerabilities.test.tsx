@@ -133,6 +133,14 @@ describe('HarborVulnerabilitiesPage', () => {
     expect(screen.getByText('Sync Now')).toBeInTheDocument();
   });
 
+  it('does not render a decorative gif image on the summary cards', () => {
+    const { container } = render(<HarborVulnerabilitiesPage />);
+    // No <img> elements should be rendered on the page at all.
+    expect(container.querySelector('img')).toBeNull();
+    // And nothing should point at the previously hard-coded animated gif.
+    expect(container.querySelector('img[src*=".gif"]')).toBeNull();
+  });
+
   it('shows search input', () => {
     render(<HarborVulnerabilitiesPage />);
     expect(screen.getByPlaceholderText(/Search by CVE/)).toBeInTheDocument();

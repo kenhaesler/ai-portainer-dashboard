@@ -27,6 +27,7 @@ import {
   networksRoutes,
   searchRoutes,
   cacheAdminRoutes,
+  systemInfoRoutes,
   userRoutes,
   kubernetesRoutes,
 } from '@dashboard/foundation';
@@ -135,6 +136,57 @@ export function resolveTrustProxy(value: string | undefined): boolean | string[]
   return valid;
 }
 
+/**
+ * Pure resolution cascade for the product version. Kept separate from the IO so
+ * every branch is unit-testable. First non-blank source wins:
+ *   1. `env`  — explicit `APP_VERSION` override (set at build/deploy time).
+ *   2. `bakedFile` — contents of the version file baked into the server dist by
+ *      the Docker build (the runtime image ships @dashboard/server's
+ *      package.json as /app/package.json, so the product version isn't in cwd).
+ *   3. `cwdPackageVersion` — version field of the working-dir package.json,
+ *      which is the product root in dev (the process runs from the repo root).
+ * Falls back to `'unknown'` so a missing source never blocks startup.
+ */
+export function resolveProductVersion(sources: {
+  env?: string;
+  bakedFile?: string;
+  cwdPackageVersion?: string;
+}): string {
+  const candidates = [sources.env, sources.bakedFile, sources.cwdPackageVersion];
+  for (const candidate of candidates) {
+    const trimmed = candidate?.trim();
+    if (trimmed) return trimmed;
+  }
+  return 'unknown';
+}
+
+/**
+ * Read the product version from its build/runtime sources (see
+ * {@link resolveProductVersion}). Each read is guarded so a missing file never
+ * throws during startup.
+ */
+export function readProductVersion(): string {
+  let bakedFile: string | undefined;
+  try {
+    // Baked next to this module by the Docker build (see backend/Dockerfile).
+    bakedFile = readFileSync(new URL('./product-version', import.meta.url), 'utf8');
+  } catch {
+    /* not baked (e.g. local dev) — fall through to the cwd package.json */
+  }
+
+  let cwdPackageVersion: string | undefined;
+  try {
+    const parsed = JSON.parse(readFileSync(`${process.cwd()}/package.json`, 'utf8')) as {
+      version?: unknown;
+    };
+    if (typeof parsed.version === 'string') cwdPackageVersion = parsed.version;
+  } catch {
+    /* ignore */
+  }
+
+  return resolveProductVersion({ env: process.env.APP_VERSION, bakedFile, cwdPackageVersion });
+}
+
 export async function buildApp() {
   const isDev = process.env.NODE_ENV !== 'production';
   const app = Fastify({
@@ -202,6 +254,7 @@ export async function buildApp() {
   await app.register(networksRoutes);
   await app.register(searchRoutes);
   await app.register(cacheAdminRoutes);
+  await app.register(systemInfoRoutes, { appVersion: readProductVersion() });
   await app.register(userRoutes);
   await app.register(kubernetesRoutes);
 

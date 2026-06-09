@@ -377,3 +377,33 @@ describe('security-audit service', () => {
     expect(resolveAuditSeverity([{ severity: 'critical', category: 'x', title: 'x', description: 'x' }])).toBe('critical');
   });
 });
+
+// Separate block: uses the REAL cache (the suite above mocks cachedFetch away).
+describe('setSecurityAuditIgnoreList — cache invalidation (Home "Security Findings" KPI staleness)', () => {
+  beforeEach(async () => {
+    await cache.clear();
+    vi.restoreAllMocks();
+    mockGetSetting.mockResolvedValue(undefined);
+    mockSetSetting.mockResolvedValue(undefined);
+  });
+
+  it('busts every cached security-audit entry so the next read recomputes ignored flags', async () => {
+    // A prior audit run cached its entries with each `ignored` flag baked in,
+    // under the fleet-wide ('all') key and a per-endpoint key. The Home
+    // "Security Findings" KPI (/api/dashboard/summary) reads from these.
+    const allKey = portainerCache.getCacheKey('security-audit', 'all');
+    const endpointKey = portainerCache.getCacheKey('security-audit', 1);
+    await cache.set(allKey, [{ containerName: 'foo', ignored: false }], 300);
+    await cache.set(endpointKey, [{ containerName: 'foo', ignored: false }], 300);
+    expect(await cache.get(allKey)).toBeDefined();
+    expect(await cache.get(endpointKey)).toBeDefined();
+
+    // Admin adds 'foo' to the ignore list.
+    await setSecurityAuditIgnoreList(['foo']);
+
+    // Both cached audits must be cleared — otherwise the KPI keeps counting
+    // 'foo' for up to SECURITY_AUDIT_TTL (5 min) after it was ignored.
+    expect(await cache.get(allKey)).toBeUndefined();
+    expect(await cache.get(endpointKey)).toBeUndefined();
+  });
+});

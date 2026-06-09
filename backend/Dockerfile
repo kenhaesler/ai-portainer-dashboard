@@ -34,6 +34,11 @@ COPY backend/src/ backend/src/
 RUN npm run build -w backend
 COPY packages/server/ ./packages/server/
 RUN npm run build -w @dashboard/server
+# Bake the product version (root package.json) into the server dist. The runtime
+# image ships @dashboard/server's package.json as /app/package.json (for ESM
+# resolution, see runtime stage), so the product version can't be read from cwd
+# — readProductVersion() reads this baked file instead.
+RUN node -e "require('fs').writeFileSync('packages/server/dist/product-version', require('./package.json').version)"
 
 # Separate stage to build production dependencies with native bindings
 FROM dhi.io/node:24-alpine3.23-dev AS prod-deps

@@ -22,10 +22,10 @@ test.describe('Sidebar Navigation', () => {
     ];
 
     for (const route of routes) {
-      // Click sidebar link
+      // Sidebar nav items render as <button> (client-side navigate), not <a>.
       await page
         .locator('[data-testid="sidebar"]')
-        .getByRole('link', { name: route.label })
+        .getByRole('button', { name: route.label })
         .click();
 
       // Verify URL updated
@@ -40,7 +40,7 @@ test.describe('Sidebar Navigation', () => {
     // Navigate to a nested page
     await page
       .locator('[data-testid="sidebar"]')
-      .getByRole('link', { name: /workload explorer/i })
+      .getByRole('button', { name: /workload explorer/i })
       .click();
 
     await expect(page).toHaveURL(/\/workloads/);

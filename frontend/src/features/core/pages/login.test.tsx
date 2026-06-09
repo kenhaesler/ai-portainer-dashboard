@@ -82,10 +82,21 @@ describe('LoginPage', () => {
 
     expect(screen.getByTestId('login-gradient')).toBeInTheDocument();
     expect(screen.getByText(/Powered by AI/i)).toBeInTheDocument();
-    expect(screen.getByLabelText('Username')).toHaveValue('admin');
-    expect(screen.getByLabelText('Password')).toHaveValue('changeme123');
+    expect(screen.getByLabelText('Username')).toHaveValue('');
+    expect(screen.getByLabelText('Password')).toHaveValue('');
     expect(document.querySelectorAll('.login-particle')).toHaveLength(10);
     expect(screen.getByRole('img', { name: 'Brain logo' })).toBeInTheDocument();
+  });
+
+  it('renders the username and password fields empty on initial render', () => {
+    render(
+      <MemoryRouter>
+        <LoginPage />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByLabelText(/username/i)).toHaveValue('');
+    expect(screen.getByLabelText(/password/i)).toHaveValue('');
   });
 
   it('respects reduced motion by disabling decorative particles', () => {

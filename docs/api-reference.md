@@ -27,7 +27,7 @@ REST and real-time (Socket.IO) surface of the AI Portainer Dashboard backend. Al
 | `POST` | `/api/auth/refresh` | [AUTH] | Refresh the JWT/session |
 | `POST` | `/api/auth/stream-ticket` | [AUTH] | Issue a single-use SSE auth ticket (30s TTL) |
 | `GET` | `/api/auth/oidc/status` | — | OIDC enabled flag + authorization URL |
-| `POST` | `/api/auth/oidc/callback` | — | Exchange OIDC auth code for a session (rate-limited) |
+| `POST` | `/api/auth/oidc/callback` | — | Exchange OIDC auth code for a session (rate-limited). Returns `403` when `oidc.allow_unmapped_viewer` is off and the user's groups match no role mapping. |
 | `POST` | `/api/auth/oidc/logout` | [AUTH] | Log out of the OIDC session |
 | `GET` | `/api/auth/oidc/effective-redirect-uri` | [ADMIN] | Show the env-derived OIDC redirect URI |
 | `GET` | `/api/auth/oidc/discovered-groups` | [ADMIN] | OIDC groups observed from past logins |
@@ -202,6 +202,7 @@ See [AI & Anomaly Detection](ai-anomaly-detection.md) for detector semantics and
 | `POST` | `/api/users` | [ADMIN] | Create a user |
 | `PATCH` | `/api/users/:id` | [ADMIN] | Update a user |
 | `DELETE` | `/api/users/:id` | [ADMIN] | Delete a user (cannot delete self) |
+| `GET` | `/api/admin/system-info` | [ADMIN] | Key component versions (app, Node.js, Fastify) shown in Settings → General |
 | `GET` | `/api/admin/cache/stats` | [ADMIN] | Cache statistics + active entries |
 | `POST` | `/api/admin/cache/clear` | [ADMIN] | Clear all cache entries |
 | `POST` | `/api/admin/cache/invalidate` | [ADMIN] | Invalidate cache by resource pattern |

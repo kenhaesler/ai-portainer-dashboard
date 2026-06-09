@@ -69,11 +69,12 @@ test.describe('Workload Explorer filter dropdowns anchor to trigger', () => {
     await page.goto('/workloads', { waitUntil: 'domcontentloaded' });
     const trigger = page.locator('#endpoint-select');
     await expect(trigger).toBeAttached({ timeout: 15_000 });
-    // `{ timeout: 100 }` keeps the click attempt from blocking on a slow
-    // mount; `force: true` skips the actionability checks (visible, stable,
+    // `force: true` skips the actionability checks (visible, stable,
     // enabled) that would otherwise wait until the entrance animation
     // settles — defeating the point of the variation.
-    await trigger.click({ timeout: 100, force: true });
+    // force:true skips the actionability waits, so the click still races the
+    // entrance animation; the artificial 100ms cap just flaked on CI runners.
+    await trigger.click({ force: true });
     await expectAnchored(page, 'endpoint-select');
     await page.keyboard.press('Escape');
   });

@@ -22,13 +22,15 @@ import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { useEndpoints } from '@/features/containers/hooks/use-endpoints';
 import { useContainers } from '@/features/containers/hooks/use-containers';
 import { useStacks } from '@/features/containers/hooks/use-stacks';
-import { useContainerMetrics, useAnomalies, useNetworkRates, useAnomalyExplanations } from '@/features/observability/hooks/use-metrics';
+import { useContainerMetrics, useAnomalies, useNetworkRates, useAnomalyExplanations, useContainerMetricsMeta } from '@/features/observability/hooks/use-metrics';
+import { useHeaderContextStore } from '@/stores/header-context-store';
 import { useContainerForecast, useForecasts, useAiForecastNarrative, type CapacityForecast } from '@/features/observability/hooks/use-forecasts';
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
 import { MetricsLineChart } from '@/shared/components/charts/metrics-line-chart';
 import { AnomalySparkline } from '@/shared/components/charts/anomaly-sparkline';
 import { NetworkTrafficTooltip } from '@/shared/components/charts/network-traffic-tooltip';
 import { RefreshControls } from '@/shared/components/ui/refresh-controls';
+import { FleetSearch } from '@/features/containers/components/fleet/fleet-search';
 import { EmptyState } from '@/shared/components/feedback/empty-state';
 import { SkeletonText, SkeletonChart, SkeletonTableRow } from '@/shared/components/feedback/skeleton';
 import { DataTable } from '@/shared/components/tables/data-table';
@@ -79,6 +81,15 @@ const DEFAULT_MAX_POINTS = 240;
 function formatBytes(bytes: number): string {
   const mb = bytes / (1024 * 1024);
   return mb.toFixed(1);
+}
+
+// Compact MB/GB formatter for the memory denominator label. Intentionally simpler
+// than shared/lib/utils.ts:formatBytes — whole-MB rounding, no sub-MB units — to keep
+// the "used / limit" label terse.
+function formatMemSize(bytes: number): string {
+  const mb = bytes / (1024 * 1024);
+  if (mb >= 1024) return `${(mb / 1024).toFixed(1)} GB`;
+  return `${Math.round(mb)} MB`;
 }
 
 function exportToCSV(data: Array<{ timestamp: string; value: number }>, filename: string) {
@@ -135,6 +146,7 @@ export default function MetricsDashboardPage() {
   const [selectedEndpoint, setSelectedEndpoint] = useState<number | null>(null);
   const [selectedStack, setSelectedStack] = useState<string | null>(null);
   const [selectedContainer, setSelectedContainer] = useState<string | null>(null);
+  const [containerQuery, setContainerQuery] = useState('');
   const [timeRange, setTimeRange] = useState('1h');
   const [zoomLevel, setZoomLevel] = useState(1);
   const [chatOpen, setChatOpen] = useState(false);
@@ -179,15 +191,39 @@ export default function MetricsDashboardPage() {
       return resolvedStack === selectedStack;
     });
   }, [containers, selectedStack, stackNamesForEndpoint]);
+  const searchedContainers = useMemo(() => {
+    const q = containerQuery.trim().toLowerCase();
+    if (!q) return filteredContainers;
+    return filteredContainers.filter((container) => {
+      const stack = resolveContainerStackName(container, stackNamesForEndpoint) ?? NO_STACK_LABEL;
+      return container.name.toLowerCase().includes(q) || stack.toLowerCase().includes(q);
+    });
+  }, [filteredContainers, containerQuery, stackNamesForEndpoint]);
   const groupedContainerOptions = useMemo(
-    () => buildStackGroupedContainerOptions(filteredContainers, stackNamesForEndpoint),
-    [filteredContainers, stackNamesForEndpoint],
+    () => buildStackGroupedContainerOptions(searchedContainers, stackNamesForEndpoint),
+    [searchedContainers, stackNamesForEndpoint],
   );
   // Get selected container details
   const selectedContainerData = useMemo(() => {
     if (!allContainers || !selectedContainer) return null;
     return allContainers.find((c) => c.id === selectedContainer);
   }, [allContainers, selectedContainer]);
+
+  const setMetricsContainerName = useHeaderContextStore((s) => s.setMetricsContainerName);
+  const clearMetricsContainerName = useHeaderContextStore((s) => s.clearMetricsContainerName);
+
+  // Feed the selected container name to the shared header; clear on deselect/unmount.
+  useEffect(() => {
+    if (selectedContainerData?.name) {
+      setMetricsContainerName(selectedContainerData.name);
+    } else {
+      clearMetricsContainerName();
+    }
+  }, [selectedContainerData, setMetricsContainerName, clearMetricsContainerName]);
+
+  // Also clear on page unmount in case a container is still selected.
+  useEffect(() => () => clearMetricsContainerName(), [clearMetricsContainerName]);
+
   const networkTrafficData = useMemo(() => {
     if (!selectedContainerData) return [];
     const connectedNetworks = selectedContainerData.networks ?? [];
@@ -239,6 +275,11 @@ export default function MetricsDashboardPage() {
     selectedContainer ?? undefined,
     'memory_bytes',
     timeRange
+  );
+
+  const { data: containerMeta } = useContainerMetricsMeta(
+    selectedEndpoint ?? undefined,
+    selectedContainer ?? undefined,
   );
 
   // Fetch anomalies
@@ -328,6 +369,35 @@ export default function MetricsDashboardPage() {
     };
   }, [cpuData, memoryData, memoryBytesData]);
 
+  const selectedEndpointData = useMemo(
+    () => endpoints?.find((ep) => ep.id === selectedEndpoint) ?? null,
+    [endpoints, selectedEndpoint],
+  );
+
+  const cpuCoresLabel = useMemo(() => {
+    const cores = containerMeta?.onlineCpus ?? selectedEndpointData?.totalCpu ?? null;
+    if (!cores) return null;
+    const used = stats.cpu.avg / 100;
+    return `≈${used.toFixed(1)} of ${cores} core${cores === 1 ? '' : 's'} (max ${cores * 100}%)`;
+  }, [containerMeta, selectedEndpointData, stats.cpu.avg]);
+
+  const memoryDenominatorLabel = useMemo(() => {
+    const limit = containerMeta?.memoryLimitBytes ?? null;
+    const hostTotal = selectedEndpointData?.totalMemory ?? null;
+    // Numerator matches the "Avg Memory %" headline above this label: use the
+    // range-average used bytes (memoryBytesData is in MB → ×1MiB) when the series
+    // has data, falling back to the live `/meta` sample only when it's empty.
+    const avgUsedBytes = memoryBytesData.length > 0
+      ? stats.memoryBytes.avg * 1024 * 1024
+      : null;
+    const used = avgUsedBytes ?? containerMeta?.usedBytes ?? null;
+    if (limit == null || used == null) return null;
+    const isHostTotal = hostTotal != null && limit >= hostTotal * 0.99;
+    return isHostTotal
+      ? `${formatMemSize(used)} / ${formatMemSize(limit)} host (no limit set)`
+      : `${formatMemSize(used)} / ${formatMemSize(limit)} limit`;
+  }, [containerMeta, selectedEndpointData, stats.memoryBytes.avg, memoryBytesData]);
+
   const rankedForecasts = useMemo<RankedForecast[]>(() => {
     const forecasts = forecastOverviewQuery.data ?? [];
     return [...forecasts]
@@ -359,6 +429,7 @@ export default function MetricsDashboardPage() {
     setSelectedEndpoint(endpointId);
     setSelectedStack(null);
     setSelectedContainer(null);
+    setContainerQuery('');
   };
 
   const handleRefresh = () => {
@@ -502,6 +573,7 @@ export default function MetricsDashboardPage() {
                 setSelectedStack(val);
               }
               setSelectedContainer(null);
+              setContainerQuery('');
             }}
             placeholder="All stacks"
             disabled={!selectedEndpoint || containersLoading}
@@ -516,18 +588,28 @@ export default function MetricsDashboardPage() {
         </div>
 
         {/* Container Selector */}
-        <div className="flex items-center gap-2">
-          <Box className="h-4 w-4 text-muted-foreground" />
-          <ThemedSelect
-            value={selectedContainer ?? '__placeholder__'}
-            onValueChange={(val) => val !== '__placeholder__' && setSelectedContainer(val)}
-            placeholder="Select container..."
-            disabled={!selectedEndpoint || containersLoading}
-            options={[
-              { value: '__placeholder__', label: 'Select container...', disabled: true },
-              ...groupedContainerOptions,
-            ]}
+        <div className="flex flex-col gap-2 min-w-[16rem]">
+          <FleetSearch
+            key={`${selectedEndpoint ?? 'none'}-${selectedStack ?? 'all'}`}
+            label="Search containers"
+            placeholder="Search containers..."
+            onSearch={setContainerQuery}
+            totalCount={filteredContainers.length}
+            filteredCount={searchedContainers.length}
           />
+          <div className="flex items-center gap-2">
+            <Box className="h-4 w-4 text-muted-foreground" />
+            <ThemedSelect
+              value={selectedContainer ?? '__placeholder__'}
+              onValueChange={(val) => val !== '__placeholder__' && setSelectedContainer(val)}
+              placeholder="Select container..."
+              disabled={!selectedEndpoint || containersLoading}
+              options={[
+                { value: '__placeholder__', label: 'Select container...', disabled: true },
+                ...groupedContainerOptions,
+              ]}
+            />
+          </div>
         </div>
 
         {/* Time Range Selector */}
@@ -663,17 +745,19 @@ export default function MetricsDashboardPage() {
         <>
           {/* Container Info & Stats */}
           {selectedContainerData && (
-            <div className="grid gap-4 md:grid-cols-4">
-              <SpotlightCard>
-                <div className="rounded-lg border bg-card p-6 shadow-sm">
-                  <p className="text-sm font-medium text-muted-foreground">Container</p>
-                  <p className="mt-2 text-3xl font-bold tracking-tight truncate">{selectedContainerData.name}</p>
-                </div>
-              </SpotlightCard>
+            <div className="grid gap-4 md:grid-cols-3" data-testid="metrics-kpi-grid">
               <SpotlightCard>
                 <div className="rounded-lg border bg-card p-6 shadow-sm">
                   <p className="text-sm font-medium text-muted-foreground">Avg CPU</p>
                   <p className="mt-2 text-3xl font-bold tracking-tight">{stats.cpu.avg.toFixed(1)}%</p>
+                  {cpuCoresLabel && (
+                    <p
+                      className="text-xs text-muted-foreground mt-1"
+                      title="Docker stats convention — 100% = one full CPU core, so this peaks at 100% × online cores."
+                    >
+                      {cpuCoresLabel}
+                    </p>
+                  )}
                   <AnomalySparkline
                     values={cpuData.map((d) => d.value)}
                     anomalyIndices={cpuAnomalyIndices}
@@ -685,6 +769,14 @@ export default function MetricsDashboardPage() {
                 <div className="rounded-lg border bg-card p-6 shadow-sm">
                   <p className="text-sm font-medium text-muted-foreground">Avg Memory</p>
                   <p className="mt-2 text-3xl font-bold tracking-tight">{stats.memory.avg.toFixed(1)}%</p>
+                  {memoryDenominatorLabel && (
+                    <p
+                      className="text-xs text-muted-foreground mt-1"
+                      title="memory% = (usage − cache) ÷ limit. Unconstrained containers report the host's total RAM as the limit."
+                    >
+                      {memoryDenominatorLabel}
+                    </p>
+                  )}
                   <AnomalySparkline
                     values={memoryData.map((d) => d.value)}
                     anomalyIndices={memoryAnomalyIndices}
@@ -730,7 +822,7 @@ export default function MetricsDashboardPage() {
               description="No metrics have been recorded for this container in the selected time range. Containers record metrics every 60 seconds — try a wider time range or wait for collection."
             />
           ) : (
-            <div className="space-y-6">
+            <div className="grid gap-6 lg:grid-cols-2" data-testid="metrics-charts-grid">
               {/* CPU Chart */}
               <SpotlightCard>
               <div className="rounded-lg border bg-card p-6 shadow-sm">
