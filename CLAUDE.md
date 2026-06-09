@@ -14,6 +14,7 @@ AI-powered container monitoring dashboard extending Portainer with real-time ins
 4. **Never commit secrets** — No `.env`, API keys, passwords, or credentials.
 5. **Never work on `NO AI` issues** — Refuse and explain.
 6. **Ask before assuming** — If ambiguous, ask for clarification before proceeding.
+7. **Never wipe persistent data without explicit user authorization** — Do not run `docker volume rm`, `docker volume prune`, `docker compose down -v`, `docker compose rm -v`, `DROP DATABASE`, `TRUNCATE` on app tables, or any other action that destroys shared dev/test infrastructure (e.g. the `docker_postgres-app-data`, `docker_timescale-data`, `docker_redis-data` volumes). The dev DB carries the developer's working users, settings, history, and seeded data — wiping it is **not** an acceptable shortcut for fixing a stale password, a broken row, or a CI-only test issue. If a problem looks solvable by destroying data: (a) propose the targeted alternative instead (reset only the affected user's password via `UPDATE`, fix the specific row, etc.), and (b) ask first if destruction really is the only path. **This rule applies to subagents and parallel work too** — when dispatching a subagent that may touch docker volumes or databases, restate this rule explicitly in the brief.
 
 ## Build Commands
 
@@ -38,6 +39,8 @@ npm run test -w frontend   # Frontend only
 Backend uses npm workspaces under `packages/` with a `core/` kernel (`@dashboard/core`). See `@docs/ai-instructions/architecture.md` for complete directory structure. See `@packages/core/src/CLAUDE.md` for kernel boundaries and security-critical files.
 
 **Portainer data source:** All endpoint container counts, host CPU/memory, and stack totals come from live `/docker/info` calls — Portainer's per-endpoint `Snapshots[]` is **not read**. The pipeline lives in `packages/core/src/portainer/live-fleet.ts` (`enrichEndpointsWithLiveDockerInfo`, `attachStackCounts`, `computeFleetTotals`, `collectFleetOverview`). Up Docker endpoints are `live`; Edge Async (Type 7) and any down or non-Docker endpoint are `unavailable`. `EDGE_LIVE_QUERY_ENABLED=false` is a hard kill-switch — all endpoints become `unavailable` with no fallback. Our `kpi_snapshots`/`monitoring_snapshots` history tables are unchanged; only their inputs are now live.
+
+**Metrics Dashboard resource labels (#1429):** The Metrics Dashboard (`/metrics`) surfaces per-container CPU%/memory% **denominators**. CPU% keeps the Docker `docker stats` convention (100% = one core) with an "of N cores (max N×100%)" sub-label; memory% shows `used / limit` and flags host-total when no limit is set. The limit + online-CPU count come from a read-only `GET /api/metrics/:endpointId/:containerId/meta` endpoint (`packages/observability/src/routes/metrics.ts`) that projects the already-cached Docker stats into `{ memoryLimitBytes, onlineCpus, usedBytes }` — no schema change, no persisted data, `authenticate`-only, and degrades to nulls when stats are unavailable (a `0` limit is treated as unset). Containers are filtered with a `FleetSearch` box above the selector. The selected container name appears in the global header via the ephemeral `useHeaderContextStore` slice (`frontend/src/stores/header-context-store.ts`), set by the page and cleared on unmount.
 
 ## Security (Mandatory)
 
