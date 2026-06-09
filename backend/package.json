@@ -35,7 +35,7 @@
     "fastify-plugin": "^5.0.1",
     "fastify-type-provider-zod": "^6.1.0",
     "jose": "^6.2.3",
-    "nodemailer": "^8.0.9",
+    "nodemailer": "^8.0.10",
     "openid-client": "^6.8.4",
     "p-limit": "^7.3.0",
     "pg": "^8.21.0",
@@ -49,7 +49,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/bcrypt": "^6.0.0",
-    "@types/node": "^25.9.1",
+    "@types/node": "^25.9.2",
     "@types/nodemailer": "^8.0.0",
     "@types/pg": "^8.20.0",
     "@types/uuid": "^11.0.0",
