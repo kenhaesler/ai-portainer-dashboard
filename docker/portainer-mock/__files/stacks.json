@@ -1,0 +1,4 @@
+[
+  { "Id": 1, "Name": "shop", "Type": 1, "EndpointId": 1, "Status": 1, "Env": [] },
+  { "Id": 2, "Name": "infra", "Type": 1, "EndpointId": 1, "Status": 1, "Env": [] }
+]

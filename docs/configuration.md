@@ -17,6 +17,20 @@ All configuration is done via environment variables. Copy [`.env.example`](../.e
 | `DASHBOARD_PASSWORD` | Dashboard login password | `changeme123` |
 | `JWT_SECRET` | JWT signing secret (32+ chars in production) | *(auto-generated in dev)* |
 
+### ⚠️ Breaking change — OIDC access restricted to defined groups (upgrade note)
+
+OIDC/SSO is configured in **Settings → Security** (stored in the database, not via env vars). As of this release, OIDC access is **restrictive by default**: the new `oidc.allow_unmapped_viewer` toggle ("Grant viewer role to all IDP users") defaults to **off**.
+
+- **Before:** any user who authenticated via the IdP received at least `viewer` access, even when their groups matched no group→role mapping.
+- **After (default off):** an OIDC login that resolves to no mapped role (and no `*` wildcard) is **denied `403`** (`oidc_login_denied` audit), and any lingering server-side sessions for that user are revoked. This is enforced for **new and existing** users — removing a user from a mapped IdP group revokes their access at the next login.
+
+**Action required before/after upgrading an OIDC deployment** — to avoid locking out legitimate users, do one of:
+1. Define the appropriate **Group-to-Role Mappings** in Settings → Security (recommended), or
+2. Add a `*` wildcard mapping (e.g. `{ "*": "viewer" }`) to admit any authenticated IdP user, including those who present no groups, or
+3. Turn the **"Grant viewer role to all IDP users"** toggle **on** to keep the previous permissive behavior.
+
+**Local username/password auth is unaffected**, so the local admin account cannot be locked out by this change.
+
 ## AI / LLM
 
 The dashboard targets a single OpenAI-compatible chat-completions API (OpenAI, LM Studio, vLLM, LiteLLM, OpenWebUI, Anthropic via proxy, etc.). The bare base URL is sufficient — `/v1/chat/completions` is appended automatically.

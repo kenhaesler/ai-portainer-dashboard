@@ -45,8 +45,8 @@ export default function LoginPage() {
   const potatoMode = useUiStore((state) => state.potatoMode);
   const prefersReducedMotion = usePrefersReducedMotion();
   const reducedMotion = prefersReducedMotion || potatoMode;
-  const [username, setUsername] = useState("admin");
-  const [password, setPassword] = useState("changeme123");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitState, setSubmitState] = useState<"idle" | "loading" | "success">("idle");
   const [showPostLoginLoading, setShowPostLoginLoading] = useState(false);

@@ -7,8 +7,9 @@ test.describe('Smoke Tests', () => {
   test('login flow redirects to dashboard', async ({ page }) => {
     await page.goto('/');
 
-    // Should see login form
-    await expect(page.getByRole('heading', { name: /sign in|login/i })).toBeVisible({ timeout: 10_000 });
+    // Should see the login page — the heading is "Docker Insights"
+    // (not "Sign in"; that copy is a <p> subtitle, not a heading).
+    await expect(page.getByRole('heading', { name: /docker insights/i })).toBeVisible({ timeout: 10_000 });
 
     // Fill credentials and submit
     await page.getByLabel(/username/i).fill(USERNAME);

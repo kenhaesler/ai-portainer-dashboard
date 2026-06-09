@@ -14,6 +14,10 @@ This file provides guidance to AI coding assistants (GitHub Copilot, Cursor, Win
 6. **Regression Testing** — Every security fix must include a corresponding test in `backend/src/routes/security-regression-*.test.ts`. Add the test to the file matching your domain (auth, rbac, headers, prompt-guard, sockets, stream-tickets, jwt, infra), or create a new per-domain file if none fits.
 7. **Observer-First Integrity** — Mutating actions (restart/stop containers) are strictly opt-in and must be gated by both an 'Admin' role and a 'Remediation Approval' workflow.
 
+## Data Safety (Mandatory)
+
+**Never wipe persistent data without explicit user authorization.** Do not run destructive operations on shared dev/test infrastructure — `docker volume rm` / `docker volume prune`, `docker compose down -v` / `rm -v`, `DROP DATABASE`, or `TRUNCATE` on app tables (e.g. the `docker_postgres-app-data`, `docker_timescale-data`, `docker_redis-data` volumes). The dev DB holds the developer's working users, settings, history, and seeded data — wiping it is not an acceptable shortcut for a stale password, a broken row, or a CI-only test issue. Propose the targeted alternative (e.g. `UPDATE` the affected row) and ask first. This applies to subagents and parallel work too. (Canonical: `CLAUDE.md` rule #7.)
+
 ## Testing & Mocks
 
 **Tests required** — Every change needs tests. PRs without tests are blocked by CI. Backend: `backend/src/**/*.test.ts`, Packages: `packages/*/src/**/*.test.ts`, Frontend: `frontend/src/**/*.test.{ts,tsx}`, E2E: `e2e/*.spec.ts`. Both use Vitest; frontend uses jsdom + `@testing-library/react`. Never use `--no-verify`.

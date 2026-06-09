@@ -160,6 +160,41 @@ describe('adaptive-anomaly-detector', () => {
       expect(result!.z_score).toBe(0);
     });
 
+    // #1391 — a near-constant baseline yields a floating-point std_dev (~5.6e-17),
+    // which slips past the strict `std_dev === 0` guard. The raw (value-mean)/std_dev
+    // then explodes to an astronomical z-score (the reported ~1.78e14) and the tiny,
+    // operationally-meaningless deviation is flagged as an anomaly.
+    it('does not flag a tiny deviation when std dev is near-zero floating-point noise (#1391)', async () => {
+      mockGetMovingAverage.mockResolvedValue({ mean: 0.16, std_dev: 5.6e-17, sample_count: 15 });
+      // Mirrors the bug report: memory 0.17 vs mean 0.16.
+      const result = await detectAnomalyAdaptive('c1', 'web', 'memory', 0.17, 'adaptive', mockGetMovingAverage);
+      expect(result).not.toBeNull();
+      expect(result!.is_anomalous).toBe(false);
+      // The z-score must stay finite/small, not the astronomical ~1.78e14 from the report.
+      expect(Math.abs(result!.z_score)).toBeLessThan(10);
+    });
+
+    // Drives a *relative* floor (not just an absolute FP epsilon): a genuinely tiny
+    // but non-trivial variance on a low mean is still effectively constant, so a
+    // sub-tolerance deviation must not be flagged.
+    it('does not flag a sub-tolerance deviation when variance is negligible vs the mean (#1391)', async () => {
+      mockGetMovingAverage.mockResolvedValue({ mean: 0.16, std_dev: 1e-5, sample_count: 15 });
+      const result = await detectAnomalyAdaptive('c1', 'web', 'memory', 0.17, 'adaptive', mockGetMovingAverage);
+      expect(result).not.toBeNull();
+      expect(result!.is_anomalous).toBe(false);
+      expect(Math.abs(result!.z_score)).toBeLessThan(10);
+    });
+
+    // Guard against over-correction: a real jump on a near-constant baseline must
+    // still be flagged via the percentage-tolerance rule.
+    it('still flags a genuine spike on a near-constant baseline (#1391)', async () => {
+      mockGetMovingAverage.mockResolvedValue({ mean: 0.16, std_dev: 5.6e-17, sample_count: 15 });
+      const result = await detectAnomalyAdaptive('c1', 'web', 'memory', 0.5, 'adaptive', mockGetMovingAverage);
+      expect(result).not.toBeNull();
+      expect(result!.is_anomalous).toBe(true);
+      expect(Number.isFinite(result!.z_score)).toBe(true);
+    });
+
     // #1362 — robust median+MAD detection (one-sided, outlier-resistant).
     describe('detectAnomalyRobust', () => {
       // median 50, MAD 4 → modified-z threshold (2.5) is crossed at value > ~64.8.
@@ -209,6 +244,27 @@ describe('adaptive-anomaly-detector', () => {
         const tiny = await detectAnomalyRobust('c1', 'web', 'cpu', 50.2, getWindow);
         expect(spike!.is_anomalous).toBe(true);
         expect(tiny!.is_anomalous).toBe(false); // within 10% tolerance of median
+      });
+
+      // #1391 — same class of bug as the mean/std path, in the default detector.
+      // A baseline that jitters by ±1e-5 around 0.16 has a tiny but NON-zero MAD,
+      // so the strict `mad === 0` guard is skipped and the modified z-score
+      // (0.6745·Δ/MAD) explodes — flagging an operationally-meaningless deviation.
+      const nearConstant = () => Array.from({ length: 12 }, (_, i) => 0.16 + (i % 2 === 0 ? -1e-5 : 1e-5));
+
+      it('does not flag a sub-tolerance deviation when MAD is near-zero, not exactly 0 (#1391)', async () => {
+        const getWindow = vi.fn().mockResolvedValue(nearConstant());
+        const r = await detectAnomalyRobust('c1', 'web', 'memory', 0.165, getWindow);
+        expect(r).not.toBeNull();
+        expect(r!.is_anomalous).toBe(false);
+        expect(Math.abs(r!.z_score)).toBeLessThan(10);
+      });
+
+      it('still flags a genuine spike when MAD is near-zero (#1391)', async () => {
+        const getWindow = vi.fn().mockResolvedValue(nearConstant());
+        const r = await detectAnomalyRobust('c1', 'web', 'memory', 0.5, getWindow);
+        expect(r!.is_anomalous).toBe(true);
+        expect(Number.isFinite(r!.z_score)).toBe(true);
       });
 
       // #1362 review — keep #1295 seasonality: prefer the hour-of-day window.

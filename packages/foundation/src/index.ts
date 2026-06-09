@@ -16,4 +16,6 @@ export { oidcRoutes } from './routes/oidc.js';
 export { searchRoutes } from './routes/search.js';
 export { settingsRoutes } from './routes/settings.js';
 export { stacksRoutes } from './routes/stacks.js';
+export { systemInfoRoutes } from './routes/system-info.js';
+export type { SystemInfoRoutesOpts } from './routes/system-info.js';
 export { userRoutes } from './routes/users.js';

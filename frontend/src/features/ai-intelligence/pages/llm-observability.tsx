@@ -252,14 +252,14 @@ export default function LlmObservabilityPage() {
 
       {/* KPI Cards */}
       {showStatsSkeleton ? (
-        <div className="grid gap-4 md:grid-cols-4">
+        <div className="grid gap-6 md:grid-cols-4">
           <SkeletonKpi />
           <SkeletonKpi />
           <SkeletonKpi />
           <SkeletonKpi />
         </div>
       ) : (
-        <div className="grid gap-4 md:grid-cols-4">
+        <div className="grid gap-6 md:grid-cols-4">
           <TiltCard>
             <KpiCard
               label="Total Queries"

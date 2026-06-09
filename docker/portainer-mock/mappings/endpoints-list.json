@@ -1,0 +1,1 @@
+{ "request": { "method": "GET", "urlPath": "/api/endpoints" }, "response": { "status": 200, "headers": { "Content-Type": "application/json" }, "bodyFileName": "endpoints.json" } }

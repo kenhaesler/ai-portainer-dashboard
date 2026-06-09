@@ -86,6 +86,25 @@ export function useContainerMetrics(
   });
 }
 
+export interface ContainerMetricsMeta {
+  memoryLimitBytes: number | null;
+  onlineCpus: number | null;
+  usedBytes: number | null;
+}
+
+export function useContainerMetricsMeta(
+  endpointId: number | undefined,
+  containerId: string | undefined,
+) {
+  return useQuery<ContainerMetricsMeta>({
+    queryKey: ['metrics', 'meta', endpointId, containerId],
+    queryFn: () =>
+      api.get<ContainerMetricsMeta>(`/api/metrics/${endpointId}/${containerId}/meta`),
+    enabled: Boolean(endpointId) && Boolean(containerId),
+    staleTime: 60_000,
+  });
+}
+
 export function useAnomalies() {
   return useQuery<Anomaly[]>({
     queryKey: ['metrics', 'anomalies'],

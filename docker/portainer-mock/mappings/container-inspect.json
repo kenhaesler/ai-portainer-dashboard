@@ -1,0 +1,1 @@
+{ "priority": 1, "request": { "method": "GET", "urlPathPattern": "/api/endpoints/[0-9]+/docker/containers/[a-f0-9]+/json" }, "response": { "status": 200, "headers": { "Content-Type": "application/json" }, "bodyFileName": "container-inspect.json" } }

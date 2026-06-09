@@ -50,8 +50,9 @@ test.describe('Metrics Dashboard', () => {
       page.getByRole('heading', { name: /metrics dashboard/i, level: 1 }),
     ).toBeVisible({ timeout: 15_000 });
 
+    // Buttons render full labels: "15 min", "1 hour", "6 hours", "7 days".
     const ranges = page.getByRole('button', {
-      name: /^\s*\d+\s*(m|h|d)\s*$/i,
+      name: /^\s*\d+\s*(min|hour|day)s?\s*$/i,
     });
     const rangeCount = await ranges.count();
     expect(rangeCount).toBeGreaterThanOrEqual(2);
