@@ -646,11 +646,10 @@ export function createMonitoringService(deps: MonitoringDeps) {
               'Analyze the current infrastructure state. Identify the top 3 most important ' +
               'issues or recommendations. Be specific and actionable. Format each as a brief title and description.';
 
-            let aiResponse = '';
-            await chatStream(
+            const aiResponse = await chatStream(
               [{ role: 'user', content: analysisPrompt }],
               systemPrompt,
-              (chunk) => { aiResponse += chunk; },
+              () => {},
               'monitoring_analysis',
             );
 

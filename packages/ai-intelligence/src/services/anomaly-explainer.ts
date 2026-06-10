@@ -29,11 +29,12 @@ export async function explainAnomaly(
   // Try up to 2 attempts (initial + 1 retry for timeout errors)
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      let response = '';
-      await chatStream(
+      // Use the return value, not accumulated chunks — chatStream sanitizes
+      // the full response centrally before returning it.
+      const response = await chatStream(
         [{ role: 'user', content: userPrompt }],
         await getEffectivePrompt('anomaly_explainer'),
-        (chunk) => { response += chunk; },
+        () => {},
         'anomaly_explainer',
       );
 
@@ -128,11 +129,10 @@ export async function explainAnomalies(
       `What does it mean and what might cause it? ` +
       `Reply with the same numbered format [1], [2], etc.\n\n${anomalyList}`;
 
-    let response = '';
-    await chatStream(
+    const response = await chatStream(
       [{ role: 'user', content: userPrompt }],
       await getEffectivePrompt('anomaly_explainer'),
-      (chunk) => { response += chunk; },
+      () => {},
       'anomaly_explainer',
     );
 

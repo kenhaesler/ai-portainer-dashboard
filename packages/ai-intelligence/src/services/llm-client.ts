@@ -6,6 +6,7 @@ import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { getConfig } from '@dashboard/core/config/index.js';
 import { getEffectiveLlmConfig, type PromptFeature } from './prompt-store.js';
 import { insertLlmTrace } from './llm-trace-store.js';
+import { isPromptInjection, sanitizeLlmOutput } from './prompt-guard.js';
 import { withSpan } from '@dashboard/core/tracing/trace-context.js';
 import { scrubPii, scrubPiiDeep } from '@dashboard/core/utils/pii-scrubber.js';
 import type { NormalizedEndpoint, NormalizedContainer } from '@dashboard/core/portainer/portainer-normalizers.js';
@@ -194,6 +195,25 @@ export async function chatStream(
   onChunk: (chunk: string) => void,
   feature?: PromptFeature,
 ): Promise<string> {
+  // Choke-point prompt guard: every chatStream caller funnels through here,
+  // including internal flows (log analysis, anomaly explanation, incident
+  // summaries, investigations, remediation, PCAP, forecasts, correlations)
+  // whose user-role content embeds container-derived data an attacker can
+  // influence — log lines, container names, insight descriptions. Guarding
+  // here means a new caller cannot forget the guard. Internal callers treat
+  // the throw like any other LLM failure and degrade gracefully.
+  for (const message of messages) {
+    if (message.role !== 'user') continue;
+    const guard = isPromptInjection(message.content);
+    if (guard.blocked) {
+      log.warn(
+        { feature, reason: guard.reason, score: guard.score },
+        'LLM request blocked by prompt-injection guard',
+      );
+      throw new Error('LLM request blocked by prompt-injection guard');
+    }
+  }
+
   return llmLimit(() =>
     withSpan('LLM chat', 'llm-service', 'client', () =>
       chatStreamInner(messages, systemPrompt, onChunk, feature),
@@ -304,6 +324,13 @@ async function chatStreamInner(
     const promptTokens = estimateTokens(fullMessages.map((m) => m.content).join(''));
     const completionTokens = estimateTokens(fullResponse);
 
+    // Choke-point output sanitization: strip thinking blocks, leaked
+    // tool-call JSON, and system-prompt leak patterns before the response
+    // is returned to callers (and persisted in traces/insights). Streamed
+    // chunks via onChunk are necessarily raw — live-stream consumers (chat
+    // socket, SSE summaries) apply their own final-message sanitization.
+    const sanitizedResponse = sanitizeLlmOutput(fullResponse);
+
     try {
       await insertLlmTrace({
         trace_id: correlationId,
@@ -314,7 +341,7 @@ async function chatStreamInner(
         latency_ms: latencyMs,
         status: 'success',
         user_query: userQuery?.slice(0, 500),
-        response_preview: fullResponse.slice(0, 500),
+        response_preview: sanitizedResponse.slice(0, 500),
       });
     } catch (traceErr) {
       log.warn({ err: traceErr }, 'Failed to record LLM trace');
@@ -334,7 +361,7 @@ async function chatStreamInner(
       },
       'LLM chat stream completed',
     );
-    return fullResponse;
+    return sanitizedResponse;
   } catch (err) {
     const latencyMs = Date.now() - startTime;
     try {

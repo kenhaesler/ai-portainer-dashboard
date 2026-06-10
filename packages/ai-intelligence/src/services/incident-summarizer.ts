@@ -25,11 +25,10 @@ export async function generateLlmIncidentSummary(
       `Number of alerts: ${insights.length}\n\n` +
       `Alerts:\n${alertDescriptions}`;
 
-    let response = '';
-    await chatStream(
+    const response = await chatStream(
       [{ role: 'user', content: userPrompt }],
       await getEffectivePrompt('incident_summarizer'),
-      (chunk) => { response += chunk; },
+      () => {},
       'incident_summarizer',
     );
 

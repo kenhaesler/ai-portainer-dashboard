@@ -33,11 +33,13 @@ export async function analyzeContainerLogs(
       return null;
     }
 
-    let response = '';
-    await chatStream(
+    // Use the return value, not accumulated chunks — chatStream guards the
+    // log content (attacker-writable via container stdout) and sanitizes the
+    // full response centrally. A guard block throws and is caught below.
+    const response = await chatStream(
       [{ role: 'user', content: `Analyze these container logs from "${containerName}":\n\n${logs.slice(0, 4000)}` }],
       await getEffectivePrompt('log_analyzer'),
-      (chunk) => { response += chunk; },
+      () => {},
       'log_analyzer',
     );
 

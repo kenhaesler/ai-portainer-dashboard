@@ -30,7 +30,7 @@ File: `packages/ai-intelligence/src/services/prompt-guard.ts`
 2. **Heuristic scoring**: role-play detection, base64 encoding, multilingual injection
 3. **Output sanitization**: system prompt leaks, sentinel phrases, tool definition exposure
 
-Applied to: REST `/api/llm/query` and WebSocket `chat:message`.
+Applied to: enforced centrally in `chatStream()` (`packages/ai-intelligence/src/services/llm-client.ts`) — every user-role message is guarded before the LLM call and the returned response is sanitized. This covers all internal flows (log analysis, anomaly explanation, incident summaries, investigations, remediation, PCAP analysis, forecasts, correlations) plus REST `/api/llm/query` and WebSocket `chat:message`, which additionally apply their own user-facing block messages and per-session canary checks. Callers must use `chatStream`'s return value rather than re-accumulating raw `onChunk` chunks.
 Configurable: `LLM_PROMPT_GUARD_STRICT` env var.
 
 ## Secrets & Credentials
