@@ -98,9 +98,28 @@ export async function deleteUser(id: string): Promise<boolean> {
   return result.changes > 0;
 }
 
+// Lazily-computed bcrypt hash used to equalise the timing of the
+// username-not-found path with the found path (anti username-enumeration).
+// Computed once (one bcrypt op) then reused; the comparison cost matches a
+// real login because both run bcrypt at the same cost factor.
+let dummyHashPromise: Promise<string> | null = null;
+function getDummyHash(): Promise<string> {
+  if (!dummyHashPromise) {
+    dummyHashPromise = hashPassword('dummy-password-for-constant-time-auth');
+  }
+  return dummyHashPromise;
+}
+
 export async function authenticateUser(username: string, password: string): Promise<User | null> {
   const user = await getUserByUsername(username);
-  if (!user) return null;
+  if (!user) {
+    // Perform an equivalent bcrypt comparison against a throwaway hash so an
+    // unknown username takes the same time as a known one. Without this, the
+    // early return (no bcrypt) makes valid vs. invalid usernames distinguishable
+    // by response latency, enabling username enumeration.
+    await comparePassword(password, await getDummyHash());
+    return null;
+  }
   const valid = await comparePassword(password, user.password_hash);
   return valid ? user : null;
 }

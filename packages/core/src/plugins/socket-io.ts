@@ -5,10 +5,32 @@ import { IncomingMessage } from 'http';
 import { verifyJwt } from '../utils/crypto.js';
 import { createChildLogger } from '../utils/logger.js';
 import { getSession } from '../services/session-store.js';
+import { getUserById } from '../services/user-store.js';
 import { DEV_ALLOWED_ORIGINS } from './dev-origins.js';
 import { getAllowedOrigins } from './allowed-origins.js';
 
 const log = createChildLogger('socket.io');
+
+/** How often live sockets re-validate their session/role (ms). */
+export const SOCKET_REVALIDATE_INTERVAL_MS = 60_000;
+
+/**
+ * Decide whether a live socket should be torn down. Socket auth/authz only runs
+ * at handshake time, so without this a logged-out / demoted / deleted user keeps
+ * full socket access until the JWT expires (REST re-checks every request).
+ *
+ * Exported as a pure function for testing.
+ */
+export function socketRevalidationVerdict(
+  session: { user_id: string } | null | undefined,
+  expectedSub: string,
+  requireAdmin: boolean,
+  dbRole: string | undefined,
+): 'ok' | 'session-invalid' | 'role-lost' {
+  if (!session || session.user_id !== expectedSub) return 'session-invalid';
+  if (requireAdmin && dbRole !== 'admin') return 'role-lost';
+  return 'ok';
+}
 
 interface SocketUser {
   sub: string;
@@ -158,6 +180,36 @@ async function socketIoPlugin(fastify: FastifyInstance) {
     }
     next();
   });
+
+  // Periodic live re-validation. Handshake auth runs once; this catches a
+  // session that is later revoked (logout, admin force-revoke, user deletion,
+  // OIDC group-mapping change) or an admin demoted out of the remediation role,
+  // disconnecting the socket instead of letting it survive for the full JWT TTL.
+  for (const ns of [llmNamespace, monitoringNamespace, remediationNamespace]) {
+    const requireAdmin = ns === remediationNamespace;
+    ns.on('connection', (socket) => {
+      const user = socket.data.user as SocketUser | undefined;
+      if (!user) return;
+      const timer = setInterval(() => {
+        void (async () => {
+          try {
+            const session = await getSession(user.sessionId);
+            const dbUser = requireAdmin ? await getUserById(user.sub) : undefined;
+            const verdict = socketRevalidationVerdict(session, user.sub, requireAdmin, dbUser?.role);
+            if (verdict !== 'ok') {
+              log.info({ userId: user.sub, ns: ns.name, verdict }, 'Disconnecting socket on revalidation');
+              socket.disconnect(true);
+            }
+          } catch (err) {
+            log.warn({ err: (err as Error).message, userId: user.sub }, 'Socket revalidation check failed');
+          }
+        })();
+      }, SOCKET_REVALIDATE_INTERVAL_MS);
+      // Don't keep the event loop alive solely for this timer.
+      timer.unref?.();
+      socket.on('disconnect', () => clearInterval(timer));
+    });
+  }
 
   fastify.decorate('io', io);
   fastify.decorate('ioNamespaces', {

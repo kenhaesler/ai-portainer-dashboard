@@ -21,6 +21,7 @@ import {
 import { getEffectivePrompt, PROMPT_FEATURES, type PromptFeature } from '../services/prompt-store.js';
 import { writeAuditLog } from '@dashboard/core/services/audit-logger.js';
 import { getAuthHeaders, llmFetch, resolveChatCompletionsUrl } from '../services/llm-client.js';
+import { isPromptInjection } from '../services/prompt-guard.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 
 const log = createChildLogger('llm-feedback-routes');
@@ -260,9 +261,18 @@ export async function llmFeedbackRoutes(fastify: FastifyInstance) {
     const currentPrompt = await getEffectivePrompt(feature as PromptFeature);
     const featureInfo = PROMPT_FEATURES.find(f => f.key === feature);
 
-    // Build the analysis prompt for the LLM
-    const feedbackSummary = negativeFeedback
-      .filter(f => f.comment)
+    // Build the analysis prompt for the LLM. Feedback comments are submitted by
+    // any authenticated user and are sent to the model via a raw llmFetch (not
+    // the chatStream chokepoint), so they must be run through the prompt-injection
+    // guard here — otherwise a user can smuggle injection text into the
+    // admin-triggered suggestion call. Flagged comments are dropped.
+    const commentedFeedback = negativeFeedback.filter(f => f.comment);
+    const safeFeedback = commentedFeedback.filter(f => !isPromptInjection(f.comment!).blocked);
+    const droppedForInjection = commentedFeedback.length - safeFeedback.length;
+    if (droppedForInjection > 0) {
+      log.warn({ feature, droppedForInjection }, 'Dropped feedback comments flagged as prompt injection before LLM analysis');
+    }
+    const feedbackSummary = safeFeedback
       .map((f, i) => `${i + 1}. [${f.rating}] ${f.comment}`)
       .join('\n');
 

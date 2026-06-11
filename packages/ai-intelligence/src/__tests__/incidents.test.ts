@@ -81,6 +81,41 @@ describe('incidents routes', () => {
         expect.objectContaining({ status: 'active' }),
       );
     });
+
+    // SECURITY REGRESSION: unbounded pagination DoS — limit must be coerced and
+    // capped (max 1000) and an over-limit / non-numeric value must be rejected,
+    // never passed through to the SQL LIMIT.
+    it('rejects an over-limit value with 400 and does not query', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/incidents?limit=100000000',
+      });
+      expect(response.statusCode).toBe(400);
+      expect(mockedGetIncidents).not.toHaveBeenCalled();
+    });
+
+    it('rejects a non-numeric limit with 400', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/incidents?limit=abc',
+      });
+      expect(response.statusCode).toBe(400);
+      expect(mockedGetIncidents).not.toHaveBeenCalled();
+    });
+
+    it('defaults limit/offset to bounded values when omitted', async () => {
+      await app.inject({ method: 'GET', url: '/api/incidents' });
+      expect(mockedGetIncidents).toHaveBeenCalledWith(
+        expect.objectContaining({ limit: 50, offset: 0 }),
+      );
+    });
+
+    it('accepts an in-range limit', async () => {
+      await app.inject({ method: 'GET', url: '/api/incidents?limit=1000&offset=5' });
+      expect(mockedGetIncidents).toHaveBeenCalledWith(
+        expect.objectContaining({ limit: 1000, offset: 5 }),
+      );
+    });
   });
 
   describe('GET /api/incidents/groups', () => {

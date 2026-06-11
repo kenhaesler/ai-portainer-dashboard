@@ -22,8 +22,14 @@ vi.mock('../services/session-store.js', () => ({
   getSession: (...args: unknown[]) => mockGetSession(...args),
 }));
 
+// user-store is pulled in by the live-revalidation logic; mock so the plugin
+// loads without a real DB.
+vi.mock('../services/user-store.js', () => ({
+  getUserById: vi.fn(),
+}));
+
 import socketIoPlugin from './socket-io.js';
-import { authenticateSocketToken, verifyTransportRequest } from './socket-io.js';
+import { authenticateSocketToken, verifyTransportRequest, socketRevalidationVerdict } from './socket-io.js';
 import { IncomingMessage } from 'http';
 
 describe('socket-io plugin', () => {
@@ -309,5 +315,32 @@ describe('verifyTransportRequest (Engine.IO allowRequest)', () => {
     const cb = vi.fn();
     await verifyTransportRequest(fakeReq('/socket.io/?EIO=4&transport=polling&token=valid'), cb);
     expect(cb).toHaveBeenCalledWith(null, true);
+  });
+});
+
+// SECURITY REGRESSION: live sockets must be torn down when the session is
+// revoked or an admin loses the role — handshake-time checks are not enough.
+describe('socketRevalidationVerdict', () => {
+  const session = { user_id: 'u1' };
+
+  it('returns ok for a still-valid session (non-admin namespace)', () => {
+    expect(socketRevalidationVerdict(session, 'u1', false, undefined)).toBe('ok');
+  });
+
+  it('flags a revoked/expired session (getSession returned null)', () => {
+    expect(socketRevalidationVerdict(null, 'u1', false, undefined)).toBe('session-invalid');
+  });
+
+  it('flags a session that no longer belongs to the expected user (deleted/reissued)', () => {
+    expect(socketRevalidationVerdict({ user_id: 'someone-else' }, 'u1', false, undefined)).toBe('session-invalid');
+  });
+
+  it('keeps an admin on the remediation namespace while still admin', () => {
+    expect(socketRevalidationVerdict(session, 'u1', true, 'admin')).toBe('ok');
+  });
+
+  it('flags an admin who was downgraded (remediation namespace)', () => {
+    expect(socketRevalidationVerdict(session, 'u1', true, 'operator')).toBe('role-lost');
+    expect(socketRevalidationVerdict(session, 'u1', true, undefined)).toBe('role-lost');
   });
 });

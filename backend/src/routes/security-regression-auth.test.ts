@@ -76,6 +76,8 @@ vi.mock('@dashboard/core/services/user-store.js', () => ({
   createUser: vi.fn(),
   updateUser: vi.fn(),
   deleteUser: vi.fn(),
+  getUserById: vi.fn(),
+  upsertOIDCUser: vi.fn(),
   hasMinRole: vi.fn(() => false),
 }));
 
@@ -1056,6 +1058,9 @@ describe('OIDC Restrict-to-Mapped-Groups Enforcement', () => {
   let exchangeCode: ReturnType<typeof vi.fn>;
   let createSession: ReturnType<typeof vi.fn>;
   let writeAuditLog: ReturnType<typeof vi.fn>;
+  let invalidateAllUserSessions: ReturnType<typeof vi.fn>;
+  let getUserById: ReturnType<typeof vi.fn>;
+  let upsertOIDCUser: ReturnType<typeof vi.fn>;
 
   const restrictiveConfig = {
     enabled: true,
@@ -1078,10 +1083,14 @@ describe('OIDC Restrict-to-Mapped-Groups Enforcement', () => {
     const oidc = await import('@dashboard/core/services/oidc.js');
     const sessions = await import('@dashboard/core/services/session-store.js');
     const audit = await import('@dashboard/core/services/audit-logger.js');
+    const users = await import('@dashboard/core/services/user-store.js');
     getOIDCConfig = vi.mocked(oidc.getOIDCConfig) as unknown as ReturnType<typeof vi.fn>;
     exchangeCode = vi.mocked(oidc.exchangeCode) as unknown as ReturnType<typeof vi.fn>;
     createSession = vi.mocked(sessions.createSession) as unknown as ReturnType<typeof vi.fn>;
     writeAuditLog = vi.mocked(audit.writeAuditLog) as unknown as ReturnType<typeof vi.fn>;
+    invalidateAllUserSessions = vi.mocked(sessions.invalidateAllUserSessions) as unknown as ReturnType<typeof vi.fn>;
+    getUserById = vi.mocked(users.getUserById) as unknown as ReturnType<typeof vi.fn>;
+    upsertOIDCUser = vi.mocked(users.upsertOIDCUser) as unknown as ReturnType<typeof vi.fn>;
   });
 
   afterAll(async () => {
@@ -1091,6 +1100,9 @@ describe('OIDC Restrict-to-Mapped-Groups Enforcement', () => {
   beforeEach(() => {
     createSession.mockClear();
     writeAuditLog.mockClear();
+    invalidateAllUserSessions.mockClear();
+    getUserById.mockReset();
+    upsertOIDCUser.mockReset();
   });
 
   it('denies an OIDC login whose groups match no mapping — no session, denial audited', async () => {
@@ -1113,5 +1125,135 @@ describe('OIDC Restrict-to-Mapped-Groups Enforcement', () => {
     expect(writeAuditLog).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'oidc_login_denied' }),
     );
+  });
+
+  // SECURITY REGRESSION: an OIDC role *downgrade* must revoke the user's prior
+  // (elevated) sessions, otherwise the frozen-in-JWT admin role survives until
+  // the token expires even though the IdP removed the admin group.
+  it('revokes prior sessions when an existing user is downgraded via group mapping', async () => {
+    getOIDCConfig.mockResolvedValue({
+      ...restrictiveConfig,
+      group_role_mappings: { Staff: 'viewer' as const },
+      allow_unmapped_viewer: true,
+    });
+    exchangeCode.mockResolvedValue({
+      sub: 'alice-1', email: 'alice@e.com', name: 'Alice', groups: ['Staff'],
+    });
+    // Alice was previously an admin in the local DB.
+    getUserById.mockResolvedValue({ id: 'alice-1', username: 'alice@e.com', role: 'admin' });
+    upsertOIDCUser.mockResolvedValue({ roleChanged: true, previousRole: 'admin' });
+    // Provide a complete session so the 200 response schema (expiresAt: string) serializes.
+    createSession.mockResolvedValueOnce({
+      id: 'sess-new', user_id: 'alice-1', username: 'alice@e.com',
+      expires_at: '2099-01-01T00:00:00.000Z',
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/auth/oidc/callback',
+      payload: {
+        callbackUrl: 'https://app.example.com/auth/callback?code=c&state=s',
+        state: 's',
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    // Prior sessions revoked BEFORE the new (viewer) session is created.
+    expect(invalidateAllUserSessions).toHaveBeenCalledWith('alice-1');
+    expect(writeAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'oidc_role_changed' }),
+    );
+    expect(createSession).toHaveBeenCalledWith('alice-1', 'alice@e.com');
+  });
+});
+
+// =====================================================================
+//  LOCAL USER MUTATION → SESSION REVOCATION (issue: stale-privilege JWT)
+// =====================================================================
+// Regression: changing a user's role/password, or deleting the user, must
+// revoke all their existing sessions immediately. The role lives in the signed
+// JWT and is never re-read from the DB, so without revocation a demoted user
+// keeps their old privileges (and a stolen token survives a password reset)
+// until the token expires.
+describe('User mutation revokes sessions', () => {
+  let app: FastifyInstance;
+  let updateUser: ReturnType<typeof vi.fn>;
+  let deleteUser: ReturnType<typeof vi.fn>;
+  let invalidateAllUserSessions: ReturnType<typeof vi.fn>;
+
+  beforeAll(async () => {
+    const users = await import('@dashboard/core/services/user-store.js');
+    const sessions = await import('@dashboard/core/services/session-store.js');
+    updateUser = vi.mocked(users.updateUser) as unknown as ReturnType<typeof vi.fn>;
+    deleteUser = vi.mocked(users.deleteUser) as unknown as ReturnType<typeof vi.fn>;
+    invalidateAllUserSessions = vi.mocked(sessions.invalidateAllUserSessions) as unknown as ReturnType<typeof vi.fn>;
+
+    app = Fastify({ logger: false });
+    app.setValidatorCompiler(validatorCompiler);
+    app.setSerializerCompiler(serializerCompiler);
+    app.decorate('authenticate', async () => undefined);
+    app.decorate('requireRole', () => async () => undefined);
+    app.decorateRequest('user', undefined);
+    app.addHook('preHandler', async (request) => {
+      request.user = { sub: 'admin-actor', username: 'admin', sessionId: 's-admin', role: 'admin' };
+    });
+    await app.register(userRoutes);
+    await app.ready();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  beforeEach(() => {
+    updateUser.mockReset();
+    deleteUser.mockReset();
+    invalidateAllUserSessions.mockClear();
+  });
+
+  it('revokes sessions when a role is changed', async () => {
+    updateUser.mockResolvedValue({ id: 'target-1', username: 'bob', role: 'viewer' });
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/api/users/target-1',
+      payload: { role: 'viewer' },
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(invalidateAllUserSessions).toHaveBeenCalledWith('target-1');
+  });
+
+  it('revokes sessions when a password is reset', async () => {
+    updateUser.mockResolvedValue({ id: 'target-2', username: 'bob', role: 'operator' });
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/api/users/target-2',
+      payload: { password: 'a-new-strong-password' },
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(invalidateAllUserSessions).toHaveBeenCalledWith('target-2');
+  });
+
+  it('does NOT revoke sessions for a username-only change', async () => {
+    updateUser.mockResolvedValue({ id: 'target-3', username: 'renamed', role: 'operator' });
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/api/users/target-3',
+      payload: { username: 'renamed' },
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(invalidateAllUserSessions).not.toHaveBeenCalled();
+  });
+
+  it('revokes sessions when a user is deleted', async () => {
+    deleteUser.mockResolvedValue(true);
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/api/users/target-4',
+    });
+    expect(res.statusCode).toBe(200);
+    expect(invalidateAllUserSessions).toHaveBeenCalledWith('target-4');
   });
 });

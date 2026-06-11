@@ -123,8 +123,12 @@ type ConvertedAnyValue = {
   bytesValue?: string;
 };
 
-function convertAnyValue(av: any): ConvertedAnyValue {
-  if (!av) return {};
+// Bounds recursion on attacker-supplied OTLP protobuf AnyValue nesting so a
+// deeply nested array/kvlist cannot blow the stack during decode.
+const MAX_ANYVALUE_DEPTH = 32;
+
+function convertAnyValue(av: any, depth = 0): ConvertedAnyValue {
+  if (!av || depth >= MAX_ANYVALUE_DEPTH) return {};
   if (av.stringValue !== undefined && av.stringValue !== null) return { stringValue: av.stringValue };
   if (av.intValue !== undefined && av.intValue !== null) return { intValue: Number(av.intValue) };
   if (av.doubleValue !== undefined && av.doubleValue !== null) return { doubleValue: av.doubleValue };
@@ -132,7 +136,7 @@ function convertAnyValue(av: any): ConvertedAnyValue {
   if (Array.isArray(av.arrayValue?.values)) {
     return {
       arrayValue: {
-        values: av.arrayValue.values.map((entry: any) => convertAnyValue(entry)),
+        values: av.arrayValue.values.map((entry: any) => convertAnyValue(entry, depth + 1)),
       },
     };
   }
@@ -141,7 +145,7 @@ function convertAnyValue(av: any): ConvertedAnyValue {
       kvlistValue: {
         values: av.kvlistValue.values.map((entry: any) => ({
           key: entry.key,
-          value: convertAnyValue(entry.value),
+          value: convertAnyValue(entry.value, depth + 1),
         })),
       },
     };

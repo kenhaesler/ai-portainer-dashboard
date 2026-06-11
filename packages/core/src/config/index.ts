@@ -99,6 +99,21 @@ function validatePrometheusToken(data: EnvConfig): void {
   }
 }
 
+function validateTraceIngestionKey(data: EnvConfig): void {
+  // The OTLP ingest endpoint is unauthenticated apart from this key. In
+  // production, refuse to start with ingestion enabled but no strong key —
+  // mirrors the Prometheus-token guard above.
+  if (
+    process.env.NODE_ENV === 'production' &&
+    data.TRACES_INGESTION_ENABLED &&
+    (!data.TRACES_INGESTION_API_KEY || data.TRACES_INGESTION_API_KEY.length < 16)
+  ) {
+    throw new Error(
+      'Invalid environment configuration:\n  TRACES_INGESTION_API_KEY: must be at least 16 characters when trace ingestion is enabled in production'
+    );
+  }
+}
+
 function validateDashboardCredentials(username: string, password: string): void {
   if (process.env.NODE_ENV !== 'production') return;
 
@@ -241,6 +256,7 @@ export function getConfig(): EnvConfig {
     validateDashboardCredentials(result.data.DASHBOARD_USERNAME, result.data.DASHBOARD_PASSWORD);
     validateServicePasswords(result.data);
     validatePrometheusToken(result.data);
+    validateTraceIngestionKey(result.data);
     warnDeprecatedEnvVars();
     config = result.data;
   }

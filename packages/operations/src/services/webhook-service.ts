@@ -5,6 +5,7 @@ import { eventBus } from '@dashboard/core/services/typed-event-bus.js';
 import { getSetting } from '@dashboard/core/services/settings-store.js';
 import { toWebhookEvent, type WebhookEvent } from '@dashboard/contracts';
 import { withSpan } from '@dashboard/core/tracing/trace-context.js';
+import { validateOutboundWebhookUrl } from '@dashboard/core/utils/network-security.js';
 
 const log = createChildLogger('webhook-service');
 
@@ -157,6 +158,20 @@ async function deliverWebhookInner(deliveryId: string): Promise<boolean> {
 
   const signature = signPayload(delivery.payload, webhook.secret);
   const attempt = delivery.attempt + 1;
+
+  // SECURITY: re-validate the destination at delivery time, not just at
+  // create/update. This covers rows stored before the SSRF guard was hardened
+  // and blocks a webhook whose URL is (or was repointed to) an internal /
+  // loopback / metadata target before we ever issue the request.
+  const urlError = validateOutboundWebhookUrl(webhook.url);
+  if (urlError) {
+    log.warn({ deliveryId, webhookId: webhook.id, reason: urlError }, 'Webhook delivery blocked: unsafe destination URL');
+    await db().execute(
+      "UPDATE webhook_deliveries SET status = 'failed', response_body = ?, attempt = ? WHERE id = ?",
+      [`Blocked: ${urlError}`, attempt, deliveryId],
+    );
+    return false;
+  }
 
   try {
     const response = await fetch(webhook.url, {

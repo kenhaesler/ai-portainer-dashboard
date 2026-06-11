@@ -172,6 +172,20 @@ export async function oidcRoutes(fastify: FastifyInstance) {
         const { roleChanged, previousRole } = await upsertOIDCUser(claims.sub, username, effectiveRole);
 
         if (roleChanged) {
+          // SECURITY: a role change (incl. downgrade) must revoke prior sessions.
+          // The role is frozen into the previously-issued JWT and never re-read
+          // from the DB, so without this a user demoted from admin keeps admin
+          // authority on their old token until it expires. Revoke BEFORE
+          // createSession() below so only the freshly-issued correct-role token
+          // survives. Mirrors the revoke-on-deny path above; best-effort.
+          try {
+            await invalidateAllUserSessions(claims.sub);
+          } catch (revokeErr) {
+            log.warn(
+              { err: (revokeErr as Error).message, sub: claims.sub },
+              'Failed to revoke prior sessions on OIDC role change — continuing',
+            );
+          }
           writeAuditLog({
             user_id: claims.sub,
             username,
@@ -221,6 +235,17 @@ export async function oidcRoutes(fastify: FastifyInstance) {
       };
     } catch (err) {
       fastify.log.error({ err }, 'OIDC callback failed');
+      // A username (email/name claim) collision against the UNIQUE users.username
+      // column surfaces as a Postgres 23505. Return a static, generic message —
+      // never reflect the raw DB error (which leaks the index name + colliding
+      // value) to the unauthenticated callback caller.
+      if ((err as { code?: string }).code === '23505'
+        || (err instanceof Error && err.message.includes('UNIQUE constraint'))) {
+        // Cast: this route declares a typed response schema that does not list
+        // 409 (same pattern used elsewhere for off-schema error codes).
+        return (reply as { code: (n: number) => typeof reply }).code(409)
+          .send({ error: 'This account could not be provisioned (username already in use).' });
+      }
       const message = err instanceof Error ? err.message : 'OIDC authentication failed';
       return reply.code(400).send({ error: message });
     }

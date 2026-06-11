@@ -5,6 +5,7 @@ import { transformOtlpToSpans, type OtlpExportRequest } from '@dashboard/core/tr
 import { decodeOtlpProtobuf } from '@dashboard/core/tracing/otlp-protobuf.js';
 import { insertSpans } from '@dashboard/core/tracing/trace-store.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
+import { constantTimeEqual } from '@dashboard/core/utils/crypto.js';
 import { createSampler, type Sampler, type SamplerStats } from '../services/trace-sampler.js';
 
 const log = createChildLogger('traces-ingest');
@@ -86,9 +87,11 @@ async function handleOtlpIngest(
     return reply.status(501).send({ error: 'Trace ingestion is not enabled' });
   }
 
-  // API key auth (service-to-service, not JWT)
+  // API key auth (service-to-service, not JWT). Constant-time compare; an empty
+  // configured key never matches (constantTimeEqual fails closed), so ingestion
+  // with an unset key is deny-all rather than open.
   const apiKey = extractApiKey(request.headers);
-  if (!apiKey || apiKey !== config.TRACES_INGESTION_API_KEY) {
+  if (!constantTimeEqual(apiKey, config.TRACES_INGESTION_API_KEY)) {
     return reply.status(401).send({ error: 'Invalid or missing API key' });
   }
 

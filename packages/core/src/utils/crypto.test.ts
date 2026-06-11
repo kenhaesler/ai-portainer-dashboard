@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import { SignJWT } from 'jose';
-import { signJwt, verifyJwt, hashPassword, comparePassword, _resetKeyCache } from './crypto.js';
+import { signJwt, verifyJwt, hashPassword, comparePassword, constantTimeEqual, _resetKeyCache } from './crypto.js';
 import { setConfigForTest, resetConfig } from '../config/index.js';
 
 // Mock the relative logger module so that crypto.ts's `createChildLogger('crypto')`
@@ -377,6 +377,22 @@ describe('crypto', () => {
         const verified = await verifyJwt(token);
         expect(verified?.sub).toBe('user-1');
       });
+    });
+  });
+
+  describe('constantTimeEqual', () => {
+    it('returns true only for identical strings', () => {
+      expect(constantTimeEqual('s3cret-token', 's3cret-token')).toBe(true);
+      expect(constantTimeEqual('s3cret-token', 's3cret-tokeX')).toBe(false);
+      expect(constantTimeEqual('short', 'a-much-longer-value')).toBe(false);
+    });
+
+    it('fails closed for empty / nullish inputs (an unset secret never matches)', () => {
+      expect(constantTimeEqual('', '')).toBe(false);
+      expect(constantTimeEqual('value', '')).toBe(false);
+      expect(constantTimeEqual('', 'value')).toBe(false);
+      expect(constantTimeEqual(undefined, 'value')).toBe(false);
+      expect(constantTimeEqual('value', null)).toBe(false);
     });
   });
 

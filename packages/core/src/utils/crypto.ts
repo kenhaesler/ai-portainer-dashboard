@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { timingSafeEqual } from 'node:crypto';
 import { SignJWT, jwtVerify, importPKCS8, importSPKI, errors, type CryptoKey } from 'jose';
 import bcrypt from 'bcrypt';
 import { getConfig } from '../config/index.js';
@@ -113,6 +114,20 @@ export async function verifyJwt(token: string) {
     log.error({ err }, 'JWT verification failed with unexpected error');
     return null;
   }
+}
+
+/**
+ * Constant-time string comparison for secrets/tokens (API keys, bearer tokens,
+ * HMACs). Uses crypto.timingSafeEqual after a length guard so the comparison
+ * does not short-circuit on the first differing byte. Treats an empty `expected`
+ * as never-matching (fail closed) so an unset secret can't be matched.
+ */
+export function constantTimeEqual(a: string | undefined | null, b: string | undefined | null): boolean {
+  if (!a || !b) return false;
+  const bufA = Buffer.from(a, 'utf8');
+  const bufB = Buffer.from(b, 'utf8');
+  if (bufA.length !== bufB.length) return false;
+  return timingSafeEqual(bufA, bufB);
 }
 
 export async function hashPassword(password: string): Promise<string> {
