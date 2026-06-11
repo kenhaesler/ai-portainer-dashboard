@@ -186,21 +186,22 @@ describe('remediation-service', () => {
 
   it('enriches rationale with structured LLM analysis when available', async () => {
     mockLlm.isAvailable.mockResolvedValue(true);
+    const analysisJson = JSON.stringify({
+      root_cause: 'OOM due to connection pool leak',
+      severity: 'critical',
+      recommended_actions: [
+        {
+          action: 'Restart the container',
+          priority: 'high',
+          rationale: 'Recovers service quickly while leak is investigated',
+        },
+      ],
+      log_analysis: 'Repeated pool exhaustion warnings before malloc failure',
+      confidence_score: 0.82,
+    });
     mockLlm.chatStream.mockImplementation(async (_messages: any, _system: any, onChunk: any) => {
-      onChunk(JSON.stringify({
-        root_cause: 'OOM due to connection pool leak',
-        severity: 'critical',
-        recommended_actions: [
-          {
-            action: 'Restart the container',
-            priority: 'high',
-            rationale: 'Recovers service quickly while leak is investigated',
-          },
-        ],
-        log_analysis: 'Repeated pool exhaustion warnings before malloc failure',
-        confidence_score: 0.82,
-      }));
-      return '';
+      onChunk(analysisJson);
+      return analysisJson;
     });
 
     const result = await suggestAction({
@@ -229,24 +230,25 @@ describe('remediation-service', () => {
   it('retries with stricter prompt when first LLM attempt returns unstructured output (#746)', async () => {
     mockLlm.isAvailable.mockResolvedValue(true);
     let callCount = 0;
+    const retryJson = JSON.stringify({
+      root_cause: 'Health check timeout due to slow startup',
+      severity: 'warning',
+      recommended_actions: [
+        { action: 'Increase health check timeout', priority: 'medium', rationale: 'Startup takes 30s' },
+      ],
+      log_analysis: 'Health check probe fails during startup',
+      confidence_score: 0.75,
+    });
     mockLlm.chatStream.mockImplementation(async (_messages: any, _system: any, onChunk: any) => {
       callCount++;
       if (callCount === 1) {
         // First attempt: unstructured
         onChunk('container looks unhealthy, maybe restart');
-      } else {
-        // Retry: structured JSON
-        onChunk(JSON.stringify({
-          root_cause: 'Health check timeout due to slow startup',
-          severity: 'warning',
-          recommended_actions: [
-            { action: 'Increase health check timeout', priority: 'medium', rationale: 'Startup takes 30s' },
-          ],
-          log_analysis: 'Health check probe fails during startup',
-          confidence_score: 0.75,
-        }));
+        return 'container looks unhealthy, maybe restart';
       }
-      return '';
+      // Retry: structured JSON
+      onChunk(retryJson);
+      return retryJson;
     });
 
     const result = await suggestAction({
@@ -283,7 +285,7 @@ describe('remediation-service', () => {
     mockLlm.chatStream.mockImplementation(async (_messages: any, _system: any, onChunk: any) => {
       // Both attempts return unstructured output
       onChunk('I think the container needs attention');
-      return '';
+      return 'I think the container needs attention';
     });
 
     const result = await suggestAction({
@@ -311,7 +313,7 @@ describe('remediation-service', () => {
     mockLlm.isAvailable.mockResolvedValue(true);
     mockLlm.chatStream.mockImplementation(async (_messages: any, _system: any, onChunk: any) => {
       onChunk('container looks unhealthy, maybe restart');
-      return '';
+      return 'container looks unhealthy, maybe restart';
     });
 
     const result = await suggestAction({

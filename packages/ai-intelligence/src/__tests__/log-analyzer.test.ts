@@ -58,13 +58,14 @@ describe('log-analyzer', () => {
       '2024-01-01T00:00:01Z WARN: Retrying connection...\n'.repeat(10),
     );
 
+    const analysisJson = JSON.stringify({
+      severity: 'critical',
+      summary: 'Database connection failures detected',
+      errorPatterns: ['Connection refused', 'Retrying connection'],
+    });
     mockChatStream.mockImplementation((_msgs: unknown, _sys: unknown, onChunk: (s: string) => void) => {
-      onChunk(JSON.stringify({
-        severity: 'critical',
-        summary: 'Database connection failures detected',
-        errorPatterns: ['Connection refused', 'Retrying connection'],
-      }));
-      return Promise.resolve('');
+      onChunk(analysisJson);
+      return Promise.resolve(analysisJson);
     });
 
     const result = await analyzeContainerLogs(1, 'container-1', 'web-app', 100);
@@ -84,7 +85,7 @@ describe('log-analyzer', () => {
 
     mockChatStream.mockImplementation((_msgs: unknown, _sys: unknown, onChunk: (s: string) => void) => {
       onChunk('null');
-      return Promise.resolve('');
+      return Promise.resolve('null');
     });
 
     const result = await analyzeContainerLogs(1, 'container-1', 'web-app', 100);
@@ -114,7 +115,7 @@ describe('log-analyzer', () => {
     );
     mockChatStream.mockImplementation((_msgs: unknown, _sys: unknown, onChunk: (s: string) => void) => {
       onChunk(JSON.stringify({ severity: 'warning', summary: 'Issues found', errorPatterns: [] }));
-      return Promise.resolve('');
+      return Promise.resolve(JSON.stringify({ severity: 'warning', summary: 'Issues found', errorPatterns: [] }));
     });
 
     const containers = Array.from({ length: 10 }, (_, i) => ({
@@ -135,7 +136,7 @@ describe('log-analyzer', () => {
 
     mockChatStream.mockImplementation((_msgs: unknown, _sys: unknown, onChunk: (s: string) => void) => {
       onChunk('This is not valid JSON at all');
-      return Promise.resolve('');
+      return Promise.resolve('This is not valid JSON at all');
     });
 
     const result = await analyzeContainerLogs(1, 'container-1', 'web-app', 100);
@@ -151,7 +152,7 @@ describe('log-analyzer', () => {
 
     mockChatStream.mockImplementation((_msgs: unknown, _sys: unknown, onChunk: (s: string) => void) => {
       onChunk(jsonWithControlChars);
-      return Promise.resolve('');
+      return Promise.resolve(jsonWithControlChars);
     });
 
     const result = await analyzeContainerLogs(1, 'container-1', 'web-app', 100);
@@ -172,7 +173,7 @@ describe('log-analyzer', () => {
 
     mockChatStream.mockImplementation((_msgs: unknown, _sys: unknown, onChunk: (s: string) => void) => {
       onChunk(jsonWithBadChars);
-      return Promise.resolve('');
+      return Promise.resolve(jsonWithBadChars);
     });
 
     const result = await analyzeContainerLogs(1, 'container-1', 'web-app', 100);

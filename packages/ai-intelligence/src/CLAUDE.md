@@ -58,6 +58,6 @@ All wiring happens in `@dashboard/server/src/wiring.ts`.
 ## Key Rules
 
 - **Never add imports from other domain packages** — use DI via `initInvestigationDeps()` or `createMonitoringService(deps)`
-- All LLM queries must pass through prompt guard before reaching the model
+- All LLM queries must pass through prompt guard before reaching the model — enforced centrally in `chatStream()` (`services/llm-client.ts`): user-role messages are guarded and the returned response is sanitized. Consume `chatStream`'s return value; do not re-accumulate raw `onChunk` chunks
 - Cooldown sweep prevents alert spam (configurable per anomaly type)
 - MCP tools auto-connect at server startup; manually configurable via routes

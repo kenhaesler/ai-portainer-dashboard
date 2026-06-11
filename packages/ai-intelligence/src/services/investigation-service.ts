@@ -394,11 +394,10 @@ async function runInvestigation(investigationId: string, insight: Insight): Prom
 
     const prompt = buildInvestigationPrompt(insight, evidence);
 
-    let llmResponse = '';
-    await chatStream(
+    const llmResponse = await chatStream(
       [{ role: 'user', content: prompt }],
       await getEffectivePrompt('root_cause'),
-      (chunk) => { llmResponse += chunk; },
+      () => {},
       'root_cause',
     );
 

@@ -37,7 +37,7 @@ describe('anomaly-explainer', () => {
         async (_msgs: unknown, _sys: unknown, onChunk: (c: string) => void) => {
           onChunk('The CPU usage is significantly above normal. ');
           onChunk('This likely indicates a runaway process.');
-          return '';
+          return 'The CPU usage is significantly above normal. This likely indicates a runaway process.';
         },
       );
 
@@ -83,7 +83,7 @@ describe('anomaly-explainer', () => {
       vi.spyOn(llmClient, 'chatStream').mockImplementation(
         async (_msgs: unknown, _sys: unknown, onChunk: (c: string) => void) => {
           onChunk(longText);
-          return '';
+          return longText;
         },
       );
 
@@ -99,7 +99,7 @@ describe('anomaly-explainer', () => {
       vi.spyOn(llmClient, 'chatStream').mockImplementation(
         async (_msgs: unknown, _sys: unknown, onChunk: (c: string) => void) => {
           onChunk('Single explanation');
-          return '';
+          return 'Single explanation';
         },
       );
 
@@ -118,7 +118,7 @@ describe('anomaly-explainer', () => {
       vi.spyOn(llmClient, 'chatStream').mockImplementation(
         async (_msgs: unknown, _sys: unknown, onChunk: (c: string) => void) => {
           onChunk('[1] CPU spike from a runaway process.\n[2] Memory leak detected.\n[3] Disk IO contention.');
-          return '';
+          return '[1] CPU spike from a runaway process.\n[2] Memory leak detected.\n[3] Disk IO contention.';
         },
       );
 
@@ -141,7 +141,7 @@ describe('anomaly-explainer', () => {
       vi.spyOn(llmClient, 'chatStream').mockImplementation(
         async (_msgs: unknown, _sys: unknown, onChunk: (c: string) => void) => {
           onChunk('[1] Explanation one.\n[2] Explanation two.');
-          return '';
+          return '[1] Explanation one.\n[2] Explanation two.';
         },
       );
 
@@ -165,7 +165,7 @@ describe('anomaly-explainer', () => {
           const warningIdx = content.indexOf('warning-container');
           expect(criticalIdx).toBeLessThan(warningIdx);
           onChunk('[1] Critical explanation.\n[2] Warning explanation.');
-          return '';
+          return '[1] Critical explanation.\n[2] Warning explanation.';
         },
       );
 
@@ -192,10 +192,10 @@ describe('anomaly-explainer', () => {
           callCount++;
           if (callCount === 1) {
             onChunk('[1] First explanation.');
-            return '';
+            return '[1] First explanation.';
           }
           onChunk('Fallback explanation for second.');
-          return '';
+          return 'Fallback explanation for second.';
         },
       );
 
@@ -219,7 +219,7 @@ describe('anomaly-explainer', () => {
           callCount++;
           if (callCount === 1) throw new Error('Batch LLM error');
           onChunk('Individual explanation');
-          return '';
+          return 'Individual explanation';
         },
       );
 

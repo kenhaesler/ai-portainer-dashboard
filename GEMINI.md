@@ -8,7 +8,7 @@ This file provides guidance to Google Gemini and Gemini-based coding tools worki
 
 1. **RBAC by Default** — All mutating endpoints (POST/PUT/DELETE) and sensitive read endpoints (Backups, Settings, Cache, User Management) MUST require `fastify.requireRole('admin')`. Never assume `fastify.authenticate` is sufficient for administrative actions.
 2. **Zero Default Secrets** — Production deployments (`NODE_ENV=production`) MUST fail to start if `JWT_SECRET` is the default value or less than 32 characters. Never hardcode credentials.
-3. **LLM Safety** — All LLM interactions must pass through the Prompt Injection Guard. Output must be sanitized to prevent system prompt leakage or infrastructure detail exposure to unauthorized users.
+3. **LLM Safety** — All LLM interactions must pass through the Prompt Injection Guard (enforced centrally in `chatStream()` in `packages/ai-intelligence/src/services/llm-client.ts` — user-role messages are guarded and the returned response is sanitized; consume the return value, do not re-accumulate raw chunks). Output must be sanitized to prevent system prompt leakage or infrastructure detail exposure to unauthorized users.
 4. **Infrastructure Isolation** — Internal services (Prometheus, LLM API, Redis) must not be exposed on `0.0.0.0`. Use internal Docker networks. Authenticate all cross-service communication.
 5. **Input & Data Safety** — Use Zod for all API boundaries. Use parameterized SQL only (no concatenation). Strip sensitive metadata (like filesystem paths in container labels) before sending to frontend.
 6. **Regression Testing** — Every security fix must include a corresponding test in `backend/src/routes/security-regression.test.ts`.

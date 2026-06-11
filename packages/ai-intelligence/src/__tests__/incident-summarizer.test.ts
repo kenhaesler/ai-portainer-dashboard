@@ -35,7 +35,7 @@ describe('incident-summarizer', () => {
   it('returns summary when LLM available', async () => {
     vi.spyOn(llmClient, 'chatStream').mockImplementation((_msgs: unknown, _sys: unknown, onChunk: (s: string) => void) => {
       onChunk('Multiple containers are experiencing high CPU usage, suggesting a shared infrastructure bottleneck affecting the web tier.');
-      return Promise.resolve('');
+      return Promise.resolve('Multiple containers are experiencing high CPU usage, suggesting a shared infrastructure bottleneck affecting the web tier.');
     });
 
     const insights = [
@@ -71,7 +71,7 @@ describe('incident-summarizer', () => {
   it('respects character limit', async () => {
     vi.spyOn(llmClient, 'chatStream').mockImplementation((_msgs: unknown, _sys: unknown, onChunk: (s: string) => void) => {
       onChunk('A'.repeat(1000));
-      return Promise.resolve('');
+      return Promise.resolve('A'.repeat(1000));
     });
 
     const insights = [

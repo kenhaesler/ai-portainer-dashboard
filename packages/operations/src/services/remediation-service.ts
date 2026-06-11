@@ -318,14 +318,12 @@ async function enrichActionWithLlmAnalysis(
     const evidence = await gatherRemediationEvidence(insight);
     const prompt = buildRemediationPrompt(insight, evidence);
     const systemPrompt = await _llm!.getEffectivePrompt('remediation');
-    let rawResponse = '';
-
-    await _llm!.chatStream(
+    // Use the return value, not accumulated chunks — chatStream guards the
+    // prompt and sanitizes the full response centrally.
+    const rawResponse = await _llm!.chatStream(
       [{ role: 'user', content: prompt }],
       systemPrompt,
-      (chunk) => {
-        rawResponse += chunk;
-      },
+      () => {},
       'remediation',
     );
 
@@ -334,17 +332,14 @@ async function enrichActionWithLlmAnalysis(
     // Single retry with a stricter prompt when the first attempt returns unstructured output (#746)
     if (!parsed) {
       log.warn({ actionId, insightId: insight.id }, 'First LLM attempt returned unstructured output, retrying with stricter prompt');
-      let retryResponse = '';
-      await _llm!.chatStream(
+      const retryResponse = await _llm!.chatStream(
         [
           { role: 'user', content: prompt },
           { role: 'assistant', content: rawResponse },
           { role: 'user', content: 'Your previous response was not valid JSON. Please respond with ONLY a raw JSON object, no markdown fences, no extra text.' },
         ],
         RETRY_SYSTEM_PROMPT,
-        (chunk) => {
-          retryResponse += chunk;
-        },
+        () => {},
         'remediation',
       );
       parsed = tryParseRemediationAnalysis(retryResponse);

@@ -322,11 +322,13 @@ export async function analyzeCapture(captureId: string, llm: LLMInterface): Prom
   // Phase 2: LLM analysis
   const prompt = buildAnalysisPrompt(summary, capture.container_name);
 
-  let llmResponse = '';
-  await llm.chatStream(
+  // Use the return value, not accumulated chunks — chatStream guards the
+  // prompt (PCAP summaries embed attacker-influenced network data) and
+  // sanitizes the full response centrally.
+  const llmResponse = await llm.chatStream(
     [{ role: 'user', content: prompt }],
     await llm.getEffectivePrompt('pcap_analyzer'),
-    (chunk) => { llmResponse += chunk; },
+    () => {},
     'pcap_analyzer',
   );
 
