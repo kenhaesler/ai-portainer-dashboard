@@ -156,13 +156,13 @@ async function deliverWebhookInner(deliveryId: string): Promise<boolean> {
     return false;
   }
 
-  const signature = signPayload(delivery.payload, webhook.secret);
   const attempt = delivery.attempt + 1;
 
   // SECURITY: re-validate the destination at delivery time, not just at
-  // create/update. This covers rows stored before the SSRF guard was hardened
-  // and blocks a webhook whose URL is (or was repointed to) an internal /
-  // loopback / metadata target before we ever issue the request.
+  // create/update — and BEFORE doing any other work. This covers rows stored
+  // before the SSRF guard was hardened and blocks a webhook whose URL is (or
+  // was repointed to) an internal / loopback / metadata target before we ever
+  // issue the request.
   const urlError = validateOutboundWebhookUrl(webhook.url);
   if (urlError) {
     log.warn({ deliveryId, webhookId: webhook.id, reason: urlError }, 'Webhook delivery blocked: unsafe destination URL');
@@ -172,6 +172,8 @@ async function deliverWebhookInner(deliveryId: string): Promise<boolean> {
     );
     return false;
   }
+
+  const signature = signPayload(delivery.payload, webhook.secret);
 
   try {
     const response = await fetch(webhook.url, {

@@ -87,7 +87,14 @@ export async function userRoutes(fastify: FastifyInstance) {
     // a stolen token) until the JWT expires. Revoke all of the target's
     // sessions so the next request forces a fresh login with the new role.
     if (body.role !== undefined || body.password !== undefined) {
-      await invalidateAllUserSessions(id);
+      // Best-effort: the update has already committed, so a transient revocation
+      // failure must not turn the operation into a 500 — but it must be logged
+      // for ops to catch. Mirrors the revoke-on-role-change path in oidc.ts.
+      try {
+        await invalidateAllUserSessions(id);
+      } catch (revokeErr) {
+        request.log.warn({ err: revokeErr, userId: id }, 'Failed to revoke sessions after user update');
+      }
     }
 
     writeAuditLog({
@@ -126,8 +133,13 @@ export async function userRoutes(fastify: FastifyInstance) {
 
     // SECURITY: the sessions table has no FK/ON DELETE CASCADE to users, and
     // getSession only checks session validity — so a deleted user's token keeps
-    // authenticating until expiry. Explicitly revoke their sessions on delete.
-    await invalidateAllUserSessions(id);
+    // authenticating until expiry. Explicitly revoke their sessions on delete
+    // (best-effort + logged, matching the update path).
+    try {
+      await invalidateAllUserSessions(id);
+    } catch (revokeErr) {
+      request.log.warn({ err: revokeErr, userId: id }, 'Failed to revoke sessions after user deletion');
+    }
 
     writeAuditLog({
       user_id: actor.sub,

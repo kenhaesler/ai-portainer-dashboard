@@ -487,4 +487,39 @@ describe('transformOtlpToSpans', () => {
     expect(attrs.map).toEqual({ flag: true, port: 8080 });
     expect(attrs.raw).toBe('aGVsbG8=');
   });
+
+  // SECURITY REGRESSION: attacker-controlled OTLP attribute nesting must not be
+  // walked unbounded. A pathologically deep arrayValue would blow the stack
+  // (RangeError) during attribute extraction without the depth cap.
+  it('does not stack-overflow on pathologically deep attribute nesting', () => {
+    let deep: Record<string, unknown> = { stringValue: 'leaf' };
+    for (let i = 0; i < 10_000; i++) {
+      deep = { arrayValue: { values: [deep] } };
+    }
+    const payload = {
+      resourceSpans: [
+        {
+          resource: { attributes: [{ key: 'service.name', value: { stringValue: 'my-app' } }] },
+          scopeSpans: [
+            {
+              spans: [
+                {
+                  traceId: 'abc123def456',
+                  spanId: 'span-deep',
+                  name: 'GET /deep',
+                  startTimeUnixNano: '1700000000000000000',
+                  endTimeUnixNano: '1700000000100000000',
+                  attributes: [{ key: 'deep', value: deep }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    } as unknown as OtlpExportRequest;
+
+    expect(() => transformOtlpToSpans(payload)).not.toThrow();
+    const result = transformOtlpToSpans(payload);
+    expect(result).toHaveLength(1);
+  });
 });

@@ -20,6 +20,8 @@ import {
   listWebhooks,
   deleteWebhook,
   createDelivery,
+  deliverWebhook,
+  getDeliveriesForWebhook,
   startWebhookListener,
   stopWebhookListener,
 } from '../services/webhook-service.js';
@@ -111,6 +113,47 @@ describe('webhook-service', () => {
     it('should start and stop without errors', () => {
       expect(() => startWebhookListener()).not.toThrow();
       expect(() => stopWebhookListener()).not.toThrow();
+    });
+  });
+
+  // SECURITY REGRESSION: validateOutboundWebhookUrl only runs at create/update
+  // in the route layer. Delivery must RE-validate the stored URL, otherwise a
+  // row whose URL is (or was repointed to) an internal/loopback/metadata target
+  // is fetched server-side. The service-level createWebhook does not validate,
+  // so an unsafe URL can be persisted here exactly as it could pre-fix.
+  describe('deliverWebhook SSRF re-validation', () => {
+    it('blocks delivery to an internal/metadata URL and never issues the fetch', async () => {
+      const fetchSpy = vi.spyOn(globalThis, 'fetch');
+      const webhook = await createWebhook({
+        name: 'evil',
+        url: 'http://169.254.169.254/latest/meta-data/',
+        events: ['*'],
+      });
+      const event = { type: 'insight.created', timestamp: new Date().toISOString(), data: { test: true } };
+      const deliveryId = await createDelivery(webhook.id, event);
+
+      const ok = await deliverWebhook(deliveryId);
+
+      expect(ok).toBe(false);
+      expect(fetchSpy).not.toHaveBeenCalled();
+      const { deliveries } = await getDeliveriesForWebhook(webhook.id);
+      const row = deliveries.find((d) => d.id === deliveryId);
+      expect(row?.status).toBe('failed');
+      expect(row?.response_body ?? '').toContain('Blocked');
+      fetchSpy.mockRestore();
+    });
+
+    it('also blocks the bracketed-IPv6 loopback bypass', async () => {
+      const fetchSpy = vi.spyOn(globalThis, 'fetch');
+      const webhook = await createWebhook({ name: 'evil6', url: 'http://[::1]:9090/x', events: ['*'] });
+      const event = { type: 'insight.created', timestamp: new Date().toISOString(), data: {} };
+      const deliveryId = await createDelivery(webhook.id, event);
+
+      const ok = await deliverWebhook(deliveryId);
+
+      expect(ok).toBe(false);
+      expect(fetchSpy).not.toHaveBeenCalled();
+      fetchSpy.mockRestore();
     });
   });
 });

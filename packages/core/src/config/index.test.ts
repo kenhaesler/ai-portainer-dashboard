@@ -132,6 +132,55 @@ describe('config validation', () => {
     });
   });
 
+  // SECURITY REGRESSION: the OTLP ingest endpoint is unauthenticated apart from
+  // TRACES_INGESTION_API_KEY, so production must refuse to start with ingestion
+  // enabled and a weak/empty key (mirrors the PROMETHEUS_BEARER_TOKEN guard).
+  describe('trace ingestion key validation (production only)', () => {
+    // A fully-valid production environment except for the trace key under test.
+    function validProdEnv() {
+      process.env.NODE_ENV = 'production';
+      process.env.DASHBOARD_PASSWORD = 'xK9#mP2$vL7@nQ4!';
+      process.env.REDIS_PASSWORD = 'strong-redis-pass-2024';
+      process.env.TIMESCALE_URL = 'postgresql://metrics_user:str0ng-ts-p4ss@timescaledb:5432/metrics';
+    }
+
+    it('rejects a short key when ingestion is enabled in production', async () => {
+      validProdEnv();
+      process.env.TRACES_INGESTION_ENABLED = 'true';
+      process.env.TRACES_INGESTION_API_KEY = 'short';
+
+      const { getConfig } = await import('./index.js');
+      expect(() => getConfig()).toThrowError(/TRACES_INGESTION_API_KEY/i);
+    });
+
+    it('rejects an empty key when ingestion is enabled in production', async () => {
+      validProdEnv();
+      process.env.TRACES_INGESTION_ENABLED = 'true';
+      process.env.TRACES_INGESTION_API_KEY = '';
+
+      const { getConfig } = await import('./index.js');
+      expect(() => getConfig()).toThrowError(/TRACES_INGESTION_API_KEY/i);
+    });
+
+    it('accepts a strong key when ingestion is enabled in production', async () => {
+      validProdEnv();
+      process.env.TRACES_INGESTION_ENABLED = 'true';
+      process.env.TRACES_INGESTION_API_KEY = 'k'.repeat(24);
+
+      const { getConfig } = await import('./index.js');
+      expect(() => getConfig()).not.toThrow();
+    });
+
+    it('allows a weak/empty key when ingestion is disabled', async () => {
+      validProdEnv();
+      process.env.TRACES_INGESTION_ENABLED = 'false';
+      process.env.TRACES_INGESTION_API_KEY = '';
+
+      const { getConfig } = await import('./index.js');
+      expect(() => getConfig()).not.toThrow();
+    });
+  });
+
   describe('shannonEntropy function', () => {
     it('returns 0 for empty string', async () => {
       const { shannonEntropy } = await import('./index.js');
