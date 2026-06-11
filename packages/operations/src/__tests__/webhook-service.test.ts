@@ -155,5 +155,32 @@ describe('webhook-service', () => {
       expect(fetchSpy).not.toHaveBeenCalled();
       fetchSpy.mockRestore();
     });
+
+    // SECURITY REGRESSION: the URL check above only sees the ORIGINAL
+    // destination. A public host could answer the signed POST with a 307 to a
+    // private/metadata target; with the default redirect: 'follow' the runtime
+    // would re-issue the request there, bypassing the validation entirely. The
+    // delivery fetch must therefore refuse to follow redirects.
+    it('issues the delivery fetch with redirect: "error" so a 3xx cannot pivot to an internal target', async () => {
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+        new Response('ok', { status: 200 }),
+      );
+      const webhook = await createWebhook({ name: 'public', url: 'https://example.com/hook', events: ['*'] });
+      const event = { type: 'insight.created', timestamp: new Date().toISOString(), data: {} };
+      const deliveryId = await createDelivery(webhook.id, event);
+
+      const ok = await deliverWebhook(deliveryId);
+
+      expect(ok).toBe(true);
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      const init = fetchSpy.mock.calls[0][1] as RequestInit;
+      expect(init.redirect).toBe('error');
+      // The payload column is JSONB (pg returns an object): the body must be the
+      // re-serialized string and the HMAC must sign exactly those bytes.
+      expect(typeof init.body).toBe('string');
+      const headers = init.headers as Record<string, string>;
+      expect(headers['X-Webhook-Signature']).toBe(`sha256=${signPayload(init.body as string, webhook.secret)}`);
+      fetchSpy.mockRestore();
+    });
   });
 });
