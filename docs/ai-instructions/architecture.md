@@ -275,7 +275,7 @@ deleted — time-based retention is unchanged.
 ### Monitoring & anomaly detection
 
 ```
-[Scheduler]  (polls 60s; runs at MONITORING_INTERVAL_MINUTES)
+[Scheduler]  (polls 60s; runs at the Settings monitoring.polling_interval)
    → monitoring-service.runMonitoringCycle()
         ├─ adaptive detector (z-score / Bollinger / CV-scaled) + Isolation Forest
         ├─ optional security scan, NLP log analysis, predictive alerting
@@ -321,7 +321,7 @@ The guard is applied to both the REST and WebSocket entry points; see CLAUDE.md 
 | Job | Cadence | Controlled by |
 |-----|---------|---------------|
 | Metrics collection | 60s | `METRICS_COLLECTION_INTERVAL_SECONDS` |
-| Monitoring cycle | configurable (1-min poll) | `MONITORING_INTERVAL_MINUTES` (Settings) |
+| Monitoring cycle | configurable (1-min poll) | Settings `monitoring.polling_interval` |
 | Webhook retry sweep | 30s | `WEBHOOKS_RETRY_INTERVAL_SECONDS` |
 | KPI snapshot | 5 min | — |
 | Image staleness check | 24h | `IMAGE_STALENESS_CHECK_INTERVAL_HOURS` |

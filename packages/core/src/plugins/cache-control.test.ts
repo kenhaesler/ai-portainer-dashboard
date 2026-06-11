@@ -16,6 +16,8 @@ async function buildTestApp() {
   app.get('/api/auth/session', async () => ({ ok: true }));
   app.get('/api/admin/cache/stats', async () => ({ ok: true }));
   app.get('/api/llm/models', async () => ({ ok: true }));
+  app.get('/api/users', async () => ({ ok: true }));
+  app.get('/api/backup/db.sql', async () => ({ ok: true }));
   app.get('/api/health', async () => ({ ok: true }));
   app.post('/api/containers/restart', async () => ({ ok: true }));
 
@@ -51,6 +53,9 @@ describe('cache-control plugin', () => {
       '/api/auth/session',
       '/api/admin/cache/stats',
       '/api/llm/models',
+      // Sensitive admin reads must never be browser-cached.
+      '/api/users',
+      '/api/backup/db.sql',
     ];
 
     for (const url of sensitiveRoutes) {

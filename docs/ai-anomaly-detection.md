@@ -1,6 +1,6 @@
 # AI & Anomaly Detection Techniques
 
-The monitoring pipeline runs a multi-phase analysis on every cycle (cadence is configurable via `MONITORING_INTERVAL_MINUTES`). Each technique operates independently and degrades gracefully when its prerequisites are unavailable. Detector internals live in `packages/ai-intelligence/src/services/`; defaults are defined in `packages/core/src/config/env.schema.ts` and documented in the [configuration reference](configuration.md).
+The monitoring pipeline runs a multi-phase analysis on every cycle (cadence is configurable via Settings → Monitoring → General, `monitoring.polling_interval`). Each technique operates independently and degrades gracefully when its prerequisites are unavailable. Detector internals live in `packages/ai-intelligence/src/services/`; defaults are defined in `packages/core/src/config/env.schema.ts` and documented in the [configuration reference](configuration.md).
 
 > **Recent tuning (issues #1294–#1298).** The pipeline was reworked to cut false positives and add a human-in-the-loop feedback signal: a wider moving-average window, lower Isolation Forest contamination, an hour-of-day seasonal baseline, coefficient-of-variation (CV) threshold scaling, a per-user false-positive feedback loop, and per-user sensitivity presets. Each is described below.
 

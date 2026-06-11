@@ -8,6 +8,17 @@ import { cachedFetchSWR, getCacheKey, cache } from '@dashboard/core/portainer/po
 import { z } from 'zod';
 
 export async function incidentsRoutes(fastify: FastifyInstance) {
+  // Bounded query schema — without this, limit/offset were read via a raw cast
+  // with no coercion or bounds, so `?limit=100000000` returned the entire table
+  // (unbounded pagination DoS, made worse because GETs bypass the rate limiter).
+  const ListQ = z.object({
+    status: z.enum(['active', 'resolved']).optional(),
+    severity: z.enum(['critical', 'warning', 'info']).optional(),
+    signature: z.string().max(256).optional(),
+    limit: z.coerce.number().int().min(1).max(1000).default(50),
+    offset: z.coerce.number().int().min(0).default(0),
+  });
+
   // List incidents
   fastify.get('/api/incidents', {
     schema: {
@@ -16,14 +27,14 @@ export async function incidentsRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
     },
     preHandler: [fastify.authenticate],
-  }, async (request) => {
-    const { status, severity, signature, limit = 50, offset = 0 } = request.query as {
-      status?: 'active' | 'resolved';
-      severity?: string;
-      signature?: string;
-      limit?: number;
-      offset?: number;
-    };
+  }, async (request, reply) => {
+    // Validate via safeParse (mirrors /api/incidents/groups in this file) so the
+    // route does not depend on a Zod validator compiler being registered.
+    const parsed = ListQ.safeParse(request.query);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'invalid query', details: parsed.error.flatten() });
+    }
+    const { status, severity, signature, limit, offset } = parsed.data;
 
     const incidents = await getIncidents({ status, severity, signature, limit, offset });
     const counts = await getIncidentCount();

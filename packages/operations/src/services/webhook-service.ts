@@ -5,6 +5,7 @@ import { eventBus } from '@dashboard/core/services/typed-event-bus.js';
 import { getSetting } from '@dashboard/core/services/settings-store.js';
 import { toWebhookEvent, type WebhookEvent } from '@dashboard/contracts';
 import { withSpan } from '@dashboard/core/tracing/trace-context.js';
+import { validateOutboundWebhookUrl } from '@dashboard/core/utils/network-security.js';
 
 const log = createChildLogger('webhook-service');
 
@@ -28,7 +29,8 @@ export interface WebhookDelivery {
   id: string;
   webhook_id: string;
   event_type: string;
-  payload: string;
+  /** Stored as JSONB — the pg driver returns an object, not the original string. */
+  payload: string | Record<string, unknown>;
   status: string;
   http_status: number | null;
   response_body: string | null;
@@ -155,8 +157,30 @@ async function deliverWebhookInner(deliveryId: string): Promise<boolean> {
     return false;
   }
 
-  const signature = signPayload(delivery.payload, webhook.secret);
   const attempt = delivery.attempt + 1;
+
+  // SECURITY: re-validate the destination at delivery time, not just at
+  // create/update — and BEFORE doing any other work. This covers rows stored
+  // before the SSRF guard was hardened and blocks a webhook whose URL is (or
+  // was repointed to) an internal / loopback / metadata target before we ever
+  // issue the request.
+  const urlError = validateOutboundWebhookUrl(webhook.url);
+  if (urlError) {
+    log.warn({ deliveryId, webhookId: webhook.id, reason: urlError }, 'Webhook delivery blocked: unsafe destination URL');
+    await db().execute(
+      "UPDATE webhook_deliveries SET status = 'failed', response_body = ?, attempt = ? WHERE id = ?",
+      [`Blocked: ${urlError}`, attempt, deliveryId],
+    );
+    return false;
+  }
+
+  // payload is a JSONB column, so the pg driver hands back an object —
+  // re-serialize and sign exactly the bytes we send, so the HMAC signature
+  // always verifies against the delivered body.
+  const payloadText = typeof delivery.payload === 'string'
+    ? delivery.payload
+    : JSON.stringify(delivery.payload);
+  const signature = signPayload(payloadText, webhook.secret);
 
   try {
     const response = await fetch(webhook.url, {
@@ -168,8 +192,12 @@ async function deliverWebhookInner(deliveryId: string): Promise<boolean> {
         'X-Webhook-Delivery': deliveryId,
         'User-Agent': 'AI-Portainer-Dashboard/1.0',
       },
-      body: delivery.payload,
+      body: payloadText,
       signal: AbortSignal.timeout(10000),
+      // SECURITY: never follow redirects — a public webhook host could 307 the
+      // signed POST into a private/metadata target, bypassing the URL
+      // validation above (which only sees the original destination).
+      redirect: 'error',
     });
 
     const responseBody = await response.text().catch(() => '');

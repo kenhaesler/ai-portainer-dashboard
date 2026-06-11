@@ -586,6 +586,21 @@ export function setupLlmNamespace(ns: Namespace, infraLogs: InfrastructureLogsIn
     let abortController: AbortController | null = null;
 
     socket.on('chat:message', async (data: { text: string; context?: any; model?: string }) => {
+      // ── Payload validation ──
+      // The handler is typed but receives untrusted socket input. Without this
+      // a malformed payload (missing/non-string `text`) made isPromptInjection
+      // -> String.normalize throw OUTSIDE the try/catch below, escaping as an
+      // unhandled rejection with no chat:error sent back to the client.
+      if (
+        !data || typeof data !== 'object'
+        || typeof data.text !== 'string' || data.text.trim().length === 0
+        || (data.model !== undefined && typeof data.model !== 'string')
+        || (data.context !== undefined && (typeof data.context !== 'object' || data.context === null))
+      ) {
+        socket.emit('chat:error', { message: 'Invalid message payload' });
+        return;
+      }
+
       // ── Per-user throttle: reject rapid-fire messages ──
       const throttleKey = `chat:message:${userId}`;
       const throttleResult = chatThrottle.check(throttleKey);
@@ -639,6 +654,21 @@ export function setupLlmNamespace(ns: Namespace, infraLogs: InfrastructureLogsIn
       const mcpToolPrompt = await getMcpToolPrompt();
 
       const additionalContext = data.context ? formatChatContext(data.context) : '';
+      // The client-supplied `context` is serialized verbatim into the system
+      // prompt, so it must pass the same prompt-injection guard as `text` —
+      // otherwise an attacker smuggles instructions into the high-trust system
+      // role via a benign-looking `text`.
+      if (additionalContext) {
+        const ctxGuard = isPromptInjection(additionalContext);
+        if (ctxGuard.blocked) {
+          log.warn({ userId, reason: ctxGuard.reason, score: ctxGuard.score }, 'Chat context blocked by prompt guard');
+          socket.emit('chat:blocked', {
+            reason: 'Your message context was flagged as a potential prompt injection attempt.',
+            score: ctxGuard.score,
+          });
+          return;
+        }
+      }
       const basePrompt = await getEffectivePrompt('chat_assistant');
       // Canary preamble (#1119): a per-session random token prepended to
       // the system prompt. If the LLM ever echoes it back, the output
@@ -824,13 +854,32 @@ export function setupLlmNamespace(ns: Namespace, infraLogs: InfrastructureLogsIn
             })),
           });
 
+          // Guard tool-result content before feeding it back to the model.
+          // Tool output (container logs, MCP command output) is attacker-
+          // influenceable and is NOT covered by the chatStream() chokepoint
+          // (this socket calls streamLlmCall directly, and the chokepoint only
+          // scans role:'user' messages). Without this, planted text in a
+          // container's stdout becomes a second-order prompt injection on the
+          // next iteration.
+          const toolResultsText = formatToolResults(results);
+          const toolGuard = isPromptInjection(toolResultsText);
+          const safeToolResults = toolGuard.blocked
+            ? '[Tool results were withheld because they contained content flagged as a potential prompt-injection attempt.]'
+            : toolResultsText;
+          if (toolGuard.blocked) {
+            log.warn(
+              { userId, reason: toolGuard.reason, score: toolGuard.score, tools: toolCalls.map((t) => t.tool) },
+              'Tool result content flagged by prompt guard — withheld from follow-up LLM call',
+            );
+          }
+
           // Add assistant's tool request and tool results to messages for next iteration
           messages = [
             ...messages,
             { role: 'assistant', content: iterationResponse },
             {
               role: 'tool',
-              content: `## Tool Results\n\nThe following tools were executed. Use these results to answer the user's question:\n\n${formatToolResults(results)}`,
+              content: `## Tool Results\n\nThe following tools were executed. Use these results to answer the user's question:\n\n${safeToolResults}`,
             },
           ];
 

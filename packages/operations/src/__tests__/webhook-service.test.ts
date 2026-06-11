@@ -20,6 +20,8 @@ import {
   listWebhooks,
   deleteWebhook,
   createDelivery,
+  deliverWebhook,
+  getDeliveriesForWebhook,
   startWebhookListener,
   stopWebhookListener,
 } from '../services/webhook-service.js';
@@ -111,6 +113,74 @@ describe('webhook-service', () => {
     it('should start and stop without errors', () => {
       expect(() => startWebhookListener()).not.toThrow();
       expect(() => stopWebhookListener()).not.toThrow();
+    });
+  });
+
+  // SECURITY REGRESSION: validateOutboundWebhookUrl only runs at create/update
+  // in the route layer. Delivery must RE-validate the stored URL, otherwise a
+  // row whose URL is (or was repointed to) an internal/loopback/metadata target
+  // is fetched server-side. The service-level createWebhook does not validate,
+  // so an unsafe URL can be persisted here exactly as it could pre-fix.
+  describe('deliverWebhook SSRF re-validation', () => {
+    it('blocks delivery to an internal/metadata URL and never issues the fetch', async () => {
+      const fetchSpy = vi.spyOn(globalThis, 'fetch');
+      const webhook = await createWebhook({
+        name: 'evil',
+        url: 'http://169.254.169.254/latest/meta-data/',
+        events: ['*'],
+      });
+      const event = { type: 'insight.created', timestamp: new Date().toISOString(), data: { test: true } };
+      const deliveryId = await createDelivery(webhook.id, event);
+
+      const ok = await deliverWebhook(deliveryId);
+
+      expect(ok).toBe(false);
+      expect(fetchSpy).not.toHaveBeenCalled();
+      const { deliveries } = await getDeliveriesForWebhook(webhook.id);
+      const row = deliveries.find((d) => d.id === deliveryId);
+      expect(row?.status).toBe('failed');
+      expect(row?.response_body ?? '').toContain('Blocked');
+      fetchSpy.mockRestore();
+    });
+
+    it('also blocks the bracketed-IPv6 loopback bypass', async () => {
+      const fetchSpy = vi.spyOn(globalThis, 'fetch');
+      const webhook = await createWebhook({ name: 'evil6', url: 'http://[::1]:9090/x', events: ['*'] });
+      const event = { type: 'insight.created', timestamp: new Date().toISOString(), data: {} };
+      const deliveryId = await createDelivery(webhook.id, event);
+
+      const ok = await deliverWebhook(deliveryId);
+
+      expect(ok).toBe(false);
+      expect(fetchSpy).not.toHaveBeenCalled();
+      fetchSpy.mockRestore();
+    });
+
+    // SECURITY REGRESSION: the URL check above only sees the ORIGINAL
+    // destination. A public host could answer the signed POST with a 307 to a
+    // private/metadata target; with the default redirect: 'follow' the runtime
+    // would re-issue the request there, bypassing the validation entirely. The
+    // delivery fetch must therefore refuse to follow redirects.
+    it('issues the delivery fetch with redirect: "error" so a 3xx cannot pivot to an internal target', async () => {
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+        new Response('ok', { status: 200 }),
+      );
+      const webhook = await createWebhook({ name: 'public', url: 'https://example.com/hook', events: ['*'] });
+      const event = { type: 'insight.created', timestamp: new Date().toISOString(), data: {} };
+      const deliveryId = await createDelivery(webhook.id, event);
+
+      const ok = await deliverWebhook(deliveryId);
+
+      expect(ok).toBe(true);
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      const init = fetchSpy.mock.calls[0][1] as RequestInit;
+      expect(init.redirect).toBe('error');
+      // The payload column is JSONB (pg returns an object): the body must be the
+      // re-serialized string and the HMAC must sign exactly those bytes.
+      expect(typeof init.body).toBe('string');
+      const headers = init.headers as Record<string, string>;
+      expect(headers['X-Webhook-Signature']).toBe(`sha256=${signPayload(init.body as string, webhook.secret)}`);
+      fetchSpy.mockRestore();
     });
   });
 });

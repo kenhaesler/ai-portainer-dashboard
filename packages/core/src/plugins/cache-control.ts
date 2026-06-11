@@ -39,6 +39,10 @@ const NO_CACHE_PREFIXES = [
   '/api/llm',
   '/api/remediation',
   '/api/settings',
+  // Sensitive admin reads: the user roster and database backup downloads must
+  // not be written to the browser's private disk cache (survives logout).
+  '/api/users',
+  '/api/backup',
 ];
 
 async function cacheControlPlugin(fastify: FastifyInstance) {

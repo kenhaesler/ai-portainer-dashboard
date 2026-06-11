@@ -98,10 +98,10 @@ Approved external access pattern (when needed):
 
 ## Monitoring & Metrics
 
+Monitoring enable/interval are configured via **Settings UI → Monitoring → General** (`monitoring.enabled`, `monitoring.polling_interval`). The legacy `MONITORING_ENABLED` / `MONITORING_INTERVAL_MINUTES` env vars still work as fallbacks but are deprecated and no longer set by the compose files.
+
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `MONITORING_ENABLED` | Enable background monitoring | `true` |
-| `MONITORING_INTERVAL_MINUTES` | Monitoring cycle interval | `5` |
 | `METRICS_COLLECTION_ENABLED` | Enable metrics collection | `true` |
 | `METRICS_COLLECTION_INTERVAL_SECONDS` | Collection interval | `60` |
 | `METRICS_RETENTION_DAYS` | Days to retain metrics | `7` |

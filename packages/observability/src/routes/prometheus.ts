@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { getConfig } from '@dashboard/core/config/index.js';
+import { constantTimeEqual } from '@dashboard/core/utils/crypto.js';
 import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
 
 type PrometheusRoutesOpts = { getPromptGuardNearMissTotal?: () => number };
@@ -286,7 +287,8 @@ export async function prometheusRoutes(fastify: FastifyInstance, opts: Prometheu
     if (config.PROMETHEUS_BEARER_TOKEN) {
       const authHeader = request.headers.authorization;
       const expected = `Bearer ${config.PROMETHEUS_BEARER_TOKEN}`;
-      if (authHeader !== expected) {
+      // Constant-time compare to avoid leaking the token via response timing.
+      if (typeof authHeader !== 'string' || !constantTimeEqual(authHeader, expected)) {
         return reply
           .code(401)
           .header('www-authenticate', 'Bearer')

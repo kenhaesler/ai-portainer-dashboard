@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { listUsers, createUser, updateUser, deleteUser, type Role } from '@dashboard/core/services/user-store.js';
+import { invalidateAllUserSessions } from '@dashboard/core/services/session-store.js';
 import { writeAuditLog } from '@dashboard/core/services/audit-logger.js';
 import { UserCreateBodySchema, UserIdParamsSchema, UserUpdateBodySchema } from '@dashboard/core/models/api-schemas.js';
 import { assertUser } from '@dashboard/core/utils/auth-helpers.js';
@@ -79,6 +80,23 @@ export async function userRoutes(fastify: FastifyInstance) {
     }
     if (!user) return reply.status(404).send({ error: 'User not found' });
 
+    // SECURITY: a role change or password reset must take effect immediately.
+    // The role is carried inside the signed JWT and is never re-read from the
+    // DB on subsequent requests, so without revoking sessions a demoted user
+    // would keep their old privileges (and a password reset would not lock out
+    // a stolen token) until the JWT expires. Revoke all of the target's
+    // sessions so the next request forces a fresh login with the new role.
+    if (body.role !== undefined || body.password !== undefined) {
+      // Best-effort: the update has already committed, so a transient revocation
+      // failure must not turn the operation into a 500 — but it must be logged
+      // for ops to catch. Mirrors the revoke-on-role-change path in oidc.ts.
+      try {
+        await invalidateAllUserSessions(id);
+      } catch (revokeErr) {
+        request.log.warn({ err: revokeErr, userId: id }, 'Failed to revoke sessions after user update');
+      }
+    }
+
     writeAuditLog({
       user_id: actor.sub,
       username: actor.username,
@@ -112,6 +130,16 @@ export async function userRoutes(fastify: FastifyInstance) {
 
     const deleted = await deleteUser(id);
     if (!deleted) return reply.status(404).send({ error: 'User not found' });
+
+    // SECURITY: the sessions table has no FK/ON DELETE CASCADE to users, and
+    // getSession only checks session validity — so a deleted user's token keeps
+    // authenticating until expiry. Explicitly revoke their sessions on delete
+    // (best-effort + logged, matching the update path).
+    try {
+      await invalidateAllUserSessions(id);
+    } catch (revokeErr) {
+      request.log.warn({ err: revokeErr, userId: id }, 'Failed to revoke sessions after user deletion');
+    }
 
     writeAuditLog({
       user_id: actor.sub,

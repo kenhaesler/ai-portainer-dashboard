@@ -24,6 +24,21 @@ function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
+/**
+ * True when two LLM endpoint URLs share the same origin (scheme + host + port).
+ * Used to decide whether the *stored* API token may be attached to an outbound
+ * probe: the token is only ever sent to the already-configured endpoint, never
+ * to a caller-supplied host (token-exfiltration / SSRF-credential guard).
+ */
+function sameLlmOrigin(a: string | undefined, b: string | undefined): boolean {
+  if (!a || !b) return false;
+  try {
+    return new URL(a).origin === new URL(b).origin;
+  } catch {
+    return false;
+  }
+}
+
 async function getInfrastructureSummary(): Promise<string> {
   try {
     const endpoints = await cachedFetch(
@@ -238,7 +253,11 @@ export async function llmRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
       body: LlmTestConnectionBodySchema,
     },
-    preHandler: [fastify.authenticate],
+    // Admin-only: this endpoint drives a server-side fetch of a caller-supplied
+    // URL and (for the configured endpoint) attaches the stored API token.
+    // Matches the sibling /api/llm/test-prompt gate; a viewer/operator must not
+    // be able to use it as an SSRF probe or token-exfiltration channel.
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request) => {
     const { url, token, authType } = request.body;
 
@@ -253,7 +272,12 @@ export async function llmRoutes(fastify: FastifyInstance) {
       // returned by the settings GET, treat it as nullish so the stored
       // config wins. See REDACTED_TOKEN_PLACEHOLDER for full rationale.
       const tokenIsRedacted = token === REDACTED_TOKEN_PLACEHOLDER;
-      const effectiveToken = (token && !tokenIsRedacted) ? token : effectiveConfig.apiToken;
+      const callerToken = (token && !tokenIsRedacted) ? token : undefined;
+      // Only fall back to the stored token when probing the already-configured
+      // endpoint. Testing a *different* URL requires the caller to supply their
+      // own token — the stored secret is never forwarded to an arbitrary host.
+      const effectiveToken = callerToken
+        ?? (sameLlmOrigin(targetUrl, effectiveConfig.apiUrl) ? effectiveConfig.apiToken : undefined);
       const effectiveAuthType = authType ?? effectiveConfig.authType;
       const authHeaders = getAuthHeaders(effectiveToken, effectiveAuthType);
       const modelsUrl = resolveModelsUrl(targetUrl);
@@ -420,8 +444,13 @@ export async function llmRoutes(fastify: FastifyInstance) {
     preHandler: [fastify.authenticate],
   }, async (request) => {
     const llmConfig = await getEffectiveLlmConfig();
-    // Optional `host` query param lets the Settings page probe an unsaved URL.
-    const targetUrl = request.query.host || llmConfig.apiUrl;
+    // The optional `host` query param lets the Settings page probe an unsaved
+    // URL. Honour it only for admins — a non-admin must not be able to redirect
+    // this server-side fetch to an arbitrary host. Non-admins (and the model
+    // pickers on the Metrics Dashboard / Assistant pages) always hit the
+    // configured endpoint.
+    const isAdmin = request.user?.role === 'admin';
+    const targetUrl = (request.query.host && isAdmin) ? request.query.host : llmConfig.apiUrl;
 
     try {
       if (!targetUrl) {
@@ -429,9 +458,12 @@ export async function llmRoutes(fastify: FastifyInstance) {
       }
 
       const modelsUrl = resolveModelsUrl(targetUrl);
+      // Only attach the stored token when the destination is the configured
+      // endpoint — never leak the secret to an admin-supplied foreign host.
+      const attachToken = sameLlmOrigin(targetUrl, llmConfig.apiUrl);
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
-        ...getAuthHeaders(llmConfig.apiToken, llmConfig.authType),
+        ...(attachToken ? getAuthHeaders(llmConfig.apiToken, llmConfig.authType) : {}),
       };
 
       const response = await llmFetch(modelsUrl, { headers });

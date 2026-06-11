@@ -31,14 +31,28 @@ global.fetch = mockFetch;
 
 describe('Health Routes', () => {
   let app: FastifyInstance;
+  // /health/ready/detail is admin-gated; default to admin so the content tests
+  // exercise the full diagnostic payload, and flip per-test to assert the gate.
+  let currentRole: 'viewer' | 'operator' | 'admin' = 'admin';
   beforeAll(async () => {
     app = Fastify({ logger: false });
     app.setValidatorCompiler(validatorCompiler);
     app.setSerializerCompiler(serializerCompiler);
     app.decorate('authenticate', async () => undefined);
+    app.decorate('requireRole', (minRole: 'viewer' | 'operator' | 'admin') => async (request: any, reply: any) => {
+      const rank = { viewer: 0, operator: 1, admin: 2 };
+      if (rank[(request.user?.role ?? 'viewer') as keyof typeof rank] < rank[minRole]) {
+        reply.code(403).send({ error: 'Insufficient permissions' });
+      }
+    });
+    app.decorateRequest('user', undefined);
+    app.addHook('preHandler', async (request: any) => {
+      request.user = { sub: 'u1', username: 'u', sessionId: 's1', role: currentRole };
+    });
     await app.register(healthRoutes);
     await app.ready();
   });
+  beforeEach(() => { currentRole = 'admin'; });
   afterAll(async () => {
     await app.close();
     await closeTestRedis();
@@ -233,6 +247,14 @@ describe('Health Routes', () => {
   });
 
   describe('GET /health/ready/detail (authenticated)', () => {
+    it('denies non-admin roles (403) — internal URLs/errors must not leak to viewers', async () => {
+      currentRole = 'viewer';
+      const r = await app.inject({ method: 'GET', url: '/health/ready/detail' });
+      expect(r.statusCode).toBe(403);
+      currentRole = 'operator';
+      const r2 = await app.inject({ method: 'GET', url: '/health/ready/detail' });
+      expect(r2.statusCode).toBe(403);
+    });
     it('should return full diagnostic info including URLs', async () => {
       mockIsMetricsDbHealthy.mockResolvedValue(true);
       mockFetch.mockResolvedValue({ ok: true });

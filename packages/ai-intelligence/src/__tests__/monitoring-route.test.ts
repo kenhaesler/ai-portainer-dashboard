@@ -377,3 +377,53 @@ describe('GET /api/monitoring/insights/container/:containerId', () => {
     expect(params.some((p) => typeof p === 'string' && p.endsWith('Z'))).toBe(true);
   });
 });
+
+// SECURITY REGRESSION: acknowledging an insight is a mutation on fleet-shared
+// triage state and must require at least operator — a read-only viewer must be
+// rejected (403) and the UPDATE must never run.
+describe('insight acknowledge RBAC gate', () => {
+  let app: FastifyInstance;
+  let role: 'viewer' | 'operator' | 'admin';
+
+  beforeAll(async () => {
+    app = Fastify({ logger: false });
+    app.setValidatorCompiler(validatorCompiler);
+    app.setSerializerCompiler(serializerCompiler);
+    app.decorate('authenticate', async () => undefined);
+    app.decorate('requireRole', (minRole: 'viewer' | 'operator' | 'admin') => async (request: any, reply: any) => {
+      const rank = { viewer: 0, operator: 1, admin: 2 };
+      if (rank[(request.user?.role ?? 'viewer') as keyof typeof rank] < rank[minRole]) {
+        reply.code(403).send({ error: 'Insufficient permissions' });
+      }
+    });
+    app.decorateRequest('user', undefined);
+    app.addHook('preHandler', async (request: any) => {
+      request.user = { sub: 'u1', username: 'u', sessionId: 's1', role };
+    });
+    await app.register(monitoringRoutes, monitoringOpts);
+    await app.ready();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockExecute.mockResolvedValue({ changes: 1 });
+  });
+
+  it('rejects a viewer with 403 and never runs the UPDATE', async () => {
+    role = 'viewer';
+    const res = await app.inject({ method: 'POST', url: '/api/monitoring/insights/i1/acknowledge' });
+    expect(res.statusCode).toBe(403);
+    expect(mockExecute).not.toHaveBeenCalled();
+  });
+
+  it('allows an operator', async () => {
+    role = 'operator';
+    const res = await app.inject({ method: 'POST', url: '/api/monitoring/insights/i1/acknowledge' });
+    expect(res.statusCode).toBe(200);
+    expect(mockExecute).toHaveBeenCalled();
+  });
+});

@@ -294,7 +294,10 @@ export async function monitoringRoutes(fastify: FastifyInstance, opts: Monitorin
       params: InsightIdParamsSchema,
       response: { 200: SuccessResponseSchema },
     },
-    preHandler: [fastify.authenticate],
+    // Acknowledging mutates fleet-shared triage state, so it requires at least
+    // operator — read-only viewers must not be able to flip the flag on any
+    // insight (project policy: mutating endpoints require a role gate).
+    preHandler: [fastify.authenticate, fastify.requireRole('operator')],
   }, async (request, reply) => {
     const { id } = request.params as { id: string };
     try {

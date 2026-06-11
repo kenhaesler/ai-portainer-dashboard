@@ -10,6 +10,7 @@ import socketIoPlugin from '@dashboard/core/plugins/socket-io.js';
 import compressPlugin from '@dashboard/core/plugins/compress.js';
 import securityHeadersPlugin from '@dashboard/core/plugins/security-headers.js';
 import cacheControlPlugin from '@dashboard/core/plugins/cache-control.js';
+import errorHandlerPlugin from '@dashboard/core/plugins/error-handler.js';
 import staticPlugin from '@dashboard/core/plugins/static.js';
 
 // Foundational routes (cross-domain, Portainer API glue)
@@ -225,6 +226,9 @@ export async function buildApp() {
   await app.register(swaggerPlugin);
   await app.register(authPlugin);
   await app.register(socketIoPlugin);
+  // Global error handler — generic 5xx bodies in production (no raw error
+  // reflection), validation/4xx errors preserved. See plugin for rationale.
+  await app.register(errorHandlerPlugin);
 
   // Build shared adapters for DI
   const llmAdapter = buildLlmAdapter();

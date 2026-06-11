@@ -43,16 +43,22 @@ export interface OtlpExportRequest {
 
 // ─── Helpers ────────────────────────────────────────────────────────
 
-function extractAttributeValue(value: OtlpKeyValue['value']): unknown {
+// Bounds recursion on attacker-supplied OTLP attribute nesting so a deeply
+// nested array/kvlist payload cannot blow the stack. Beyond the cap the value
+// is truncated rather than recursed.
+const MAX_ATTR_DEPTH = 32;
+
+function extractAttributeValue(value: OtlpKeyValue['value'], depth = 0): unknown {
+  if (depth >= MAX_ATTR_DEPTH) return undefined;
   if (value.stringValue !== undefined) return value.stringValue;
   if (value.intValue !== undefined) return Number(value.intValue);
   if (value.doubleValue !== undefined) return value.doubleValue;
   if (value.boolValue !== undefined) return value.boolValue;
-  if (value.arrayValue) return value.arrayValue.values.map(extractAttributeValue);
+  if (value.arrayValue) return value.arrayValue.values.map((v) => extractAttributeValue(v, depth + 1));
   if (value.kvlistValue) {
     const result: Record<string, unknown> = {};
     for (const entry of value.kvlistValue.values) {
-      result[entry.key] = extractAttributeValue(entry.value);
+      result[entry.key] = extractAttributeValue(entry.value, depth + 1);
     }
     return result;
   }

@@ -129,12 +129,15 @@ export async function healthRoutes(fastify: FastifyInstance) {
     };
   });
 
-  // Readiness probe (authenticated, full detail)
+  // Readiness probe (admin only, full detail). The unredacted checks expose
+  // internal service URLs (Portainer/LLM endpoints) and raw connection-error
+  // strings — infrastructure-disclosure that must match the admin gate used by
+  // /api/admin/system-info. Non-admins use the redacted /health/ready instead.
   fastify.get('/health/ready/detail', {
-    preHandler: fastify.authenticate,
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
     schema: {
       tags: ['Health'],
-      summary: 'Readiness check (authenticated) - full diagnostic info',
+      summary: 'Readiness check (admin) - full diagnostic info',
     },
   }, async () => {
     const { checks, overallStatus } = await runChecks();
