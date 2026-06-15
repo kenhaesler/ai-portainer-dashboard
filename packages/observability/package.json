@@ -33,7 +33,7 @@
   "devDependencies": {
     "@types/node": "^25.9.2",
     "@vitest/coverage-v8": "^4.1.8",
-    "protobufjs": "^8.6.1",
+    "protobufjs": "^8.6.3",
     "typescript": "^6.0.3",
     "vitest": "^4.0.18"
   }
