@@ -22,7 +22,7 @@
     "@dashboard/operations": "*",
     "@dashboard/infrastructure": "*",
     "fastify": "^5.8.5",
-    "fastify-plugin": "^5.0.1",
+    "fastify-plugin": "^6.0.0",
     "fastify-type-provider-zod": "^6.1.0",
     "p-limit": "^7.3.0",
     "socket.io": "^4.8.1"
