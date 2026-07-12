@@ -119,12 +119,17 @@ export async function harborVulnerabilityRoutes(fastify: FastifyInstance) {
       offset: number;
     };
 
-    const [vulnerabilities, summary] = await Promise.all([
+    const [vulnerabilities, summary, total] = await Promise.all([
       vulnStore.getVulnerabilities(query),
       vulnStore.getVulnerabilitySummary(),
+      vulnStore.getVulnerabilitiesCount(query),
     ]);
 
-    return { vulnerabilities, summary };
+    // `summary` stays global (unfiltered) for the KPI cards; `total` is the count
+    // of the *filtered* result set so the client can paginate over it accurately
+    // instead of the old fixed 500 cap / global total (#1546). limit/offset are
+    // echoed back so the caller can render page controls.
+    return { vulnerabilities, summary, total, limit: query.limit, offset: query.offset };
   });
 
   fastify.get('/api/harbor/vulnerabilities/summary', {

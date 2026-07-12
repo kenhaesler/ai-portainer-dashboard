@@ -72,6 +72,9 @@ vi.mock('@/features/security/hooks/use-harbor-vulnerabilities', () => ({
         fixable: 20,
         excepted: 2,
       },
+      total: 2,
+      limit: 50,
+      offset: 0,
     },
     isLoading: false,
     isError: false,
@@ -158,6 +161,46 @@ describe('HarborVulnerabilitiesPage', () => {
     expect(screen.getByRole('columnheader', { name: /In Use/ })).toBeInTheDocument();
     // Row data renders inside the DataTable body
     expect(screen.getByText('myproject/nginx')).toBeInTheDocument();
+  });
+
+  it('counts against the filtered total, not the global summary total (#1546)', () => {
+    render(<HarborVulnerabilitiesPage />);
+    // summary.total is 42 (global KPI card), but the list count line must use the
+    // filtered total (2) so a severity/in-use filter reads honestly.
+    expect(screen.getByText(/Showing 2 of 2 vulnerabilities/)).toBeInTheDocument();
+    // The global figure still appears once, on the "Total Vulnerabilities" KPI card.
+    expect(screen.getByText('42')).toBeInTheDocument();
+  });
+
+  it('renders server pagination controls when the filtered total exceeds one page (#1546)', async () => {
+    const mod = await import('@/features/security/hooks/use-harbor-vulnerabilities');
+    vi.mocked(mod.useHarborVulnerabilities).mockReturnValueOnce({
+      data: {
+        vulnerabilities: [
+          {
+            id: 1, cve_id: 'CVE-2024-1234', severity: 'Critical', cvss_v3_score: 9.8,
+            package: 'openssl', version: '1.1.1', fixed_version: '1.1.2', status: 'fixed',
+            description: null, links: null, project_id: 1, repository_name: 'myproject/nginx',
+            digest: 'sha256:abc', tags: null, in_use: false, matching_containers: null,
+            synced_at: '2026-02-16T10:01:00Z',
+          },
+        ],
+        summary: { total: 300, critical: 50, high: 100, medium: 100, low: 50, in_use_total: 8, in_use_critical: 3, fixable: 20, excepted: 2 },
+        total: 120,
+        limit: 50,
+        offset: 0,
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as ReturnType<typeof mod.useHarborVulnerabilities>);
+
+    render(<HarborVulnerabilitiesPage />);
+    // 120 filtered rows / 50 per page = 3 pages, so the pager appears.
+    expect(screen.getByTestId('server-pagination')).toBeInTheDocument();
+    expect(screen.getByText(/Page 1 of 3/)).toBeInTheDocument();
+    expect(screen.getByTestId('server-next-page')).toBeInTheDocument();
   });
 
   it('expands a vulnerability detail panel on row click', async () => {
