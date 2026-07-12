@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { axe } from 'vitest-axe';
@@ -162,6 +162,9 @@ describe('ImageFootprintPage accessibility', () => {
     const dialog = screen.getByRole('dialog');
     expect(dialog).toBeInTheDocument();
     expect(dialog.getAttribute('aria-label')).toMatch(/nginx/i);
+
+    // The icon-only close button exposes an accessible name (#1540)
+    expect(within(dialog).getByRole('button', { name: 'Close details' })).toBeInTheDocument();
   });
 
   // ---------------------------------------------------------------------

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSockets } from '@/providers/socket-provider';
 import { cn } from '@/shared/lib/utils';
+import { formatRelativeTime } from '@/shared/lib/format-relative-time';
 import { useUiStore } from '@/stores/ui-store';
 
 type ConnectionState = 'connected' | 'reconnecting' | 'disconnected';
@@ -57,11 +58,13 @@ export function ConnectionOrb() {
 
   const getRelativeTime = useCallback(() => {
     if (!lastUpdate) return 'No data';
-    const seconds = Math.floor((Date.now() - lastUpdate) / 1000);
-    if (seconds < 5) return 'Just now';
-    if (seconds < 60) return `${seconds}s ago`;
-    const minutes = Math.floor(seconds / 60);
-    return `${minutes}m ago`;
+    // Second-granularity freshness label ("Just now" <5s, seconds, then caps at minutes).
+    return formatRelativeTime(lastUpdate, {
+      nowThresholdSeconds: 5,
+      justNowLabel: 'Just now',
+      showSeconds: true,
+      maxUnit: 'minute',
+    });
   }, [lastUpdate]);
 
   // Tick relative time every second

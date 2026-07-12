@@ -50,24 +50,7 @@ export function useDeletePortainerBackup() {
 }
 
 export async function downloadPortainerBackup(filename: string): Promise<void> {
-  const token = api.getToken();
-  const baseUrl = import.meta.env.VITE_API_URL || '';
-  const response = await fetch(`${baseUrl}/api/portainer-backup/${encodeURIComponent(filename)}`, {
-    method: 'GET',
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to download Portainer backup (${response.status})`);
-  }
-
-  const blob = await response.blob();
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = filename;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
+  // Routes through ApiClient for shared auth-header/X-Request-ID plumbing and the
+  // 401 → auth:expired flow; forces the stored filename as the download name.
+  await api.downloadBlob(`/api/portainer-backup/${encodeURIComponent(filename)}`, { filename });
 }

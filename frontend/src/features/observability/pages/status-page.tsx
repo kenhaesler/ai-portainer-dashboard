@@ -11,6 +11,7 @@ import {
   Activity,
 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
+import { formatRelativeTime } from '@/shared/lib/format-relative-time';
 import { MotionStagger, MotionReveal } from '@/shared/components/layout/motion-page';
 
 interface UptimeBucket {
@@ -121,15 +122,9 @@ function formatTime(iso: string): string {
   return new Date(iso).toLocaleString();
 }
 
+// "just now" under a minute, then minutes/hours, capped at days.
 function formatRelative(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  return `${days}d ago`;
+  return formatRelativeTime(iso, { nowThresholdSeconds: 60, maxUnit: 'day' });
 }
 
 function UptimeTimeline({ buckets, reducedMotion }: { buckets: UptimeBucket[]; reducedMotion: boolean }) {
@@ -185,12 +180,16 @@ function IncidentItem({ incident }: { incident: Incident }) {
         <div className="flex-1">
           <div className="flex items-center gap-2">
             <span
+              aria-hidden="true"
               className={cn(
                 'inline-block w-2 h-2 rounded-full',
                 incident.severity === 'critical' ? 'bg-red-500' :
                 incident.severity === 'warning' ? 'bg-yellow-500' : 'bg-blue-500',
               )}
             />
+            <span className="sr-only">
+              {incident.severity === 'critical' ? 'Critical' : incident.severity === 'warning' ? 'Warning' : 'Info'} severity
+            </span>
             <span className="font-medium text-foreground">{incident.title}</span>
           </div>
           {incident.summary && (

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Pause, Play, RefreshCw, ChevronDown } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
+import { formatRelativeTime } from '@/shared/lib/format-relative-time';
 import { type RefreshInterval } from '@/shared/hooks/use-auto-refresh';
 
 const INTERVAL_OPTIONS: { label: string; value: RefreshInterval }[] = [
@@ -22,14 +23,13 @@ interface SmartRefreshControlsProps {
   className?: string;
 }
 
+// Second-granularity freshness label ("just now" <5s, seconds, minutes, then caps at hours).
 function formatTimeAgo(date: Date): string {
-  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
-  if (seconds < 5) return 'just now';
-  if (seconds < 60) return `${seconds}s ago`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  return `${hours}h ago`;
+  return formatRelativeTime(date, {
+    nowThresholdSeconds: 5,
+    showSeconds: true,
+    maxUnit: 'hour',
+  });
 }
 
 export function SmartRefreshControls({

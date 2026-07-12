@@ -44,10 +44,12 @@ vi.mock('@/features/containers/hooks/use-endpoints', () => ({
   useEndpoints: () => ({ data: [{ id: 1, name: 'prod' }] }),
 }));
 
+const auditState = vi.hoisted(() => ({ isLoading: false }));
+
 vi.mock('@/features/security/hooks/use-security-audit', () => ({
   useSecurityAudit: () => ({
-    data: { entries: mockEntries },
-    isLoading: false,
+    data: auditState.isLoading ? undefined : { entries: mockEntries },
+    isLoading: auditState.isLoading,
     isError: false,
     error: null,
     refetch: vi.fn(),
@@ -105,5 +107,17 @@ describe('SecurityAuditPage', () => {
     fireEvent.change(screen.getByPlaceholderText('Search containers by name or image...'), { target: { value: 'nonexistent' } });
 
     expect(screen.getByText('No matching containers')).toBeInTheDocument();
+  });
+
+  it('renders skeleton rows instead of raw loading text while loading (#1549)', () => {
+    auditState.isLoading = true;
+    try {
+      renderWithClient(<SecurityAuditPage />);
+
+      expect(screen.getByRole('status', { name: 'Loading security audit' })).toBeInTheDocument();
+      expect(screen.queryByText('Loading security audit...')).not.toBeInTheDocument();
+    } finally {
+      auditState.isLoading = false;
+    }
   });
 });

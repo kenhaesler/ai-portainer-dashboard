@@ -247,7 +247,12 @@ export function ContainerMultiSelect({
                 role="listitem"
                 className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-xs text-foreground"
               >
-                <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', getStateColor(container.state))} />
+                <span
+                  aria-hidden="true"
+                  title={container.state}
+                  className={cn('h-1.5 w-1.5 shrink-0 rounded-full', getStateColor(container.state))}
+                />
+                <span className="sr-only">{container.state}</span>
                 {name}
                 <button
                   type="button"
@@ -370,7 +375,12 @@ export function ContainerMultiSelect({
                       >
                         {isSelected && <Check className="h-3 w-3" />}
                       </span>
-                      <span className={cn('h-2 w-2 shrink-0 rounded-full', getStateColor(container.state))} />
+                      <span
+                        aria-hidden="true"
+                        title={container.state}
+                        className={cn('h-2 w-2 shrink-0 rounded-full', getStateColor(container.state))}
+                      />
+                      <span className="sr-only">{container.state}</span>
                       <span className="truncate">{container.name}</span>
                     </button>
                   );

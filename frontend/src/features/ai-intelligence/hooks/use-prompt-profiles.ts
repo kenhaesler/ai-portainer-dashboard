@@ -167,29 +167,12 @@ export function useSwitchProfile() {
 export function useExportProfile() {
   return useMutation<void, Error, { profileId?: string }>({
     mutationFn: async ({ profileId }) => {
-      const params = profileId ? `?profileId=${encodeURIComponent(profileId)}` : '';
-      const token = api.getToken();
-      const baseUrl = import.meta.env.VITE_API_URL || '';
-      const response = await fetch(`${baseUrl}/api/prompt-profiles/export${params}`, {
-        method: 'GET',
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      // downloadBlob shares ApiClient's auth-header/X-Request-ID plumbing and the
+      // 401 → auth:expired flow; it prefers the response's Content-Disposition filename.
+      await api.downloadBlob('/api/prompt-profiles/export', {
+        params: profileId ? { profileId } : undefined,
+        fallbackFilename: 'prompts-export.json',
       });
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
-        throw new Error(err.error ?? `Export failed: HTTP ${response.status}`);
-      }
-      const disposition = response.headers.get('Content-Disposition');
-      const filenameMatch = disposition?.match(/filename="([^"]+)"/);
-      const filename = filenameMatch?.[1] ?? 'prompts-export.json';
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = filename;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      URL.revokeObjectURL(url);
     },
     onSuccess: () => {
       toast.success('Profile exported', { description: 'JSON file downloaded.' });

@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import RemediationPage from './remediation';
@@ -14,31 +14,36 @@ vi.mock('react-router-dom', async () => {
   };
 });
 
+const remediationState = vi.hoisted(() => {
+  const pendingAction = {
+    id: 'action-1',
+    action_type: 'STOP_CONTAINER',
+    status: 'pending',
+    container_id: 'container-1',
+    container_name: 'api-service',
+    endpoint_id: 1,
+    rationale: JSON.stringify({
+      root_cause: 'Connection pool leak is exhausting memory over time.',
+      severity: 'critical',
+      recommended_actions: [
+        {
+          action: 'Restart container to recover service',
+          priority: 'high',
+          rationale: 'Immediately reclaims leaked memory',
+        },
+      ],
+      log_analysis: 'Repeated pool exhaustion warnings precede malloc failures.',
+      confidence_score: 0.82,
+    }),
+    suggested_by: 'AI Monitor',
+    created_at: '2026-02-06T00:00:00Z',
+  };
+  return { pendingAction, actions: [pendingAction] as Array<Record<string, unknown>> };
+});
+
 vi.mock('@/features/operations/hooks/use-remediation', () => ({
   useRemediationActions: () => ({
-    data: [{
-      id: 'action-1',
-      action_type: 'STOP_CONTAINER',
-      status: 'pending',
-      container_id: 'container-1',
-      container_name: 'api-service',
-      endpoint_id: 1,
-      rationale: JSON.stringify({
-        root_cause: 'Connection pool leak is exhausting memory over time.',
-        severity: 'critical',
-        recommended_actions: [
-          {
-            action: 'Restart container to recover service',
-            priority: 'high',
-            rationale: 'Immediately reclaims leaked memory',
-          },
-        ],
-        log_analysis: 'Repeated pool exhaustion warnings precede malloc failures.',
-        confidence_score: 0.82,
-      }),
-      suggested_by: 'AI Monitor',
-      created_at: '2026-02-06T00:00:00Z',
-    }],
+    data: remediationState.actions,
     isLoading: false,
     isError: false,
     error: null,
@@ -120,5 +125,39 @@ describe('RemediationPage', () => {
         prefillPrompt: expect.stringContaining('Container: api-service'),
       }),
     }));
+  });
+});
+
+describe('RemediationPage — execute confirmation dialog (#1539)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    remediationState.actions = [{ ...remediationState.pendingAction, status: 'approved' }];
+  });
+
+  afterEach(() => {
+    remediationState.actions = [remediationState.pendingAction];
+  });
+
+  it('opens an accessible modal dialog with title and description', () => {
+    renderPage();
+
+    fireEvent.click(screen.getByRole('button', { name: /Execute/ }));
+
+    // Radix wires the title as the dialog's accessible name.
+    const dialog = screen.getByRole('dialog', { name: 'Execute Remediation Action' });
+    expect(dialog).toBeInTheDocument();
+    expect(screen.getByText(/perform the suggested operation/)).toBeInTheDocument();
+  });
+
+  it('closes the dialog on Escape', async () => {
+    renderPage();
+
+    fireEvent.click(screen.getByRole('button', { name: /Execute/ }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
   });
 });

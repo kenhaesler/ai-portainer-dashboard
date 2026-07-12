@@ -108,7 +108,11 @@ export function useContainerMetricsMeta(
 export function useAnomalies() {
   return useQuery<Anomaly[]>({
     queryKey: ['metrics', 'anomalies'],
-    queryFn: () => api.get<Anomaly[]>('/api/metrics/anomalies'),
+    // GET /api/metrics/anomalies returns a { anomalies: [...] } envelope, not a bare array.
+    queryFn: async () => {
+      const { anomalies } = await api.get<{ anomalies: Anomaly[] }>('/api/metrics/anomalies');
+      return anomalies;
+    },
   });
 }
 

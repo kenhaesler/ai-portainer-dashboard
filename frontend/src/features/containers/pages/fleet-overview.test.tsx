@@ -453,6 +453,18 @@ describe('InfrastructurePage — fleet section', () => {
     expect(screen.queryByText('env-1')).not.toBeInTheDocument();
   });
 
+  it('labels the grid pagination buttons for screen readers (#1540)', () => {
+    const endpoints = Array.from({ length: 45 }, (_, i) =>
+      makeEndpoint({ id: i + 1, name: `env-${i + 1}` }),
+    );
+    mockEndpoints(endpoints);
+
+    renderPage();
+
+    expect(screen.getByTestId('grid-prev-page')).toHaveAttribute('aria-label', 'Previous page');
+    expect(screen.getByTestId('grid-next-page')).toHaveAttribute('aria-label', 'Next page');
+  });
+
   it('fleet table view shows the smart search bar (not DataTable search)', () => {
     useUiStore.setState({ pageViewModes: { fleet: 'table' } });
     mockEndpoints([

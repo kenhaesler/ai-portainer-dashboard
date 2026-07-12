@@ -5,6 +5,7 @@ import { Globe } from 'lucide-react';
 import { api } from '@/shared/lib/api';
 import { cn } from '@/shared/lib/utils';
 import { DataTable } from '@/shared/components/tables/data-table';
+import { SkeletonTableRow } from '@/shared/components/feedback/skeleton';
 import { NoTraceDataCallout } from '@/features/observability/components/no-trace-data-callout';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 
@@ -138,7 +139,16 @@ export function ObservedDestinationsPanel({ endpointId }: Props) {
       )}
 
       {!isError && isLoading && (
-        <div className="text-sm text-muted-foreground">Loading observed destinations…</div>
+        <div className="overflow-x-auto" role="status" aria-label="Loading observed destinations">
+          <table className="w-full min-w-[900px] text-sm">
+            <tbody>
+              {Array.from({ length: 4 }).map((_, i) => (
+                <SkeletonTableRow key={i} columns={6} />
+              ))}
+            </tbody>
+          </table>
+          <span className="sr-only">Loading…</span>
+        </div>
       )}
 
       {!isError && !isLoading && destinations.length === 0 && (

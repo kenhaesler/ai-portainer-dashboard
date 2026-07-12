@@ -48,23 +48,22 @@ describe('TraceExplorerPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
+    // useTraces unwraps the { traces } envelope, so it resolves to a bare array.
     mockUseTraces.mockReturnValue({
-      data: {
-        traces: [
-          {
-            trace_id: 'trace-1',
-            root_span: 'GET /health',
-            duration_ms: 120,
-            status: 'ok',
-            service_name: 'api',
-            start_time: '2026-02-12T10:00:00.000Z',
-            trace_source: 'ebpf',
-            span_count: 1,
-            http_route: '/health',
-            container_name: 'api-container',
-          },
-        ],
-      },
+      data: [
+        {
+          trace_id: 'trace-1',
+          root_span: 'GET /health',
+          duration_ms: 120,
+          status: 'ok',
+          service_name: 'api',
+          start_time: '2026-02-12T10:00:00.000Z',
+          trace_source: 'ebpf',
+          span_count: 1,
+          http_route: '/health',
+          container_name: 'api-container',
+        },
+      ],
       isLoading: false,
       isError: false,
       error: null,

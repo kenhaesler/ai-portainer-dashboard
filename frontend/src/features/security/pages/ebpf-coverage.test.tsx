@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import EbpfCoveragePage from './ebpf-coverage';
@@ -236,5 +236,42 @@ describe('EbpfCoveragePage', () => {
     expect(screen.getByText('Last Trace')).toBeTruthy();
     expect(screen.getByText('Last Verified')).toBeTruthy();
     expect(screen.getByText('Actions')).toBeTruthy();
+  });
+
+  it('renders the confirmation as an accessible modal dialog (#1539)', () => {
+    renderWithProviders(<EbpfCoveragePage />);
+    fireEvent.click(screen.getAllByTestId('delete-stale-btn')[0]);
+
+    // Radix wires the title as the dialog's accessible name.
+    const dialog = screen.getByRole('dialog', { name: 'Delete stale endpoint local-docker?' });
+    expect(dialog).toBeTruthy();
+    expect(screen.getByTestId('ebpf-action-dialog')).toBeTruthy();
+  });
+
+  it('closes the dialog on Escape without running the action (#1539)', async () => {
+    renderWithProviders(<EbpfCoveragePage />);
+    fireEvent.click(screen.getAllByTestId('delete-stale-btn')[0]);
+    expect(screen.getByTestId('ebpf-action-dialog')).toBeTruthy();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => {
+      expect(screen.queryByTestId('ebpf-action-dialog')).toBeNull();
+    });
+    expect(mockDeleteStaleMutate).not.toHaveBeenCalled();
+  });
+
+  it('renders the OTLP endpoint input inside the deploy dialog and deploys with it', () => {
+    renderWithProviders(<EbpfCoveragePage />);
+    fireEvent.click(screen.getAllByTestId('deploy-btn')[0]);
+
+    const dialog = screen.getByTestId('ebpf-action-dialog');
+    const input = within(dialog).getByTestId('deploy-otlp-input');
+    fireEvent.change(input, { target: { value: '192.168.1.10' } });
+    fireEvent.click(within(dialog).getByText('Confirm'));
+
+    expect(mockDeployMutate).toHaveBeenCalledWith({
+      endpointId: 2,
+      otlpEndpoint: '192.168.1.10',
+    });
   });
 });

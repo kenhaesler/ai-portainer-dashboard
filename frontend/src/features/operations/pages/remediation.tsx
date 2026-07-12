@@ -27,6 +27,7 @@ import {
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
 import { StatusBadge } from '@/shared/components/feedback/status-badge';
 import { RefreshControls } from '@/shared/components/ui/refresh-controls';
+import { ConfirmDialog } from '@/shared/components/feedback/confirm-dialog';
 import { SkeletonChart } from '@/shared/components/feedback/skeleton';
 import { EmptyState } from '@/shared/components/feedback/empty-state';
 import { DataTable } from '@/shared/components/tables/data-table';
@@ -79,17 +80,6 @@ type ActionRecord = {
   result?: string;
 };
 
-interface ConfirmDialogProps {
-  open: boolean;
-  title: string;
-  description: string;
-  confirmLabel: string;
-  confirmVariant?: 'default' | 'destructive';
-  isLoading?: boolean;
-  onConfirm: () => void;
-  onCancel: () => void;
-}
-
 type AnalysisPriority = 'high' | 'medium' | 'low';
 type AnalysisSeverity = 'critical' | 'warning' | 'info';
 
@@ -139,54 +129,6 @@ function parseActionAnalysis(raw: string | undefined): ParsedAnalysis | null {
   } catch {
     return null;
   }
-}
-
-function ConfirmDialog({
-  open,
-  title,
-  description,
-  confirmLabel,
-  confirmVariant = 'default',
-  isLoading,
-  onConfirm,
-  onCancel,
-}: ConfirmDialogProps) {
-  if (!open) return null;
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="fixed inset-0 bg-black/50" onClick={onCancel} />
-      <div className="relative z-50 w-full max-w-md rounded-lg border bg-card p-6 shadow-lg">
-        <h3 className="text-lg font-semibold">{title}</h3>
-        <p className="mt-2 text-sm text-muted-foreground">{description}</p>
-        <div className="mt-6 flex justify-end gap-3">
-          <button
-            onClick={onCancel}
-            disabled={isLoading}
-            className="rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={onConfirm}
-            disabled={isLoading}
-            className={cn(
-              'rounded-md px-4 py-2 text-sm font-medium disabled:opacity-50',
-              confirmVariant === 'destructive'
-                ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
-                : 'bg-primary text-primary-foreground hover:bg-primary/90'
-            )}
-          >
-            {isLoading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              confirmLabel
-            )}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
 }
 
 /**
@@ -754,6 +696,7 @@ export default function RemediationPage() {
         title="Execute Remediation Action"
         description="Are you sure you want to execute this remediation action? This will perform the suggested operation on the target container."
         confirmLabel="Execute"
+        variant="default"
         isLoading={executeAction.isPending}
         onConfirm={handleExecuteConfirm}
         onCancel={() => {

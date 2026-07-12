@@ -5,6 +5,7 @@ import {
   ExternalLink, AlertTriangle, CheckCircle2, Package, Bug,
 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
+import { formatRelativeTime } from '@/shared/lib/format-relative-time';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { DataTable } from '@/shared/components/tables/data-table';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
@@ -48,15 +49,9 @@ function severityBadgeClass(severity: string): string {
   }
 }
 
+// "just now" under a minute, then minutes/hours, capped at days.
 function formatTimeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
+  return formatRelativeTime(dateStr, { nowThresholdSeconds: 60, maxUnit: 'day' });
 }
 
 function parseContainers(json: string | null): Array<{ id: string; name: string; endpoint: number }> {

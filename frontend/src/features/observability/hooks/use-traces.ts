@@ -110,10 +110,14 @@ interface TraceSummary {
 export function useTraces(options?: TracesOptions) {
   return useQuery<Trace[]>({
     queryKey: ['traces', options],
-    queryFn: () => api.get<Trace[]>(
-      '/api/traces',
-      { params: options as Record<string, string | number | boolean | undefined> }
-    ),
+    // GET /api/traces returns a { traces: [...] } envelope, not a bare array.
+    queryFn: async () => {
+      const { traces } = await api.get<{ traces: Trace[] }>(
+        '/api/traces',
+        { params: options as Record<string, string | number | boolean | undefined> }
+      );
+      return traces;
+    },
   });
 }
 

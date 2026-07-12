@@ -34,6 +34,7 @@ import {
 } from 'lucide-react';
 import { useUiStore } from '@/stores/ui-store';
 import { cn } from '@/shared/lib/utils';
+import { formatRelativeTime } from '@/shared/lib/format-relative-time';
 import { useGlobalSearch } from '@/shared/hooks/use-global-search';
 import { useEndpoints } from '@/features/containers/hooks/use-endpoints';
 import { useStacks } from '@/features/containers/hooks/use-stacks';
@@ -180,13 +181,12 @@ export function CommandPalette() {
     setOpen(false);
   };
 
-  const formatRelative = (timestamp: number) => {
-    const diff = Date.now() - timestamp;
-    if (diff < 60_000) return 'Just now';
-    if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
-    if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
-    return `${Math.floor(diff / 86_400_000)}d ago`;
-  };
+  const formatRelative = (timestamp: number) =>
+    formatRelativeTime(timestamp, {
+      nowThresholdSeconds: 60,
+      justNowLabel: 'Just now',
+      maxUnit: 'day',
+    });
 
   const allContainers = data?.containers ?? [];
   const allImages = data?.images ?? [];

@@ -64,6 +64,28 @@ describe('ContainerMultiSelect', () => {
     });
   });
 
+  describe('container state accessibility (#1548)', () => {
+    it('exposes the container state as screen-reader text on selected chips', () => {
+      const containers = makeContainers(1); // id-1 is running
+      render(
+        <ContainerMultiSelect containers={containers} selected={['id-1']} onChange={() => {}} />,
+      );
+      const chip = screen.getByRole('listitem');
+      expect(chip).toHaveTextContent('running');
+    });
+
+    it('exposes the container state as screen-reader text in the option list', () => {
+      const containers = makeContainers(2); // id-2 is stopped
+      render(<ContainerMultiSelect containers={containers} selected={[]} onChange={() => {}} />);
+
+      fireEvent.click(screen.getByRole('button', { name: /select containers/i }));
+      const option = screen.getByRole('option', { name: /container-2/ });
+      // The state is part of the option's accessible name via sr-only text
+      expect(option).toHaveTextContent('stopped');
+      expect(option).toHaveAccessibleName(expect.stringContaining('stopped'));
+    });
+  });
+
   describe('dropdown interaction', () => {
     it('opens dropdown on trigger click', () => {
       const containers = makeContainers(3);
