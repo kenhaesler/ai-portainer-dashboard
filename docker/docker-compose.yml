@@ -266,6 +266,21 @@ services:
       - ./init-pg-databases.sh:/docker-entrypoint-initdb.d/02-create-app-db.sh:ro
     networks:
       - dashboard-net
+    # Resource ceiling (#1550): timescaledb is the heaviest colocated data
+    # service (metrics hypertable + continuous aggregates) yet was the only
+    # always-on container without a cgroup limit — an uncapped Postgres can
+    # grow its working set until it starves the co-located backend/postgres-app
+    # or is OOM-killed unpredictably by the kernel instead of by a predictable
+    # limit. Sized above postgres-app (512M/1.0) to match the heavier workload.
+    # NOTE: this bounds memory/CPU only; disk growth is bounded separately by
+    # TimescaleDB retention policies, not here.
+    deploy:
+      resources:
+        limits:
+          cpus: "${TIMESCALE_CPU_LIMIT:-1.0}"
+          memory: "${TIMESCALE_MEM_LIMIT:-1G}"
+        reservations:
+          memory: 512M
 
   timescale-backup:
     image: prodrigestivill/postgres-backup-local:17

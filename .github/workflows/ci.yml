@@ -11,6 +11,14 @@ on:
     - cron: '0 2 * * *'
   workflow_dispatch:
 
+# Cancel superseded runs (#1551): a new commit on an open PR (synchronize)
+# supersedes the previous run, so the older full matrix is wasted runner time.
+# Scope cancellation to pull_request events only — push-to-dev/main and the
+# nightly scheduled E2E must always run to completion, never be pre-empted.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   audit:
     name: Security Audit

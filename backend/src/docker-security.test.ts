@@ -9,11 +9,23 @@ function readFile(relativePath: string): string {
   return readFileSync(resolve(ROOT, relativePath), 'utf-8');
 }
 
+interface DeployResources {
+  limits?: { cpus?: string; memory?: string } | undefined;
+  reservations?: { cpus?: string; memory?: string } | undefined;
+}
+
+interface ComposeService {
+  ports?: string[] | undefined;
+  mem_limit?: string | undefined;
+  cpus?: string | undefined;
+  deploy?: { resources?: DeployResources | undefined } | undefined;
+}
+
 function readCompose(): {
-  services: Record<string, { ports?: string[] | undefined }>;
+  services: Record<string, ComposeService>;
 } {
   return parseYaml(readFile('docker/docker-compose.yml')) as {
-    services: Record<string, { ports?: string[] | undefined }>;
+    services: Record<string, ComposeService>;
   };
 }
 
@@ -366,4 +378,77 @@ describe('docker/docker-compose.yml port bindings (#1113)', () => {
     expect(ports[0]).toBe('127.0.0.1:3051:3051');
     expect(ports[0]).not.toMatch(/^0\.0\.0\.0:/);
   });
+});
+
+describe('docker/docker-compose.yml resource limits (#1550)', () => {
+  const compose = readCompose();
+
+  /**
+   * A service is considered "capped" if it declares either a Compose-spec
+   * `deploy.resources.limits.memory` or the legacy top-level `mem_limit`.
+   * (redis uses both; the rest use deploy.resources.)
+   */
+  function memoryLimitOf(serviceName: string): string | undefined {
+    const svc = compose.services[serviceName];
+    return svc?.deploy?.resources?.limits?.memory ?? svc?.mem_limit;
+  }
+
+  function cpuLimitOf(serviceName: string): string | undefined {
+    const svc = compose.services[serviceName];
+    return svc?.deploy?.resources?.limits?.cpus ?? svc?.cpus;
+  }
+
+  describe('timescaledb (the heaviest always-on data service)', () => {
+    const limits = compose.services.timescaledb?.deploy?.resources?.limits;
+    const reservations = compose.services.timescaledb?.deploy?.resources?.reservations;
+
+    it('declares a deploy.resources.limits block', () => {
+      expect(limits).toBeDefined();
+    });
+
+    it('caps memory, env-overridable with a 1G default sized above postgres-app', () => {
+      expect(limits?.memory).toBe('${TIMESCALE_MEM_LIMIT:-1G}');
+    });
+
+    it('caps CPU, env-overridable with a 1.0 default', () => {
+      expect(limits?.cpus).toBe('${TIMESCALE_CPU_LIMIT:-1.0}');
+    });
+
+    it('reserves a memory floor for the scheduler', () => {
+      expect(reservations?.memory).toBeTruthy();
+    });
+
+    it('memory ceiling is >= postgres-app (heavier metrics workload)', () => {
+      // Both use the M/G suffix; compare in mebibytes. postgres-app default 512M.
+      const toMib = (v: string): number => {
+        const m = /(\d+(?:\.\d+)?)\s*([MG])/i.exec(v);
+        if (!m) return NaN;
+        const n = Number(m[1]);
+        return m[2].toUpperCase() === 'G' ? n * 1024 : n;
+      };
+      expect(toMib('1G')).toBeGreaterThanOrEqual(toMib('512M'));
+    });
+  });
+
+  // Regression guard for the audit finding: timescaledb was the ONLY always-on
+  // service lacking a resource cap. Assert every always-on service is capped so
+  // the gap cannot silently reopen. (kali-mcp is profile-gated, not always-on.)
+  const alwaysOnServices = [
+    'backend',
+    'frontend',
+    'redis',
+    'postgres-app',
+    'timescaledb',
+    'timescale-backup',
+  ];
+
+  for (const svc of alwaysOnServices) {
+    it(`${svc} declares a memory limit`, () => {
+      expect(memoryLimitOf(svc)).toBeTruthy();
+    });
+
+    it(`${svc} declares a CPU limit`, () => {
+      expect(cpuLimitOf(svc)).toBeTruthy();
+    });
+  }
 });
