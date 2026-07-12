@@ -9,12 +9,18 @@
  *
  * This store keeps the exact timestamp-vs-window semantics but persists the
  * marks in Redis when `REDIS_URL` is configured, so the suppression state is
- * shared across restarts and replicas. When Redis is unavailable it falls back
- * to an in-memory map (single-process behaviour — same as before).
+ * shared across restarts and replicas. When Redis is unavailable — at startup
+ * OR at runtime (#1496) — operations degrade to an in-memory map
+ * (single-process behaviour — same as before) instead of rejecting, so a
+ * Redis blip can never abort the monitoring cycle. The connection reconnects
+ * lazily with exponential backoff (see `resilient-redis.ts`).
  */
 import { getConfig } from '../config/index.js';
 import { createChildLogger } from '../utils/logger.js';
-import { createClient } from 'redis';
+import {
+  ResilientRedisConnection,
+  type RedisConnectionLike,
+} from './resilient-redis.js';
 
 const log = createChildLogger('cooldown-store');
 
@@ -108,6 +114,74 @@ export class RedisCooldownStore implements CooldownStore {
   }
 }
 
+/**
+ * Resilient store (#1496): Redis-backed with graceful runtime degradation.
+ * Every operation fails open — when Redis is down (or a command fails) the
+ * call falls back to a per-process in-memory shadow instead of rejecting, so
+ * one Redis blip cannot permanently disable anomaly detection. Marks are
+ * shadowed in memory even while Redis is healthy, so suppression state
+ * survives a mid-stream Redis drop without a warm-up gap.
+ */
+export class ResilientCooldownStore implements CooldownStore {
+  private readonly fallback = new InMemoryCooldownStore();
+  private redisStore: RedisCooldownStore | null = null;
+  private redisClient: object | null = null;
+
+  constructor(
+    private readonly conn: RedisConnectionLike,
+    private readonly ttlMs: number = DEFAULT_TTL_MS,
+  ) {}
+
+  private async getRedisStore(): Promise<RedisCooldownStore | null> {
+    const client = await this.conn.getClient();
+    if (!client) return null;
+    if (client !== this.redisClient) {
+      // Reconnection handed us a fresh client — rebind the Redis-backed store.
+      this.redisClient = client;
+      this.redisStore = new RedisCooldownStore(client as RedisLike, this.ttlMs);
+    }
+    return this.redisStore;
+  }
+
+  async isHot(key: string, windowMs: number, now: number = Date.now()): Promise<boolean> {
+    const redis = await this.getRedisStore();
+    if (redis) {
+      try {
+        return await redis.isHot(key, windowMs, now);
+      } catch (err) {
+        this.conn.reportFailure('cooldown-isHot-failed', err);
+      }
+    }
+    // Fail open: with Redis unreachable, answer from the in-memory shadow —
+    // a duplicate alert is acceptable; a dead monitoring cycle is not.
+    return this.fallback.isHot(key, windowMs, now);
+  }
+
+  async mark(key: string, now: number = Date.now()): Promise<void> {
+    // Shadow every mark in memory first so cooldowns keep suppressing
+    // (per-process) if Redis drops right after — or during — the write.
+    await this.fallback.mark(key, now);
+    const redis = await this.getRedisStore();
+    if (redis) {
+      try {
+        await redis.mark(key, now);
+      } catch (err) {
+        this.conn.reportFailure('cooldown-mark-failed', err);
+      }
+    }
+  }
+
+  async sweep(olderThanMs: number, now: number = Date.now()): Promise<number> {
+    // Redis entries self-expire via PX TTL; only the in-memory shadow needs sweeping.
+    return this.fallback.sweep(olderThanMs, now);
+  }
+
+  async reset(): Promise<void> {
+    // Redis keys self-expire (see RedisCooldownStore.reset); clear the shadow.
+    await this.fallback.reset();
+  }
+}
+
 // ── singleton ───────────────────────────────────────────────────────────────
 // Defaults to in-memory (restart-safe within a process) so the store is usable
 // without any async setup. `initCooldownStore()` upgrades it to Redis at server
@@ -143,32 +217,16 @@ async function buildStore(): Promise<CooldownStore> {
     log.info('cooldown store: REDIS_URL unset, using in-memory (not replica-safe)');
     return new InMemoryCooldownStore();
   }
-  try {
-    const url = buildRedisUrl(config.REDIS_URL, config.REDIS_PASSWORD);
-    const client = createClient({
-      url,
-      socket: { connectTimeout: 3_000, reconnectStrategy: false },
-    });
-    client.on('error', (err) => log.debug({ err }, 'cooldown redis client error'));
-    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
-    try {
-      await Promise.race([
-        client.connect(),
-        new Promise((_, reject) => {
-          timeoutHandle = setTimeout(
-            () => reject(new Error('redis connect timeout (5s)')),
-            5_000,
-          );
-        }),
-      ]);
-    } finally {
-      // Clear the loser of the race so a dangling timer/promise does not leak.
-      if (timeoutHandle) clearTimeout(timeoutHandle);
-    }
+  const url = buildRedisUrl(config.REDIS_URL, config.REDIS_PASSWORD);
+  const conn = new ResilientRedisConnection(url, log, 'cooldown store');
+  // Eager first connect so startup logs reflect the actual state. Either way
+  // the resilient store is returned: it reconnects with backoff if Redis is —
+  // or later becomes — unavailable (#1496), degrading to in-memory meanwhile.
+  const client = await conn.getClient();
+  if (client) {
     log.info('cooldown store: using Redis (shared across restarts and replicas)');
-    return new RedisCooldownStore(client as unknown as RedisLike);
-  } catch (err) {
-    log.warn({ err }, 'cooldown store: Redis unavailable, falling back to in-memory');
-    return new InMemoryCooldownStore();
+  } else {
+    log.warn('cooldown store: Redis unavailable at startup, starting on in-memory fallback (will keep retrying)');
   }
+  return new ResilientCooldownStore(conn);
 }

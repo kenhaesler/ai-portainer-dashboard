@@ -88,12 +88,15 @@ export async function getOrTrainModel(
     return cached.forest;
   }
 
-  // Query 7 days of metrics for training
+  // Query 7 days of metrics for training — cpu + memory in parallel (#1502),
+  // the two range scans are independent.
   const to = new Date().toISOString();
   const from = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString();
 
-  const cpuMetrics = await getMetrics(containerId, 'cpu', from, to);
-  const memoryMetrics = await getMetrics(containerId, 'memory', from, to);
+  const [cpuMetrics, memoryMetrics] = await Promise.all([
+    getMetrics(containerId, 'cpu', from, to),
+    getMetrics(containerId, 'memory', from, to),
+  ]);
 
   if (cpuMetrics.length < MIN_TRAINING_SAMPLES || memoryMetrics.length < MIN_TRAINING_SAMPLES) {
     log.debug(

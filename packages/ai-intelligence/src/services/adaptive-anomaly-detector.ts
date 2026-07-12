@@ -1,3 +1,4 @@
+import pLimit from 'p-limit';
 import { getConfig } from '@dashboard/core/config/index.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import type { AnomalyDetection } from '@dashboard/core/models/metrics.js';
@@ -34,6 +35,8 @@ export type GetMetricWindowByHourOfDayFn = (
   hourOfDay: number,
   lookbackDays: number,
   dayOfWeek?: number,
+  /** Weekly warm-up floor (#1527): require this many DISTINCT same-weekday days. */
+  minDistinctDays?: number,
 ) => Promise<number[]>;
 
 interface BollingerBands {
@@ -199,6 +202,25 @@ export async function detectAnomalyAdaptive(
   };
 }
 
+// One-time warning (#1527) when the configured day-of-week lookback exceeds
+// the raw retention window — the extra days are silently unavailable, so the
+// weekly baseline can never accumulate its configured history.
+let dowLookbackWarned = false;
+
+/** Test hook: re-arm the one-time day-of-week lookback clamp warning. */
+export function resetDowLookbackWarningForTest(): void {
+  dowLookbackWarned = false;
+}
+
+function warnDowLookbackClampedOnce(configuredLookbackDays: number, rawRetentionDays: number): void {
+  if (dowLookbackWarned) return;
+  dowLookbackWarned = true;
+  log.warn(
+    { configuredLookbackDays, rawRetentionDays },
+    'ANOMALY_DAYOFWEEK_LOOKBACK_DAYS exceeds METRICS_RAW_RETENTION_DAYS — clamping the day-of-week baseline lookback to the retained raw window',
+  );
+}
+
 /**
  * Robust median+MAD detection (#1362). Uses the modified z-score
  * (Iglewicz–Hoaglin) over the RAW trailing window so outliers in the baseline
@@ -235,16 +257,36 @@ export async function detectAnomalyRobust(
   let baselineKind: 'flat' | 'hourOfDay' | 'dayOfWeek' = 'flat';
   if (getMetricWindowByHourOfDay) {
     if (config.ANOMALY_DAYOFWEEK_ENABLED) {
-      const dow = await getMetricWindowByHourOfDay(
-        containerId,
-        metricType,
-        now.getUTCHours(),
-        config.ANOMALY_DAYOFWEEK_LOOKBACK_DAYS,
-        now.getUTCDay(),
-      );
-      if (dow.length >= config.ANOMALY_DAYOFWEEK_MIN_SAMPLES) {
-        window = dow;
-        baselineKind = 'dayOfWeek';
+      // #1527: the day-of-week window reads the RAW hypertable, whose
+      // retention is METRICS_RAW_RETENTION_DAYS — a lookback beyond that can
+      // never see more data, so clamp it (with a one-time warning) and skip
+      // the query entirely when the retained window cannot possibly contain
+      // ANOMALY_DAYOFWEEK_MIN_SAMPLES distinct same-weekday days (occurrence
+      // k sits (k-1)×7 days back). The warm-up floor itself counts DISTINCT
+      // same-weekday days (enforced by the fetcher via `minDistinctDays`),
+      // not raw samples, so one day's samples cannot pass as a weekly
+      // baseline.
+      const configuredDowLookback = config.ANOMALY_DAYOFWEEK_LOOKBACK_DAYS;
+      const rawRetentionDays = config.METRICS_RAW_RETENTION_DAYS;
+      const dowLookbackDays = Math.min(configuredDowLookback, rawRetentionDays);
+      if (configuredDowLookback > rawRetentionDays) {
+        warnDowLookbackClampedOnce(configuredDowLookback, rawRetentionDays);
+      }
+      const minDistinctDays = config.ANOMALY_DAYOFWEEK_MIN_SAMPLES;
+      const dowFeasible = (minDistinctDays - 1) * 7 <= dowLookbackDays;
+      if (dowFeasible) {
+        const dow = await getMetricWindowByHourOfDay(
+          containerId,
+          metricType,
+          now.getUTCHours(),
+          dowLookbackDays,
+          now.getUTCDay(),
+          minDistinctDays,
+        );
+        if (dow.length >= minDistinctDays) {
+          window = dow;
+          baselineKind = 'dayOfWeek';
+        }
       }
     }
     if (baselineKind === 'flat') {
@@ -342,6 +384,11 @@ export interface BatchDetectionItem {
  * Batch anomaly detection: runs detectAnomalyAdaptive for each item concurrently
  * using Promise.allSettled. Returns a Map keyed by `containerId:metricType`.
  *
+ * Concurrency is capped by ANOMALY_DETECT_CONCURRENCY (#1498): each detection
+ * issues 1-3 TimescaleDB window queries, so an unbounded 2×N fan-out saturates
+ * the shared pool on large fleets. Same p-limit pattern as the Portainer
+ * fan-outs (live-fleet.ts, dashboard.ts).
+ *
  * @param getMovingAverage - injected dependency to avoid @dashboard/observability import
  * @param getMovingAverageByHourOfDay - optional hour-of-day baseline fetcher
  *   (issue #1295 — fix 3)
@@ -364,8 +411,9 @@ export async function detectAnomaliesBatch(
   const fallbackMethod: DetectionMethod | undefined =
     method === 'robust-mad' ? 'adaptive' : method;
 
+  const limit = pLimit(getConfig().ANOMALY_DETECT_CONCURRENCY);
   const settled = await Promise.allSettled(
-    items.map(async (item) => {
+    items.map((item) => limit(async () => {
       const detection = robust
         ? await detectAnomalyRobust(
             item.containerId,
@@ -385,7 +433,7 @@ export async function detectAnomaliesBatch(
             getMovingAverageByHourOfDay,
           );
       return { key: `${item.containerId}:${item.metricType}`, detection };
-    }),
+    })),
   );
 
   for (const result of settled) {
