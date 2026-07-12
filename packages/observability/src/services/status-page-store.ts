@@ -1,5 +1,5 @@
 import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
-import { getSetting } from '@dashboard/core/services/settings-store.js';
+import { getSettingsByKeys } from '@dashboard/core/services/settings-store.js';
 
 export interface StatusPageConfig {
   enabled: boolean;
@@ -7,6 +7,37 @@ export interface StatusPageConfig {
   description: string;
   showIncidents: boolean;
   autoRefreshSeconds: number;
+}
+
+export interface UptimeWindows {
+  '24h': number;
+  '7d': number;
+  '30d': number;
+}
+
+export interface UptimeSummary {
+  containers: UptimeWindows;
+  endpoints: UptimeWindows;
+}
+
+const STATUS_PAGE_SETTING_KEYS = [
+  'status.page.enabled',
+  'status.page.title',
+  'status.page.description',
+  'status.page.show_incidents',
+  'status.page.refresh_interval',
+];
+
+/**
+ * Uncast SUM()/COUNT() aggregates come back from pg as strings (bigint), so a
+ * strict `total === 0` guard misses and `'0' / '0'` yields NaN on the public
+ * status page (#1526). The queries below cast to ::integer, and this helper
+ * coerces defensively so an empty window can never produce NaN.
+ */
+function uptimePct(part: unknown, total: unknown): number {
+  const totalNum = Number(total);
+  if (!Number.isFinite(totalNum) || totalNum === 0) return 100;
+  return Math.round((Number(part) / totalNum) * 10000) / 100;
 }
 
 export interface ServiceStatus {
@@ -26,12 +57,16 @@ export interface UptimeDayBucket {
 }
 
 export async function getStatusPageConfig(): Promise<StatusPageConfig> {
+  // Single batched settings query instead of five sequential getSetting() calls (#1506)
+  const rows = await getSettingsByKeys(STATUS_PAGE_SETTING_KEYS);
+  const values = new Map(rows.map((row) => [row.key, row.value]));
+
   return {
-    enabled: (await getSetting('status.page.enabled'))?.value === 'true',
-    title: (await getSetting('status.page.title'))?.value || 'System Status',
-    description: (await getSetting('status.page.description'))?.value || '',
-    showIncidents: (await getSetting('status.page.show_incidents'))?.value !== 'false',
-    autoRefreshSeconds: parseInt((await getSetting('status.page.refresh_interval'))?.value || '30', 10),
+    enabled: values.get('status.page.enabled') === 'true',
+    title: values.get('status.page.title') || 'System Status',
+    description: values.get('status.page.description') || '',
+    showIncidents: values.get('status.page.show_incidents') !== 'false',
+    autoRefreshSeconds: parseInt(values.get('status.page.refresh_interval') || '30', 10),
   };
 }
 
@@ -41,14 +76,13 @@ export async function getOverallUptime(hours: number): Promise<number> {
 
   const row = await monitoringDb.queryOne<{ total_running: number; total_all: number }>(`
     SELECT
-      COALESCE(SUM(containers_running), 0) as total_running,
-      COALESCE(SUM(containers_running + containers_stopped + containers_unhealthy), 0) as total_all
+      COALESCE(SUM(containers_running), 0)::integer as total_running,
+      COALESCE(SUM(containers_running + containers_stopped + containers_unhealthy), 0)::integer as total_all
     FROM monitoring_snapshots
     WHERE created_at >= ?
   `, [cutoff]);
 
-  if (!row || row.total_all === 0) return 100;
-  return Math.round((row.total_running / row.total_all) * 10000) / 100;
+  return uptimePct(row?.total_running, row?.total_all);
 }
 
 export async function getEndpointUptime(hours: number): Promise<number> {
@@ -57,14 +91,70 @@ export async function getEndpointUptime(hours: number): Promise<number> {
 
   const row = await monitoringDb.queryOne<{ total_up: number; total_all: number }>(`
     SELECT
-      COALESCE(SUM(endpoints_up), 0) as total_up,
-      COALESCE(SUM(endpoints_up + endpoints_down), 0) as total_all
+      COALESCE(SUM(endpoints_up), 0)::integer as total_up,
+      COALESCE(SUM(endpoints_up + endpoints_down), 0)::integer as total_all
     FROM monitoring_snapshots
     WHERE created_at >= ?
   `, [cutoff]);
 
-  if (!row || row.total_all === 0) return 100;
-  return Math.round((row.total_up / row.total_all) * 10000) / 100;
+  return uptimePct(row?.total_up, row?.total_all);
+}
+
+/**
+ * Container + endpoint uptime for the 24h/7d/30d windows in a single scan of
+ * the 30-day superset window, using FILTER clauses for the narrower windows —
+ * replaces six separate SUM queries on the public status page (#1506).
+ */
+export async function getUptimeSummary(): Promise<UptimeSummary> {
+  const monitoringDb = getDbForDomain('monitoring');
+  const now = Date.now();
+  const cutoff24h = new Date(now - 24 * 3600_000).toISOString();
+  const cutoff7d = new Date(now - 168 * 3600_000).toISOString();
+  const cutoff30d = new Date(now - 720 * 3600_000).toISOString();
+
+  const row = await monitoringDb.queryOne<{
+    containers_running_24h: number;
+    containers_all_24h: number;
+    containers_running_7d: number;
+    containers_all_7d: number;
+    containers_running_30d: number;
+    containers_all_30d: number;
+    endpoints_up_24h: number;
+    endpoints_all_24h: number;
+    endpoints_up_7d: number;
+    endpoints_all_7d: number;
+    endpoints_up_30d: number;
+    endpoints_all_30d: number;
+  }>(`
+    SELECT
+      COALESCE(SUM(containers_running) FILTER (WHERE created_at >= ?), 0)::integer as containers_running_24h,
+      COALESCE(SUM(containers_running + containers_stopped + containers_unhealthy) FILTER (WHERE created_at >= ?), 0)::integer as containers_all_24h,
+      COALESCE(SUM(containers_running) FILTER (WHERE created_at >= ?), 0)::integer as containers_running_7d,
+      COALESCE(SUM(containers_running + containers_stopped + containers_unhealthy) FILTER (WHERE created_at >= ?), 0)::integer as containers_all_7d,
+      COALESCE(SUM(containers_running), 0)::integer as containers_running_30d,
+      COALESCE(SUM(containers_running + containers_stopped + containers_unhealthy), 0)::integer as containers_all_30d,
+      COALESCE(SUM(endpoints_up) FILTER (WHERE created_at >= ?), 0)::integer as endpoints_up_24h,
+      COALESCE(SUM(endpoints_up + endpoints_down) FILTER (WHERE created_at >= ?), 0)::integer as endpoints_all_24h,
+      COALESCE(SUM(endpoints_up) FILTER (WHERE created_at >= ?), 0)::integer as endpoints_up_7d,
+      COALESCE(SUM(endpoints_up + endpoints_down) FILTER (WHERE created_at >= ?), 0)::integer as endpoints_all_7d,
+      COALESCE(SUM(endpoints_up), 0)::integer as endpoints_up_30d,
+      COALESCE(SUM(endpoints_up + endpoints_down), 0)::integer as endpoints_all_30d
+    FROM monitoring_snapshots
+    WHERE created_at >= ?
+  `, [cutoff24h, cutoff24h, cutoff7d, cutoff7d, cutoff24h, cutoff24h, cutoff7d, cutoff7d, cutoff30d]);
+
+  return {
+    containers: {
+      '24h': uptimePct(row?.containers_running_24h, row?.containers_all_24h),
+      '7d': uptimePct(row?.containers_running_7d, row?.containers_all_7d),
+      '30d': uptimePct(row?.containers_running_30d, row?.containers_all_30d),
+    },
+    endpoints: {
+      '24h': uptimePct(row?.endpoints_up_24h, row?.endpoints_all_24h),
+      '7d': uptimePct(row?.endpoints_up_7d, row?.endpoints_all_7d),
+      '30d': uptimePct(row?.endpoints_up_30d, row?.endpoints_all_30d),
+    },
+  };
 }
 
 export async function getLatestSnapshot(): Promise<{
@@ -114,8 +204,8 @@ export async function getDailyUptimeBuckets(days: number): Promise<UptimeDayBuck
   }>(`
     SELECT
       DATE(created_at) as date,
-      SUM(containers_running) as total_running,
-      SUM(containers_running + containers_stopped + containers_unhealthy) as total_all
+      SUM(containers_running)::integer as total_running,
+      SUM(containers_running + containers_stopped + containers_unhealthy)::integer as total_all
     FROM monitoring_snapshots
     WHERE created_at >= ?
     GROUP BY DATE(created_at)
@@ -124,7 +214,7 @@ export async function getDailyUptimeBuckets(days: number): Promise<UptimeDayBuck
 
   return rows.map((row) => ({
     date: row.date,
-    uptime_pct: row.total_all === 0 ? 100 : Math.round((row.total_running / row.total_all) * 10000) / 100,
+    uptime_pct: uptimePct(row.total_running, row.total_all),
   }));
 }
 
