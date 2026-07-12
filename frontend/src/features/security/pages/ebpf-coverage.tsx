@@ -2,7 +2,6 @@ import {
   Radio,
   RefreshCw,
   CheckCircle2,
-  Loader2,
   AlertTriangle,
   Server,
   ShieldCheck,
@@ -12,7 +11,6 @@ import {
   Ban,
 } from 'lucide-react';
 import { useState } from 'react';
-import { createPortal } from 'react-dom';
 import {
   useEbpfCoverage,
   useEbpfCoverageSummary,
@@ -26,6 +24,7 @@ import {
 } from '@/features/security/hooks/use-ebpf-coverage';
 import type { CoverageRecord } from '@/features/security/hooks/use-ebpf-coverage';
 import { StatusBadge } from '@/shared/components/feedback/status-badge';
+import { ConfirmDialog } from '@/shared/components/feedback/confirm-dialog';
 import { SkeletonText, SkeletonChart } from '@/shared/components/feedback/skeleton';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 import { formatDate } from '@/shared/lib/utils';
@@ -313,54 +312,37 @@ function CoverageRow({
           </div>
         </td>
       </tr>
-      {pendingAction && createPortal(
-        <div className="fixed inset-0 z-50 flex items-center justify-center" data-testid="ebpf-action-dialog">
-          <div className="fixed inset-0 bg-black/50" onClick={() => setPendingAction(null)} />
-          <div className="relative z-50 w-full max-w-md rounded-lg border bg-card p-6 shadow-lg">
-            <h3 className="text-lg font-semibold">{pendingAction.title}</h3>
-            <p className="mt-2 text-sm text-muted-foreground">{pendingAction.description}</p>
-            {pendingAction.action === 'deploy' && (
-              <div className="mt-4 space-y-2">
-                <label htmlFor={`otlp-endpoint-${record.endpoint_id}`} className="block text-xs font-semibold text-muted-foreground">
-                  Dashboard IP/Hostname (optional)
-                </label>
-                <input
-                  id={`otlp-endpoint-${record.endpoint_id}`}
-                  type="text"
-                  placeholder="192.168.178.20"
-                  value={deployOtlpEndpoint}
-                  onChange={(e) => setDeployOtlpEndpoint(e.target.value)}
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  data-testid="deploy-otlp-input"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Auto format: <code>http://&lt;value&gt;:3051/api/traces/otlp</code>. Leave empty for default routing.
-                </p>
-              </div>
-            )}
-            <div className="mt-6 flex justify-end gap-3">
-              <button
-                onClick={() => setPendingAction(null)}
-                disabled={mutationPending}
-                className="rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={runPendingAction}
-                disabled={mutationPending}
-                className={`rounded-md px-4 py-2 text-sm font-medium disabled:opacity-50 ${
-                  pendingAction.destructive
-                    ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
-                    : 'bg-primary text-primary-foreground hover:bg-primary/90'
-                }`}
-              >
-                {mutationPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Confirm'}
-              </button>
+      {pendingAction && (
+        <ConfirmDialog
+          open
+          title={pendingAction.title}
+          description={pendingAction.description}
+          variant={pendingAction.destructive ? 'danger' : 'default'}
+          isLoading={mutationPending}
+          onConfirm={runPendingAction}
+          onCancel={() => setPendingAction(null)}
+          data-testid="ebpf-action-dialog"
+        >
+          {pendingAction.action === 'deploy' && (
+            <div className="mt-4 space-y-2">
+              <label htmlFor={`otlp-endpoint-${record.endpoint_id}`} className="block text-xs font-semibold text-muted-foreground">
+                Dashboard IP/Hostname (optional)
+              </label>
+              <input
+                id={`otlp-endpoint-${record.endpoint_id}`}
+                type="text"
+                placeholder="192.168.178.20"
+                value={deployOtlpEndpoint}
+                onChange={(e) => setDeployOtlpEndpoint(e.target.value)}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                data-testid="deploy-otlp-input"
+              />
+              <p className="text-xs text-muted-foreground">
+                Auto format: <code>http://&lt;value&gt;:3051/api/traces/otlp</code>. Leave empty for default routing.
+              </p>
             </div>
-          </div>
-        </div>,
-        document.body,
+          )}
+        </ConfirmDialog>
       )}
     </>
   );

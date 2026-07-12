@@ -100,14 +100,26 @@ function DiscoveredBadge() {
 function EndpointCard({ endpoint, onClick, onViewStacks }: { endpoint: Endpoint; onClick: () => void; onViewStacks?: () => void }) {
   const memoryGB = (endpoint.totalMemory / (1024 * 1024 * 1024)).toFixed(1);
 
+  // Non-interactive container: nesting the "View stacks" button inside a
+  // card-level <button> is invalid HTML (#1547). The endpoint name is the
+  // real button and stretches over the card via an absolute pseudo-element,
+  // so the whole card stays clickable without nesting interactive elements.
   return (
-    <button
-      onClick={onClick}
-      className="w-full rounded-lg border bg-card p-4 shadow-sm text-left text-sm transition-colors hover:bg-accent/50 focus:outline-none focus:ring-2 focus:ring-ring"
+    <div
+      data-testid="endpoint-card"
+      className="relative w-full rounded-lg border bg-card p-4 shadow-sm text-left text-sm transition-colors hover:bg-accent/50 focus-within:ring-2 focus-within:ring-ring"
     >
       {/* Row 1: Name + ID — matches table Name column (font-medium + muted ID) */}
       <div className="flex items-center justify-between gap-2">
-        <h3 className="truncate font-medium">{endpoint.name}</h3>
+        <h3 className="min-w-0 truncate font-medium">
+          <button
+            type="button"
+            onClick={onClick}
+            className="max-w-full truncate text-left align-middle font-medium after:absolute after:inset-0 after:content-[''] focus:outline-none"
+          >
+            {endpoint.name}
+          </button>
+        </h3>
         <span className="shrink-0 text-xs text-muted-foreground">(ID: {endpoint.id})</span>
       </div>
 
@@ -153,18 +165,19 @@ function EndpointCard({ endpoint, onClick, onViewStacks }: { endpoint: Endpoint;
         </div>
       )}
 
-      {/* View stacks link */}
+      {/* View stacks link — positioned above the stretched name-button overlay */}
       {onViewStacks && endpoint.stackCount > 0 && (
         <button
+          type="button"
           onClick={(e) => { e.stopPropagation(); onViewStacks(); }}
-          className="mt-2 inline-flex items-center gap-1 text-xs text-primary hover:underline"
+          className="relative mt-2 inline-flex items-center gap-1 text-xs text-primary hover:underline"
           data-testid="view-stacks-link"
         >
           View {endpoint.stackCount} stack{endpoint.stackCount !== 1 ? 's' : ''}
           <ArrowRight className="h-3 w-3" />
         </button>
       )}
-    </button>
+    </div>
   );
 }
 
@@ -1108,6 +1121,7 @@ export default function InfrastructurePage() {
                     className="inline-flex items-center justify-center rounded-md border border-input bg-background p-2 text-sm hover:bg-accent disabled:opacity-50"
                     onClick={() => setGridPage((p) => Math.max(1, p - 1))}
                     disabled={gridPage <= 1}
+                    aria-label="Previous page"
                     data-testid="grid-prev-page"
                   >
                     <ChevronLeft className="h-4 w-4" />
@@ -1116,6 +1130,7 @@ export default function InfrastructurePage() {
                     className="inline-flex items-center justify-center rounded-md border border-input bg-background p-2 text-sm hover:bg-accent disabled:opacity-50"
                     onClick={() => setGridPage((p) => Math.min(gridPageCount, p + 1))}
                     disabled={gridPage >= gridPageCount}
+                    aria-label="Next page"
                     data-testid="grid-next-page"
                   >
                     <ChevronRight className="h-4 w-4" />

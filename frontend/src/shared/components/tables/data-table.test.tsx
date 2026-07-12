@@ -847,4 +847,119 @@ describe('DataTable', () => {
       expect(screen.getByText('container-1').closest('tr')?.className).not.toContain('bg-amber-500/5');
     });
   });
+
+  describe('keyboard interaction (#1537)', () => {
+    it('makes rows focusable only when onRowClick is provided', () => {
+      const { rerender } = render(
+        <DataTable columns={testColumns} data={makeRows(3)} onRowClick={vi.fn()} />
+      );
+      expect(screen.getByTestId('table-row-0')).toHaveAttribute('tabindex', '0');
+
+      rerender(<DataTable columns={testColumns} data={makeRows(3)} />);
+      expect(screen.getByTestId('table-row-0')).not.toHaveAttribute('tabindex');
+    });
+
+    it('activates the focused row with Enter', () => {
+      const onRowClick = vi.fn();
+      const data = makeRows(3);
+      render(<DataTable columns={testColumns} data={data} onRowClick={onRowClick} />);
+
+      const row = screen.getByTestId('table-row-1');
+      act(() => row.focus());
+      fireEvent.keyDown(row, { key: 'Enter' });
+      expect(onRowClick).toHaveBeenCalledWith(data[1]);
+    });
+
+    it('activates the focused row with Space', () => {
+      const onRowClick = vi.fn();
+      const data = makeRows(3);
+      render(<DataTable columns={testColumns} data={data} onRowClick={onRowClick} />);
+
+      const row = screen.getByTestId('table-row-2');
+      act(() => row.focus());
+      fireEvent.keyDown(row, { key: ' ' });
+      expect(onRowClick).toHaveBeenCalledWith(data[2]);
+    });
+
+    it('moves focus between rows with j/k', () => {
+      render(<DataTable columns={testColumns} data={makeRows(3)} onRowClick={vi.fn()} />);
+
+      const first = screen.getByTestId('table-row-0');
+      const second = screen.getByTestId('table-row-1');
+      act(() => first.focus());
+
+      fireEvent.keyDown(first, { key: 'j' });
+      expect(document.activeElement).toBe(second);
+
+      fireEvent.keyDown(second, { key: 'k' });
+      expect(document.activeElement).toBe(first);
+    });
+
+    it('applies the keyboard-selected highlight to the focused row', () => {
+      render(<DataTable columns={testColumns} data={makeRows(3)} onRowClick={vi.fn()} />);
+
+      const row = screen.getByTestId('table-row-0');
+      act(() => row.focus());
+      expect(row.className).toContain('keyboard-selected');
+
+      act(() => row.blur());
+      expect(row.className).not.toContain('keyboard-selected');
+    });
+
+    it('ignores Enter originating from controls inside a cell', () => {
+      const onRowClick = vi.fn();
+      const columns: ColumnDef<TestRow, any>[] = [
+        ...testColumns,
+        {
+          id: 'actions',
+          header: 'Actions',
+          cell: () => <button type="button">Inner</button>,
+        },
+      ];
+      render(<DataTable columns={columns} data={makeRows(2)} onRowClick={onRowClick} />);
+
+      const inner = screen.getAllByText('Inner')[0];
+      fireEvent.keyDown(inner, { key: 'Enter' });
+      expect(onRowClick).not.toHaveBeenCalled();
+    });
+
+    it('exposes sortable headers as buttons that toggle sort once per activation', () => {
+      render(<DataTable columns={testColumns} data={makeRows(5)} />);
+
+      const nameHeader = screen.getByText('Name').closest('th')!;
+      const sortButton = nameHeader.querySelector('button');
+      expect(sortButton).not.toBeNull();
+
+      // A native button is keyboard-operable (Enter/Space fire click); the
+      // click must not double-toggle by bubbling into the th onClick.
+      fireEvent.click(sortButton!);
+      expect(nameHeader).toHaveAttribute('aria-sort', 'ascending');
+      fireEvent.click(sortButton!);
+      expect(nameHeader).toHaveAttribute('aria-sort', 'descending');
+    });
+
+    it('enters the table at the first row when j is pressed on the virtual container', () => {
+      render(<DataTable columns={testColumns} data={makeRows(100)} onRowClick={vi.fn()} />);
+
+      const container = screen.getByTestId('virtual-scroll-container');
+      act(() => container.focus());
+      fireEvent.keyDown(container, { key: 'j' });
+      expect(document.activeElement).toBe(screen.getByTestId('table-row-0'));
+    });
+  });
+
+  describe('pagination accessible names (#1540)', () => {
+    it('labels the server pagination buttons', () => {
+      render(
+        <DataTable
+          columns={testColumns}
+          data={makeRows(10)}
+          serverPagination={{ total: 100, page: 2, pageSize: 10, onPageChange: vi.fn() }}
+        />
+      );
+
+      expect(screen.getByTestId('server-prev-page')).toHaveAttribute('aria-label', 'Previous page');
+      expect(screen.getByTestId('server-next-page')).toHaveAttribute('aria-label', 'Next page');
+    });
+  });
 });

@@ -114,4 +114,13 @@ describe('ObservedDestinationsPanel', () => {
       );
     });
   });
+
+  it('renders skeleton rows instead of raw loading text while loading (#1549)', () => {
+    mockApiGet.mockReturnValue(new Promise(() => {})); // never resolves
+
+    renderWithProviders(<ObservedDestinationsPanel />);
+
+    expect(screen.getByRole('status', { name: 'Loading observed destinations' })).toBeInTheDocument();
+    expect(screen.queryByText('Loading observed destinations…')).not.toBeInTheDocument();
+  });
 });

@@ -66,6 +66,7 @@ import { useUpdateSetting, useDeleteSetting } from '@/features/core/hooks/use-se
 import { usePromptHistory, useRollbackPrompt, type PromptVersion } from '@/features/ai-intelligence/hooks/use-prompt-versions';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { ConfirmDialog } from '@/shared/components/feedback/confirm-dialog';
+import { SkeletonList } from '@/shared/components/feedback/skeleton';
 import { DataTable } from '@/shared/components/tables/data-table';
 import { cn, formatBytes } from '@/shared/lib/utils';
 import { api } from '@/shared/lib/api';
@@ -662,7 +663,12 @@ export function McpServerRow({ server }: { server: McpServer }) {
     <div className="rounded-lg border border-border bg-card/50 p-4 space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className={`h-2.5 w-2.5 rounded-full ${server.connected ? 'bg-emerald-500' : 'bg-gray-400'}`} />
+          <div
+            aria-hidden="true"
+            title={server.connected ? 'Connected' : 'Disconnected'}
+            className={`h-2.5 w-2.5 rounded-full ${server.connected ? 'bg-emerald-500' : 'bg-gray-400'}`}
+          />
+          <span className="sr-only">{server.connected ? 'Connected' : 'Disconnected'}</span>
           <div>
             <div className="font-medium text-sm">{server.name}</div>
             <div className="text-xs text-muted-foreground">
@@ -809,7 +815,8 @@ export function McpServerRow({ server }: { server: McpServer }) {
   );
 }
 
-function McpServersSection() {
+// Exported for tests (loading skeleton, #1549).
+export function McpServersSection() {
   const { data: servers, isLoading } = useMcpServers();
   const createMutation = useCreateMcpServer();
   const [showForm, setShowForm] = useState(false);
@@ -917,7 +924,7 @@ function McpServersSection() {
         </div>
       )}
 
-      {isLoading && <div className="text-sm text-muted-foreground">Loading servers...</div>}
+      {isLoading && <SkeletonList rows={3} />}
       {servers && servers.length === 0 && !showForm && (
         <p className="text-sm text-muted-foreground text-center py-4">No MCP servers configured yet</p>
       )}
@@ -1260,7 +1267,8 @@ function TokenBadge({ count }: { count: number }) {
   );
 }
 
-function PromptTestPanel({
+// Exported for tests (accessible close-button name, #1540).
+export function PromptTestPanel({
   feature,
   systemPrompt,
   model,
@@ -1325,6 +1333,7 @@ function PromptTestPanel({
             <button
               type="button"
               onClick={handleCancel}
+              aria-label="Close test results"
               className="text-muted-foreground hover:text-foreground"
             >
               <X className="h-4 w-4" />
@@ -1418,7 +1427,8 @@ function PromptTestPanel({
   );
 }
 
-function ImportPreviewPanel({
+// Exported for tests (accessible close-button name, #1540).
+export function ImportPreviewPanel({
   preview,
   importData,
   features,
@@ -1449,7 +1459,7 @@ function ImportPreviewPanel({
           <Upload className="h-4 w-4" />
           Import Preview
         </h4>
-        <button type="button" onClick={onCancel} className="text-muted-foreground hover:text-foreground">
+        <button type="button" onClick={onCancel} aria-label="Close import preview" className="text-muted-foreground hover:text-foreground">
           <X className="h-4 w-4" />
         </button>
       </div>

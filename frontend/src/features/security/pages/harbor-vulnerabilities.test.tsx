@@ -170,6 +170,23 @@ describe('HarborVulnerabilitiesPage', () => {
     expect(screen.getByText('Critical vulnerability in OpenSSL')).toBeInTheDocument();
   });
 
+  it('expands a vulnerability detail panel with the keyboard (#1537)', async () => {
+    const { default: userEvent } = await import('@testing-library/user-event');
+    const user = userEvent.setup();
+    render(<HarborVulnerabilitiesPage />);
+
+    const row = screen.getByText('CVE-2024-1234').closest('tr')!;
+    expect(row).toHaveAttribute('tabindex', '0');
+
+    row.focus();
+    await user.keyboard('{Enter}');
+    expect(screen.getByText('Critical vulnerability in OpenSSL')).toBeInTheDocument();
+
+    // Enter again collapses (row click toggles)
+    await user.keyboard('{Enter}');
+    expect(screen.queryByText('Critical vulnerability in OpenSSL')).not.toBeInTheDocument();
+  });
+
   it('tints in-use rows so the whole-row cue is preserved', () => {
     render(<HarborVulnerabilitiesPage />);
     // CVE-2024-1234 is in_use:true, CVE-2024-5678 is in_use:false

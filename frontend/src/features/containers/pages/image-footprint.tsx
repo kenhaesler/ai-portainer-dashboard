@@ -460,6 +460,7 @@ function ImageDetailPanel({
           </div>
           <button
             onClick={onClose}
+            aria-label="Close details"
             className="ml-4 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-accent/80"
           >
             <X className="h-4 w-4" />

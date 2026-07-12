@@ -185,12 +185,16 @@ function IncidentItem({ incident }: { incident: Incident }) {
         <div className="flex-1">
           <div className="flex items-center gap-2">
             <span
+              aria-hidden="true"
               className={cn(
                 'inline-block w-2 h-2 rounded-full',
                 incident.severity === 'critical' ? 'bg-red-500' :
                 incident.severity === 'warning' ? 'bg-yellow-500' : 'bg-blue-500',
               )}
             />
+            <span className="sr-only">
+              {incident.severity === 'critical' ? 'Critical' : incident.severity === 'warning' ? 'Warning' : 'Info'} severity
+            </span>
             <span className="font-medium text-foreground">{incident.title}</span>
           </div>
           {incident.summary && (
