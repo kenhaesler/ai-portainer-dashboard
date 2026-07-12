@@ -183,10 +183,23 @@ export const envSchema = z.object({
   // weekday buckets degrade gracefully. A wider lookback (default 28d ≈ 4 same-
   // weekday occurrences) is needed for the weekly bucket to be stable. The
   // mean/std path reads this from the metrics_1hour aggregate; the robust path
-  // narrows its raw query (median+MAD needs raw samples).
+  // narrows its raw query (median+MAD needs raw samples). On the robust path
+  // the lookback is clamped to METRICS_RAW_RETENTION_DAYS (#1527) — the raw
+  // hypertable holds nothing older — with a one-time warning when it exceeds
+  // retention. MIN_SAMPLES counts DISTINCT same-weekday days (#1527), not raw
+  // samples, so one day's samples cannot masquerade as a weekly baseline; at
+  // the default 7-day raw retention the weekly bucket therefore stays in
+  // warm-up and detection uses the hour-of-day baseline.
   ANOMALY_DAYOFWEEK_ENABLED: boolStr(true),
   ANOMALY_DAYOFWEEK_LOOKBACK_DAYS: z.coerce.number().int().min(7).max(120).default(28),
   ANOMALY_DAYOFWEEK_MIN_SAMPLES: z.coerce.number().int().min(1).max(1000).default(3),
+  // Concurrency cap for per-(container × metric) anomaly detection (#1498).
+  // Each detection issues 1-3 TimescaleDB window queries; an unbounded fan-out
+  // (2 × running containers at once) saturates the shared pool
+  // (TIMESCALE_MAX_CONNECTIONS) on large fleets and starves interactive
+  // dashboard queries. Mirrors the p-limit pattern used for Portainer fan-outs.
+  // Also caps the Isolation Forest per-container pass (#1502).
+  ANOMALY_DETECT_CONCURRENCY: z.coerce.number().int().min(1).max(64).default(8),
 
   // Predictive Alerting
   PREDICTIVE_ALERTING_ENABLED: boolStr(true),

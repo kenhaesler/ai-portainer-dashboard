@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
+import pLimit from 'p-limit';
 import type { Namespace } from 'socket.io';
 import { getConfig } from '@dashboard/core/config/index.js';
 import { getEffectiveMonitoringConfig } from '@dashboard/core/services/settings-store.js';
@@ -305,23 +306,24 @@ export function createMonitoringService(deps: MonitoringDeps) {
       const monCfg = await getEffectiveMonitoringConfig();
       const anomalyInsights: InsightInsert[] = [];
 
-      // Build batch items for all running containers × metric types
+      // Build batch items for all running containers × metric types.
+      // #1525: read values via the batchMetrics Map (O(1) per lookup) instead
+      // of re-scanning the metricsFromDb array per container × metric.
       const batchItems: (BatchDetectionItem & { endpointId: number; endpointName: string })[] = [];
       for (const container of runningContainers) {
         const containerName =
           container.raw.Names?.[0]?.replace(/^\//, '') || container.raw.Id.slice(0, 12);
+        const latestForContainer = batchMetrics.get(container.raw.Id);
 
         for (const metricType of ['cpu', 'memory'] as const) {
-          const metric = metricsFromDb.find(
-            (m) => m.container_id === container.raw.Id && m.metric_type === metricType,
-          );
-          if (!metric) continue;
+          const value = latestForContainer?.[metricType];
+          if (value === undefined) continue;
 
           batchItems.push({
             containerId: container.raw.Id,
             containerName,
             metricType,
-            currentValue: metric.value,
+            currentValue: value,
             endpointId: container.endpointId,
             endpointName: container.endpointName,
           });
@@ -407,12 +409,11 @@ export function createMonitoringService(deps: MonitoringDeps) {
         for (const container of runningContainers) {
           const containerName =
             container.raw.Names?.[0]?.replace(/^\//, '') || container.raw.Id.slice(0, 12);
+          const latestForContainer = batchMetrics.get(container.raw.Id);
 
           for (const metricType of ['cpu', 'memory'] as const) {
-            const metric = metricsFromDb.find(
-              (m) => m.container_id === container.raw.Id && m.metric_type === metricType,
-            );
-            if (!metric || metric.value <= monCfg.anomalyThresholdPct) continue;
+            const value = latestForContainer?.[metricType]; // #1525: Map lookup, not .find()
+            if (value === undefined || value <= monCfg.anomalyThresholdPct) continue;
 
             // Skip if statistical detection already flagged this (container,
             // metric) — real signature dedup, not a title substring (#1363).
@@ -430,11 +431,11 @@ export function createMonitoringService(deps: MonitoringDeps) {
               endpoint_name: container.endpointName,
               container_id: container.raw.Id,
               container_name: containerName,
-              severity: metric.value > 95 ? 'critical' : 'warning',
+              severity: value > 95 ? 'critical' : 'warning',
               category: 'anomaly',
               title: `High ${metricType} usage on "${containerName}"`,
               description:
-                `Current ${metricType}: ${metric.value.toFixed(1)}% ` +
+                `Current ${metricType}: ${value.toFixed(1)}% ` +
                 `(threshold: ${monCfg.anomalyThresholdPct}%). ` +
                 `Value exceeds the configured warning threshold.`,
               suggested_action: metricType === 'memory'
@@ -447,62 +448,83 @@ export function createMonitoringService(deps: MonitoringDeps) {
         }
       }
 
-      // 4.1. Isolation Forest anomaly detection — multivariate ML-based detection
+      // 4.1. Isolation Forest anomaly detection — multivariate ML-based detection.
+      // #1502: ONE detector call per container — the forest scores the single
+      // [cpu, memory] vector, so the old per-metric loop recomputed an
+      // identical score. The flagged metric is derived from the inputs (the
+      // dominant of the two utilisation values). Containers fan out under the
+      // same p-limit as the statistical batch instead of running serially.
       if (monCfg.isolationForestEnabled) {
-        for (const container of runningContainers) {
-          const containerName =
-            container.raw.Names?.[0]?.replace(/^\//, '') || container.raw.Id.slice(0, 12);
+        // #1525: Set lookup for "already flagged by statistical/threshold
+        // detection" instead of re-scanning anomalyInsights per container.
+        const flaggedContainerIds = new Set(
+          anomalyInsights
+            .map((a) => a.container_id)
+            .filter((id): id is string => id !== null),
+        );
+        const ifLimit = pLimit(getConfig().ANOMALY_DETECT_CONCURRENCY);
+        const ifResults = await Promise.allSettled(
+          runningContainers.map((container) => ifLimit(async (): Promise<InsightInsert | null> => {
+            const containerName =
+              container.raw.Names?.[0]?.replace(/^\//, '') || container.raw.Id.slice(0, 12);
 
-          const cpuMetric = metricsFromDb.find(
-            (m) => m.container_id === container.raw.Id && m.metric_type === 'cpu',
-          );
-          const memMetric = metricsFromDb.find(
-            (m) => m.container_id === container.raw.Id && m.metric_type === 'memory',
-          );
-          if (!cpuMetric || !memMetric) continue;
+            // #1525: Map lookups instead of two metricsFromDb.find() scans.
+            const latestForContainer = batchMetrics.get(container.raw.Id);
+            const cpuValue = latestForContainer?.cpu;
+            const memoryValue = latestForContainer?.memory;
+            if (cpuValue === undefined || memoryValue === undefined) return null;
 
-          // Skip if already flagged by statistical detection
-          if (anomalyInsights.some((a) => a.container_id === container.raw.Id)) continue;
+            if (flaggedContainerIds.has(container.raw.Id)) return null;
 
-          // Adapt MetricsInterface.getMetrics (endpointId, containerId, type, from: Date, to: Date)
-          // to GetMetricsFn (containerId, type, from: string, to: string)
-          const getMetricsForContainer = (
-            cid: string,
-            metricType: string,
-            from: string,
-            to: string,
-          ) => deps.metrics.getMetrics(container.endpointId, cid, metricType, new Date(from), new Date(to));
+            // Adapt MetricsInterface.getMetrics (endpointId, containerId, type, from: Date, to: Date)
+            // to GetMetricsFn (containerId, type, from: string, to: string)
+            const getMetricsForContainer = (
+              cid: string,
+              metricType: string,
+              from: string,
+              to: string,
+            ) => deps.metrics.getMetrics(container.endpointId, cid, metricType, new Date(from), new Date(to));
 
-          for (const metricType of ['cpu', 'memory'] as const) {
-            const value = metricType === 'cpu' ? cpuMetric.value : memMetric.value;
+            // The score is per-container; label the insight with the dominant
+            // (higher-utilisation) metric of the flagged [cpu, memory] vector.
+            const metricType: 'cpu' | 'memory' = memoryValue >= cpuValue ? 'memory' : 'cpu';
+            const value = metricType === 'cpu' ? cpuValue : memoryValue;
             const ifAnomaly = await detectAnomalyIsolationForest(
               container.raw.Id, containerName, metricType, value,
-              cpuMetric.value, memMetric.value,
+              cpuValue, memoryValue,
               getMetricsForContainer,
             );
-            if (ifAnomaly?.is_anomalous) {
-              anomalyInsights.push({
-                id: uuidv4(),
-                endpoint_id: container.endpointId,
-                endpoint_name: container.endpointName,
-                container_id: container.raw.Id,
-                container_name: containerName,
-                severity: ifAnomaly.z_score > 0.7 ? 'critical' : 'warning',
-                category: 'anomaly',
-                title: `Anomalous ${metricType} usage on "${containerName}" (ML-detected)`,
-                description:
-                  `Isolation Forest anomaly score: ${ifAnomaly.z_score.toFixed(2)} ` +
-                  `(cpu: ${cpuMetric.value.toFixed(1)}%, memory: ${memMetric.value.toFixed(1)}%, ` +
-                  `method: isolation-forest). ` +
-                  `Multivariate analysis detected unusual resource usage pattern.`,
-                suggested_action: metricType === 'memory'
-                  ? 'Check for memory leaks or increase memory limit'
-                  : 'Check for runaway processes or increase CPU allocation',
-                metric_type: metricType,
-                detection_method: 'ml-anomaly',
-              });
-              break; // One insight per container for IF detection
-            }
+            if (!ifAnomaly?.is_anomalous) return null;
+
+            return {
+              id: uuidv4(),
+              endpoint_id: container.endpointId,
+              endpoint_name: container.endpointName,
+              container_id: container.raw.Id,
+              container_name: containerName,
+              severity: ifAnomaly.z_score > 0.7 ? 'critical' : 'warning',
+              category: 'anomaly',
+              title: `Anomalous ${metricType} usage on "${containerName}" (ML-detected)`,
+              description:
+                `Isolation Forest anomaly score: ${ifAnomaly.z_score.toFixed(2)} ` +
+                `(cpu: ${cpuValue.toFixed(1)}%, memory: ${memoryValue.toFixed(1)}%, ` +
+                `method: isolation-forest). ` +
+                `Multivariate analysis detected unusual resource usage pattern.`,
+              suggested_action: metricType === 'memory'
+                ? 'Check for memory leaks or increase memory limit'
+                : 'Check for runaway processes or increase CPU allocation',
+              metric_type: metricType,
+              detection_method: 'ml-anomaly',
+            } satisfies InsightInsert;
+          })),
+        );
+        // allSettled preserves input order → deterministic insight order; a
+        // failed detection is logged, never allowed to abort the cycle.
+        for (const result of ifResults) {
+          if (result.status === 'fulfilled' && result.value) {
+            anomalyInsights.push(result.value);
+          } else if (result.status === 'rejected') {
+            log.warn({ err: result.reason }, 'Isolation Forest detection failed for a container');
           }
         }
       }

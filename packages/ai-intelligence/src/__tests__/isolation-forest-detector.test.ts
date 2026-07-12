@@ -102,6 +102,26 @@ describe('isolation-forest-detector', () => {
     expect(mockGetMetrics).toHaveBeenCalledTimes(2); // Only the first two calls
   });
 
+  // #1502 — the cpu and memory training range scans are independent; fetching
+  // them sequentially doubled the training latency per container.
+  it('fetches the cpu and memory training windows in parallel (#1502)', async () => {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    mockGetMetrics.mockImplementation(async (_cid: string, metricType: string) => {
+      inFlight++;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      inFlight--;
+      return generateMetrics(100, metricType === 'cpu' ? 50 : 60);
+    });
+
+    const model = await getOrTrainModel('container-parallel', mockGetMetrics);
+
+    expect(model).not.toBeNull();
+    expect(mockGetMetrics).toHaveBeenCalledTimes(2);
+    expect(maxInFlight).toBe(2); // both windows were in flight at once
+  });
+
   it('detects anomaly with trained model', async () => {
     mockGetMetrics
       .mockResolvedValueOnce(generateMetrics(100, 50))
