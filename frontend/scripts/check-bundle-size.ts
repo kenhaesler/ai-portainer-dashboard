@@ -44,6 +44,79 @@ export interface CheckResult {
 // Core logic (exported for testing)
 // ---------------------------------------------------------------------------
 
+/**
+ * Extract the module specifiers of all STATIC imports in a built chunk.
+ * Dynamic import() calls and preload-map strings (__vite__mapDeps) are not
+ * matched: both regexes require the `import ... from "..."` / `import "..."`
+ * statement forms that only static imports produce in Rolldown output.
+ */
+export function parseStaticImports(source: string): string[] {
+  const specifiers = new Set<string>();
+  // import{a as b}from"./x.js" | import x from"./x.js" | import*as x from"./x.js"
+  const fromRe = /import\s*(?:[\w$]+\s*,?\s*)?(?:\{[^}]*\}|\*\s*as\s+[\w$]+)?\s*from\s*["']([^"']+)["']/g;
+  // Bare side-effect imports: import"./x.js"
+  const bareRe = /import\s*["']([^"']+)["']/g;
+  for (const re of [fromRe, bareRe]) {
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(source)) !== null) {
+      specifiers.add(match[1]);
+    }
+  }
+  return [...specifiers];
+}
+
+/**
+ * Walk the static-import graph from every entry file and return the set of
+ * eagerly loaded files (dist-relative paths). Anything only reachable via
+ * dynamic import() is excluded — that is the lazy boundary.
+ */
+export function collectEagerChunkFiles(distDir: string): string[] {
+  const entriesDir = path.join(distDir, 'entries');
+  if (!fs.existsSync(entriesDir)) return [];
+
+  const queue = fs
+    .readdirSync(entriesDir)
+    .filter((f) => f.endsWith('.js'))
+    .map((f) => path.join('entries', f));
+  const seen = new Set<string>(queue);
+
+  while (queue.length > 0) {
+    const rel = queue.pop()!;
+    const abs = path.join(distDir, rel);
+    if (!fs.existsSync(abs)) continue;
+    const source = fs.readFileSync(abs, 'utf-8');
+    for (const spec of parseStaticImports(source)) {
+      if (!spec.startsWith('.')) continue; // external/bare specifier
+      const resolved = path.normalize(path.join(path.dirname(rel), spec));
+      if (!seen.has(resolved)) {
+        seen.add(resolved);
+        queue.push(resolved);
+      }
+    }
+  }
+
+  return [...seen].sort();
+}
+
+/**
+ * Regression guard for #1507: recharts must never be on the startup critical
+ * path. Under Vite 8/Rolldown the legacy manualChunks placed React core inside
+ * chart-vendor, making the entry statically import the 432KB recharts chunk on
+ * every first paint. Fails if any eagerly-loaded chunk contains recharts code.
+ */
+export function checkNoEagerRecharts(distDir: string): string[] {
+  const failures: string[] = [];
+  for (const rel of collectEagerChunkFiles(distDir)) {
+    const source = fs.readFileSync(path.join(distDir, rel), 'utf-8');
+    if (source.includes('recharts-wrapper')) {
+      failures.push(
+        `${rel} is eagerly loaded (static import chain from the entry) but contains recharts code; charts must only load with lazy routes`,
+      );
+    }
+  }
+  return failures;
+}
+
 /** Collect all .js files from the given directories and measure sizes. */
 export function measureChunks(distDir: string): ChunkMeasurement[] {
   const subdirs = ['entries', 'chunks', 'assets'];
@@ -213,7 +286,12 @@ function main(): void {
 
   console.log(report);
 
-  if (result.failures.length > 0) {
+  const eagerRechartsFailures = checkNoEagerRecharts(distDir);
+  for (const failure of eagerRechartsFailures) {
+    console.error(`  - ${failure}`);
+  }
+
+  if (result.failures.length > 0 || eagerRechartsFailures.length > 0) {
     process.exit(1);
   }
 }

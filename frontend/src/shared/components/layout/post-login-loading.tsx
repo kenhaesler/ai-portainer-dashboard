@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion';
+import { m } from 'framer-motion';
 import { ICON_SET_MAP } from '../icons/icon-sets';
 
 interface PostLoginLoadingProps {
@@ -9,7 +9,7 @@ export function PostLoginLoading({ onComplete }: PostLoginLoadingProps) {
   const icon = ICON_SET_MAP['docker-ai'];
 
   return (
-    <motion.div
+    <m.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
@@ -21,7 +21,7 @@ export function PostLoginLoading({ onComplete }: PostLoginLoadingProps) {
       }}
     >
       {/* Background Ambient Glow */}
-      <motion.div
+      <m.div
         animate={{
           opacity: [0.1, 0.2, 0.1],
         }}
@@ -31,7 +31,7 @@ export function PostLoginLoading({ onComplete }: PostLoginLoadingProps) {
 
       <div className="relative mb-12">
         {/* Outer Glow - Intensified */}
-        <motion.div
+        <m.div
           animate={{
             scale: [1, 1.3, 1],
             opacity: [0.4, 0.8, 0.4],
@@ -45,7 +45,7 @@ export function PostLoginLoading({ onComplete }: PostLoginLoadingProps) {
         />
 
         {/* Rotating Logo - Larger */}
-        <motion.div
+        <m.div
           animate={{ rotate: 360 }}
           transition={{
             duration: 3,
@@ -78,20 +78,20 @@ export function PostLoginLoading({ onComplete }: PostLoginLoadingProps) {
               />
             ))}
           </svg>
-        </motion.div>
+        </m.div>
       </div>
 
       {/* Powered by AI Text */}
       <div className="relative text-center">
-        <motion.p
+        <m.p
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ delay: 0.1, type: "spring" }}
           className="text-2xl font-bold tracking-tight text-white"
         >
           Initializing Intelligence
-        </motion.p>
-        <motion.div
+        </m.p>
+        <m.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.3 }}
@@ -102,13 +102,13 @@ export function PostLoginLoading({ onComplete }: PostLoginLoadingProps) {
             Powered by AI
           </p>
           <span className="h-px w-12 bg-primary/40" />
-        </motion.div>
+        </m.div>
       </div>
 
       {/* Loading Progress Line - More obvious */}
       <div className="absolute bottom-20 w-80">
         <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/5 border border-white/10">
-          <motion.div
+          <m.div
             initial={{ x: "-100%" }}
             animate={{ x: "100%" }}
             transition={{
@@ -123,6 +123,6 @@ export function PostLoginLoading({ onComplete }: PostLoginLoadingProps) {
           Establishing secure neural link...
         </p>
       </div>
-    </motion.div>
+    </m.div>
   );
 }

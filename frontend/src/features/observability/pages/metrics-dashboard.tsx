@@ -35,7 +35,6 @@ import { EmptyState } from '@/shared/components/feedback/empty-state';
 import { SkeletonText, SkeletonChart, SkeletonTableRow } from '@/shared/components/feedback/skeleton';
 import { DataTable } from '@/shared/components/tables/data-table';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
-import { InlineChatPanel } from '@/features/ai-intelligence/components/metrics/inline-chat-panel';
 import { useLlmModels } from '@/features/ai-intelligence/hooks/use-llm-models';
 import { cn } from '@/shared/lib/utils';
 import { buildStackGroupedContainerOptions, NO_STACK_LABEL, resolveContainerStackName } from '@/features/containers/lib/container-stack-grouping';
@@ -75,6 +74,12 @@ const LazyAiMetricsSummary = lazy(() =>
 );
 const LazyCorrelationInsightsPanel = lazy(() =>
   import('@/features/ai-intelligence/components/metrics/correlation-insights-panel').then((module) => ({ default: module.CorrelationInsightsPanel })),
+);
+// Lazy like its siblings above (#1507): the panel statically pulls in the
+// react-markdown + highlight.js chunk (~326KB raw), which should load on first
+// chat open instead of on every /metrics visit.
+const LazyInlineChatPanel = lazy(() =>
+  import('@/features/ai-intelligence/components/metrics/inline-chat-panel').then((module) => ({ default: module.InlineChatPanel })),
 );
 const DEFAULT_MAX_POINTS = 240;
 
@@ -1046,9 +1051,12 @@ export default function MetricsDashboardPage() {
       </div>
       </SpotlightCard>
 
-      {/* Inline Chat Panel */}
-      {selectedContainerData && selectedEndpoint && (
-        <InlineChatPanel
+      {/* Inline Chat Panel — mounted only when open so the markdown/highlight
+          chunk is fetched on first use. Fallback is null: the panel is a fixed
+          overlay that renders null while closed, so nothing should flash. */}
+      {selectedContainerData && selectedEndpoint && chatOpen && (
+        <Suspense fallback={null}>
+        <LazyInlineChatPanel
           open={chatOpen}
           onClose={() => setChatOpen(false)}
           context={{
@@ -1061,6 +1069,7 @@ export default function MetricsDashboardPage() {
             memoryAvg: stats.memory.avg,
           }}
         />
+        </Suspense>
       )}
     </div>
   );

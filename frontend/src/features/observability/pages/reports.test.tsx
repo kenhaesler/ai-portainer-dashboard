@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import ReportsPage from './reports';
@@ -115,14 +115,11 @@ const reportState = vi.hoisted(() => ({
 vi.mock('@/shared/lib/csv-export', () => ({
   exportToCsv: (...args: unknown[]) => mockExportToCsv(...args),
 }));
+// reports.tsx loads this module via dynamic import() inside the export handler
+// (#1507); vi.mock intercepts dynamic imports too. The theme list now comes
+// from the real (light) management-pdf-themes module and is not mocked.
 vi.mock('@/features/observability/lib/management-pdf-export', () => ({
   exportManagementPdf: (...args: unknown[]) => mockExportManagementPdf(...args),
-  MANAGEMENT_PDF_THEMES: [
-    { value: 'ocean', label: 'Ocean Blue' },
-    { value: 'forest', label: 'Forest Green' },
-    { value: 'slate', label: 'Slate Gray' },
-    { value: 'sunset', label: 'Sunset Orange' },
-  ],
 }));
 
 // Mock hooks
@@ -424,13 +421,15 @@ describe('ReportsPage', () => {
     expect(screen.getByText('Memory Trend (Fleet Avg)')).toBeTruthy();
   });
 
-  it('exports management PDF with default 7d range and infrastructure excluded', () => {
+  it('exports management PDF with default 7d range and infrastructure excluded', async () => {
     renderWithProviders(<ReportsPage />);
 
     fireEvent.click(screen.getByRole('button', { name: /export management pdf/i }));
     fireEvent.click(screen.getByRole('button', { name: /generate pdf/i }));
 
-    expect(mockExportManagementPdf).toHaveBeenCalledTimes(1);
+    // The export module is loaded via dynamic import() in the handler (#1507),
+    // so the mocked export function is called asynchronously.
+    await waitFor(() => expect(mockExportManagementPdf).toHaveBeenCalledTimes(1));
     const [payload, filename] = mockExportManagementPdf.mock.calls[0];
     expect(payload.timeRange).toBe('7d');
     expect(payload.includeInfrastructure).toBe(false);
@@ -439,7 +438,7 @@ describe('ReportsPage', () => {
     expect(filename).toMatch(/^management-report-7d-all-endpoints-\d{4}-\d{2}-\d{2}\.pdf$/);
   });
 
-  it('exports management PDF with overrides when selected', () => {
+  it('exports management PDF with overrides when selected', async () => {
     renderWithProviders(<ReportsPage />);
 
     fireEvent.click(screen.getByRole('button', { name: /export management pdf/i }));
@@ -447,7 +446,7 @@ describe('ReportsPage', () => {
     fireEvent.click(screen.getByLabelText(/^include infrastructure services$/i));
     fireEvent.click(screen.getByRole('button', { name: /generate pdf/i }));
 
-    expect(mockExportManagementPdf).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(mockExportManagementPdf).toHaveBeenCalledTimes(1));
     const [payload, filename] = mockExportManagementPdf.mock.calls[0];
     expect(payload.timeRange).toBe('24h');
     expect(payload.includeInfrastructure).toBe(true);

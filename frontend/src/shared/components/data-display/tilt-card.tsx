@@ -1,5 +1,5 @@
 import { useRef, useCallback } from 'react';
-import { motion, useMotionValue, useSpring, useReducedMotion } from 'framer-motion';
+import { m, useMotionValue, useSpring, useReducedMotion } from 'framer-motion';
 import { cn } from '@/shared/lib/utils';
 import { useUiStore } from '@/stores/ui-store';
 
@@ -73,7 +73,7 @@ export function TiltCard({ children, className, disabled, intensity = 'default' 
 
   return (
     <div style={{ perspective: 1000, borderRadius: 'var(--radius-lg)' }} className={cn('h-full', className)}>
-      <motion.div
+      <m.div
         ref={ref}
         className="h-full"
         style={{
@@ -88,7 +88,7 @@ export function TiltCard({ children, className, disabled, intensity = 'default' 
         data-intensity={intensity}
       >
         <div className="h-full" style={{ transform: `translateZ(${translateZ}px)`, borderRadius: 'var(--radius-lg)' }}>{children}</div>
-      </motion.div>
+      </m.div>
     </div>
   );
 }

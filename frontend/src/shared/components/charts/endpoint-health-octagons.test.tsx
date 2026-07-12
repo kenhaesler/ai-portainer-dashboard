@@ -8,7 +8,7 @@ vi.mock('react-router-dom', () => ({
 }));
 
 vi.mock('framer-motion', () => ({
-  motion: {
+  m: {
     div: ({ children, ...props }: any) => {
       const { variants: _v, initial: _i, animate: _a, ...rest } = props;
       return <div {...rest}>{children}</div>;

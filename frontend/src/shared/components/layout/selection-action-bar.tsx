@@ -1,4 +1,4 @@
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { AnimatePresence, m, useReducedMotion } from 'framer-motion';
 import { X } from 'lucide-react';
 
 interface SelectionActionBarProps {
@@ -19,7 +19,7 @@ export function SelectionActionBar({
   return (
     <AnimatePresence>
       {visible && (
-        <motion.div
+        <m.div
           data-testid="selection-action-bar"
           initial={reduceMotion ? false : { y: 80, opacity: 0 }}
           animate={reduceMotion ? { opacity: 1 } : { y: 0, opacity: 1 }}
@@ -59,7 +59,7 @@ export function SelectionActionBar({
             <X className="h-4 w-4" />
             Clear
           </button>
-        </motion.div>
+        </m.div>
       )}
     </AnimatePresence>
   );

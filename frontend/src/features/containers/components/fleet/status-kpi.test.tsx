@@ -4,7 +4,7 @@ import { StatusKpi, ENDPOINT_STATUS_COLORS, STACK_STATUS_COLORS, type StatusKpiP
 
 // Mock framer-motion to avoid animation complexity in tests
 vi.mock('framer-motion', () => ({
-  motion: {
+  m: {
     button: ({ children, ...props }: React.PropsWithChildren<React.ButtonHTMLAttributes<HTMLButtonElement>>) => {
       const { initial, animate, exit, transition: _transition, ...rest } = props as any;
       return <button {...rest}>{children}</button>;
