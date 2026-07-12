@@ -313,6 +313,7 @@ async function sendTeamsNotificationInner(payload: NotificationPayload): Promise
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(card),
+    signal: AbortSignal.timeout(getConfig().NOTIFICATION_HTTP_TIMEOUT_MS),
   });
 
   if (!response.ok) {
@@ -400,6 +401,7 @@ async function sendDiscordNotificationInner(payload: NotificationPayload): Promi
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ embeds: [embed] }),
+    signal: AbortSignal.timeout(getConfig().NOTIFICATION_HTTP_TIMEOUT_MS),
   });
 
   if (!response.ok) {
@@ -450,6 +452,7 @@ async function sendTelegramNotificationInner(payload: NotificationPayload): Prom
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
+    signal: AbortSignal.timeout(getConfig().NOTIFICATION_HTTP_TIMEOUT_MS),
   });
 
   if (!response.ok) {
