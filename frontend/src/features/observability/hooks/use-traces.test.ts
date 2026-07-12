@@ -34,7 +34,7 @@ describe('useTraces', () => {
   });
 
   it('fetches traces with no params when none supplied', async () => {
-    mockApi.get.mockResolvedValueOnce([]);
+    mockApi.get.mockResolvedValueOnce({ traces: [] });
 
     const { result } = renderHook(() => useTraces(), { wrapper: createWrapper() });
 
@@ -43,7 +43,7 @@ describe('useTraces', () => {
   });
 
   it('passes filter options through to the api layer', async () => {
-    mockApi.get.mockResolvedValueOnce([]);
+    mockApi.get.mockResolvedValueOnce({ traces: [] });
 
     const options: TracesOptions = {
       serviceName: 'web',
@@ -58,7 +58,7 @@ describe('useTraces', () => {
     expect(mockApi.get).toHaveBeenCalledWith('/api/traces', { params: options });
   });
 
-  it('returns the array data on success', async () => {
+  it('unwraps the { traces } envelope into a bare array on success', async () => {
     const traces = [
       {
         traceId: 't1',
@@ -78,7 +78,7 @@ describe('useTraces', () => {
         status: 'ok',
       },
     ];
-    mockApi.get.mockResolvedValueOnce(traces);
+    mockApi.get.mockResolvedValueOnce({ traces });
 
     const { result } = renderHook(() => useTraces(), { wrapper: createWrapper() });
 

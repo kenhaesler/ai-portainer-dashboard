@@ -222,8 +222,12 @@ export async function getMovingAverageByHourOfDay(
  * mean/stddev — pooling daily hourly *averages* would understate the spread and
  * over-flag. When `dayOfWeek` (0=Sun..6=Sat, UTC) is supplied the query is
  * narrowed to that weekday (week-aware seasonality, #1307/#1364), which also
- * scans *fewer* rows. Returns [] for an out-of-range hour, bad lookback, or
- * empty bucket.
+ * scans *fewer* rows. When `minDistinctDays` accompanies a day-of-week filter,
+ * the bucket must span at least that many DISTINCT same-weekday days (weekly-
+ * baseline warm-up, #1527) — a burst of samples from a single day cannot
+ * masquerade as a weekly baseline. Returns [] for an out-of-range hour, bad
+ * lookback, an empty bucket, or a bucket under the distinct-day warm-up floor
+ * (so callers fall through to the next baseline).
  */
 export async function getMetricWindowByHourOfDay(
   containerId: string,
@@ -231,6 +235,7 @@ export async function getMetricWindowByHourOfDay(
   hourOfDay: number,
   lookbackDays: number,
   dayOfWeek?: number,
+  minDistinctDays?: number,
 ): Promise<number[]> {
   if (!Number.isInteger(hourOfDay) || hourOfDay < 0 || hourOfDay > 23) {
     return [];
@@ -244,7 +249,7 @@ export async function getMetricWindowByHourOfDay(
   if (filterByDow) params.push(dayOfWeek);
 
   const { rows } = await db.query(
-    `SELECT value FROM metrics
+    `SELECT value, (timestamp AT TIME ZONE 'UTC')::date AS sample_day FROM metrics
      WHERE container_id = $1
        AND metric_type = $2
        AND timestamp >= NOW() - ($3::int * INTERVAL '1 day')
@@ -257,11 +262,19 @@ export async function getMetricWindowByHourOfDay(
      ORDER BY timestamp DESC`,
     params,
   );
-  return (rows as Array<{ value: number }>).map((r) => Number(r.value));
+  const typed = rows as Array<{ value: number; sample_day: string | Date }>;
+  if (filterByDow && minDistinctDays !== undefined && minDistinctDays > 0) {
+    const distinctDays = new Set(typed.map((r) => String(r.sample_day))).size;
+    if (distinctDays < minDistinctDays) return [];
+  }
+  return typed.map((r) => Number(r.value));
 }
 
 export async function cleanOldMetrics(retentionDays: number): Promise<number> {
-  // TimescaleDB retention is handled by policies, but this provides manual cleanup
+  // Plain-Postgres fallback (#1504): the scheduler only calls this when no
+  // TimescaleDB retention policy is confirmed installed — with a policy in
+  // place, chunk drops own retention and this row-wise DELETE is skipped
+  // (it would churn dead tuples/WAL inside chunks the policy drops for free).
   const db = await getMetricsDb();
   const { rowCount } = await db.query(
     `DELETE FROM metrics WHERE timestamp < NOW() - $1 * INTERVAL '1 day'`,
@@ -273,6 +286,16 @@ export async function cleanOldMetrics(retentionDays: number): Promise<number> {
   return deleted;
 }
 
+/**
+ * Recency bound for "latest" metric reads (#1493). Without a timestamp
+ * predicate the DISTINCT ON queries below cannot prune TimescaleDB chunks and
+ * walk the container's entire retention window (days of rows) on every call.
+ * Metrics are collected every METRICS_COLLECTION_INTERVAL_SECONDS (default
+ * 60s), so 15 minutes ≈ 15 missed cycles — anything older is stale for a live
+ * view, and all callers already treat missing rows as "no recent data".
+ */
+const LATEST_METRICS_MAX_AGE_MINUTES = 15;
+
 export async function getLatestMetrics(
   containerId: string,
 ): Promise<Record<string, number>> {
@@ -281,8 +304,9 @@ export async function getLatestMetrics(
     `SELECT DISTINCT ON (metric_type) metric_type, value
      FROM metrics
      WHERE container_id = $1
+       AND timestamp > NOW() - ($2::int * INTERVAL '1 minute')
      ORDER BY metric_type, timestamp DESC`,
-    [containerId],
+    [containerId, LATEST_METRICS_MAX_AGE_MINUTES],
   );
 
   const result: Record<string, number> = {};
@@ -308,8 +332,9 @@ export async function getLatestMetricsBatch(
     `SELECT DISTINCT ON (container_id, metric_type) container_id, metric_type, value
      FROM metrics
      WHERE container_id = ANY($1)
+       AND timestamp > NOW() - ($2::int * INTERVAL '1 minute')
      ORDER BY container_id, metric_type, timestamp DESC`,
-    [containerIds],
+    [containerIds, LATEST_METRICS_MAX_AGE_MINUTES],
   );
 
   for (const row of rows) {

@@ -36,7 +36,6 @@ import {
 import { CaptureTargetPicker, type CaptureTarget } from '@/features/security/components/capture-target-picker';
 import { CaptureBrowseFallback } from '@/features/security/components/capture-browse-fallback';
 import { BpfFilterInput } from '@/features/security/components/bpf-filter-input';
-import { api } from '@/shared/lib/api';
 import { cn } from '@/shared/lib/utils';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 
@@ -128,7 +127,7 @@ export default function PacketCapture() {
 
   const handleStop = useCallback((id: string) => stopMutate(id), [stopMutate]);
   const handleDelete = useCallback((id: string) => deleteMutate(id), [deleteMutate]);
-  const handleDownload = useCallback((id: string) => downloadCapture(id, api.getToken()), []);
+  const handleDownload = useCallback((id: string) => downloadCapture(id), []);
   const handleAnalyze = useCallback((id: string) => analyzeMutate(id), [analyzeMutate]);
   const toggleExpand = useCallback((id: string) => {
     setExpandedAnalysis((prev) => {

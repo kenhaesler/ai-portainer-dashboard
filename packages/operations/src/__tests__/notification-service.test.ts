@@ -241,6 +241,33 @@ describe('notification-service', () => {
       ).rejects.toThrow('Teams webhook failed (400): Bad Request');
     });
 
+    it('bounds the request with an AbortSignal timeout (#1514)', async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, text: () => Promise.resolve('1') });
+
+      await sendTeamsNotification({ title: 'T', body: 'B', severity: 'info', eventType: 'test' });
+
+      const opts = mockFetch.mock.calls[0][1];
+      expect(opts.signal).toBeInstanceOf(AbortSignal);
+    });
+  });
+
+  describe('outbound timeouts (#1514)', () => {
+    it('Discord and Telegram fetches carry an AbortSignal', async () => {
+      mockFetch.mockResolvedValue({ ok: true, text: () => Promise.resolve('1') });
+      mockQueryOne.mockResolvedValue({ value: 'https://discord.com/api/webhooks/1/abc' });
+
+      await sendDiscordNotification({ title: 'T', body: 'B', severity: 'info', eventType: 'test' });
+      expect(mockFetch.mock.calls.at(-1)?.[1].signal).toBeInstanceOf(AbortSignal);
+
+      setConfigForTest({
+        TELEGRAM_BOT_TOKEN: '123456:AAHfake-token-value-1234567890abcdef',
+        TELEGRAM_CHAT_ID: '987654321',
+      });
+      mockQueryOne.mockResolvedValue(null);
+      await sendTelegramNotification({ title: 'T', body: 'B', severity: 'info', eventType: 'test' });
+      expect(mockFetch.mock.calls.at(-1)?.[1].signal).toBeInstanceOf(AbortSignal);
+    });
+
     it('should log notification on success', async () => {
       mockFetch.mockResolvedValueOnce({ ok: true, text: () => Promise.resolve('1') });
 

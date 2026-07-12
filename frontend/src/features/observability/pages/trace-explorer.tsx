@@ -524,14 +524,8 @@ export default function TraceExplorerPage() {
   // rendering a blank page during SPA navigation before data arrives.
   const isLoading = tracesLoading || (tracesPending && !tracesData);
 
-  const traces = useMemo(() => {
-    if (!tracesData) return [];
-    if (Array.isArray(tracesData)) return tracesData;
-    if (Array.isArray((tracesData as { traces?: unknown[] }).traces)) {
-      return (tracesData as { traces: unknown[] }).traces;
-    }
-    return [];
-  }, [tracesData]) as Array<{
+  // useTraces unwraps the { traces } envelope, so tracesData is always an array.
+  const traces = useMemo(() => tracesData ?? [], [tracesData]) as Array<{
     trace_id?: string;
     traceId?: string;
     root_span?: string;

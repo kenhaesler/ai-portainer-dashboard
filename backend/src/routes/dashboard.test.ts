@@ -29,7 +29,7 @@ vi.mock('@dashboard/core/services/settings-store.js', () => ({
 // Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
 vi.mock('@dashboard/core/portainer/portainer-client.js', async (importOriginal) => await importOriginal());
 
-import { fetchLiveDockerInfo } from '@dashboard/core/portainer/edge-live-query.js';
+import { fetchLiveDockerInfo, type LiveDockerInfo } from '@dashboard/core/portainer/edge-live-query.js';
 const mockLiveFetch = vi.mocked(fetchLiveDockerInfo);
 import * as portainerClient from '@dashboard/core/portainer/portainer-client.js';
 import { cache, waitForInFlight } from '@dashboard/core/portainer/portainer-cache.js';
@@ -486,6 +486,35 @@ describe('Dashboard Routes', () => {
       await app.close();
     });
 
+    it('runs live enrichment concurrently with the container fan-out (#1500)', async () => {
+      mockGetEndpoints.mockResolvedValue([makeEndpoint(1, 'ep-1')]);
+      mockGetContainers.mockResolvedValue([
+        makeContainer('c-1', 1000, 'running', { 'com.docker.compose.project': 'web' }),
+      ]);
+
+      // The live /docker/info probe hangs until we resolve it — the container
+      // fan-out must start anyway instead of serializing behind it.
+      let resolveLive!: (v: LiveDockerInfo | null) => void;
+      mockLiveFetch.mockImplementation(
+        () => new Promise<LiveDockerInfo | null>((res) => { resolveLive = res; }),
+      );
+
+      const app = await buildApp();
+      const pending = app.inject({ method: 'GET', url: '/api/dashboard/resources' });
+
+      await vi.waitFor(() => {
+        expect(mockLiveFetch).toHaveBeenCalled();
+        expect(mockGetContainers).toHaveBeenCalledWith(1);
+      });
+      resolveLive(null);
+
+      const res = await pending;
+      expect(res.statusCode).toBe(200);
+      expect(res.json().topStacks).toHaveLength(1);
+
+      await app.close();
+    });
+
     it('includes running and stopped counts per stack', async () => {
       const endpoints = [makeEndpoint(1, 'ep-1')];
       const containers = [
@@ -761,6 +790,73 @@ describe('Dashboard Routes', () => {
       expect(res.statusCode).toBe(200);
       const data = res.json();
       expect(data.kpiHistory).toEqual([]);
+
+      await app.close();
+    });
+
+    it('runs live enrichment concurrently with the container fan-out (#1500)', async () => {
+      mockGetEndpoints.mockResolvedValue([makeEndpoint(1, 'ep-1')]);
+      mockGetContainers.mockResolvedValue([
+        makeContainer('c-1', 1000, 'running', { 'com.docker.compose.project': 'web' }),
+      ]);
+
+      // The live /docker/info probe hangs until we resolve it — the container
+      // fan-out must start anyway instead of serializing behind it.
+      let resolveLive!: (v: LiveDockerInfo | null) => void;
+      mockLiveFetch.mockImplementation(
+        () => new Promise<LiveDockerInfo | null>((res) => { resolveLive = res; }),
+      );
+
+      const app = await buildApp();
+      const pending = app.inject({ method: 'GET', url: '/api/dashboard/full' });
+
+      await vi.waitFor(() => {
+        expect(mockLiveFetch).toHaveBeenCalled();
+        expect(mockGetContainers).toHaveBeenCalledWith(1);
+      });
+      resolveLive({ containers: 1, containersRunning: 1, containersStopped: 0, ncpu: 0, memTotal: 0, fetchedAt: Date.now() });
+
+      const res = await pending;
+      expect(res.statusCode).toBe(200);
+      const data = res.json();
+      // Enrichment results still land in the response even though it ran concurrently.
+      expect(data.summary.kpis.running).toBe(1);
+      expect(data.endpoints[0].snapshotSource).toBe('live');
+
+      await app.close();
+    });
+  });
+
+  describe('shared aggregation between /resources and /full (#1543)', () => {
+    it('returns identical resources from /resources and the resources section of /full', async () => {
+      const endpoints = [makeEndpoint(1, 'ep-1')];
+      const containers = [
+        makeContainer('c-1', 1000, 'running', { 'com.docker.compose.project': 'web' }),
+        makeContainer('c-2', 1001, 'running', { 'com.docker.compose.project': 'api' }),
+        makeContainer('c-3', 1002, 'stopped', { 'com.docker.compose.project': 'web' }),
+        makeContainer('c-4', 1003, 'running', {}), // "No Stack" bucket
+      ];
+      mockGetEndpoints.mockResolvedValue(endpoints);
+      mockGetContainers.mockResolvedValue(containers);
+      mockGetLatestMetricsBatch.mockResolvedValue(new Map([
+        ['c-1', { cpu: 40.0, memory: 50.0, memory_bytes: 1024 * 1024 * 400 }],
+        ['c-2', { cpu: 60.0, memory: 70.0, memory_bytes: 1024 * 1024 * 600 }],
+        ['c-4', { cpu: 10.0, memory: 20.0, memory_bytes: 1024 * 1024 * 100 }],
+      ]));
+
+      const app = await buildApp();
+      const fullRes = await app.inject({ method: 'GET', url: '/api/dashboard/full?topN=10' });
+      const standaloneRes = await app.inject({ method: 'GET', url: '/api/dashboard/resources?topN=10' });
+
+      expect(fullRes.statusCode).toBe(200);
+      expect(standaloneRes.statusCode).toBe(200);
+      const full = fullRes.json();
+      // Byte-identical resources shape: same aggregation code path (buildFleetResources).
+      expect(standaloneRes.json()).toEqual({
+        fleetCpuPercent: full.resources.fleetCpuPercent,
+        fleetMemoryPercent: full.resources.fleetMemoryPercent,
+        topStacks: full.resources.topStacks,
+      });
 
       await app.close();
     });

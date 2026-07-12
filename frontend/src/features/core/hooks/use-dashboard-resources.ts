@@ -20,6 +20,13 @@ export interface DashboardResources {
   topStacks: StackResourceUsage[];
 }
 
+/**
+ * @deprecated No component consumes this hook — the home page uses
+ * `useDashboardFull()` (a single `/api/dashboard/full` request) instead.
+ * Kept because `/api/dashboard/resources` remains a public API; removal is
+ * tracked separately (#1543). The exported types above are still imported
+ * by `use-dashboard-full.ts`.
+ */
 export function useDashboardResources(topN: number = 10) {
   const { interval, enabled } = useAutoRefresh(30);
   const hasToken = hasAuthToken();

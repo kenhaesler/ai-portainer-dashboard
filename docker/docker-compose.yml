@@ -62,10 +62,18 @@ services:
       # TimescaleDB Metrics Storage
       - TIMESCALE_URL=postgresql://metrics_user:${TIMESCALE_PASSWORD:?TIMESCALE_PASSWORD is required}@timescaledb:5432/metrics
       - TIMESCALE_MAX_CONNECTIONS=${TIMESCALE_MAX_CONNECTIONS:-20}
-      - METRICS_RAW_RETENTION_DAYS=${METRICS_RAW_RETENTION_DAYS:-7}
+      # Raw hypertable retention follows METRICS_RETENTION_DAYS unless overridden (#1504)
+      - METRICS_RAW_RETENTION_DAYS=${METRICS_RAW_RETENTION_DAYS:-${METRICS_RETENTION_DAYS:-7}}
       - METRICS_ROLLUP_5MIN_RETENTION_DAYS=${METRICS_ROLLUP_5MIN_RETENTION_DAYS:-30}
       - METRICS_ROLLUP_1HOUR_RETENTION_DAYS=${METRICS_ROLLUP_1HOUR_RETENTION_DAYS:-90}
       - METRICS_ROLLUP_1DAY_RETENTION_DAYS=${METRICS_ROLLUP_1DAY_RETENTION_DAYS:-365}
+      # Data Retention — app database history tables (#1505)
+      - AUDIT_LOG_RETENTION_DAYS=${AUDIT_LOG_RETENTION_DAYS:-90}
+      - NOTIFICATION_LOG_RETENTION_DAYS=${NOTIFICATION_LOG_RETENTION_DAYS:-30}
+      - LLM_TRACES_RETENTION_DAYS=${LLM_TRACES_RETENTION_DAYS:-30}
+      - WEBHOOK_DELIVERIES_RETENTION_DAYS=${WEBHOOK_DELIVERIES_RETENTION_DAYS:-30}
+      - MONITORING_CYCLES_RETENTION_DAYS=${MONITORING_CYCLES_RETENTION_DAYS:-14}
+      - MONITORING_SNAPSHOTS_RETENTION_DAYS=${MONITORING_SNAPSHOTS_RETENTION_DAYS:-90}
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3051/health').then(r=>{if(!r.ok)throw r.status;process.exit(0)}).catch(()=>process.exit(1))"]
       interval: 30s
@@ -266,6 +274,21 @@ services:
       - ./init-pg-databases.sh:/docker-entrypoint-initdb.d/02-create-app-db.sh:ro
     networks:
       - dashboard-net
+    # Resource ceiling (#1550): timescaledb is the heaviest colocated data
+    # service (metrics hypertable + continuous aggregates) yet was the only
+    # always-on container without a cgroup limit — an uncapped Postgres can
+    # grow its working set until it starves the co-located backend/postgres-app
+    # or is OOM-killed unpredictably by the kernel instead of by a predictable
+    # limit. Sized above postgres-app (512M/1.0) to match the heavier workload.
+    # NOTE: this bounds memory/CPU only; disk growth is bounded separately by
+    # TimescaleDB retention policies, not here.
+    deploy:
+      resources:
+        limits:
+          cpus: "${TIMESCALE_CPU_LIMIT:-1.0}"
+          memory: "${TIMESCALE_MEM_LIMIT:-1G}"
+        reservations:
+          memory: 512M
 
   timescale-backup:
     image: prodrigestivill/postgres-backup-local:17

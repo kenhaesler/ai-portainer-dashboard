@@ -79,11 +79,12 @@ export {
 } from './services/network-rate-tracker.js';
 
 // Services — status page
-export type { StatusPageConfig, ServiceStatus, UptimeDayBucket } from './services/status-page-store.js';
+export type { StatusPageConfig, ServiceStatus, UptimeDayBucket, UptimeSummary, UptimeWindows } from './services/status-page-store.js';
 export {
   getStatusPageConfig,
   getOverallUptime,
   getEndpointUptime,
+  getUptimeSummary,
   getLatestSnapshot,
   getDailyUptimeBuckets,
   getRecentIncidentsPublic,

@@ -4,6 +4,7 @@ import { cachedFetch, cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/p
 import { normalizeEndpoint } from '@dashboard/core/portainer/portainer-normalizers.js';
 import { EndpointIdParamsSchema } from '@dashboard/core/models/api-schemas.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
+import { errorDetails } from '@dashboard/core/plugins/error-handler.js';
 import { enrichEndpointsWithLiveDockerInfo, attachStackCounts } from '@dashboard/core/portainer/live-fleet.js';
 
 const log = createChildLogger('route:endpoints');
@@ -35,9 +36,8 @@ export async function endpointsRoutes(fastify: FastifyInstance) {
       }
       return normalized;
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
       log.error({ err }, 'Failed to fetch endpoints from Portainer');
-      return reply.code(502).send({ error: 'Unable to connect to Portainer', details: msg });
+      return reply.code(502).send({ error: 'Unable to connect to Portainer', details: errorDetails(err) });
     }
   });
 
@@ -55,9 +55,8 @@ export async function endpointsRoutes(fastify: FastifyInstance) {
       // Guard once at the source so the .map() below cannot crash on undefined.
       endpoints = (await portainer.getEndpoints()) ?? [];
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
       log.error({ err }, 'Failed to fetch endpoints from Portainer (edge-status)');
-      return reply.code(502).send({ error: 'Unable to connect to Portainer', details: msg });
+      return reply.code(502).send({ error: 'Unable to connect to Portainer', details: errorDetails(err) });
     }
     return endpoints.map((ep) => {
       const normalized = normalizeEndpoint(ep);
@@ -100,9 +99,8 @@ export async function endpointsRoutes(fastify: FastifyInstance) {
       );
       return normalizeEndpoint(endpoint);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
       log.error({ err, id }, 'Failed to fetch endpoint from Portainer');
-      return reply.code(502).send({ error: 'Unable to connect to Portainer', details: msg });
+      return reply.code(502).send({ error: 'Unable to connect to Portainer', details: errorDetails(err) });
     }
   });
 }

@@ -116,6 +116,31 @@ describe('pino-elasticsearch-transport', () => {
       );
     });
 
+    it('passes an AbortSignal so a hung Elasticsearch is bounded (#1514)', async () => {
+      const fetchMock = vi.mocked(fetch);
+      fetchMock.mockResolvedValueOnce(new Response('{}', { status: 200 }));
+
+      const noDelay = vi.fn().mockResolvedValue(undefined);
+      await sendBulk('body\n', endpoint, headers, noDelay);
+
+      const opts = fetchMock.mock.calls[0][1] as RequestInit;
+      expect(opts.signal).toBeInstanceOf(AbortSignal);
+    });
+
+    it('aborts and retries when a request exceeds the timeout (#1514)', async () => {
+      const fetchMock = vi.mocked(fetch);
+      // fetch rejects with an AbortError as AbortSignal.timeout would trigger.
+      fetchMock.mockRejectedValue(
+        Object.assign(new Error('The operation was aborted'), { name: 'TimeoutError' }),
+      );
+
+      const noDelay = vi.fn().mockResolvedValue(undefined);
+      const result = await sendBulk('body\n', endpoint, headers, noDelay, 20);
+
+      expect(result).toBe(false);
+      expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(1);
+    });
+
     it('should include Basic auth headers when provided', async () => {
       const fetchMock = vi.mocked(fetch);
       fetchMock.mockResolvedValueOnce(new Response('{}', { status: 200 }));

@@ -6,7 +6,7 @@ import type { ReactNode } from 'react';
 // Mock framer-motion before importing component
 vi.mock('framer-motion', () => ({
   useReducedMotion: vi.fn(() => false),
-  motion: {
+  m: {
     div: ({ children, className, ...rest }: { children?: ReactNode; className?: string; [k: string]: unknown }) => {
       const safe: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(rest)) {
@@ -208,6 +208,43 @@ describe('StatusPage', () => {
     expect(screen.getByText('API errors')).toBeInTheDocument();
     expect(screen.getByText('Resolved')).toBeInTheDocument();
     expect(screen.getByText('Active')).toBeInTheDocument();
+  });
+
+  it('exposes incident severity as screen-reader text, not color alone (#1548)', async () => {
+    const incidents = [
+      {
+        id: '1',
+        title: 'Database slowdown',
+        severity: 'warning',
+        status: 'resolved',
+        created_at: new Date().toISOString(),
+        resolved_at: new Date().toISOString(),
+        summary: 'Slow queries detected',
+      },
+      {
+        id: '2',
+        title: 'API errors',
+        severity: 'critical',
+        status: 'active',
+        created_at: new Date().toISOString(),
+        resolved_at: null,
+        summary: null,
+      },
+      {
+        id: '3',
+        title: 'Minor notice',
+        severity: 'info',
+        status: 'resolved',
+        created_at: new Date().toISOString(),
+        resolved_at: new Date().toISOString(),
+        summary: null,
+      },
+    ];
+    await renderPage(makeStatusData({ recentIncidents: incidents }));
+
+    expect(screen.getByText('Warning severity')).toBeInTheDocument();
+    expect(screen.getByText('Critical severity')).toBeInTheDocument();
+    expect(screen.getByText('Info severity')).toBeInTheDocument();
   });
 
   it('hides incidents section when empty', async () => {

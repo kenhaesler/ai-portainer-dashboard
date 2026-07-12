@@ -50,6 +50,7 @@ vi.mock('@dashboard/observability', async (importOriginal) => {
     collectMetrics: (...args: unknown[]) => collectMetricsMock(...args),
     insertMetrics: (...args: unknown[]) => insertMetricsMock(...args),
     cleanOldMetrics: vi.fn().mockResolvedValue(0),
+    cleanOldSpans: vi.fn().mockResolvedValue({ deleted: 0 }),
     insertKpiSnapshot: vi.fn(),
     cleanOldKpiSnapshots: vi.fn(),
     recordNetworkSample: vi.fn(),
@@ -61,7 +62,10 @@ const insertMetricsMock = vi.fn().mockResolvedValue(undefined);
 const upsertLifecycleMock = vi.fn().mockResolvedValue(undefined);
 
 // pcap-service mock consolidated into @dashboard/security above
-// Kept: portainer-backup mock
+// Kept: portainer-backup mock. Retention sweeps (#1505) are mocked so
+// runCleanup tests never touch a real database.
+const cleanOldNotificationLogMock = vi.fn().mockResolvedValue(0);
+const cleanOldWebhookDeliveriesMock = vi.fn().mockResolvedValue(0);
 vi.mock('@dashboard/operations', async (importOriginal) => {
   const orig = await importOriginal() as Record<string, unknown>;
   return {
@@ -71,6 +75,8 @@ vi.mock('@dashboard/operations', async (importOriginal) => {
     startWebhookListener: vi.fn(),
     stopWebhookListener: vi.fn(),
     processRetries: vi.fn(),
+    cleanOldNotificationLog: (...args: unknown[]) => cleanOldNotificationLogMock(...args),
+    cleanOldWebhookDeliveries: (...args: unknown[]) => cleanOldWebhookDeliveriesMock(...args),
   };
 });
 // Kept: settings-store mock — tests control settings
@@ -94,6 +100,9 @@ vi.mock('@dashboard/core/services/session-store.js', () => ({
 
 const cleanupOldInsightsMock = vi.fn().mockReturnValue(0);
 const pruneCanaryRegistryMock = vi.fn().mockReturnValue(0);
+const cleanOldLlmTracesMock = vi.fn().mockResolvedValue(0);
+const cleanOldMonitoringCyclesMock = vi.fn().mockResolvedValue(0);
+const cleanOldMonitoringSnapshotsMock = vi.fn().mockResolvedValue(0);
 // Kept: @dashboard/ai mock — tests control insights cleanup and cooldown sweep
 vi.mock('@dashboard/ai', () => ({
   startCooldownSweep: vi.fn(),
@@ -101,7 +110,28 @@ vi.mock('@dashboard/ai', () => ({
   cleanupOldInsights: (...args: unknown[]) => cleanupOldInsightsMock(...args),
   pruneCanaryRegistry: (...args: unknown[]) => pruneCanaryRegistryMock(...args),
   runAnomalyAutoTuneJob: vi.fn().mockResolvedValue({ applied: false, skipped: 'no-change', reason: 'within-target', previous: 3.5, recommended: 3.5, rate: 0, sampleCount: 0, detector: 'ml-anomaly' }),
+  cleanOldLlmTraces: (...args: unknown[]) => cleanOldLlmTracesMock(...args),
+  cleanOldMonitoringCycles: (...args: unknown[]) => cleanOldMonitoringCyclesMock(...args),
+  cleanOldMonitoringSnapshots: (...args: unknown[]) => cleanOldMonitoringSnapshotsMock(...args),
 }));
+// Audit-log retention sweep (#1505) — mocked so runCleanup never opens a real
+// app-DB connection. The services barrel re-exports from this submodule.
+const cleanOldAuditLogsMock = vi.fn().mockResolvedValue(0);
+vi.mock('@dashboard/core/services/audit-logger.js', () => ({
+  writeAuditLog: vi.fn(),
+  getAuditLogs: vi.fn().mockResolvedValue([]),
+  cleanOldAuditLogs: (...args: unknown[]) => cleanOldAuditLogsMock(...args),
+}));
+// Retention-policy ownership (#1504) — tests flip this to simulate the
+// TimescaleDB policy being installed vs the plain-Postgres fallback.
+const hasPolicyMock = vi.fn().mockReturnValue(false);
+vi.mock('@dashboard/core/db/timescale.js', async (importOriginal) => {
+  const orig = await importOriginal() as Record<string, unknown>;
+  return {
+    ...orig,
+    hasTimescaleRetentionPolicy: (...args: unknown[]) => hasPolicyMock(...args),
+  };
+});
 // initCooldownStore would otherwise attempt a real Redis connect at startup.
 vi.mock('@dashboard/core/services/cooldown-store.js', () => ({
   initCooldownStore: vi.fn().mockResolvedValue(undefined),
@@ -176,6 +206,13 @@ beforeEach(async () => {
   cleanExpiredSessionsMock.mockReturnValue(0);
   cleanupOldInsightsMock.mockReturnValue(0);
   pruneCanaryRegistryMock.mockReturnValue(0);
+  cleanOldAuditLogsMock.mockReset().mockResolvedValue(0);
+  cleanOldNotificationLogMock.mockReset().mockResolvedValue(0);
+  cleanOldLlmTracesMock.mockReset().mockResolvedValue(0);
+  cleanOldWebhookDeliveriesMock.mockReset().mockResolvedValue(0);
+  cleanOldMonitoringCyclesMock.mockReset().mockResolvedValue(0);
+  cleanOldMonitoringSnapshotsMock.mockReset().mockResolvedValue(0);
+  hasPolicyMock.mockReset().mockReturnValue(false);
 
   // Clear KPI snapshot mock between tests
   vi.mocked(insertKpiSnapshot).mockClear();
@@ -185,6 +222,8 @@ beforeEach(async () => {
   vi.mocked(securityPkg.runStalenessChecks).mockResolvedValue({ checked: 1, stale: 0 } as any);
   const obsModule = await import('@dashboard/observability');
   vi.mocked(obsModule.cleanOldMetrics).mockResolvedValue(0 as any);
+  vi.mocked(obsModule.cleanOldSpans).mockResolvedValue({ deleted: 0 } as any);
+  vi.mocked(obsModule.cleanOldKpiSnapshots).mockResolvedValue(0 as any);
   const settingsStore = await import('@dashboard/core/services/settings-store.js');
   vi.mocked(settingsStore.getSetting).mockReturnValue(null as any);
 
@@ -630,6 +669,96 @@ describe('scheduler/setup – runCleanup includes insights cleanup', () => {
     await runCleanup();
 
     expect(cleanupOldInsightsMock).toHaveBeenCalledWith(14);
+  });
+});
+
+describe('scheduler/setup – runCleanup retention ownership (#1504)', () => {
+  it('skips the row-wise hypertable DELETEs when the TimescaleDB policy owns retention', async () => {
+    hasPolicyMock.mockReturnValue(true);
+    const obsModule = await import('@dashboard/observability');
+
+    await runCleanup();
+
+    expect(hasPolicyMock).toHaveBeenCalledWith('metrics');
+    expect(hasPolicyMock).toHaveBeenCalledWith('kpi_snapshots');
+    expect(vi.mocked(obsModule.cleanOldMetrics)).not.toHaveBeenCalled();
+    expect(vi.mocked(obsModule.cleanOldKpiSnapshots)).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the row-wise DELETE when no policy is installed (plain Postgres)', async () => {
+    hasPolicyMock.mockReturnValue(false);
+    const obsModule = await import('@dashboard/observability');
+
+    await runCleanup();
+
+    // METRICS_RETENTION_DAYS=30 from beforeAll — canonical knob drives the fallback
+    expect(vi.mocked(obsModule.cleanOldMetrics)).toHaveBeenCalledWith(30);
+    expect(vi.mocked(obsModule.cleanOldKpiSnapshots)).toHaveBeenCalledWith(30);
+  });
+
+  it('honours an explicit METRICS_RAW_RETENTION_DAYS override in the fallback', async () => {
+    hasPolicyMock.mockReturnValue(false);
+    setConfigForTest({ METRICS_RETENTION_DAYS: 30, METRICS_RAW_RETENTION_DAYS: 3 });
+    const obsModule = await import('@dashboard/observability');
+
+    await runCleanup();
+
+    expect(vi.mocked(obsModule.cleanOldMetrics)).toHaveBeenCalledWith(3);
+    expect(vi.mocked(obsModule.cleanOldKpiSnapshots)).toHaveBeenCalledWith(3);
+
+    // Restore for later tests — the merged config is process-wide
+    setConfigForTest({ METRICS_RETENTION_DAYS: 30, METRICS_RAW_RETENTION_DAYS: undefined });
+  });
+
+  it('only skips the table whose policy is confirmed installed', async () => {
+    hasPolicyMock.mockImplementation((table: unknown) => table === 'metrics');
+    const obsModule = await import('@dashboard/observability');
+
+    await runCleanup();
+
+    expect(vi.mocked(obsModule.cleanOldMetrics)).not.toHaveBeenCalled();
+    expect(vi.mocked(obsModule.cleanOldKpiSnapshots)).toHaveBeenCalledWith(30);
+  });
+});
+
+describe('scheduler/setup – runCleanup history-table retention (#1505)', () => {
+  it('prunes all six history tables with their default windows', async () => {
+    await runCleanup();
+
+    expect(cleanOldAuditLogsMock).toHaveBeenCalledWith(90);
+    expect(cleanOldNotificationLogMock).toHaveBeenCalledWith(30);
+    expect(cleanOldLlmTracesMock).toHaveBeenCalledWith(30);
+    expect(cleanOldWebhookDeliveriesMock).toHaveBeenCalledWith(30);
+    expect(cleanOldMonitoringCyclesMock).toHaveBeenCalledWith(14);
+    expect(cleanOldMonitoringSnapshotsMock).toHaveBeenCalledWith(90);
+  });
+
+  it('passes env-configured retention windows from config', async () => {
+    setConfigForTest({
+      AUDIT_LOG_RETENTION_DAYS: 10,
+      MONITORING_SNAPSHOTS_RETENTION_DAYS: 120,
+    });
+
+    await runCleanup();
+
+    expect(cleanOldAuditLogsMock).toHaveBeenCalledWith(10);
+    expect(cleanOldMonitoringSnapshotsMock).toHaveBeenCalledWith(120);
+
+    setConfigForTest({
+      AUDIT_LOG_RETENTION_DAYS: 90,
+      MONITORING_SNAPSHOTS_RETENTION_DAYS: 90,
+    });
+  });
+
+  it('continues with the remaining sweeps when one fails', async () => {
+    cleanOldAuditLogsMock.mockRejectedValueOnce(new Error('DB unavailable'));
+
+    await expect(runCleanup()).resolves.toBeUndefined();
+
+    expect(cleanOldNotificationLogMock).toHaveBeenCalledTimes(1);
+    expect(cleanOldMonitoringSnapshotsMock).toHaveBeenCalledTimes(1);
+    // Later steps in runCleanup still execute
+    expect(pruneCanaryRegistryMock).toHaveBeenCalledTimes(1);
   });
 });
 

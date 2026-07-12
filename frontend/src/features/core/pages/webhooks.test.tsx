@@ -103,7 +103,9 @@ describe('WebhooksPanel', () => {
     fireEvent.change(screen.getByPlaceholderText('alerts-slack'), { target: { value: 'PagerDuty Hook' } });
     fireEvent.change(screen.getByPlaceholderText('https://hooks.example.com/...'), { target: { value: 'https://events.pagerduty.com/v2/enqueue' } });
 
-    fireEvent.click(screen.getByRole('button', { name: /create/i }));
+    // Exact match: the "Created" sort-header button in the table would also
+    // match a loose /create/i query (#1537 made sortable headers buttons).
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
 
     await waitFor(() => {
       expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({

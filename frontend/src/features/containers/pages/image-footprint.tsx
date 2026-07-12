@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { type ColumnDef } from '@tanstack/react-table';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, m } from 'framer-motion';
 import { HardDrive, Layers, Tag, AlertTriangle, X, Server, CheckCircle2, Copy, Check } from 'lucide-react';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { useImages, type DockerImage } from '@/features/containers/hooks/use-images';
@@ -428,7 +428,7 @@ function ImageDetailPanel({
   return createPortal(
     <>
       {/* Backdrop */}
-      <motion.div
+      <m.div
         key="image-detail-backdrop"
         className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
         initial={{ opacity: 0 }}
@@ -440,7 +440,7 @@ function ImageDetailPanel({
       />
 
       {/* Slide-in panel */}
-      <motion.div
+      <m.div
         key="image-detail-panel"
         role="dialog"
         aria-label={`Details for ${image.name}`}
@@ -460,6 +460,7 @@ function ImageDetailPanel({
           </div>
           <button
             onClick={onClose}
+            aria-label="Close details"
             className="ml-4 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-accent/80"
           >
             <X className="h-4 w-4" />
@@ -612,7 +613,7 @@ function ImageDetailPanel({
             Press <kbd className="rounded border border-border bg-muted/50 px-1.5 py-0.5 font-mono text-[10px]">Esc</kbd> to close
           </p>
         </div>
-      </motion.div>
+      </m.div>
     </>,
     document.body,
   );

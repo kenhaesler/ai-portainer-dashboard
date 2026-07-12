@@ -2,6 +2,7 @@ import { getEndpoint } from '@dashboard/core/portainer/portainer-client.js';
 import { normalizeEndpoint, type EdgeCapabilities } from '@dashboard/core/portainer/portainer-normalizers.js';
 import { cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
+import { HttpError } from '@dashboard/core/utils/http-error.js';
 
 const log = createChildLogger('edge-capability-guard');
 
@@ -36,12 +37,11 @@ export async function assertCapability(
   const caps = await getEndpointCapabilities(endpointId);
   if (!caps[capability]) {
     log.warn({ endpointId, capability }, 'Capability unavailable on Edge Async endpoint');
-    const err = new Error(
+    throw new HttpError(
+      422,
       `Edge Async endpoints do not support "${capability}" operations. ` +
       'This endpoint uses asynchronous communication without a persistent tunnel.',
     );
-    (err as any).statusCode = 422;
-    throw err;
   }
 }
 

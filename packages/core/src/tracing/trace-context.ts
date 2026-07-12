@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
-import { insertSpan } from './trace-store.js';
+import { enqueueSpan } from './span-buffer.js';
 import { queueSpanForExport } from './otel-exporter.js';
 import { createChildLogger } from '../utils/logger.js';
 
@@ -87,10 +87,12 @@ export async function withSpan<T>(
       attributes: '{}',
       trace_source: source,
     };
+    // Non-blocking buffer append (#1503) — child spans are flushed to
+    // PostgreSQL in batches so withSpan() adds no DB write to the hot path.
     try {
-      await insertSpan(spanData);
-    } catch (insertErr) {
-      log.warn({ err: insertErr, spanId, traceId }, 'Failed to insert child span');
+      enqueueSpan(spanData);
+    } catch (enqueueErr) {
+      log.warn({ err: enqueueErr, spanId, traceId }, 'Failed to enqueue child span');
     }
     // Queue for OTLP export if exporter is enabled (no-op when disabled)
     queueSpanForExport(spanData);

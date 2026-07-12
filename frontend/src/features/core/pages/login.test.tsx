@@ -112,6 +112,22 @@ describe('LoginPage', () => {
     expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument();
   });
 
+  it('announces login failure to screen readers via role="alert" (#1541)', async () => {
+    mockLogin.mockRejectedValue(new Error('Invalid username or password'));
+
+    render(
+      <MemoryRouter>
+        <LoginPage />
+      </MemoryRouter>,
+    );
+
+    fireEvent.submit(screen.getByRole('button', { name: 'Sign in' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Invalid username or password');
+    expect(alert).toBe(screen.getByTestId('login-error'));
+  });
+
   it('shows loading state and delays navigation for success animation', async () => {
     mockLogin.mockResolvedValue({ defaultLandingPage: '/health' });
 

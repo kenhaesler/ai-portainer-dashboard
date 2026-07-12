@@ -969,6 +969,43 @@ describe('monitoring-service', () => {
       await runMonitoringCycle();
       expect(statAnomalies().length).toBeGreaterThan(0); // fast-burn → emitted on cycle 1
     });
+
+    // #1496 — a dead Redis client (every command rejects with ClientClosedError)
+    // used to abort the whole cycle at the first cooldown/persistence call.
+    // With the resilient stores the cycle must still complete and emit insights.
+    it('still emits insights when the cooldown/persistence Redis backend dies mid-run (#1496)', async () => {
+      const [{ ResilientCooldownStore, setCooldownStoreForTest }, persistenceStore] = await Promise.all([
+        import('@dashboard/core/services/cooldown-store.js'),
+        import('@dashboard/core/services/persistence-store.js'),
+      ]);
+      const closed = async () => {
+        throw new Error('ClientClosedError');
+      };
+      // A client that is "connected" but rejects every command — the exact
+      // failure mode of node-redis with reconnectStrategy: false after a blip.
+      const deadClient = { get: closed, set: closed, lPush: closed, lTrim: closed, lRange: closed, pExpire: closed };
+      const conn = { getClient: async () => deadClient, reportFailure: () => undefined };
+      setCooldownStoreForTest(new ResilientCooldownStore(conn));
+      setPersistenceStoreForTest(new persistenceStore.ResilientPersistenceStore(conn));
+      try {
+        setConfigForTest(persistCfg);
+        // Cooldown enabled so BOTH isHot and mark hit the dead client.
+        mockGetEffectiveMonitoringConfig.mockResolvedValueOnce({
+          ...defaultMonitoringConfig,
+          anomalyCooldownMinutes: 30,
+          anomalyHardThresholdEnabled: false,
+        });
+        // Severe anomaly → fast-burn path, independent of the persistence count.
+        mockDetectAnomalyAdaptive.mockReturnValue({
+          is_anomalous: true, z_score: 8, threshold: 3.5, current_value: 50, mean: 10, method: 'adaptive',
+        });
+
+        await expect(runMonitoringCycle()).resolves.toBeUndefined();
+        expect(statAnomalies().length).toBeGreaterThan(0);
+      } finally {
+        setCooldownStoreForTest(null);
+      }
+    });
   });
 
   describe('anomalyCooldowns sweep (#547)', () => {
@@ -1070,6 +1107,76 @@ describe('monitoring-service', () => {
       expect(snapshotSpy).toHaveBeenCalledWith(
         expect.objectContaining({ containersUnhealthy: 1 }),
       );
+    });
+  });
+
+  // #1502 — the Isolation Forest scores one [cpu, memory] vector per
+  // container; the old per-metric loop recomputed an identical score.
+  describe('Isolation Forest pass (#1502)', () => {
+    function enableIsolationForest() {
+      mockGetEffectiveMonitoringConfig.mockResolvedValueOnce({
+        ...defaultMonitoringConfig,
+        isolationForestEnabled: true,
+      });
+      mockGetEndpoints.mockResolvedValue([
+        { Id: 1, Name: 'local', Status: 1, Type: 1, URL: 'tcp://localhost' },
+      ]);
+      mockGetContainers.mockResolvedValue([
+        { Id: 'c1', Names: ['/web-app'], State: 'running', Image: 'node:18' },
+      ]);
+    }
+
+    it('calls the detector ONCE per container with the dominant metric label', async () => {
+      enableIsolationForest();
+      const isoForest = await import('../services/isolation-forest-detector.js');
+      const mockIf = vi.mocked(isoForest.detectAnomalyIsolationForest);
+      mockIf.mockResolvedValue({
+        container_id: 'c1', container_name: 'web-app', metric_type: 'memory',
+        current_value: 60, mean: 0, std_dev: 0, z_score: 0.9, is_anomalous: true,
+        threshold: 0.9, timestamp: new Date().toISOString(), method: 'isolation-forest',
+      } as never);
+
+      await runMonitoringCycle();
+
+      // Exactly one call — not one per metric type.
+      expect(mockIf).toHaveBeenCalledTimes(1);
+      // Dominant metric derived from the inputs: memory (60) > cpu (50).
+      const call = mockIf.mock.calls[0];
+      expect(call[2]).toBe('memory'); // metricType label
+      expect(call[3]).toBe(60);       // currentValue = dominant metric's value
+      expect(call[4]).toBe(50);       // cpuValue
+      expect(call[5]).toBe(60);       // memoryValue
+
+      const inserted = getInsertedInsights();
+      const ifInsights = inserted.filter((i) => i.description.includes('isolation-forest'));
+      expect(ifInsights).toHaveLength(1);
+      expect(ifInsights[0].severity).toBe('critical'); // score 0.9 > 0.7
+    });
+
+    it('skips containers already flagged by statistical detection', async () => {
+      enableIsolationForest();
+      mockDetectAnomalyAdaptive.mockReturnValue({
+        is_anomalous: true, z_score: 3.5, current_value: 95.0, mean: 40.0,
+        threshold: 2.5, method: 'adaptive',
+      });
+      const isoForest = await import('../services/isolation-forest-detector.js');
+      const mockIf = vi.mocked(isoForest.detectAnomalyIsolationForest);
+      mockIf.mockResolvedValue(null as never);
+
+      await runMonitoringCycle();
+
+      expect(mockIf).not.toHaveBeenCalled();
+    });
+
+    it('a failed detection is logged, not allowed to abort the cycle', async () => {
+      enableIsolationForest();
+      const isoForest = await import('../services/isolation-forest-detector.js');
+      const mockIf = vi.mocked(isoForest.detectAnomalyIsolationForest);
+      mockIf.mockRejectedValue(new Error('training query timed out'));
+
+      await expect(runMonitoringCycle()).resolves.toBeUndefined();
+      // The cycle still completed its insight insert phase.
+      expect(mockInsertInsights).toHaveBeenCalled();
     });
   });
 });

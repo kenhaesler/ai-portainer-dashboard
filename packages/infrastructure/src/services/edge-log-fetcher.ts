@@ -1,5 +1,6 @@
 import * as portainer from '@dashboard/core/portainer/portainer-client.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
+import { HttpError } from '@dashboard/core/utils/http-error.js';
 
 const log = createChildLogger('edge-log-fetcher');
 
@@ -54,9 +55,7 @@ export async function waitForTunnel(
     }
   }
 
-  const err = new Error('Edge agent tunnel did not establish within timeout');
-  (err as any).status = 504;
-  throw err;
+  throw new HttpError(504, 'Edge agent tunnel did not establish within timeout');
 }
 
 /**

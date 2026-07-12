@@ -158,4 +158,52 @@ describe('getMetricWindowByHourOfDay — robust hour-of-day window (#1362)', () 
     expect(sql).not.toMatch(/date_part\('dow'/i);
     expect(mockQuery).toHaveBeenCalledWith(expect.any(String), ['c1', 'cpu', 14, 9]);
   });
+
+  // #1527 — the weekly warm-up must count DISTINCT same-weekday days, not raw
+  // samples: a burst of samples from a single day is NOT a weekly baseline.
+  describe('distinct same-weekday warm-up floor (#1527)', () => {
+    it('returns [] when the bucket spans fewer distinct days than minDistinctDays', async () => {
+      mockQuery.mockResolvedValue({
+        rows: [
+          { value: 3, sample_day: '2026-05-25' },
+          { value: 2, sample_day: '2026-05-25' },
+          { value: 1, sample_day: '2026-05-25' },
+        ],
+      });
+      // 3 raw samples, but all from one Monday → under a 3-distinct-day floor.
+      expect(await getMetricWindowByHourOfDay('c1', 'cpu', 9, 28, 1, 3)).toEqual([]);
+    });
+
+    it('returns the window when the bucket spans enough distinct same-weekday days', async () => {
+      mockQuery.mockResolvedValue({
+        rows: [
+          { value: 3, sample_day: '2026-05-25' },
+          { value: 2, sample_day: '2026-05-18' },
+          { value: 1, sample_day: '2026-05-11' },
+        ],
+      });
+      expect(await getMetricWindowByHourOfDay('c1', 'cpu', 9, 28, 1, 3)).toEqual([3, 2, 1]);
+    });
+
+    it('does not enforce the floor without a day-of-week filter (hour-of-day path)', async () => {
+      mockQuery.mockResolvedValue({
+        rows: [
+          { value: 3, sample_day: '2026-05-25' },
+          { value: 2, sample_day: '2026-05-25' },
+        ],
+      });
+      // No dayOfWeek → minDistinctDays is a weekly concept, ignored here.
+      expect(await getMetricWindowByHourOfDay('c1', 'cpu', 9, 14, undefined, 3)).toEqual([3, 2]);
+    });
+
+    it('keeps legacy behaviour when minDistinctDays is omitted', async () => {
+      mockQuery.mockResolvedValue({
+        rows: [
+          { value: 3, sample_day: '2026-05-25' },
+          { value: 2, sample_day: '2026-05-25' },
+        ],
+      });
+      expect(await getMetricWindowByHourOfDay('c1', 'cpu', 9, 28, 1)).toEqual([3, 2]);
+    });
+  });
 });

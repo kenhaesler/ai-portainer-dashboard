@@ -140,6 +140,9 @@ export function DataTable<T>({
   }, [selectedRowIds]);
 
   const [showScrollTop, setShowScrollTop] = useState(false);
+  // Row currently holding keyboard focus — drives the `keyboard-selected`
+  // highlight (index.css) advertised by the shortcuts overlay (j/k/Enter).
+  const [focusedRowId, setFocusedRowId] = useState<string | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const isServerPaginated = !!serverPagination;
@@ -337,13 +340,55 @@ export function DataTable<T>({
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (!useVirtual || !scrollContainerRef.current) return;
+      // Only act when the container itself is focused — focused rows handle
+      // their own j/k navigation (see handleRowKeyDown).
+      if (e.target !== e.currentTarget) return;
+      if (e.key !== 'j' && e.key !== 'k') return;
+      if (onRowClick) {
+        // Interactive rows: j enters the table at the first row, k at the last.
+        const rowEls = scrollContainerRef.current.querySelectorAll<HTMLTableRowElement>('tbody tr[tabindex]');
+        const target = e.key === 'j' ? rowEls[0] : rowEls[rowEls.length - 1];
+        if (target) {
+          e.preventDefault();
+          target.focus();
+        }
+        return;
+      }
       if (e.key === 'j') {
         scrollContainerRef.current.scrollBy({ top: ROW_HEIGHT, behavior: 'smooth' });
-      } else if (e.key === 'k') {
+      } else {
         scrollContainerRef.current.scrollBy({ top: -ROW_HEIGHT, behavior: 'smooth' });
       }
     },
-    [useVirtual]
+    [useVirtual, onRowClick]
+  );
+
+  // Keyboard support for clickable rows: Enter/Space activates the focused
+  // row, j/k (or arrow keys) move focus between rows. Handled only when the
+  // <tr> itself is focused so cell-level controls (checkboxes, buttons) keep
+  // their native key behavior.
+  const handleRowKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLTableRowElement>, rowData: T) => {
+      if (!onRowClick || e.target !== e.currentTarget) return;
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        e.stopPropagation();
+        onRowClick(rowData);
+        return;
+      }
+      const down = e.key === 'j' || e.key === 'ArrowDown';
+      const up = e.key === 'k' || e.key === 'ArrowUp';
+      if (!down && !up) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const tbody = e.currentTarget.closest('tbody');
+      if (!tbody) return;
+      const rowEls = Array.from(tbody.querySelectorAll<HTMLTableRowElement>('tr[tabindex]'));
+      const index = rowEls.indexOf(e.currentTarget);
+      const next = down ? rowEls[index + 1] : rowEls[index - 1];
+      next?.focus();
+    },
+    [onRowClick]
   );
 
   const filteredCount = rows.length;
@@ -398,10 +443,26 @@ export function DataTable<T>({
       className={cn(
         'group/row border-b transition-colors duration-200 hover:bg-muted/30',
         onRowClick && 'cursor-pointer',
+        onRowClick && focusedRowId === row.id && 'keyboard-selected',
         enableRowSelection && row.getIsSelected() && 'bg-primary/5',
         rowClassName?.(row.original)
       )}
       onClick={() => onRowClick?.(row.original)}
+      {...(onRowClick
+        ? {
+            tabIndex: 0,
+            onKeyDown: (e: React.KeyboardEvent<HTMLTableRowElement>) =>
+              handleRowKeyDown(e, row.original),
+            onFocus: (e: React.FocusEvent<HTMLTableRowElement>) => {
+              if (e.target === e.currentTarget) setFocusedRowId(row.id);
+            },
+            onBlur: (e: React.FocusEvent<HTMLTableRowElement>) => {
+              if (e.target === e.currentTarget) {
+                setFocusedRowId((prev) => (prev === row.id ? null : prev));
+              }
+            },
+          }
+        : {})}
     >
       {row.getVisibleCells().map((cell) => (
         <td
@@ -442,19 +503,40 @@ export function DataTable<T>({
                 )}
                 onClick={header.column.getToggleSortingHandler()}
               >
-                <div className="flex items-center gap-2">
-                  {header.isPlaceholder
-                    ? null
-                    : flexRender(header.column.columnDef.header, header.getContext())}
-                  {canSort &&
-                    (sorted === 'asc' ? (
-                      <ArrowUp className="h-4 w-4 text-foreground" />
-                    ) : sorted === 'desc' ? (
-                      <ArrowDown className="h-4 w-4 text-foreground" />
-                    ) : (
-                      <ArrowUpDown className="h-4 w-4 text-muted-foreground/40" />
-                    ))}
-                </div>
+                {(() => {
+                  const content = (
+                    <>
+                      {header.isPlaceholder
+                        ? null
+                        : flexRender(header.column.columnDef.header, header.getContext())}
+                      {canSort &&
+                        (sorted === 'asc' ? (
+                          <ArrowUp className="h-4 w-4 text-foreground" />
+                        ) : sorted === 'desc' ? (
+                          <ArrowDown className="h-4 w-4 text-foreground" />
+                        ) : (
+                          <ArrowUpDown className="h-4 w-4 text-muted-foreground/40" />
+                        ))}
+                    </>
+                  );
+                  // Sortable headers expose a real <button> so Tab + Enter/Space
+                  // toggles sort. The <th> keeps its onClick for the larger
+                  // mouse target; stopPropagation prevents a double toggle.
+                  return canSort ? (
+                    <button
+                      type="button"
+                      className="flex items-center gap-2"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        header.column.getToggleSortingHandler()?.(e);
+                      }}
+                    >
+                      {content}
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-2">{content}</div>
+                  );
+                })()}
               </th>
             );
           })}
@@ -477,6 +559,7 @@ export function DataTable<T>({
             className="inline-flex items-center justify-center rounded-md border border-input bg-background p-2 text-sm hover:bg-accent disabled:opacity-50"
             onClick={() => serverPagination.onPageChange(serverPagination.page - 1)}
             disabled={!canServerPrev}
+            aria-label="Previous page"
             data-testid="server-prev-page"
           >
             <ChevronLeft className="h-4 w-4" />
@@ -485,6 +568,7 @@ export function DataTable<T>({
             className="inline-flex items-center justify-center rounded-md border border-input bg-background p-2 text-sm hover:bg-accent disabled:opacity-50"
             onClick={() => serverPagination.onPageChange(serverPagination.page + 1)}
             disabled={!canServerNext}
+            aria-label="Next page"
             data-testid="server-next-page"
           >
             <ChevronRight className="h-4 w-4" />

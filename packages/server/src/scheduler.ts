@@ -5,15 +5,16 @@ import { getEndpoints, getContainers, getStacksByEndpoint, isEndpointDegraded, g
 import { isDockerEndpoint } from '@dashboard/core/models/portainer.js';
 import { cachedFetch, cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/index.js';
 import { normalizeEndpoint, type NormalizedEndpoint } from '@dashboard/core/portainer/index.js';
-import { getSetting, setSetting, writeAuditLog, getEffectiveHarborConfig, getEffectiveMonitoringSchedulerConfig, cleanExpiredSessions, cleanExpiredStreamTickets } from '@dashboard/core/services/index.js';
+import { getSetting, setSetting, writeAuditLog, getEffectiveHarborConfig, getEffectiveMonitoringSchedulerConfig, cleanExpiredSessions, cleanExpiredStreamTickets, cleanOldAuditLogs } from '@dashboard/core/services/index.js';
 import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
+import { hasTimescaleRetentionPolicy, resolveRawMetricsRetentionDays } from '@dashboard/core/db/timescale.js';
 import { runWithTraceContext } from '@dashboard/core/tracing/index.js';
-import { startCooldownSweep, stopCooldownSweep, cleanupOldInsights, pruneCanaryRegistry, runDedupTelemetryCycle, cleanupOldDedupMetrics, runAnomalyAutoTuneJob } from '@dashboard/ai';
+import { startCooldownSweep, stopCooldownSweep, cleanupOldInsights, pruneCanaryRegistry, runDedupTelemetryCycle, cleanupOldDedupMetrics, runAnomalyAutoTuneJob, cleanOldLlmTraces, cleanOldMonitoringCycles, cleanOldMonitoringSnapshots } from '@dashboard/ai';
 import { initCooldownStore } from '@dashboard/core/services/cooldown-store.js';
 import { initPersistenceStore } from '@dashboard/core/services/persistence-store.js';
 import { collectMetrics, insertMetrics, cleanOldMetrics, cleanOldSpans, type MetricInsert, recordNetworkSample, insertKpiSnapshot, cleanOldKpiSnapshots, pruneStaleEntries, upsertContainerLifecycle } from '@dashboard/observability';
 import { cleanupOldCaptures, cleanupOrphanedSidecars, runStalenessChecks, runHarborSync, isHarborSyncRunning, isHarborConfiguredAsync, cleanupOldVulnerabilities } from '@dashboard/security';
-import { createPortainerBackup, cleanupOldPortainerBackups, startWebhookListener, stopWebhookListener, processRetries } from '@dashboard/operations';
+import { createPortainerBackup, cleanupOldPortainerBackups, startWebhookListener, stopWebhookListener, processRetries, cleanOldNotificationLog, cleanOldWebhookDeliveries } from '@dashboard/operations';
 import { startElasticsearchLogForwarder, stopElasticsearchLogForwarder } from '@dashboard/infrastructure';
 
 const log = createChildLogger('scheduler');
@@ -345,11 +346,21 @@ async function runPortainerBackupSchedule(): Promise<void> {
 }
 
 export async function runCleanup(): Promise<void> {
+  // #1504 — the TimescaleDB retention policy is the single owner of hypertable
+  // cleanup (metrics, kpi_snapshots): dropping whole chunks is near-free while
+  // a competing row-wise DELETE churns dead tuples/WAL inside chunks the
+  // policy would drop wholesale. The DELETE below is kept only as a fallback
+  // for deployments where the policy install failed (plain Postgres without
+  // the timescaledb extension).
   try {
     const config = getConfig();
-    const deleted = await cleanOldMetrics(config.METRICS_RETENTION_DAYS);
-    if (deleted > 0) {
-      log.info({ deleted }, 'Old metrics cleaned up');
+    if (hasTimescaleRetentionPolicy('metrics')) {
+      log.debug('Metrics retention owned by TimescaleDB policy — skipping row-wise DELETE');
+    } else {
+      const deleted = await cleanOldMetrics(resolveRawMetricsRetentionDays(config));
+      if (deleted > 0) {
+        log.info({ deleted }, 'Old metrics cleaned up');
+      }
     }
   } catch (err) {
     log.error({ err }, 'Metrics cleanup failed');
@@ -384,9 +395,13 @@ export async function runCleanup(): Promise<void> {
   }
 
   try {
-    const kpiDeleted = await cleanOldKpiSnapshots(getConfig().METRICS_RETENTION_DAYS);
-    if (kpiDeleted > 0) {
-      log.info({ deleted: kpiDeleted }, 'Old KPI snapshots cleaned up');
+    if (hasTimescaleRetentionPolicy('kpi_snapshots')) {
+      log.debug('KPI snapshot retention owned by TimescaleDB policy — skipping row-wise DELETE');
+    } else {
+      const kpiDeleted = await cleanOldKpiSnapshots(resolveRawMetricsRetentionDays(getConfig()));
+      if (kpiDeleted > 0) {
+        log.info({ deleted: kpiDeleted }, 'Old KPI snapshots cleaned up');
+      }
     }
   } catch (err) {
     log.error({ err }, 'KPI snapshot cleanup failed');
@@ -427,6 +442,63 @@ export async function runCleanup(): Promise<void> {
     }
   } catch (err) {
     log.error({ err }, 'Harbor vulnerability cleanup failed');
+  }
+
+  // #1505 — retention for app-DB history tables that previously grew forever
+  // (audit_log, notification_log, llm_traces, webhook_deliveries,
+  // monitoring_cycles, monitoring_snapshots). Each window is env-configurable.
+  try {
+    const deleted = await cleanOldAuditLogs(getConfig().AUDIT_LOG_RETENTION_DAYS);
+    if (deleted > 0) {
+      log.info({ deleted }, 'Old audit log entries cleaned up');
+    }
+  } catch (err) {
+    log.error({ err }, 'Audit log cleanup failed');
+  }
+
+  try {
+    const deleted = await cleanOldNotificationLog(getConfig().NOTIFICATION_LOG_RETENTION_DAYS);
+    if (deleted > 0) {
+      log.info({ deleted }, 'Old notification log entries cleaned up');
+    }
+  } catch (err) {
+    log.error({ err }, 'Notification log cleanup failed');
+  }
+
+  try {
+    const deleted = await cleanOldLlmTraces(getConfig().LLM_TRACES_RETENTION_DAYS);
+    if (deleted > 0) {
+      log.info({ deleted }, 'Old LLM traces cleaned up');
+    }
+  } catch (err) {
+    log.error({ err }, 'LLM trace cleanup failed');
+  }
+
+  try {
+    const deleted = await cleanOldWebhookDeliveries(getConfig().WEBHOOK_DELIVERIES_RETENTION_DAYS);
+    if (deleted > 0) {
+      log.info({ deleted }, 'Old webhook deliveries cleaned up');
+    }
+  } catch (err) {
+    log.error({ err }, 'Webhook delivery cleanup failed');
+  }
+
+  try {
+    const deleted = await cleanOldMonitoringCycles(getConfig().MONITORING_CYCLES_RETENTION_DAYS);
+    if (deleted > 0) {
+      log.info({ deleted }, 'Old monitoring cycle telemetry cleaned up');
+    }
+  } catch (err) {
+    log.error({ err }, 'Monitoring cycle cleanup failed');
+  }
+
+  try {
+    const deleted = await cleanOldMonitoringSnapshots(getConfig().MONITORING_SNAPSHOTS_RETENTION_DAYS);
+    if (deleted > 0) {
+      log.info({ deleted }, 'Old monitoring snapshots cleaned up');
+    }
+  } catch (err) {
+    log.error({ err }, 'Monitoring snapshot cleanup failed');
   }
 
   // Prune stale entries from the in-memory network rate tracker (issue #1111).

@@ -35,6 +35,8 @@ File: `packages/ai-intelligence/src/services/prompt-guard.ts`
 3. **Output sanitization**: system prompt leaks, sentinel phrases, tool definition exposure
 
 Applied to: enforced centrally in `chatStream()` (`packages/ai-intelligence/src/services/llm-client.ts`) — every user-role message is guarded before the LLM call and the returned response is sanitized. This covers all internal flows (log analysis, anomaly explanation, incident summaries, investigations, remediation, PCAP analysis, forecasts, correlations) plus REST `/api/llm/query` and WebSocket `chat:message`, which additionally apply their own user-facing block messages and per-session canary checks. Callers must use `chatStream`'s return value rather than re-accumulating raw `onChunk` chunks.
+Live streams (#1516): consumers that stream chunks to the client (chat socket, metrics ai-summary SSE) pass each chunk through the streaming `ThinkingBlockFilter` (via `LLMInterface.createStreamFilter()` for DI consumers) and finish with the sanitized `chatStream` return value as the authoritative message — the client replaces its accumulated stream with it, so leaked content never persists client-side.
+Rate limiting (#1517): LLM-invoking endpoints must carry a per-user rate limit (`LLM_RATE_LIMIT_PER_MINUTE`, keyed on `request.user.sub`) and must NOT ride the observer-read bypass in `packages/core/src/plugins/rate-limit.ts` — the ai-summary SSE GET is excluded via `LLM_BACKED_READ_PATH_SUFFIXES`.
 Configurable: `LLM_PROMPT_GUARD_STRICT` env var.
 
 ## Secrets & Credentials
@@ -59,7 +61,7 @@ Configurable: `LLM_PROMPT_GUARD_STRICT` env var.
 - **Known residual**: DNS-based SSRF (a public hostname resolving to a private IP) is not blocked — closing it requires resolve-then-pin.
 - **LLM probe endpoints**: `POST /api/llm/test-connection` is admin-only; the `?host=` override on `GET /api/llm/models` is honoured only for admins. The stored provider token is only ever attached when the destination matches the configured endpoint's origin — never forwarded to a caller-supplied host.
 - **Machine-ingestion auth**: Prometheus bearer token and OTLP trace-ingest API key are compared in constant time (`constantTimeEqual`, fails closed on unset keys). Production refuses to start when trace ingestion is enabled with a `TRACES_INGESTION_API_KEY` shorter than 16 chars.
-- **Error hygiene**: the global error handler (`packages/core/src/plugins/error-handler.ts`) returns generic 5xx bodies in production (4xx/validation preserved); `/api/users` and `/api/backup` responses are `no-store`.
+- **Error hygiene**: the global error handler (`packages/core/src/plugins/error-handler.ts`) returns generic 5xx bodies in production (4xx/validation preserved) and honours both `statusCode` and the legacy `status` error spellings (`getErrorStatusCode`, #1511 — throw core's `HttpError` for new code). Handler-caught errors that reply with an explicit 5xx must route `details` through `errorDetails()` from the same module — it returns the message in development and `undefined` in production, so raw Postgres/undici messages never reach clients (#1518; guarded by `security-regression-error-details.test.ts`). `/api/users` and `/api/backup` responses are `no-store`.
 
 ## Security Regression Tests
 

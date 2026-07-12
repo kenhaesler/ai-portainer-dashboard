@@ -1,4 +1,4 @@
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { AnimatePresence, m, useReducedMotion } from 'framer-motion';
 import { X } from 'lucide-react';
 import { transition } from '@/shared/lib/motion-tokens';
 
@@ -23,7 +23,7 @@ export function FilterChipBar({ filters, onRemove, onClearAll }: FilterChipBarPr
     <div className="flex items-center gap-2 flex-wrap" aria-live="polite" data-testid="filter-chip-bar">
       <AnimatePresence mode="popLayout">
         {filters.map((filter) => (
-          <motion.span
+          <m.span
             key={filter.key}
             layout
             initial={reduceMotion ? false : { opacity: 0, scale: 0.85 }}
@@ -43,7 +43,7 @@ export function FilterChipBar({ filters, onRemove, onClearAll }: FilterChipBarPr
             >
               <X className="h-3 w-3" />
             </button>
-          </motion.span>
+          </m.span>
         ))}
       </AnimatePresence>
       {filters.length >= 2 && (

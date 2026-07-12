@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { cn } from '@/shared/lib/utils';
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
-import { motion, useReducedMotion } from 'framer-motion';
+import { m, useReducedMotion } from 'framer-motion';
 import { useCountUp } from '@/shared/hooks/use-count-up';
 import { KpiSparkline } from '@/shared/components/charts/kpi-sparkline';
 import { useUiStore } from '@/stores/ui-store';
@@ -82,7 +82,7 @@ export function KpiCard({
           </div>
         </div>
         <div className="mt-2 flex items-baseline gap-2">
-          <motion.p
+          <m.p
             className="text-3xl font-bold tracking-tight"
             animate={
               pulse && !reducedMotion
@@ -92,9 +92,9 @@ export function KpiCard({
             transition={{ duration: duration.base, ease: 'easeOut' }}
           >
             {isNumeric ? displayValue : value}
-          </motion.p>
+          </m.p>
           {trend && (
-            <motion.span
+            <m.span
               className={cn(
                 'inline-flex items-center gap-1 text-xs font-medium',
                 trend === 'up' && 'text-emerald-600 dark:text-emerald-400',
@@ -109,7 +109,7 @@ export function KpiCard({
               {trend === 'down' && <TrendingDown className="h-3 w-3" />}
               {trend === 'neutral' && <Minus className="h-3 w-3" />}
               {trendValue}
-            </motion.span>
+            </m.span>
           )}
         </div>
 

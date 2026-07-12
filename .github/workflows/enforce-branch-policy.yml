@@ -4,6 +4,14 @@ on:
   pull_request:
     branches: [main]
 
+# Cancel superseded runs (#1551): this policy check only triggers on
+# pull_request, so a newer commit on the PR safely supersedes the prior run.
+# Unconditional cancel is correct here — there are no push/tag/schedule runs
+# to protect, and the re-run reports the required status for the new head.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check-source-branch:
     name: Source branch check

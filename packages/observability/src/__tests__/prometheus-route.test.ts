@@ -94,6 +94,23 @@ describe('Prometheus Routes', () => {
     expect(response.body).toContain('prompt_guard_near_miss_total 0');
   });
 
+  it('bounds the monitoring cycle histogram to the last 24 hours (#1505)', async () => {
+    setConfigForTest({ PROMETHEUS_METRICS_ENABLED: true });
+
+    await pool.query(`
+      INSERT INTO monitoring_cycles (duration_ms, created_at) VALUES
+        (1800, NOW() - INTERVAL '5 minutes'),
+        (950, NOW() - INTERVAL '2 hours'),
+        (999999, NOW() - INTERVAL '3 days')
+    `);
+
+    const response = await app.inject({ method: 'GET', url: '/metrics' });
+    expect(response.statusCode).toBe(200);
+    // Only the two recent cycles contribute — the 3-day-old row is excluded.
+    expect(response.body).toContain('dashboard_monitoring_cycle_duration_seconds_count 2');
+    expect(response.body).toContain('dashboard_monitoring_cycle_duration_seconds_sum 2.75');
+  });
+
   it('enforces bearer token only when configured', async () => {
     setConfigForTest({
       PROMETHEUS_METRICS_ENABLED: true,

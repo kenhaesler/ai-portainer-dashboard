@@ -70,6 +70,8 @@ export async function getLatestKpiSnapshot(): Promise<KpiSnapshot | null> {
 }
 
 export async function cleanOldKpiSnapshots(retentionDays: number): Promise<number> {
+  // Plain-Postgres fallback (#1504) — see cleanOldMetrics; skipped by the
+  // scheduler when the TimescaleDB retention policy owns kpi_snapshots.
   const db = await getMetricsDb();
   const { rowCount } = await db.query(
     `DELETE FROM kpi_snapshots WHERE timestamp < NOW() - $1 * INTERVAL '1 day'`,

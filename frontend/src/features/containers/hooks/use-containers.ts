@@ -115,10 +115,16 @@ export function useFavoriteContainers(ids: string[]) {
   });
 }
 
+export interface ContainerCountSummary {
+  total: number;
+  byState: Record<string, number>;
+}
+
 export function useContainerCount() {
-  return useQuery<{ count: number }>({
+  return useQuery<ContainerCountSummary>({
     queryKey: ['containers', 'count'],
-    queryFn: () => api.get<{ count: number }>('/api/containers/count'),
+    // GET /api/containers/count returns { total, byState }, not { count }.
+    queryFn: () => api.get<ContainerCountSummary>('/api/containers/count'),
     staleTime: STALE_TIMES.SHORT,
   });
 }

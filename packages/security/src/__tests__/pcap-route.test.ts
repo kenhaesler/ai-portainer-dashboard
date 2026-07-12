@@ -174,6 +174,29 @@ describe('PCAP Routes', () => {
       expect(body.error).toBe('PCAP not enabled');
     });
 
+    it('maps status-spelled upstream errors (PortainerError shape) to their status instead of 400 (#1511)', async () => {
+      const upstreamErr = Object.assign(new Error('Portainer API error: 502 Bad Gateway at https://portainer.internal:9443'), { status: 502 });
+      mockStartCapture.mockRejectedValue(upstreamErr);
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/pcap/captures',
+        headers: { authorization: 'Bearer test' },
+        payload: {
+          endpointId: 1,
+          containerId: 'abc123',
+          containerName: 'web',
+        },
+      });
+
+      expect(response.statusCode).toBe(502);
+      const body = JSON.parse(response.body);
+      // 5xx bodies use a static error message; the raw upstream message
+      // (internal hostname) must not appear in the error field (#1518).
+      expect(body.error).toBe('Failed to start capture');
+      expect(body.error).not.toContain('portainer.internal');
+    });
+
     it('should return 422 when Edge Async endpoint lacks exec capability', async () => {
       const capErr = new Error('Edge Async endpoints do not support "exec" operations.');
       (capErr as any).statusCode = 422;

@@ -76,4 +76,45 @@ describe('ConfirmDialog', () => {
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(onCancel).toHaveBeenCalled();
   });
+
+  it('exposes dialog semantics with the title as accessible name', () => {
+    render(<ConfirmDialog {...defaultProps} />);
+    const dialog = screen.getByRole('dialog', { name: 'Delete item' });
+    expect(dialog).toHaveAttribute('aria-describedby', 'confirm-dialog-description');
+  });
+
+  it('applies primary styling for the default variant', () => {
+    render(<ConfirmDialog {...defaultProps} variant="default" />);
+    expect(screen.getByText('Delete')).toHaveClass('bg-primary');
+  });
+
+  it('renders children between the description and the buttons', () => {
+    render(
+      <ConfirmDialog {...defaultProps}>
+        <input data-testid="extra-field" />
+      </ConfirmDialog>,
+    );
+    expect(screen.getByTestId('extra-field')).toBeInTheDocument();
+  });
+
+  it('disables both buttons and shows a spinner while isLoading', () => {
+    render(<ConfirmDialog {...defaultProps} isLoading />);
+    const buttons = screen.getAllByRole('button');
+    expect(buttons).toHaveLength(2);
+    buttons.forEach((btn) => expect(btn).toBeDisabled());
+    // Confirm label is replaced by the spinner
+    expect(screen.queryByText('Delete')).not.toBeInTheDocument();
+  });
+
+  it('does not close via Escape while isLoading', () => {
+    const onCancel = vi.fn();
+    render(<ConfirmDialog {...defaultProps} onCancel={onCancel} isLoading />);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onCancel).not.toHaveBeenCalled();
+  });
+
+  it('applies a custom data-testid to the dialog content', () => {
+    render(<ConfirmDialog {...defaultProps} data-testid="my-dialog" />);
+    expect(screen.getByTestId('my-dialog')).toBeInTheDocument();
+  });
 });

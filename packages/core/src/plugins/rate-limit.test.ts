@@ -41,6 +41,22 @@ describe('rate-limit plugin', () => {
     expect(responses[3]?.statusCode).toBe(429);
     await app.close();
   });
+
+  it('still enforces global limits for the LLM-backed ai-summary read (#1517)', async () => {
+    const app = Fastify();
+    await app.register(rateLimitPlugin);
+    app.get('/api/metrics/:endpointId/:containerId/ai-summary', async () => ({ ok: true }));
+    await app.ready();
+
+    const responses = [];
+    for (let i = 0; i < 4; i += 1) {
+      responses.push(await app.inject({ method: 'GET', url: '/api/metrics/1/abc/ai-summary' }));
+    }
+
+    expect(responses.slice(0, 3).every((response) => response.statusCode === 200)).toBe(true);
+    expect(responses[3]?.statusCode).toBe(429);
+    await app.close();
+  });
 });
 
 describe('shouldBypassGlobalRateLimit', () => {
@@ -52,5 +68,17 @@ describe('shouldBypassGlobalRateLimit', () => {
   it('returns false for non-get routes and unknown paths', () => {
     expect(shouldBypassGlobalRateLimit('POST', '/api/metrics/1/abc')).toBe(false);
     expect(shouldBypassGlobalRateLimit('GET', '/api/auth/login')).toBe(false);
+  });
+
+  it('excludes LLM-backed ai-summary reads from the metrics bypass (#1517)', () => {
+    expect(shouldBypassGlobalRateLimit('GET', '/api/metrics/1/abc123/ai-summary')).toBe(false);
+    expect(shouldBypassGlobalRateLimit('GET', '/api/metrics/1/abc123/ai-summary?timeRange=1h')).toBe(false);
+    expect(shouldBypassGlobalRateLimit('GET', '/api/metrics/ai-summary')).toBe(false);
+  });
+
+  it('keeps plain metrics reads on the bypass', () => {
+    expect(shouldBypassGlobalRateLimit('GET', '/api/metrics/1/abc123')).toBe(true);
+    expect(shouldBypassGlobalRateLimit('GET', '/api/metrics/1/abc123/meta')).toBe(true);
+    expect(shouldBypassGlobalRateLimit('GET', '/api/metrics/anomalies?limit=10')).toBe(true);
   });
 });

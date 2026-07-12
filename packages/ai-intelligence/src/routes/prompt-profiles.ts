@@ -16,6 +16,10 @@ import {
 } from '../services/prompt-profile-store.js';
 import { PROMPT_FEATURES, estimateTokens } from '../services/prompt-store.js';
 import { writeAuditLog } from '@dashboard/core/services/audit-logger.js';
+import { createChildLogger } from '@dashboard/core/utils/logger.js';
+import { errorDetails } from '@dashboard/core/plugins/error-handler.js';
+
+const log = createChildLogger('route:prompt-profiles');
 
 // ── Zod Schemas ──────────────────────────────────────────────────────
 
@@ -141,7 +145,8 @@ export async function promptProfileRoutes(fastify: FastifyInstance) {
       if (message.includes('UNIQUE constraint failed')) {
         return reply.code(409).send({ error: 'A profile with that name already exists' });
       }
-      return reply.code(500).send({ error: message });
+      log.error({ err }, 'Failed to create prompt profile');
+      return reply.code(500).send({ error: 'Failed to create prompt profile', details: errorDetails(err) });
     }
   });
 
@@ -182,7 +187,8 @@ export async function promptProfileRoutes(fastify: FastifyInstance) {
       if (message.includes('UNIQUE constraint failed')) {
         return reply.code(409).send({ error: 'A profile with that name already exists' });
       }
-      return reply.code(500).send({ error: message });
+      log.error({ err }, 'Failed to update prompt profile');
+      return reply.code(500).send({ error: 'Failed to update prompt profile', details: errorDetails(err) });
     }
   });
 
@@ -263,7 +269,8 @@ export async function promptProfileRoutes(fastify: FastifyInstance) {
       if (message.includes('UNIQUE constraint failed')) {
         return reply.code(409).send({ error: 'A profile with that name already exists' });
       }
-      return reply.code(500).send({ error: message });
+      log.error({ err }, 'Failed to duplicate prompt profile');
+      return reply.code(500).send({ error: 'Failed to duplicate prompt profile', details: errorDetails(err) });
     }
   });
 

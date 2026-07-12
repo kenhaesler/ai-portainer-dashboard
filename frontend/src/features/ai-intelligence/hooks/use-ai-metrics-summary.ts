@@ -99,9 +99,14 @@ export function useAiMetricsSummary(
               }
             }
             if (data.done) {
-              cacheRef.current.set(cacheKey, { summary: accumulated, timestamp: Date.now() });
+              // The `done` event carries the fully sanitized summary as the
+              // authoritative result (#1516) — prefer it over the accumulated
+              // stream so leaked content filtered out server-side after
+              // streaming never persists client-side.
+              const finalSummary = typeof data.summary === 'string' ? data.summary : accumulated;
+              cacheRef.current.set(cacheKey, { summary: finalSummary, timestamp: Date.now() });
               if (requestKeyRef.current === cacheKey) {
-                setState({ summary: accumulated, isStreaming: false, error: null });
+                setState({ summary: finalSummary, isStreaming: false, error: null });
               }
             }
             if (data.error) {

@@ -75,6 +75,12 @@ export interface MetricsInterface {
     lookbackDays: number,
     /** Optional UTC day-of-week (0=Sun..6=Sat); narrows the raw window (#1307). */
     dayOfWeek?: number,
+    /**
+     * Optional weekly-baseline warm-up floor (#1527): with a day-of-week
+     * filter, return [] unless the bucket spans at least this many DISTINCT
+     * same-weekday days — raw samples from one day are not a weekly baseline.
+     */
+    minDistinctDays?: number,
   ): Promise<number[]>;
 
   /** Retrieve top-N capacity forecasts sorted by urgency. */

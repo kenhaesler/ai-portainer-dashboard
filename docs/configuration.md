@@ -2,6 +2,8 @@
 
 All configuration is done via environment variables. Copy [`.env.example`](../.env.example) for a ready-to-copy template.
 
+**Boolean variables** accept `true`/`1` and `false`/`0` (case-insensitive). Unset or empty values use the documented default; any other value (e.g. `yes`, `on`) logs a startup warning and falls back to the default (#1492 — previously several flags parsed via `Boolean(string)`, so setting them to `false` silently enabled them).
+
 ## Required
 
 | Variable | Description | Default |
@@ -104,7 +106,24 @@ Monitoring enable/interval are configured via **Settings UI → Monitoring → G
 |----------|-------------|---------|
 | `METRICS_COLLECTION_ENABLED` | Enable metrics collection | `true` |
 | `METRICS_COLLECTION_INTERVAL_SECONDS` | Collection interval | `60` |
-| `METRICS_RETENTION_DAYS` | Days to retain metrics | `7` |
+| `METRICS_RETENTION_DAYS` | Canonical raw-metrics retention (#1504). Drives the TimescaleDB chunk-drop policy on the `metrics` and `kpi_snapshots` hypertables (and the plain-Postgres DELETE fallback). | `7` |
+| `METRICS_RAW_RETENTION_DAYS` | Optional override of `METRICS_RETENTION_DAYS` for the raw hypertables only. Unset = follows `METRICS_RETENTION_DAYS`. | unset |
+| `METRICS_ROLLUP_5MIN_RETENTION_DAYS` | Retention policy on the `metrics_5min` continuous aggregate (#1504) | `30` |
+| `METRICS_ROLLUP_1HOUR_RETENTION_DAYS` | Retention policy on the `metrics_1hour` continuous aggregate | `90` |
+| `METRICS_ROLLUP_1DAY_RETENTION_DAYS` | Retention policy on the `metrics_1day` continuous aggregate | `365` |
+
+## Data Retention (app database history tables)
+
+Pruned by the daily cleanup job in 10k-row batches on each table's `created_at` index (#1505).
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `AUDIT_LOG_RETENTION_DAYS` | `audit_log` — one row per login/admin action | `90` |
+| `NOTIFICATION_LOG_RETENTION_DAYS` | `notification_log` — one row per delivery attempt | `30` |
+| `LLM_TRACES_RETENTION_DAYS` | `llm_traces` — one row per LLM call (includes query text) | `30` |
+| `WEBHOOK_DELIVERIES_RETENTION_DAYS` | `webhook_deliveries` — one row per delivery attempt | `30` |
+| `MONITORING_CYCLES_RETENTION_DAYS` | `monitoring_cycles` — one row per monitoring cycle | `14` |
+| `MONITORING_SNAPSHOTS_RETENTION_DAYS` | `monitoring_snapshots` — feeds the status page's 90-day uptime timeline; keep >= 90 | `90` |
 
 ## Anomaly Detection
 

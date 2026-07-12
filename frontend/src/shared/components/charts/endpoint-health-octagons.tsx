@@ -1,6 +1,6 @@
 import { memo, useCallback, useMemo, useRef, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion, useReducedMotion } from 'framer-motion';
+import { m, useReducedMotion } from 'framer-motion';
 import { cn } from '@/shared/lib/utils';
 import { duration, easing } from '@/shared/lib/motion-tokens';
 
@@ -206,7 +206,7 @@ function HexagonCard({
   const title = getCardTitle(name, level, running, total, snapshotSource, snapshotFetchedAt);
 
   return (
-    <motion.div
+    <m.div
       variants={itemVariants}
       onClick={onClick}
       onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onClick()}
@@ -273,7 +273,7 @@ function HexagonCard({
           </span>
         </div>
       </div>
-    </motion.div>
+    </m.div>
   );
 }
 
@@ -379,7 +379,7 @@ export const EndpointHealthOctagons = memo(function EndpointHealthOctagons({
     <div className="flex flex-col">
       {/* Hexagon honeycomb grid */}
       <div ref={containerRef} className="py-2">
-        <motion.div
+        <m.div
           className="relative w-full"
           style={{ height: layout.totalHeight || 'auto' }}
           variants={{
@@ -414,7 +414,7 @@ export const EndpointHealthOctagons = memo(function EndpointHealthOctagons({
               </div>
             );
           })}
-        </motion.div>
+        </m.div>
       </div>
 
       {/* Legend */}

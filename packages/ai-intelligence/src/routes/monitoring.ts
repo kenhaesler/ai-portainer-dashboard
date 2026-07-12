@@ -7,6 +7,7 @@ import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
 import { InsightsQuerySchema, InsightIdParamsSchema, SuccessResponseSchema } from '@dashboard/core/models/api-schemas.js';
 import { ANOMALY_DETECTORS } from '@dashboard/core/models/monitoring.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
+import { errorDetails } from '@dashboard/core/plugins/error-handler.js';
 import {
   SensitivityPutBodySchema,
   getUserPreset,
@@ -186,9 +187,8 @@ export async function monitoringRoutes(fastify: FastifyInstance, opts: Monitorin
         hasMore,
       };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
       log.error({ err }, 'Failed to query insights');
-      return reply.code(500).send({ error: 'Failed to query insights', details: msg });
+      return reply.code(500).send({ error: 'Failed to query insights', details: errorDetails(err) });
     }
   });
 
@@ -280,9 +280,8 @@ export async function monitoringRoutes(fastify: FastifyInstance, opts: Monitorin
 
       return { explanations, sensitivity: preset };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
       log.error({ err, containerId }, 'Failed to query container insights');
-      return reply.code(500).send({ error: 'Failed to query container insights', details: msg });
+      return reply.code(500).send({ error: 'Failed to query container insights', details: errorDetails(err) });
     }
   });
 
@@ -305,9 +304,8 @@ export async function monitoringRoutes(fastify: FastifyInstance, opts: Monitorin
       await db.execute('UPDATE insights SET is_acknowledged = true WHERE id = ?', [id]);
       return { success: true };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
       log.error({ err, insightId: id }, 'Failed to acknowledge insight');
-      return (reply as any).code(500).send({ error: 'Failed to acknowledge insight', details: msg });
+      return (reply as any).code(500).send({ error: 'Failed to acknowledge insight', details: errorDetails(err) });
     }
   });
 
@@ -385,9 +383,8 @@ export async function monitoringRoutes(fastify: FastifyInstance, opts: Monitorin
         duplicate,
       };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
       log.error({ err, anomalyId, userId }, 'Failed to record anomaly feedback');
-      return (reply as any).code(500).send({ error: 'Failed to record anomaly feedback', details: msg });
+      return (reply as any).code(500).send({ error: 'Failed to record anomaly feedback', details: errorDetails(err) });
     }
   });
 
@@ -536,9 +533,8 @@ export async function monitoringRoutes(fastify: FastifyInstance, opts: Monitorin
 
       return { rates, scope: fleetWide ? 'fleet' : 'mine' };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
       log.error({ err, userId }, 'Failed to compute anomaly feedback rates');
-      return reply.code(500).send({ error: 'Failed to compute anomaly feedback rates', details: msg });
+      return reply.code(500).send({ error: 'Failed to compute anomaly feedback rates', details: errorDetails(err) });
     }
   });
 
@@ -554,9 +550,8 @@ export async function monitoringRoutes(fastify: FastifyInstance, opts: Monitorin
       const entries = await opts.getSecurityAudit();
       return { entries };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
       log.error({ err }, 'Failed to fetch security audit');
-      return reply.code(500).send({ error: 'Failed to fetch security audit', details: msg });
+      return reply.code(500).send({ error: 'Failed to fetch security audit', details: errorDetails(err) });
     }
   });
 
@@ -574,9 +569,8 @@ export async function monitoringRoutes(fastify: FastifyInstance, opts: Monitorin
       const entries = await opts.getSecurityAudit(parsedEndpointId);
       return { entries };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
       log.error({ err, endpointId }, 'Failed to fetch security audit for endpoint');
-      return reply.code(500).send({ error: 'Failed to fetch security audit for endpoint', details: msg });
+      return reply.code(500).send({ error: 'Failed to fetch security audit for endpoint', details: errorDetails(err) });
     }
   });
 
@@ -596,9 +590,8 @@ export async function monitoringRoutes(fastify: FastifyInstance, opts: Monitorin
         patterns: await opts.getSecurityAuditIgnoreList(),
       };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
       log.error({ err }, 'Failed to fetch security ignore list');
-      return reply.code(500).send({ error: 'Failed to fetch security ignore list', details: msg });
+      return reply.code(500).send({ error: 'Failed to fetch security ignore list', details: errorDetails(err) });
     }
   });
 
@@ -624,9 +617,8 @@ export async function monitoringRoutes(fastify: FastifyInstance, opts: Monitorin
         patterns: saved,
       };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
       log.error({ err }, 'Failed to update security ignore list');
-      return reply.code(500).send({ error: 'Failed to update security ignore list', details: msg });
+      return reply.code(500).send({ error: 'Failed to update security ignore list', details: errorDetails(err) });
     }
   });
 
@@ -653,9 +645,8 @@ export async function monitoringRoutes(fastify: FastifyInstance, opts: Monitorin
       const preset = await getUserPreset(userId);
       return { preset };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
       log.error({ err, userId }, 'Failed to read sensitivity preset');
-      return reply.code(500).send({ error: 'Failed to read sensitivity preset', details: msg });
+      return reply.code(500).send({ error: 'Failed to read sensitivity preset', details: errorDetails(err) });
     }
   });
 
@@ -681,9 +672,8 @@ export async function monitoringRoutes(fastify: FastifyInstance, opts: Monitorin
       await setUserPreset(userId, parsed.data.preset);
       return { preset: parsed.data.preset };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
       log.error({ err, userId }, 'Failed to update sensitivity preset');
-      return reply.code(500).send({ error: 'Failed to update sensitivity preset', details: msg });
+      return reply.code(500).send({ error: 'Failed to update sensitivity preset', details: errorDetails(err) });
     }
   });
 }

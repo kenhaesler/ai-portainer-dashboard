@@ -8,7 +8,7 @@ vi.mock('react-dom', async () => {
 
 vi.mock('framer-motion', () => ({
   AnimatePresence: ({ children }: any) => <>{children}</>,
-  motion: {
+  m: {
     div: ({ children, ...props }: any) => <div {...Object.fromEntries(Object.entries(props).filter(([k]) => !['variants', 'initial', 'animate', 'exit', 'transition'].includes(k)))}>{children}</div>,
   },
   useReducedMotion: () => false,

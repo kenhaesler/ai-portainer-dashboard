@@ -4,6 +4,7 @@ import '@dashboard/core/plugins/auth.js';
 import '@dashboard/core/plugins/request-tracing.js';
 import '@fastify/swagger';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
+import { errorDetails } from '@dashboard/core/plugins/error-handler.js';
 import { writeAuditLog } from '@dashboard/core/services/audit-logger.js';
 import * as harborClient from '../services/harbor-client.js';
 import { getEffectiveHarborConfig } from '@dashboard/core/services/settings-store.js';
@@ -84,9 +85,8 @@ export async function harborVulnerabilityRoutes(fastify: FastifyInstance) {
     try {
       return await harborClient.getSecuritySummary();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
       log.error({ err }, 'Failed to fetch Harbor security summary');
-      return reply.code(502).send({ error: 'Failed to connect to Harbor', details: msg });
+      return reply.code(502).send({ error: 'Failed to connect to Harbor', details: errorDetails(err) });
     }
   });
 
@@ -119,12 +119,17 @@ export async function harborVulnerabilityRoutes(fastify: FastifyInstance) {
       offset: number;
     };
 
-    const [vulnerabilities, summary] = await Promise.all([
+    const [vulnerabilities, summary, total] = await Promise.all([
       vulnStore.getVulnerabilities(query),
       vulnStore.getVulnerabilitySummary(),
+      vulnStore.getVulnerabilitiesCount(query),
     ]);
 
-    return { vulnerabilities, summary };
+    // `summary` stays global (unfiltered) for the KPI cards; `total` is the count
+    // of the *filtered* result set so the client can paginate over it accurately
+    // instead of the old fixed 500 cap / global total (#1546). limit/offset are
+    // echoed back so the caller can render page controls.
+    return { vulnerabilities, summary, total, limit: query.limit, offset: query.offset };
   });
 
   fastify.get('/api/harbor/vulnerabilities/summary', {
@@ -157,9 +162,8 @@ export async function harborVulnerabilityRoutes(fastify: FastifyInstance) {
     try {
       return await harborClient.getProjects();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
       log.error({ err }, 'Failed to fetch Harbor projects');
-      return reply.code(502).send({ error: 'Failed to connect to Harbor', details: msg });
+      return reply.code(502).send({ error: 'Failed to connect to Harbor', details: errorDetails(err) });
     }
   });
 

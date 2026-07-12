@@ -18,6 +18,8 @@ import { analyzeCapture } from '../services/pcap-analysis-service.js';
 import { writeAuditLog } from '@dashboard/core/services/audit-logger.js';
 import { assertCapability } from '@dashboard/infrastructure';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
+import { getErrorStatusCode } from '@dashboard/core/utils/http-error.js';
+import { errorDetails } from '@dashboard/core/plugins/error-handler.js';
 
 const log = createChildLogger('pcap-route');
 
@@ -64,10 +66,19 @@ export async function pcapRoutes(fastify: FastifyInstance, opts: { llm: LLMInter
 
       return capture;
     } catch (err) {
-      const statusCode = (err as any).statusCode ?? 400;
+      // getErrorStatusCode honours both `statusCode` (HttpError, capability
+      // guard) and `status` (PortainerError) — previously the `.status`
+      // spelling was missed and upstream Portainer failures were misreported
+      // as 400 Bad Request (#1511).
+      const statusCode = getErrorStatusCode(err) ?? 400;
       const message = err instanceof Error ? err.message : 'Failed to start capture';
       if (statusCode !== 422) {
         log.error({ err }, 'Failed to start capture');
+      }
+      if (statusCode >= 500) {
+        // Mask upstream 5xx messages like the global error handler does —
+        // raw PortainerError text can carry internal hostnames (#1518).
+        return reply.status(statusCode).send({ error: 'Failed to start capture', details: errorDetails(err) });
       }
       return reply.status(statusCode).send({ error: message });
     }

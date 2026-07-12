@@ -6,6 +6,14 @@ on:
     tags: ['v*']
   pull_request:
 
+# Cancel superseded runs (#1551): each PR push rebuilds both multi-stage
+# images, so an in-progress build is wasted once a newer commit lands. Only
+# cancel pull_request runs — push-to-branch and tag builds (which push images)
+# must always finish. Tags get a unique ref, so they never share a group.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   docker-backend:
     name: Backend Image

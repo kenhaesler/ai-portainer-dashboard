@@ -30,6 +30,7 @@ export {
   chatThrottle,
   CHAT_THROTTLE_MS,
   monitoringThrottle,
+  ThinkingBlockFilter,
 } from './sockets/index.js';
 
 // Services — monitoring orchestration
@@ -58,6 +59,10 @@ export type { AutoTuneResult } from './services/anomaly-autotune.js';
 export { runDedupTelemetryCycle, collectDedupMetrics, cleanupOldDedupMetrics } from './services/dedup-telemetry.js';
 export type { DedupMetricRow, DedupTelemetryCycleResult } from './services/dedup-telemetry.js';
 
+// Services — data retention sweeps (#1505)
+export { cleanOldLlmTraces } from './services/llm-trace-store.js';
+export { cleanOldMonitoringCycles, cleanOldMonitoringSnapshots } from './services/monitoring-telemetry-store.js';
+
 // Services — prompt store
 export { PROMPT_FEATURES, DEFAULT_PROMPTS, getEffectivePrompt } from './services/prompt-store.js';
 
@@ -77,6 +82,8 @@ export {
   getPromptGuardNearMissTotal,
   getPromptGuardCanaryLeakTotal,
   pruneCanaryRegistry,
+  sanitizeLlmOutput,
+  stripThinkingBlocks,
 } from './services/prompt-guard.js';
 
 // Services — MCP

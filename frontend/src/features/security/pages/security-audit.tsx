@@ -5,6 +5,7 @@ import { useSecurityAudit, type SecurityAuditEntry } from '@/features/security/h
 import { useEndpoints } from '@/features/containers/hooks/use-endpoints';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { DataTable } from '@/shared/components/tables/data-table';
+import { SkeletonTableRow } from '@/shared/components/feedback/skeleton';
 import { cn } from '@/shared/lib/utils';
 import { ObservedDestinationsPanel } from '@/features/security/components/observed-destinations-panel';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
@@ -322,7 +323,16 @@ export default function SecurityAuditPage() {
         </div>
 
         {isLoading ? (
-          <div className="text-sm text-muted-foreground">Loading security audit...</div>
+          <div className="overflow-x-auto" role="status" aria-label="Loading security audit">
+            <table className="w-full min-w-[1100px] text-sm">
+              <tbody>
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <SkeletonTableRow key={i} columns={8} />
+                ))}
+              </tbody>
+            </table>
+            <span className="sr-only">Loading…</span>
+          </div>
         ) : filteredEntries.length === 0 ? (
           <div className="rounded-lg border bg-muted/30 p-8 text-center">
             <ShieldAlert className="mx-auto h-8 w-8 text-muted-foreground" />

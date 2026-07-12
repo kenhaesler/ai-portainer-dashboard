@@ -10,6 +10,7 @@ export { logger, createChildLogger } from './utils/logger.js';
 export { hashPassword, comparePassword, signJwt, verifyJwt } from './utils/crypto.js';
 export { sanitize } from './utils/log-sanitizer.js';
 export { validateOutboundWebhookUrl } from './utils/network-security.js';
+export { HttpError, getErrorStatusCode } from './utils/http-error.js';
 
 // DB
 export { getAppDb, closeAppDb, isAppDbReady, isAppDbHealthy } from './db/postgres.js';
@@ -21,6 +22,7 @@ export type { AppDb, QueryResult } from './db/app-db.js';
 // Tracing
 export { getCurrentTraceContext, runWithTraceContext, withSpan } from './tracing/trace-context.js';
 export { insertSpan, insertSpans, getTrace, getTraces, getServiceMap } from './tracing/trace-store.js';
+export { enqueueSpan, flushSpanBuffer, shutdownSpanBuffer, getSpanBufferStats } from './tracing/span-buffer.js';
 export { queueSpanForExport, initOtelExporter, shutdownOtelExporter } from './tracing/otel-exporter.js';
 
 // Portainer
@@ -30,7 +32,7 @@ export { normalizeEndpoint, normalizeContainer, normalizeStack, normalizeNetwork
 export { CircuitBreaker } from './portainer/circuit-breaker.js';
 
 // Core Services
-export { getSetting, setSetting, getSettings, getEffectiveLlmConfig, getEffectiveMonitoringConfig, getEffectiveMonitoringSchedulerConfig } from './services/settings-store.js';
+export { getSetting, getSettingsByKeys, setSetting, getSettings, getEffectiveLlmConfig, getEffectiveMonitoringConfig, getEffectiveMonitoringSchedulerConfig } from './services/settings-store.js';
 export type { MonitoringConfig } from './services/settings-store.js';
 export { createSession, getSession, invalidateSession, refreshSession } from './services/session-store.js';
 export { getUserById, getUserByUsername, authenticateUser, hasMinRole } from './services/user-store.js';

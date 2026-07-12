@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
+import { batchedDeleteOlderThan } from '@dashboard/core/db/retention.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { eventBus } from '@dashboard/core/services/typed-event-bus.js';
 import { getSetting } from '@dashboard/core/services/settings-store.js';
@@ -311,6 +312,16 @@ export async function processRetries(): Promise<number> {
   }
 
   return processed;
+}
+
+/**
+ * Daily retention sweep (#1505). webhook_deliveries stores the full JSONB
+ * payload per delivery attempt and was previously only removed by the parent
+ * webhook's ON DELETE CASCADE. A row past the retention window is dead in
+ * every status — the retry backoff never reaches that far back.
+ */
+export async function cleanOldWebhookDeliveries(days: number): Promise<number> {
+  return batchedDeleteOlderThan(db(), 'webhook_deliveries', 'created_at', days);
 }
 
 // --- Event listener ---

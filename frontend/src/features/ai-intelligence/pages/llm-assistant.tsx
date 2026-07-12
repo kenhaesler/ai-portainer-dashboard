@@ -1,9 +1,9 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { memo, useState, useRef, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Send, X, Trash2, Bot, User, AlertCircle, Copy, Check, Wrench, CheckCircle2, XCircle, Layers, WifiOff, Loader2 } from 'lucide-react';
 import { ContextBanner, type ContextBannerData } from '@/shared/components/layout/context-banner';
 import { ConfirmDialog } from '@/shared/components/feedback/confirm-dialog';
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { type Components } from 'react-markdown';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
@@ -128,13 +128,15 @@ export default function LlmAssistantPage() {
     }
   }, [modelsData, selectedModel]);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-
+  // Instant scroll while streaming: smooth scrolling on every batched chunk
+  // flush thrashes layout. Smooth is reserved for message boundaries, and
+  // reduced-motion users always get instant jumps.
   useEffect(() => {
-    scrollToBottom();
-  }, [messages, currentResponse, isSending]);
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    messagesEndRef.current?.scrollIntoView({
+      behavior: reduceMotion || isStreaming ? 'auto' : 'smooth',
+    });
+  }, [messages, currentResponse, isSending, isStreaming]);
 
   // Clear sending state when streaming starts
   useEffect(() => {
@@ -457,7 +459,10 @@ interface MessageBubbleProps {
   userQuery?: string;
 }
 
-function MessageBubble({ message, userQuery }: MessageBubbleProps) {
+// Memoized so completed history bubbles do not re-render (and re-parse
+// their markdown) on every streamed-chunk flush of the page (#1494).
+// Message objects are immutable once appended, so shallow compare suffices.
+const MessageBubble = memo(function MessageBubble({ message, userQuery }: MessageBubbleProps) {
   const isUser = message.role === 'user';
   const isSystem = message.role === 'system';
 
@@ -534,7 +539,7 @@ function MessageBubble({ message, userQuery }: MessageBubbleProps) {
       </div>
     </div>
   );
-}
+});
 
 function ToolCallIndicator({ events }: { events: ToolCallEvent[] }) {
   return (
@@ -618,71 +623,80 @@ function normalizeMarkdown(raw: string): string {
   return text;
 }
 
-function MarkdownContent({ content }: { content: string }) {
+// Hoisted to module scope so memoized markdown renders are not defeated by
+// fresh plugin arrays / components objects created on every render (#1494).
+const REMARK_PLUGINS = [remarkGfm];
+const REHYPE_PLUGINS = [rehypeHighlight];
+
+const MARKDOWN_COMPONENTS: Components = {
+  h1: ({ children }) => <h1 className="mb-3 pb-2 border-b border-border text-lg">{children}</h1>,
+  h2: ({ children }) => <h2 className="mt-4 mb-2 pb-1.5 border-b border-border/50 text-base">{children}</h2>,
+  h3: ({ children }) => <h3 className="mt-3 mb-1.5 text-sm font-semibold">{children}</h3>,
+  ul: ({ children }) => <ul className="space-y-0.5 my-2">{children}</ul>,
+  ol: ({ children }) => <ol className="space-y-0.5 my-2">{children}</ol>,
+  li: ({ children }) => <li className="leading-relaxed text-[13px]">{children}</li>,
+  blockquote: ({ children }) => (
+    <blockquote className="border-l-4 border-blue-500 bg-blue-500/5 pl-4 py-2 my-2 italic text-[13px]">
+      {children}
+    </blockquote>
+  ),
+  table: ({ children }) => (
+    <div className="my-4 overflow-x-auto">
+      <table className="min-w-full divide-y divide-border rounded-lg border border-border overflow-hidden">
+        {children}
+      </table>
+    </div>
+  ),
+  thead: ({ children }) => (
+    <thead className="bg-muted/50">{children}</thead>
+  ),
+  th: ({ children }) => (
+    <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider">
+      {children}
+    </th>
+  ),
+  td: ({ children }) => (
+    <td className="px-4 py-2 text-[13px] border-t border-border">{children}</td>
+  ),
+  code({ className, children, ...props }) {
+    const match = /language-(\w+)/.exec(className || '');
+    const isCodeBlock = match !== null;
+
+    if (isCodeBlock) {
+      // Extract plain text for the copy button
+      const plainText = extractText(children).replace(/\n$/, '');
+      return (
+        <CodeBlock plainText={plainText} language={match?.[1]}>
+          {children}
+        </CodeBlock>
+      );
+    }
+
+    return (
+      <code className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-mono border border-border/50" {...props}>
+        {children}
+      </code>
+    );
+  },
+};
+
+// Memoized (content-keyed) — ReactMarkdown re-parses on every render, so a
+// bail-out here is what stops streaming from re-parsing finished messages.
+const MarkdownContent = memo(function MarkdownContent({ content }: { content: string }) {
   const normalizedContent = normalizeMarkdown(content);
 
   return (
     <div className="prose prose-sm dark:prose-invert max-w-none prose-headings:font-semibold prose-headings:tracking-tight prose-h1:text-lg prose-h2:text-base prose-h3:text-sm prose-p:text-[13px] prose-p:leading-relaxed prose-pre:bg-zinc-900 prose-pre:shadow-lg prose-code:text-blue-600 dark:prose-code:text-blue-400 prose-li:text-[13px] prose-td:text-[13px] prose-th:text-xs">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeHighlight]}
-        components={{
-          h1: ({ children }) => <h1 className="mb-3 pb-2 border-b border-border text-lg">{children}</h1>,
-          h2: ({ children }) => <h2 className="mt-4 mb-2 pb-1.5 border-b border-border/50 text-base">{children}</h2>,
-          h3: ({ children }) => <h3 className="mt-3 mb-1.5 text-sm font-semibold">{children}</h3>,
-          ul: ({ children }) => <ul className="space-y-0.5 my-2">{children}</ul>,
-          ol: ({ children }) => <ol className="space-y-0.5 my-2">{children}</ol>,
-          li: ({ children }) => <li className="leading-relaxed text-[13px]">{children}</li>,
-          blockquote: ({ children }) => (
-            <blockquote className="border-l-4 border-blue-500 bg-blue-500/5 pl-4 py-2 my-2 italic text-[13px]">
-              {children}
-            </blockquote>
-          ),
-          table: ({ children }) => (
-            <div className="my-4 overflow-x-auto">
-              <table className="min-w-full divide-y divide-border rounded-lg border border-border overflow-hidden">
-                {children}
-              </table>
-            </div>
-          ),
-          thead: ({ children }) => (
-            <thead className="bg-muted/50">{children}</thead>
-          ),
-          th: ({ children }) => (
-            <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider">
-              {children}
-            </th>
-          ),
-          td: ({ children }) => (
-            <td className="px-4 py-2 text-[13px] border-t border-border">{children}</td>
-          ),
-          code({ className, children, ...props }) {
-            const match = /language-(\w+)/.exec(className || '');
-            const isCodeBlock = match !== null;
-
-            if (isCodeBlock) {
-              // Extract plain text for the copy button
-              const plainText = extractText(children).replace(/\n$/, '');
-              return (
-                <CodeBlock plainText={plainText} language={match?.[1]}>
-                  {children}
-                </CodeBlock>
-              );
-            }
-
-            return (
-              <code className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-mono border border-border/50" {...props}>
-                {children}
-              </code>
-            );
-          },
-        }}
+        remarkPlugins={REMARK_PLUGINS}
+        rehypePlugins={REHYPE_PLUGINS}
+        components={MARKDOWN_COMPONENTS}
       >
         {normalizedContent}
       </ReactMarkdown>
     </div>
   );
-}
+});
 
 /** Recursively extract plain text from React children (for clipboard copy). */
 function extractText(node: React.ReactNode): string {

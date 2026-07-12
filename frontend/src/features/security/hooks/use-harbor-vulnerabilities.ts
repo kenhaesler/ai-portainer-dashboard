@@ -40,6 +40,12 @@ export interface VulnerabilitySummary {
 export interface VulnerabilityListResponse {
   vulnerabilities: VulnerabilityRecord[];
   summary: VulnerabilitySummary;
+  /** Count of rows matching the active filters (severity/inUse/…), ignoring
+   *  limit/offset — drives real pagination instead of the global summary total (#1546). */
+  total: number;
+  /** Echoed back so the caller can render page controls. */
+  limit: number;
+  offset: number;
 }
 
 export interface HarborStatus {

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import Fastify from 'fastify';
-import errorHandlerPlugin, { formatErrorResponse } from './error-handler.js';
+import errorHandlerPlugin, { formatErrorResponse, errorDetails } from './error-handler.js';
+import { HttpError } from '../utils/http-error.js';
 
 describe('formatErrorResponse', () => {
   it('hides 5xx messages in production but logs nothing sensitive to the client', () => {
@@ -26,6 +27,51 @@ describe('formatErrorResponse', () => {
     expect(r.statusCode).toBe(400);
     expect(r.body.error).toContain('limit');
     expect(r.body.details).toEqual([{ field: 'limit' }]);
+  });
+
+  it('honours the legacy status spelling as a fallback (#1511)', () => {
+    // PortainerError carries only `.status` — previously misreported as 500.
+    const r = formatErrorResponse({ status: 404, message: 'Portainer resource not found' }, false);
+    expect(r.statusCode).toBe(404);
+    expect(r.body.error).toBe('Portainer resource not found');
+  });
+
+  it('masks status-spelled 5xx errors in production', () => {
+    const r = formatErrorResponse({ status: 502, message: 'connect ECONNREFUSED 10.0.0.5:9443' }, false);
+    expect(r.statusCode).toBe(502);
+    expect(r.body.error).toBe('Internal Server Error');
+  });
+
+  it('prefers statusCode over status when both are present', () => {
+    const r = formatErrorResponse({ statusCode: 422, status: 500, message: 'capability unavailable' }, false);
+    expect(r.statusCode).toBe(422);
+    expect(r.body.error).toBe('capability unavailable');
+  });
+});
+
+describe('errorDetails (#1518)', () => {
+  it('returns the error message outside production', () => {
+    const prev = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'test';
+    try {
+      expect(errorDetails(new Error('relation "metrics" does not exist'))).toBe('relation "metrics" does not exist');
+      expect(errorDetails(['local: ECONNREFUSED'])).toEqual(['local: ECONNREFUSED']);
+      expect(errorDetails(undefined)).toBe('Unknown error');
+    } finally {
+      process.env.NODE_ENV = prev;
+    }
+  });
+
+  it('returns undefined in production so the field is omitted from JSON bodies', () => {
+    const prev = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    try {
+      expect(errorDetails(new Error('syntax error at or near "SELECT"'))).toBeUndefined();
+      expect(errorDetails(['local: ECONNREFUSED'])).toBeUndefined();
+      expect(JSON.stringify({ error: 'Failed', details: errorDetails(new Error('secret')) })).toBe('{"error":"Failed"}');
+    } finally {
+      process.env.NODE_ENV = prev;
+    }
   });
 });
 
@@ -71,5 +117,32 @@ describe('error-handler plugin (production mode)', () => {
     } finally {
       process.env.NODE_ENV = prev;
     }
+  });
+
+  it('maps a thrown HttpError to its statusCode (#1511)', async () => {
+    const app = Fastify({ logger: false });
+    await app.register(errorHandlerPlugin);
+    app.get('/capability', async () => {
+      throw new HttpError(422, 'Edge Async endpoints do not support "exec" operations.');
+    });
+    await app.ready();
+
+    const res = await app.inject({ method: 'GET', url: '/capability' });
+    expect(res.statusCode).toBe(422);
+    expect(res.json().error).toContain('Edge Async');
+    await app.close();
+  });
+
+  it('maps a thrown status-spelled error (PortainerError shape) to its status instead of 500 (#1511)', async () => {
+    const app = Fastify({ logger: false });
+    await app.register(errorHandlerPlugin);
+    app.get('/tunnel', async () => {
+      throw Object.assign(new Error('Edge agent tunnel did not establish within timeout'), { status: 504 });
+    });
+    await app.ready();
+
+    const res = await app.inject({ method: 'GET', url: '/tunnel' });
+    expect(res.statusCode).toBe(504);
+    await app.close();
   });
 });

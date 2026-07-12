@@ -1,4 +1,4 @@
-import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
+import { m, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { ChevronRight } from 'lucide-react';
 import { spring } from '@/shared/lib/motion-tokens';
 import { cn } from '@/shared/lib/utils';
@@ -33,20 +33,20 @@ export function ExpandableRow({
         data-testid="expandable-row-trigger"
         className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium transition-colors hover:bg-muted/50"
       >
-        <motion.span
+        <m.span
           data-testid="expandable-row-chevron"
           animate={{ rotate: expanded ? 90 : 0 }}
           transition={reducedMotion ? { duration: 0 } : spring.snappy}
         >
           <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-        </motion.span>
+        </m.span>
         {trigger}
       </button>
 
       {/* Expandable content */}
       <AnimatePresence initial={false}>
         {expanded && (
-          <motion.div
+          <m.div
             data-testid="expandable-row-content"
             initial={reducedMotion ? false : { height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
@@ -55,7 +55,7 @@ export function ExpandableRow({
             className="overflow-hidden"
           >
             <div className="px-3 pb-3 pt-1">{children}</div>
-          </motion.div>
+          </m.div>
         )}
       </AnimatePresence>
     </div>

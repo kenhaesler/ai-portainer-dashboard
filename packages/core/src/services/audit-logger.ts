@@ -1,5 +1,6 @@
 import { getDbForDomain } from '../db/app-db-router.js';
 import type { AppDb } from '../db/app-db.js';
+import { batchedDeleteOlderThan } from '../db/retention.js';
 import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('audit');
@@ -80,4 +81,13 @@ export async function getAuditLogs(options?: {
     ORDER BY created_at DESC
     LIMIT ? OFFSET ?
   `, [...params, limit, offset]);
+}
+
+/**
+ * Daily retention sweep (#1505). audit_log receives a row per login/admin
+ * action (plus GIN index maintenance on `details`) and was never pruned.
+ * Batched deletes on idx_audit_created keep the sweep lock-friendly.
+ */
+export async function cleanOldAuditLogs(days: number): Promise<number> {
+  return batchedDeleteOlderThan(getDb(), 'audit_log', 'created_at', days);
 }

@@ -1,4 +1,5 @@
 import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
+import { batchedDeleteOlderThan } from '@dashboard/core/db/retention.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 
 const log = createChildLogger('llm-trace-store');
@@ -99,4 +100,14 @@ export async function getLlmStats(hoursBack: number = 24): Promise<LlmStats> {
     errorRate: Math.round((summary?.error_rate ?? 0) * 100) / 100,
     modelBreakdown,
   };
+}
+
+/**
+ * Daily retention sweep (#1505). llm_traces stores a row per LLM call —
+ * including user_query text and a 500-char response preview — and was never
+ * pruned. Batched deletes on idx_llm_traces_created keep the sweep
+ * lock-friendly.
+ */
+export async function cleanOldLlmTraces(days: number): Promise<number> {
+  return batchedDeleteOlderThan(getDbForDomain('llm-traces'), 'llm_traces', 'created_at', days);
 }

@@ -36,11 +36,13 @@ import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 import { TiltCard } from '@/shared/components/data-display/tilt-card';
 import { KpiCard } from '@/shared/components/data-display/kpi-card';
 import { exportToCsv } from '@/shared/lib/csv-export';
+// Only the lightweight theme metadata is imported statically; the jsPDF-backed
+// export module is loaded via dynamic import() inside handleExportPdf (#1507)
+// so /reports does not ship the PDF machinery until Export PDF is clicked.
 import {
   MANAGEMENT_PDF_THEMES,
-  exportManagementPdf,
   type ManagementPdfTheme,
-} from '@/features/observability/lib/management-pdf-export';
+} from '@/features/observability/lib/management-pdf-themes';
 
 const TIME_RANGES = [
   { value: '24h', label: '24 Hours' },
@@ -532,6 +534,7 @@ export default function ReportsPage() {
     setPdfExportSuccess(null);
     setIsGeneratingPdf(true);
     try {
+      const { exportManagementPdf } = await import('@/features/observability/lib/management-pdf-export');
       const filename = `management-report-${pdfTimeRange}-${scope}-${date.toISOString().slice(0, 10)}.pdf`;
       const baseInput = {
         generatedAt: date,

@@ -1,6 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { setConfigForTest, resetConfig } from '@dashboard/core/config/index.js';
-import { calculateBollingerBands, detectAnomalyAdaptive, detectAnomalyRobust } from '../services/adaptive-anomaly-detector.js';
+import {
+  calculateBollingerBands,
+  detectAnomaliesBatch,
+  detectAnomalyAdaptive,
+  detectAnomalyRobust,
+} from '../services/adaptive-anomaly-detector.js';
 
 // DI pattern — getMovingAverage is passed as a parameter, no @dashboard/observability needed
 const mockGetMovingAverage = vi.fn();
@@ -303,14 +308,19 @@ describe('adaptive-anomaly-detector', () => {
           ANOMALY_DAYOFWEEK_ENABLED: true,
           ANOMALY_DAYOFWEEK_LOOKBACK_DAYS: 28,
           ANOMALY_DAYOFWEEK_MIN_SAMPLES: 3,
+          // #1527: the dow lookback is clamped to the raw retention window —
+          // keep retention ≥ lookback here so these tests exercise the
+          // unclamped 28-day shape (clamping is covered below).
+          METRICS_RAW_RETENTION_DAYS: 28,
         }));
 
         it('prefers the day-of-week × hour window when it has enough samples', async () => {
           const flat = vi.fn().mockResolvedValue(spread());
           const seasonal = vi.fn().mockResolvedValue(spread());
           const r = await detectAnomalyRobust('c1', 'web', 'cpu', 80, flat, seasonal, NOW);
-          // First call narrows to the weekday over the wider dow lookback.
-          expect(seasonal).toHaveBeenCalledWith('c1', 'cpu', HOUR, 28, DOW);
+          // First call narrows to the weekday over the wider dow lookback,
+          // passing the distinct-day warm-up floor (#1527).
+          expect(seasonal).toHaveBeenCalledWith('c1', 'cpu', HOUR, 28, DOW, 3);
           expect(flat).not.toHaveBeenCalled();
           expect(r!.is_anomalous).toBe(true);
         });
@@ -321,7 +331,7 @@ describe('adaptive-anomaly-detector', () => {
             .mockResolvedValueOnce([50, 50])   // dow×hour → sparse (< 3)
             .mockResolvedValueOnce(spread());  // hour-of-day → enough
           const r = await detectAnomalyRobust('c1', 'web', 'cpu', 80, flat, seasonal, NOW);
-          expect(seasonal).toHaveBeenNthCalledWith(1, 'c1', 'cpu', HOUR, 28, DOW);
+          expect(seasonal).toHaveBeenNthCalledWith(1, 'c1', 'cpu', HOUR, 28, DOW, 3);
           expect(seasonal).toHaveBeenNthCalledWith(2, 'c1', 'cpu', HOUR, 14); // hour-only, no dow
           expect(flat).not.toHaveBeenCalled();
           expect(r!.is_anomalous).toBe(true);
@@ -332,6 +342,38 @@ describe('adaptive-anomaly-detector', () => {
           const seasonal = vi.fn().mockResolvedValue([50, 50]); // both sparse
           const r = await detectAnomalyRobust('c1', 'web', 'cpu', 80, flat, seasonal, NOW);
           expect(flat).toHaveBeenCalledWith('c1', 'cpu', 30);
+          expect(r!.is_anomalous).toBe(true);
+        });
+
+        // #1527 — the raw hypertable only retains METRICS_RAW_RETENTION_DAYS,
+        // so a wider dow lookback can never see more data.
+        it('clamps the day-of-week lookback to METRICS_RAW_RETENTION_DAYS (#1527)', async () => {
+          setConfigForTest({
+            ANOMALY_DAYOFWEEK_ENABLED: true,
+            ANOMALY_DAYOFWEEK_LOOKBACK_DAYS: 28,
+            ANOMALY_DAYOFWEEK_MIN_SAMPLES: 3,
+            METRICS_RAW_RETENTION_DAYS: 21, // < lookback, but ≥ (3-1)×7 → still feasible
+          });
+          const flat = vi.fn().mockResolvedValue(spread());
+          const seasonal = vi.fn().mockResolvedValue(spread());
+          await detectAnomalyRobust('c1', 'web', 'cpu', 80, flat, seasonal, NOW);
+          expect(seasonal).toHaveBeenCalledWith('c1', 'cpu', HOUR, 21, DOW, 3);
+        });
+
+        it('skips the day-of-week query when retention cannot hold enough same-weekday occurrences (#1527)', async () => {
+          setConfigForTest({
+            ANOMALY_DAYOFWEEK_ENABLED: true,
+            ANOMALY_DAYOFWEEK_LOOKBACK_DAYS: 28,
+            ANOMALY_DAYOFWEEK_MIN_SAMPLES: 3,
+            // Default retention: 3 distinct same-weekday days need ≥ 14 days of raw data.
+            METRICS_RAW_RETENTION_DAYS: 7,
+          });
+          const flat = vi.fn().mockResolvedValue(spread());
+          const seasonal = vi.fn().mockResolvedValue(spread());
+          const r = await detectAnomalyRobust('c1', 'web', 'cpu', 80, flat, seasonal, NOW);
+          // Only the hour-of-day call fires — no wasted weekly scan.
+          expect(seasonal).toHaveBeenCalledTimes(1);
+          expect(seasonal).toHaveBeenCalledWith('c1', 'cpu', HOUR, 14);
           expect(r!.is_anomalous).toBe(true);
         });
       });
@@ -349,6 +391,40 @@ describe('adaptive-anomaly-detector', () => {
       const result = await detectAnomalyAdaptive('c1', 'web', 'cpu', 65, 'bollinger', mockGetMovingAverage);
       expect(result).not.toBeNull();
       expect(result!.method).toBe('zscore');
+    });
+  });
+
+  // #1498 — the per-item fan-out issues 1-3 TimescaleDB queries per detection;
+  // it must be capped so a large fleet cannot saturate the shared pool.
+  describe('detectAnomaliesBatch — bounded concurrency (#1498)', () => {
+    it('caps concurrent detections at ANOMALY_DETECT_CONCURRENCY', async () => {
+      setConfigForTest({
+        ANOMALY_ZSCORE_THRESHOLD: 2.5,
+        ANOMALY_MOVING_AVERAGE_WINDOW: 30,
+        ANOMALY_MIN_SAMPLES: 10,
+        ANOMALY_DETECT_CONCURRENCY: 2,
+      });
+      let inFlight = 0;
+      let maxInFlight = 0;
+      const getMovingAverage = vi.fn(async () => {
+        inFlight++;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        inFlight--;
+        return { mean: 50, std_dev: 5, sample_count: 15 };
+      });
+      const items = Array.from({ length: 10 }, (_, i) => ({
+        containerId: `c${i}`,
+        containerName: `app-${i}`,
+        metricType: 'cpu',
+        currentValue: 55,
+      }));
+
+      const results = await detectAnomaliesBatch(items, 'zscore', getMovingAverage);
+
+      expect(results.size).toBe(10); // every item still produces a decision
+      expect(getMovingAverage).toHaveBeenCalledTimes(10);
+      expect(maxInFlight).toBeLessThanOrEqual(2);
     });
   });
 });

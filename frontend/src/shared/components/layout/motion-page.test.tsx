@@ -5,7 +5,7 @@ import { MotionPage, MotionStagger, MotionReveal, _resetVisitedPaths } from './m
 
 // Mock framer-motion to inspect props without running real animations
 vi.mock('framer-motion', () => ({
-  motion: {
+  m: {
     div: ({ children, initial, ...props }: any) => (
       <div data-initial={String(initial)} data-testid="motion-div" {...props}>
         {children}

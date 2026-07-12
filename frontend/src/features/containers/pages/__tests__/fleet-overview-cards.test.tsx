@@ -247,6 +247,38 @@ describe('EndpointCard — compact 3-row layout', () => {
     const viewLink = screen.getByTestId('view-stacks-link');
     expect(viewLink).toHaveTextContent('View 1 stack');
   });
+
+  it('does not nest the "View stacks" button inside another button (#1547)', () => {
+    mockEndpoints([makeEndpoint({ id: 1, name: 'ep-with-stacks', stackCount: 2 })]);
+    mockStacks([
+      makeStack({ id: 1, endpointId: 1 }),
+      makeStack({ id: 2, endpointId: 1 }),
+    ]);
+
+    renderPage();
+
+    const viewLink = screen.getByTestId('view-stacks-link');
+    expect(viewLink.tagName).toBe('BUTTON');
+    // Invalid-HTML regression guard: no button ancestor
+    expect(viewLink.parentElement?.closest('button')).toBeNull();
+  });
+
+  it('keeps both card actions keyboard-accessible (#1547)', () => {
+    mockEndpoints([makeEndpoint({ id: 9, name: 'kbd-env', stackCount: 1 })]);
+    mockStacks([makeStack({ id: 1, endpointId: 9 })]);
+
+    renderPage();
+
+    // The endpoint name is a real button that opens the endpoint
+    const nameButton = screen.getByRole('button', { name: 'kbd-env' });
+    fireEvent.click(nameButton);
+    expect(mockNavigate).toHaveBeenCalledWith('/workloads?endpoint=9');
+
+    // The view-stacks action stays an independent button
+    const viewLink = screen.getByTestId('view-stacks-link');
+    fireEvent.click(viewLink);
+    expect(screen.getByTestId('clear-stack-filter')).toBeInTheDocument();
+  });
 });
 
 describe('StackCard — compact 3-row layout', () => {

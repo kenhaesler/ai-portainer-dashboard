@@ -11,6 +11,7 @@ import {
 } from '@dashboard/core/portainer/portainer-normalizers.js';
 import { isKubernetesEndpoint } from '@dashboard/core/models/portainer.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
+import { errorDetails } from '@dashboard/core/plugins/error-handler.js';
 
 const log = createChildLogger('kubernetes-routes');
 
@@ -250,9 +251,8 @@ export async function kubernetesRoutes(fastify: FastifyInstance) {
       });
       return { logs };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
       log.error({ err, endpointId, namespace, podName }, 'Failed to fetch pod logs');
-      return reply.code(502).send({ error: 'Unable to fetch pod logs from Portainer', details: msg });
+      return reply.code(502).send({ error: 'Unable to fetch pod logs from Portainer', details: errorDetails(err) });
     }
   });
 
