@@ -242,7 +242,7 @@ curl -X POST http://localhost:3051/api/traces/otlp \
    - Promotes common OTLP attributes into typed `spans` columns (`http_*`, service/container/k8s/network fields) for indexed filtering, including semantic-convention variants (e.g. `http.method` and `http.request.method`)
    - Flattens nested OTLP attributes to a JSON object
    - Tags all spans with `trace_source: 'ebpf'`
-5. Spans are **batch-inserted** into SQLite within a single transaction for performance
+5. Spans are **batch-inserted** into PostgreSQL with a single multi-row `unnest()` INSERT for performance (internal HTTP/scheduler spans additionally pass through an in-memory buffer that flushes every 50 spans or 2 s — see `packages/core/src/tracing/span-buffer.ts`)
 6. If the **OTLP exporter** is enabled (`OTEL_EXPORTER_ENABLED=true`), spans are also queued for export to an external collector (Jaeger, Tempo, Datadog) via OTLP/HTTP JSON. See [Span Export to External Collectors](#span-export-to-external-collectors)
 7. The **Trace Explorer** UI can filter by source: HTTP Requests, Background Jobs, or eBPF (Apps)
 

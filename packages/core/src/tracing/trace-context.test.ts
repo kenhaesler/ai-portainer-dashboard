@@ -5,11 +5,11 @@ import {
   getCurrentTraceContext,
 } from './trace-context.js';
 
-const mockInsertSpan = vi.fn();
+const mockEnqueueSpan = vi.fn();
 
-// Kept: trace-store mock — no PostgreSQL in CI
-vi.mock('./trace-store.js', () => ({
-  insertSpan: (...args: unknown[]) => mockInsertSpan(...args),
+// Kept: span-buffer mock — withSpan buffers spans instead of inserting; no PostgreSQL in CI
+vi.mock('./span-buffer.js', () => ({
+  enqueueSpan: (...args: unknown[]) => mockEnqueueSpan(...args),
 }));
 
 describe('trace-context', () => {
@@ -59,8 +59,8 @@ describe('trace-context', () => {
         },
       );
 
-      expect(mockInsertSpan).toHaveBeenCalledOnce();
-      const span = mockInsertSpan.mock.calls[0][0];
+      expect(mockEnqueueSpan).toHaveBeenCalledOnce();
+      const span = mockEnqueueSpan.mock.calls[0][0];
       expect(span.trace_id).toBe('trace-1');
       expect(span.parent_span_id).toBe('root-span');
       expect(span.name).toBe('test-op');
@@ -85,8 +85,8 @@ describe('trace-context', () => {
         },
       );
 
-      expect(mockInsertSpan).toHaveBeenCalledOnce();
-      const span = mockInsertSpan.mock.calls[0][0];
+      expect(mockEnqueueSpan).toHaveBeenCalledOnce();
+      const span = mockEnqueueSpan.mock.calls[0][0];
       expect(span.status).toBe('error');
     });
 
@@ -112,7 +112,7 @@ describe('trace-context', () => {
     it('runs without tracing when no context exists', async () => {
       const result = await withSpan('orphan', 'svc', 'client', async () => 'ok');
       expect(result).toBe('ok');
-      expect(mockInsertSpan).not.toHaveBeenCalled();
+      expect(mockEnqueueSpan).not.toHaveBeenCalled();
     });
 
     it('nests spans correctly', async () => {
@@ -127,11 +127,11 @@ describe('trace-context', () => {
         },
       );
 
-      expect(mockInsertSpan).toHaveBeenCalledTimes(2);
+      expect(mockEnqueueSpan).toHaveBeenCalledTimes(2);
 
       // Child span is inserted first (innermost completes first)
-      const childSpan = mockInsertSpan.mock.calls[0][0];
-      const parentSpan = mockInsertSpan.mock.calls[1][0];
+      const childSpan = mockEnqueueSpan.mock.calls[0][0];
+      const parentSpan = mockEnqueueSpan.mock.calls[1][0];
 
       expect(childSpan.trace_id).toBe('trace-nested');
       expect(childSpan.name).toBe('child-op');
@@ -145,9 +145,9 @@ describe('trace-context', () => {
       expect(parentSpan.trace_source).toBe('scheduler');
     });
 
-    it('does not fail if insertSpan throws', async () => {
-      mockInsertSpan.mockImplementationOnce(() => {
-        throw new Error('DB write failed');
+    it('does not fail if enqueueSpan throws', async () => {
+      mockEnqueueSpan.mockImplementationOnce(() => {
+        throw new Error('buffer append failed');
       });
 
       const result = await runWithTraceContext(

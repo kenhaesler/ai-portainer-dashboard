@@ -1,13 +1,17 @@
 import { FastifyInstance } from 'fastify';
 import fp from 'fastify-plugin';
 import { v4 as uuidv4 } from 'uuid';
-import { insertSpan } from '../tracing/trace-store.js';
+import { enqueueSpan } from '../tracing/span-buffer.js';
 import { runWithTraceContext, getCurrentTraceContext } from '../tracing/trace-context.js';
 import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('request-tracing');
 
-const EXCLUDED_PREFIXES = ['/api/health', '/socket.io', '/assets/', '/favicon'];
+// Health routes are registered at /health, /health/ready and /health/ready/detail
+// (packages/foundation/src/routes/health.ts, no /api prefix) — the Docker
+// healthcheck probes /health every 30s, so tracing them would pollute the
+// Trace Explorer and RED metrics with probe spans (#1542).
+const EXCLUDED_PREFIXES = ['/health', '/socket.io', '/assets/', '/favicon'];
 
 async function requestTracingPlugin(fastify: FastifyInstance) {
   // Merged from request-context: assign requestId and set up logging context
@@ -50,8 +54,12 @@ async function requestTracingPlugin(fastify: FastifyInstance) {
     // downstream SIEMs index (#1226). The path alone is sufficient for
     // trace correlation; the public origin is recorded once at deploy
     // time via service_name.
+    //
+    // enqueueSpan is a synchronous in-memory buffer append (#1503) — the span
+    // is flushed to PostgreSQL in batches so the hook never blocks on a
+    // per-request single-row INSERT into the heavily indexed spans table.
     try {
-      await insertSpan({
+      enqueueSpan({
         id: spanId,
         trace_id: traceId,
         parent_span_id: null,
@@ -83,7 +91,7 @@ async function requestTracingPlugin(fastify: FastifyInstance) {
         network_protocol_name: null,
       });
     } catch (err) {
-      log.warn({ err }, 'Failed to insert request span');
+      log.warn({ err }, 'Failed to enqueue request span');
     }
   });
 

@@ -3,9 +3,31 @@ import '@dashboard/core/plugins/auth.js';
 import '@fastify/swagger';
 import { z } from 'zod/v4';
 import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
+import type { AppDb } from '@dashboard/core/db/app-db.js';
 import { TracesQuerySchema, TraceIdParamsSchema } from '@dashboard/core/models/api-schemas.js';
 import { computeRed } from '../services/trace-red.js';
 import { getSamplerStats } from './traces-ingest.js';
+
+// #1528: when the client omits `from` (e.g. the Trace Explorer "all" range),
+// bound the heavy aggregate endpoints (service-map, summary) to the last hour
+// instead of scanning the whole spans table.
+const DEFAULT_AGGREGATE_WINDOW_MS = 60 * 60 * 1_000;
+
+// #1528: cap aggregate query runtime, mirroring the reports route pattern.
+const AGGREGATE_STATEMENT_TIMEOUT_MS = 10_000;
+
+/**
+ * Run `fn` inside a transaction with a statement_timeout so a runaway spans
+ * aggregate cannot hold an app-pool connection indefinitely. SET LOCAL scopes
+ * the timeout to this transaction — it resets automatically on COMMIT/ROLLBACK,
+ * so the pooled connection is returned clean.
+ */
+async function withAggregateTimeout<T>(db: AppDb, fn: (txDb: AppDb) => Promise<T>): Promise<T> {
+  return db.transaction(async (txDb) => {
+    await txDb.execute(`SET LOCAL statement_timeout = ${AGGREGATE_STATEMENT_TIMEOUT_MS}`);
+    return fn(txDb);
+  });
+}
 
 const RedQuerySchema = z.object({
   from: z.string().datetime(),
@@ -303,6 +325,7 @@ export async function tracesRoutes(fastify: FastifyInstance) {
     schema: {
       tags: ['Traces'],
       summary: 'Get service dependency map',
+      description: 'Aggregates spans into service nodes and edges. When `from` is omitted the window defaults to the last hour (#1528).',
       security: [{ bearerAuth: [] }],
       querystring: TracesQuerySchema,
     },
@@ -360,7 +383,7 @@ export async function tracesRoutes(fastify: FastifyInstance) {
 
     const db = getDbForDomain('traces');
     const { conditions, params } = buildSpanConditions({
-      from,
+      from: from ?? new Date(Date.now() - DEFAULT_AGGREGATE_WINDOW_MS).toISOString(),
       to,
       serviceName,
       status,
@@ -411,30 +434,32 @@ export async function tracesRoutes(fastify: FastifyInstance) {
 
     const where = buildWhere(conditions);
 
-    const nodes = await db.query<any>(`
-      SELECT s.service_name as id, s.service_name as name,
-             COUNT(*)::integer as "callCount",
-             AVG(s.duration_ms)::float as "avgDuration",
-             (SUM(CASE WHEN s.status = 'error' THEN 1 ELSE 0 END)::float / COUNT(*)) as "errorRate"
-      FROM spans s
-      ${where}
-      GROUP BY s.service_name
-    `, [...params]);
+    return withAggregateTimeout(db, async (txDb) => {
+      const nodes = await txDb.query<any>(`
+        SELECT s.service_name as id, s.service_name as name,
+               COUNT(*)::integer as "callCount",
+               AVG(s.duration_ms)::float as "avgDuration",
+               (SUM(CASE WHEN s.status = 'error' THEN 1 ELSE 0 END)::float / COUNT(*)) as "errorRate"
+        FROM spans s
+        ${where}
+        GROUP BY s.service_name
+      `, [...params]);
 
-    const childConditions = conditions.map((condition) => condition.replaceAll('s.', 'c.'));
-    const childWhere = buildWhere(childConditions);
+      const childConditions = conditions.map((condition) => condition.replaceAll('s.', 'c.'));
+      const childWhere = buildWhere(childConditions);
 
-    const edges = await db.query<any>(`
-      SELECT p.service_name as source, c.service_name as target,
-             COUNT(*)::integer as "callCount",
-             AVG(c.duration_ms)::float as "avgDuration"
-      FROM spans c
-      JOIN spans p ON c.parent_span_id = p.id
-      ${childWhere}${childWhere ? ' AND ' : ' WHERE '}p.service_name != c.service_name
-      GROUP BY p.service_name, c.service_name
-    `, [...params]);
+      const edges = await txDb.query<any>(`
+        SELECT p.service_name as source, c.service_name as target,
+               COUNT(*)::integer as "callCount",
+               AVG(c.duration_ms)::float as "avgDuration"
+        FROM spans c
+        JOIN spans p ON c.parent_span_id = p.id
+        ${childWhere}${childWhere ? ' AND ' : ' WHERE '}p.service_name != c.service_name
+        GROUP BY p.service_name, c.service_name
+      `, [...params]);
 
-    return { nodes, edges };
+      return { nodes, edges };
+    });
   });
 
   // Summary stats
@@ -442,6 +467,7 @@ export async function tracesRoutes(fastify: FastifyInstance) {
     schema: {
       tags: ['Traces'],
       summary: 'Get trace summary statistics',
+      description: 'KPI aggregates over root spans. Applies the same filters (including *Match modes) as the list endpoint. When `from` is omitted the window defaults to the last hour (#1528).',
       security: [{ bearerAuth: [] }],
       querystring: TracesQuerySchema,
     },
@@ -498,8 +524,11 @@ export async function tracesRoutes(fastify: FastifyInstance) {
     } = request.query as TraceFilters;
 
     const db = getDbForDomain('traces');
+    // #1538: forward ALL *Match fields exactly like the list route does —
+    // omitting one silently degrades that filter to exact equality, making
+    // the summary KPI cards contradict the trace list.
     const { conditions, params } = buildSpanConditions({
-      from,
+      from: from ?? new Date(Date.now() - DEFAULT_AGGREGATE_WINDOW_MS).toISOString(),
       to,
       serviceName,
       status,
@@ -507,14 +536,18 @@ export async function tracesRoutes(fastify: FastifyInstance) {
       minDuration,
       httpMethod,
       httpRoute,
+      httpRouteMatch,
       httpStatusCode,
       serviceNamespace,
+      serviceNamespaceMatch,
       serviceInstanceId,
       serviceVersion,
       deploymentEnvironment,
       containerId,
       containerName,
+      containerNameMatch,
       k8sNamespace,
+      k8sNamespaceMatch,
       k8sPodName,
       k8sContainerName,
       serverAddress,
@@ -547,23 +580,27 @@ export async function tracesRoutes(fastify: FastifyInstance) {
     conditions.push('s.parent_span_id IS NULL');
     const where = buildWhere(conditions);
 
-    const summary = await db.queryOne<{ totalTraces: number; avgDuration: number | null; errorRate: number | null; services: number }>(`
-      SELECT
-        COUNT(DISTINCT s.trace_id)::integer as "totalTraces",
-        AVG(s.duration_ms)::float as "avgDuration",
-        (SUM(CASE WHEN s.status = 'error' THEN 1 ELSE 0 END)::float / NULLIF(COUNT(*), 0)) as "errorRate",
-        COUNT(DISTINCT s.service_name)::integer as services
-      FROM spans s
-      ${where}
-    `, [...params]);
+    const { summary, bySource } = await withAggregateTimeout(db, async (txDb) => {
+      const summary = await txDb.queryOne<{ totalTraces: number; avgDuration: number | null; errorRate: number | null; services: number }>(`
+        SELECT
+          COUNT(DISTINCT s.trace_id)::integer as "totalTraces",
+          AVG(s.duration_ms)::float as "avgDuration",
+          (SUM(CASE WHEN s.status = 'error' THEN 1 ELSE 0 END)::float / NULLIF(COUNT(*), 0)) as "errorRate",
+          COUNT(DISTINCT s.service_name)::integer as services
+        FROM spans s
+        ${where}
+      `, [...params]);
 
-    const bySource = await db.query<{ source: string; total: number }>(`
-      SELECT COALESCE(NULLIF(s.trace_source, ''), 'unknown') as source,
-             COUNT(DISTINCT s.trace_id)::integer as total
-      FROM spans s
-      ${where}
-      GROUP BY COALESCE(NULLIF(s.trace_source, ''), 'unknown')
-    `, [...params]);
+      const bySource = await txDb.query<{ source: string; total: number }>(`
+        SELECT COALESCE(NULLIF(s.trace_source, ''), 'unknown') as source,
+               COUNT(DISTINCT s.trace_id)::integer as total
+        FROM spans s
+        ${where}
+        GROUP BY COALESCE(NULLIF(s.trace_source, ''), 'unknown')
+      `, [...params]);
+
+      return { summary, bySource };
+    });
 
     const sourceCounts = {
       http: 0,
