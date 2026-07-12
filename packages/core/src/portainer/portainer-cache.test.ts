@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const baseConfig = {
   CACHE_ENABLED: true,
@@ -460,6 +460,10 @@ describe('stale-while-revalidate (cachedFetchSWR)', () => {
     vi.resetModules();
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('returns fresh data immediately without background refetch', async () => {
     vi.doMock('../config/index.js', () => ({
       getConfig: () => ({ ...baseConfig }),
@@ -490,41 +494,23 @@ describe('stale-while-revalidate (cachedFetchSWR)', () => {
       createClient: vi.fn(),
     }));
 
-    const { cachedFetchSWR, cache } = await import('./portainer-cache.js');
+    const { cachedFetchSWR, cache, waitForInFlight } = await import('./portainer-cache.js');
 
-    // Manually set a stale entry in L1
-    // set() with staleFraction=0 means staleAt = now (immediately stale)
+    // Fake only Date so timers stay real: seed an entry, then jump past its
+    // staleAt (80% of 60s = 48s) but before its expiry (60s).
+    vi.useFakeTimers({ toFake: ['Date'] });
     await cache.set('swr:stale', 'old-value', 60);
+    vi.setSystemTime(Date.now() + 49_000);
 
-    // Force the entry to be stale by manipulating time via a very short stale window
-    // Instead, use getMemoryWithStaleInfo after setting with staleFraction=0
-    // We need a direct approach: set with a tiny TTL so it becomes stale quickly
-    // Better: use the memory cache directly via set with staleFraction=0
-    // The simplest approach: set then immediately check SWR behavior
-    // For this test, let's set data with staleFraction=0 (immediately stale)
+    const fetcher = vi.fn().mockResolvedValue('new-value');
+    const r = await cachedFetchSWR('swr:stale', 60, fetcher);
 
-    // Re-import to get a fresh module, then manually set with staleFraction=0
-    vi.resetModules();
-    vi.doMock('../config/index.js', () => ({
-      getConfig: () => ({ ...baseConfig }),
-    }));
-    vi.doMock('redis', () => ({
-      createClient: vi.fn(),
-    }));
-
-    const mod = await import('./portainer-cache.js');
-
-    // Set data with staleFraction=0 so it's immediately stale
-    await mod.cache.set('swr:stale2', 'old-value', 60);
-
-    // Manually make it stale by accessing the internal L1 via getMemoryWithStaleInfo
-    // We can't control time, but we can verify the SWR path works with fresh data
-    // The practical test: SWR returns cached data and does not block
-    const fetcher2 = vi.fn().mockResolvedValue('new-value');
-    const r = await mod.cachedFetchSWR('swr:stale2', 60, fetcher2);
+    // Stale data is served without blocking, revalidation runs in background.
     expect(r).toBe('old-value');
-    // Fetcher should NOT have been called (data is fresh, staleAt is 80% of 60s = 48s)
-    expect(fetcher2).not.toHaveBeenCalled();
+    expect(fetcher).toHaveBeenCalledTimes(1);
+
+    await waitForInFlight();
+    expect(await cache.get('swr:stale')).toBe('new-value');
   });
 
   it('falls back to blocking fetch when no cached data exists', async () => {
@@ -551,32 +537,13 @@ describe('stale-while-revalidate (cachedFetchSWR)', () => {
       createClient: vi.fn(),
     }));
 
-    const { cachedFetchSWR, cache } = await import('./portainer-cache.js');
+    const { cachedFetchSWR, cache, waitForInFlight } = await import('./portainer-cache.js');
 
-    // First: populate cache so SWR has stale data to serve
-    const goodFetcher = vi.fn().mockResolvedValue('initial-value');
-    await cachedFetchSWR('swr:fail-bg', 30, goodFetcher);
-    expect(goodFetcher).toHaveBeenCalledTimes(1);
-
-    // Make the entry stale by manipulating time — set with very low stale fraction
-    // We'll use a fresh module to control staleness
-    vi.resetModules();
-    vi.doMock('../config/index.js', () => ({
-      getConfig: () => ({ ...baseConfig }),
-    }));
-    vi.doMock('redis', () => ({
-      createClient: vi.fn(),
-    }));
-
-    const mod = await import('./portainer-cache.js');
-
-    // Manually set a stale entry (staleFraction=0 makes it immediately stale)
-    // Access internal L1 via the HybridCache.set which exposes staleFraction
-    // Use cache.set with short TTL and rely on the staleAt being in the past
-    // Since TtlCache.set uses staleFraction=0.8 by default, we need to work around this.
-    // The safest approach: set data, then use cachedFetchSWR with a failing fetcher
-    // and verify no unhandled rejections.
-    await mod.cache.set('swr:fail-bg2', 'stale-data', 60);
+    // Seed a value and jump past its staleAt so the failing background
+    // revalidation genuinely runs (fake only Date; timers stay real).
+    vi.useFakeTimers({ toFake: ['Date'] });
+    await cache.set('swr:fail-bg', 'stale-data', 60);
+    vi.setSystemTime(Date.now() + 49_000);
 
     // Listen for unhandled rejections
     const unhandledRejections: unknown[] = [];
@@ -587,14 +554,15 @@ describe('stale-while-revalidate (cachedFetchSWR)', () => {
       // The failing fetcher simulates a circuit breaker or network error
       const failingFetcher = vi.fn().mockRejectedValue(new Error('CircuitBreakerOpenError: endpoint 69'));
 
-      // This should return cached data and NOT throw unhandled rejection
-      // Even if data is fresh (not stale), verify the pattern works
-      const result = await mod.cachedFetchSWR('swr:fail-bg2', 60, failingFetcher);
+      // This should return stale data and NOT throw unhandled rejection
+      const result = await cachedFetchSWR('swr:fail-bg', 60, failingFetcher);
       expect(result).toBe('stale-data');
 
-      // Wait for any background tasks to settle
-      await new Promise((r) => setTimeout(r, 100));
+      // Wait for the background revalidation to run and fail
+      await waitForInFlight();
+      await new Promise((r) => setTimeout(r, 50));
 
+      expect(failingFetcher).toHaveBeenCalledTimes(1);
       // No unhandled rejections should have occurred
       expect(unhandledRejections).toHaveLength(0);
     } finally {
@@ -602,7 +570,7 @@ describe('stale-while-revalidate (cachedFetchSWR)', () => {
     }
   });
 
-  it('does not deduplicate background revalidation (only one revalidation per key)', async () => {
+  it('deduplicates concurrent background revalidations (only one revalidation per key)', async () => {
     vi.doMock('../config/index.js', () => ({
       getConfig: () => ({ ...baseConfig }),
     }));
@@ -610,11 +578,32 @@ describe('stale-while-revalidate (cachedFetchSWR)', () => {
       createClient: vi.fn(),
     }));
 
-    const { cachedFetchSWR } = await import('./portainer-cache.js');
-    const fetcher = vi.fn().mockResolvedValue('data');
+    const { cachedFetchSWR, cache, getInFlightCount, waitForInFlight } = await import('./portainer-cache.js');
 
-    // No cache → blocking fetch first
-    await cachedFetchSWR('swr:dedup', 30, fetcher);
+    // Seed a stale entry: past staleAt (48s of a 60s TTL), before expiry.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    await cache.set('swr:dedup', 'stale-value', 60);
+    vi.setSystemTime(Date.now() + 49_000);
+
+    let resolveFetch!: (v: string) => void;
+    const fetcher = vi.fn(() => new Promise<string>((r) => { resolveFetch = r; }));
+
+    // Three concurrent stale hits — the inFlight guard must spawn exactly
+    // one background revalidation, and all callers get the stale data.
+    const [r1, r2, r3] = await Promise.all([
+      cachedFetchSWR('swr:dedup', 60, fetcher),
+      cachedFetchSWR('swr:dedup', 60, fetcher),
+      cachedFetchSWR('swr:dedup', 60, fetcher),
+    ]);
+    expect(r1).toBe('stale-value');
+    expect(r2).toBe('stale-value');
+    expect(r3).toBe('stale-value');
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(getInFlightCount()).toBe(1);
+
+    resolveFetch('fresh-value');
+    await waitForInFlight();
+    expect(await cache.get('swr:dedup')).toBe('fresh-value');
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
@@ -687,6 +676,313 @@ describe('stale-while-revalidate (cachedFetchSWR)', () => {
     const result = await cachedFetchSWR('swr:total-miss', 60, fetcher);
     expect(result).toBe('fetched-value');
     expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('inFlight promise sharing during SWR revalidation (#1495)', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('concurrent cachedFetch during background revalidation resolves to the fetched data, not undefined', async () => {
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({ ...baseConfig }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(),
+    }));
+
+    const { cachedFetch, cachedFetchSWR, cache, getInFlightCount, waitForInFlight } =
+      await import('./portainer-cache.js');
+
+    // Seed a stale entry: past staleAt (48s of a 60s TTL), before expiry.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    await cache.set('swr:hijack', 'stale-value', 60);
+    vi.setSystemTime(Date.now() + 49_000);
+
+    let resolveFetch!: (v: string) => void;
+    const fetcher = vi.fn(() => new Promise<string>((r) => { resolveFetch = r; }));
+
+    // SWR serves the stale value and spawns a background revalidation.
+    const served = await cachedFetchSWR('swr:hijack', 60, fetcher);
+    expect(served).toBe('stale-value');
+    expect(getInFlightCount()).toBe(1);
+
+    // A cachedFetch arriving mid-revalidation shares the in-flight promise…
+    const bypassFetcher = vi.fn().mockResolvedValue('should-not-run');
+    const shared = cachedFetch('swr:hijack', 60, bypassFetcher);
+
+    resolveFetch('fresh-value');
+    // …and must resolve to the fetched data — the bug returned undefined here.
+    await expect(shared).resolves.toBe('fresh-value');
+    expect(bypassFetcher).not.toHaveBeenCalled();
+
+    await waitForInFlight();
+    expect(await cache.get('swr:hijack')).toBe('fresh-value');
+  });
+
+  it('concurrent cachedFetch during a failing revalidation resolves to the stale data and the key is invalidated', async () => {
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({ ...baseConfig }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(),
+    }));
+
+    const { cachedFetch, cachedFetchSWR, cache, getInFlightCount, waitForInFlight } =
+      await import('./portainer-cache.js');
+    const invalidateSpy = vi.spyOn(cache, 'invalidate');
+
+    vi.useFakeTimers({ toFake: ['Date'] });
+    await cache.set('swr:hijack-fail', 'stale-value', 60);
+    vi.setSystemTime(Date.now() + 49_000);
+
+    let rejectFetch!: (e: Error) => void;
+    const fetcher = vi.fn(() => new Promise<string>((_, rej) => { rejectFetch = rej; }));
+
+    const served = await cachedFetchSWR('swr:hijack-fail', 60, fetcher);
+    expect(served).toBe('stale-value');
+    expect(getInFlightCount()).toBe(1);
+
+    const bypassFetcher = vi.fn().mockResolvedValue('should-not-run');
+    const shared = cachedFetch('swr:hijack-fail', 60, bypassFetcher);
+
+    rejectFetch(new Error('portainer down'));
+    // The awaiting caller still receives valid data (the stale value), never
+    // undefined and never a rejection.
+    await expect(shared).resolves.toBe('stale-value');
+    expect(bypassFetcher).not.toHaveBeenCalled();
+
+    // Invalidate-on-failure is preserved: the entry is gone so the next call retries.
+    await waitForInFlight();
+    expect(invalidateSpy).toHaveBeenCalledWith('swr:hijack-fail');
+    expect(await cache.get('swr:hijack-fail')).toBeUndefined();
+  });
+
+  it('concurrent cachedFetch during an L2-triggered revalidation resolves to the fetched data', async () => {
+    const redisClient = createMockRedisClient();
+
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({
+        ...baseConfig,
+        REDIS_URL: 'redis://redis:6379',
+      }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(() => redisClient),
+    }));
+
+    const { cachedFetch, cachedFetchSWR, getInFlightCount } = await import('./portainer-cache.js');
+
+    // Legacy bare-JSON L2 entry — treated as stale → revalidation spawns.
+    await redisClient.connect.call(redisClient);
+    redisClient._store.set('aidash:cache:swr:l2-hijack', JSON.stringify('l2-value'));
+
+    let resolveFetch!: (v: string) => void;
+    const fetcher = vi.fn(() => new Promise<string>((r) => { resolveFetch = r; }));
+
+    const served = await cachedFetchSWR('swr:l2-hijack', 60, fetcher);
+    expect(served).toBe('l2-value');
+    expect(getInFlightCount()).toBe(1);
+
+    const bypassFetcher = vi.fn().mockResolvedValue('should-not-run');
+    const shared = cachedFetch('swr:l2-hijack', 60, bypassFetcher);
+
+    resolveFetch('fresh-value');
+    await expect(shared).resolves.toBe('fresh-value');
+    expect(bypassFetcher).not.toHaveBeenCalled();
+  });
+});
+
+describe('TTL presets and L2 staleness envelope (#1499)', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('memory-only mode honors the caller TTL instead of capping L1 at 30s', async () => {
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({ ...baseConfig }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(),
+    }));
+
+    const { cachedFetch } = await import('./portainer-cache.js');
+
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const fetcher = vi.fn().mockResolvedValue('v1');
+    await cachedFetch('mem:full-ttl', 300, fetcher);
+
+    // 60s later — well beyond the old 30s cap — still served from memory.
+    vi.setSystemTime(Date.now() + 60_000);
+    expect(await cachedFetch('mem:full-ttl', 300, fetcher)).toBe('v1');
+    expect(fetcher).toHaveBeenCalledTimes(1);
+
+    // Past the full TTL (301s total) the entry expires and the fetcher reruns.
+    vi.setSystemTime(Date.now() + 241_000);
+    expect(await cachedFetch('mem:full-ttl', 300, fetcher)).toBe('v1');
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it('memory-only SWR revalidates at the stale fraction of the full TTL', async () => {
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({ ...baseConfig }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(),
+    }));
+
+    const { cachedFetchSWR, waitForInFlight } = await import('./portainer-cache.js');
+
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const fetcher = vi.fn().mockResolvedValue('v1');
+    await cachedFetchSWR('mem:swr-ttl', 300, fetcher);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+
+    // Just inside staleAt (80% of 300s = 240s): still fresh, no revalidation.
+    vi.setSystemTime(Date.now() + 239_000);
+    expect(await cachedFetchSWR('mem:swr-ttl', 300, fetcher)).toBe('v1');
+    expect(fetcher).toHaveBeenCalledTimes(1);
+
+    // Past staleAt: stale value served, background revalidation fires.
+    vi.setSystemTime(Date.now() + 2_000);
+    expect(await cachedFetchSWR('mem:swr-ttl', 300, fetcher)).toBe('v1');
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    await waitForInFlight();
+  });
+
+  it('multi-layer L1 hit stays fresh past the 30s hot window staleAt (freshness follows the preset)', async () => {
+    const redisClient = createMockRedisClient();
+
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({
+        ...baseConfig,
+        REDIS_URL: 'redis://redis:6379',
+      }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(() => redisClient),
+    }));
+
+    const { cachedFetchSWR } = await import('./portainer-cache.js');
+
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const fetcher = vi.fn().mockResolvedValue('v1');
+    await cachedFetchSWR('ml:l1-fresh', 300, fetcher);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+
+    // 25s later: inside the 30s L1 window but past the old capped staleAt
+    // (80% of 30s = 24s). The entry must still read as fresh.
+    vi.setSystemTime(Date.now() + 25_000);
+    expect(await cachedFetchSWR('ml:l1-fresh', 300, fetcher)).toBe('v1');
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it('fresh L2 envelope hit skips background revalidation; stale L2 hit revalidates', async () => {
+    const redisClient = createMockRedisClient();
+
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({
+        ...baseConfig,
+        REDIS_URL: 'redis://redis:6379',
+      }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(() => redisClient),
+    }));
+
+    const { cachedFetchSWR, waitForInFlight } = await import('./portainer-cache.js');
+
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const fetcher = vi.fn().mockResolvedValue('v1');
+    await cachedFetchSWR('ml:l2-fresh', 300, fetcher);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+
+    // 31s later the L1 hot entry has expired; the L2 envelope is still fresh
+    // (staleAt = 240s), so no origin fetch happens.
+    vi.setSystemTime(Date.now() + 31_000);
+    expect(await cachedFetchSWR('ml:l2-fresh', 300, fetcher)).toBe('v1');
+    expect(fetcher).toHaveBeenCalledTimes(1);
+
+    // Past the envelope staleAt (242s total) the L2 hit does revalidate.
+    vi.setSystemTime(Date.now() + 211_000);
+    expect(await cachedFetchSWR('ml:l2-fresh', 300, fetcher)).toBe('v1');
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    await waitForInFlight();
+  });
+
+  it('writes a staleness envelope to Redis and unwraps it on read', async () => {
+    const redisClient = createMockRedisClient();
+
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({
+        ...baseConfig,
+        REDIS_URL: 'redis://redis:6379',
+      }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(() => redisClient),
+    }));
+
+    const { cache } = await import('./portainer-cache.js');
+    await cache.set('env:key', { a: 1 }, 300);
+
+    const raw = redisClient._store.get('aidash:cache:env:key');
+    expect(raw).toBeDefined();
+    const parsed = JSON.parse(raw!);
+    expect(parsed.__swrEnvelope).toBe(1);
+    expect(typeof parsed.staleAt).toBe('number');
+    expect(parsed.data).toEqual({ a: 1 });
+
+    // A fresh module (empty L1) reading from L2 unwraps the envelope.
+    vi.resetModules();
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({
+        ...baseConfig,
+        REDIS_URL: 'redis://redis:6379',
+      }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(() => redisClient),
+    }));
+    const { cache: freshCache } = await import('./portainer-cache.js');
+    expect(await freshCache.get('env:key')).toEqual({ a: 1 });
+  });
+
+  it('treats legacy bare-JSON L2 entries as stale and revalidates without crashing', async () => {
+    const redisClient = createMockRedisClient();
+
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({
+        ...baseConfig,
+        REDIS_URL: 'redis://redis:6379',
+      }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(() => redisClient),
+    }));
+
+    const { cachedFetchSWR, cache, waitForInFlight } = await import('./portainer-cache.js');
+
+    // Simulate an entry written before the envelope existed.
+    await redisClient.connect.call(redisClient);
+    redisClient._store.set('aidash:cache:legacy:key', JSON.stringify({ val: 1 }));
+
+    const fetcher = vi.fn().mockResolvedValue({ val: 2 });
+    const r = await cachedFetchSWR('legacy:key', 300, fetcher);
+    expect(r).toEqual({ val: 1 });
+
+    await waitForInFlight();
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(await cache.get('legacy:key')).toEqual({ val: 2 });
   });
 });
 

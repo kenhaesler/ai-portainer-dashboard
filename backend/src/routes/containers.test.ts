@@ -58,8 +58,12 @@ describe('containers routes', () => {
     vi.restoreAllMocks();
   });
 
-  it('should return containers from healthy endpoints', { timeout: 15000 }, async (ctx) => {
+  it('should return containers from healthy endpoints (live Portainer)', { timeout: 15000 }, async (ctx) => {
+    // Intentional skip when Portainer is unreachable (always the case in CI —
+    // see CLAUDE.md "Mocks are for CI only"). When it runs, every assertion
+    // below is unconditional so the test cannot pass vacuously (#1535).
     if (!portainerUp) return ctx.skip();
+
     const app = buildApp();
     const res = await app.inject({
       method: 'GET',
@@ -68,15 +72,29 @@ describe('containers routes', () => {
 
     expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.body);
-    // Real Portainer returns real containers — check structure not exact values
-    if (Array.isArray(body)) {
-      if (body.length > 0) {
-        expect(body[0]).toHaveProperty('name');
-        expect(body[0]).toHaveProperty('state');
-        expect(body[0]).toHaveProperty('image');
-      }
-    } else {
-      expect(body).toHaveProperty('data');
+
+    // Without pagination params the route returns a flat array, or
+    // { data, partial, failedEndpoints } when some endpoints failed mid-run.
+    const containers = Array.isArray(body) ? body : body.data;
+    expect(Array.isArray(containers)).toBe(true);
+    if (!Array.isArray(body)) {
+      expect(body.partial).toBe(true);
+      expect(Array.isArray(body.failedEndpoints)).toBe(true);
+      expect(body.failedEndpoints.length).toBeGreaterThan(0);
+    }
+
+    // The dev fixture always runs at least Portainer's own container on the
+    // local endpoint, so an empty list means the environment (or the route)
+    // is broken — fail loudly instead of passing on the status code alone.
+    expect(containers.length).toBeGreaterThan(0);
+
+    // Every returned container must be normalized — check all items so a
+    // malformed entry anywhere in the list fails the test.
+    for (const c of containers) {
+      expect(typeof c.name).toBe('string');
+      expect(c.name.length).toBeGreaterThan(0);
+      expect(typeof c.state).toBe('string');
+      expect(typeof c.image).toBe('string');
     }
   });
 
