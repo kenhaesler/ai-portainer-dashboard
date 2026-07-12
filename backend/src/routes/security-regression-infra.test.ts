@@ -74,20 +74,61 @@ describe('No Global TLS Override', () => {
     expect(content).not.toContain('NODE_TLS_REJECT_UNAUTHORIZED');
   });
 
-  it('should default all VERIFY_SSL env vars to true in the env schema (CWE-295)', () => {
-    // The env schema defines defaults for TLS verification env vars.
-    // All must default to 'true' (transformed to boolean true) so that
-    // TLS verification is enabled unless explicitly opted out.
-    // Read the source directly to guard against default changes.
+  it('should default all VERIFY_SSL env vars to true in the env schema (CWE-295)', async () => {
+    // All VERIFY_SSL flags must default to true so TLS verification is
+    // enabled unless explicitly opted out. Asserted against the real parsed
+    // schema (the flags use the shared boolStr helper since #1492).
+    const { envSchema } = await import('@dashboard/core/config/env.schema.js');
+    const result = envSchema.safeParse({
+      DASHBOARD_USERNAME: 'admin',
+      DASHBOARD_PASSWORD: 'replace-with-strong-random-passphrase',
+      JWT_SECRET: 'a'.repeat(64),
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.PORTAINER_VERIFY_SSL).toBe(true);
+      expect(result.data.LLM_VERIFY_SSL).toBe(true);
+      expect(result.data.HARBOR_VERIFY_SSL).toBe(true);
+    }
+  });
+
+  it('should never use z.coerce.boolean() in the env schema (#1492)', () => {
+    // z.coerce.boolean() is Boolean(input): the strings 'false' and '0'
+    // coerce to TRUE, silently inverting documented kill-switches
+    // (PCAP_ENABLED=false opened the packet-capture gate). All boolean env
+    // flags must go through the shared boolStr() helper.
     const schemaPath = path.resolve(process.cwd(), '..', 'packages', 'core', 'src', 'config', 'env.schema.ts');
     const schemaSource = readFileSync(schemaPath, 'utf8');
+    const offending = schemaSource
+      .split('\n')
+      .filter((line) => line.includes('z.coerce.boolean(') && !line.trimStart().startsWith('*'));
+    expect(offending).toEqual([]);
+  });
 
-    // Each VERIFY_SSL field must have .default('true')
-    const verifySslFields = ['PORTAINER_VERIFY_SSL', 'LLM_VERIFY_SSL', 'HARBOR_VERIFY_SSL'];
-    for (const field of verifySslFields) {
-      // Match the field definition and verify it defaults to 'true'
-      const fieldRegex = new RegExp(`${field}:\\s*z\\.string\\(\\)\\.default\\(['"]true['"]\\)`);
-      expect(schemaSource).toMatch(fieldRegex);
+  it('should parse security-relevant kill-switches set to false as OFF (#1492)', async () => {
+    // Regression: these previously used z.coerce.boolean(), so an operator
+    // writing FLAG=false (the documented opt-out, and what docker-compose
+    // forwards by default for PCAP_ENABLED) silently ENABLED the feature.
+    const { envSchema } = await import('@dashboard/core/config/env.schema.js');
+    const result = envSchema.safeParse({
+      DASHBOARD_USERNAME: 'admin',
+      DASHBOARD_PASSWORD: 'replace-with-strong-random-passphrase',
+      JWT_SECRET: 'a'.repeat(64),
+      PCAP_ENABLED: 'false',
+      PROMETHEUS_METRICS_ENABLED: 'false',
+      WEBHOOKS_ENABLED: 'false',
+      ANOMALY_AUTOTUNE_ENABLED: 'false',
+      CACHE_ENABLED: '0',
+      HSTS_PRELOAD: 'false',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.PCAP_ENABLED).toBe(false);
+      expect(result.data.PROMETHEUS_METRICS_ENABLED).toBe(false);
+      expect(result.data.WEBHOOKS_ENABLED).toBe(false);
+      expect(result.data.ANOMALY_AUTOTUNE_ENABLED).toBe(false);
+      expect(result.data.CACHE_ENABLED).toBe(false);
+      expect(result.data.HSTS_PRELOAD).toBe(false);
     }
   });
 

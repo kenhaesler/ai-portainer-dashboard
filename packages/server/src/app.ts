@@ -2,6 +2,7 @@ import Fastify from 'fastify';
 import { readFileSync } from 'node:fs';
 import { getConfig } from '@dashboard/core/config/index.js';
 import requestTracing from '@dashboard/core/plugins/request-tracing.js';
+import requestLogging from '@dashboard/core/plugins/request-logging.js';
 import corsPlugin from '@dashboard/core/plugins/cors.js';
 import rateLimitPlugin from '@dashboard/core/plugins/rate-limit.js';
 import swaggerPlugin from '@dashboard/core/plugins/swagger.js';
@@ -79,10 +80,17 @@ import {
 
 import { buildLlmAdapter, buildMetricsAdapter } from './wiring.js';
 
-function getHttp2Options(): { http2: true; https: { key: Buffer; cert: Buffer; allowHTTP1: true } } | Record<string, never> {
-  const enabled = process.env.HTTP2_ENABLED === 'true';
-  const certPath = process.env.TLS_CERT_PATH;
-  const keyPath = process.env.TLS_KEY_PATH;
+/**
+ * Build the HTTP/2 + TLS options for the Fastify factory. Reads the parsed
+ * config rather than process.env directly (#1492): the raw-env read predated
+ * the schema and meant the validated HTTP2_ENABLED value was never consumed.
+ * Exported for unit tests.
+ */
+export function getHttp2Options(): { http2: true; https: { key: Buffer; cert: Buffer; allowHTTP1: true } } | Record<string, never> {
+  const config = getConfig();
+  const enabled = config.HTTP2_ENABLED;
+  const certPath = config.TLS_CERT_PATH;
+  const keyPath = config.TLS_KEY_PATH;
 
   if (enabled && certPath && keyPath) {
     return {
@@ -212,12 +220,18 @@ export async function buildApp() {
         },
       }),
     },
+    // #1552: Fastify's automatic per-request logging ("incoming request" +
+    // "request completed" at info for every request, including the 30s
+    // /health liveness probe) is replaced by the request-logging plugin,
+    // which skips probe/static paths and honors LOG_HTTP_SUCCESS.
+    disableRequestLogging: true,
     requestIdHeader: 'x-request-id',
     genReqId: () => crypto.randomUUID(),
   });
 
   // Core plugins
   await app.register(requestTracing);
+  await app.register(requestLogging);
   await app.register(compressPlugin);
   await app.register(securityHeadersPlugin);
   await app.register(cacheControlPlugin);

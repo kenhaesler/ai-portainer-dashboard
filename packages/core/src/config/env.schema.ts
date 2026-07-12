@@ -6,6 +6,29 @@ const optionalUrl = z.preprocess(
   z.string().url().optional(),
 );
 
+/**
+ * Boolean env flag. Accepts 'true'/'1' and 'false'/'0' (case-insensitive,
+ * trimmed); unset or empty values take the default; any other value logs a
+ * warning and falls back to the default (#1492).
+ *
+ * NEVER use z.coerce.boolean() for env flags: it is Boolean(input), so the
+ * strings 'false' and '0' coerce to TRUE and documented kill-switches
+ * silently invert (e.g. CACHE_ENABLED=false would keep the cache on).
+ */
+const boolStr = (defaultValue: boolean) =>
+  z.preprocess((v) => {
+    if (v === undefined || v === null) return defaultValue;
+    if (typeof v === 'boolean') return v;
+    const normalized = String(v).trim().toLowerCase();
+    if (normalized === '') return defaultValue;
+    if (normalized === 'true' || normalized === '1') return true;
+    if (normalized === 'false' || normalized === '0') return false;
+    console.warn(
+      `[env] Unrecognized boolean value ${JSON.stringify(v)} (expected 'true'/'1'/'false'/'0'); falling back to default ${defaultValue}`,
+    );
+    return defaultValue;
+  }, z.boolean());
+
 export const envSchema = z.object({
   // Auth
   DASHBOARD_USERNAME: z.string().min(1),
@@ -37,7 +60,7 @@ export const envSchema = z.object({
   // Portainer
   PORTAINER_API_URL: z.string().url().default('http://localhost:9000'),
   PORTAINER_API_KEY: z.string().default(''),
-  PORTAINER_VERIFY_SSL: z.string().default('true').transform((v) => v === 'true' || v === '1'),
+  PORTAINER_VERIFY_SSL: boolStr(true),
   PORTAINER_CONCURRENCY: z.coerce.number().int().min(1).max(100).default(30),
   PORTAINER_MAX_CONNECTIONS: z.coerce.number().int().min(1).max(100).default(20),
   PORTAINER_CB_FAILURE_THRESHOLD: z.coerce.number().int().min(1).max(50).default(5),
@@ -48,7 +71,7 @@ export const envSchema = z.object({
   // written back by edge agents). Env names kept for backward compatibility.
   // ENABLED=false is a hard kill-switch: with no snapshot fallback, endpoints
   // then render as "unavailable" (0 counts).
-  EDGE_LIVE_QUERY_ENABLED: z.string().default('true').transform((v) => v === 'true' || v === '1'),
+  EDGE_LIVE_QUERY_ENABLED: boolStr(true),
   EDGE_LIVE_QUERY_CONCURRENCY: z.coerce.number().int().min(1).max(20).default(2),
   EDGE_LIVE_QUERY_INTERVAL_SECONDS: z.coerce.number().int().min(15).max(3600).default(60),
   EDGE_LIVE_QUERY_TIMEOUT_MS: z.coerce.number().int().min(1000).max(30000).default(5000),
@@ -61,7 +84,7 @@ export const envSchema = z.object({
   LLM_API_TOKEN: z.string().optional(), // Bearer token or username:password for Basic auth
   LLM_MODEL: z.string().default('gpt-4o-mini'),
   LLM_AUTH_TYPE: z.enum(['bearer', 'basic']).default('bearer'),
-  LLM_VERIFY_SSL: z.string().default('true').transform((v) => v === 'true' || v === '1'),
+  LLM_VERIFY_SSL: boolStr(true),
   LLM_REQUEST_TIMEOUT: z.coerce.number().int().min(5000).max(600000).default(120000),
 
   // Kibana (optional)
@@ -69,18 +92,18 @@ export const envSchema = z.object({
   KIBANA_API_KEY: z.string().optional(),
 
   // Monitoring
-  MONITORING_ENABLED: z.coerce.boolean().default(true),
+  MONITORING_ENABLED: boolStr(true),
   MONITORING_INTERVAL_MINUTES: z.coerce.number().int().min(1).default(5),
   MAX_INSIGHTS_PER_CYCLE: z.coerce.number().int().min(1).max(10000).default(500),
-  AI_ANALYSIS_ENABLED: z.coerce.boolean().default(true),
+  AI_ANALYSIS_ENABLED: boolStr(true),
 
   // Metrics Collection
-  METRICS_COLLECTION_ENABLED: z.coerce.boolean().default(true),
+  METRICS_COLLECTION_ENABLED: boolStr(true),
   METRICS_COLLECTION_INTERVAL_SECONDS: z.coerce.number().int().min(10).default(60),
   METRICS_RETENTION_DAYS: z.coerce.number().int().min(1).default(7),
   METRICS_ENDPOINT_CONCURRENCY: z.coerce.number().int().min(1).max(50).default(10),
   METRICS_CONTAINER_CONCURRENCY: z.coerce.number().int().min(1).max(100).default(20),
-  PROMETHEUS_METRICS_ENABLED: z.coerce.boolean().default(false),
+  PROMETHEUS_METRICS_ENABLED: boolStr(false),
   PROMETHEUS_BEARER_TOKEN: z.string().optional(),
 
   // Anomaly Detection
@@ -103,14 +126,14 @@ export const envSchema = z.object({
   ANOMALY_DETECTION_DIRECTION: z.enum(['spike', 'drop', 'both']).default('spike'),
   ANOMALY_COOLDOWN_MINUTES: z.coerce.number().int().min(0).default(30),
   ANOMALY_THRESHOLD_PCT: z.coerce.number().min(50).max(100).default(85),
-  ANOMALY_HARD_THRESHOLD_ENABLED: z.coerce.boolean().default(true),
+  ANOMALY_HARD_THRESHOLD_ENABLED: boolStr(true),
   // Alerting discipline (#1363) — M-of-N persistence + multi-window. An anomaly
   // must persist (>= M of the last N cycles) before it is surfaced, suppressing
   // isolated benign blips. A severe single sample (severity >= multiplier ×
   // threshold) takes a short high-burn-rate path and is surfaced immediately so
   // brief hard failures still page (Google SRE multi-window). Set M > N to make
   // only the fast path fire; disable to surface every raw anomaly (legacy).
-  ANOMALY_PERSISTENCE_ENABLED: z.coerce.boolean().default(true),
+  ANOMALY_PERSISTENCE_ENABLED: boolStr(true),
   ANOMALY_PERSISTENCE_M: z.coerce.number().int().min(1).default(3),
   ANOMALY_PERSISTENCE_N: z.coerce.number().int().min(1).default(5),
   ANOMALY_FAST_BURN_MULTIPLIER: z.coerce.number().min(1).default(2),
@@ -135,12 +158,12 @@ export const envSchema = z.object({
   // OFF by default — auto-mutating a detection threshold is opt-in (observer-
   // first); with the flag off the job still logs what it WOULD change. Every
   // applied change is written to the audit log.
-  ANOMALY_AUTOTUNE_ENABLED: z.coerce.boolean().default(false),
+  ANOMALY_AUTOTUNE_ENABLED: boolStr(false),
   ANOMALY_AUTOTUNE_INTERVAL_MINUTES: z.coerce.number().int().min(5).default(360),
   ANOMALY_AUTOTUNE_TARGET_FP_RATE: z.coerce.number().min(0).max(1).default(0.05),
   ANOMALY_AUTOTUNE_MIN_SAMPLES: z.coerce.number().int().min(1).default(20),
   ANOMALY_AUTOTUNE_LOOKBACK_DAYS: z.coerce.number().int().min(1).default(30),
-  BOLLINGER_BANDS_ENABLED: z.coerce.boolean().default(true),
+  BOLLINGER_BANDS_ENABLED: boolStr(true),
   // Hour-of-day baseline (issue #1295): compare the recent sample against the
   // baseline for the same hour-of-day across the last N days, rather than a
   // flat 24h baseline. Eliminates false positives during diurnal ramps
@@ -161,16 +184,16 @@ export const envSchema = z.object({
   // weekday occurrences) is needed for the weekly bucket to be stable. The
   // mean/std path reads this from the metrics_1hour aggregate; the robust path
   // narrows its raw query (median+MAD needs raw samples).
-  ANOMALY_DAYOFWEEK_ENABLED: z.coerce.boolean().default(true),
+  ANOMALY_DAYOFWEEK_ENABLED: boolStr(true),
   ANOMALY_DAYOFWEEK_LOOKBACK_DAYS: z.coerce.number().int().min(7).max(120).default(28),
   ANOMALY_DAYOFWEEK_MIN_SAMPLES: z.coerce.number().int().min(1).max(1000).default(3),
 
   // Predictive Alerting
-  PREDICTIVE_ALERTING_ENABLED: z.coerce.boolean().default(true),
+  PREDICTIVE_ALERTING_ENABLED: boolStr(true),
   PREDICTIVE_ALERT_THRESHOLD_HOURS: z.coerce.number().int().min(1).default(24),
 
   // Anomaly Explanations (LLM)
-  ANOMALY_EXPLANATION_ENABLED: z.coerce.boolean().default(true),
+  ANOMALY_EXPLANATION_ENABLED: boolStr(true),
   ANOMALY_EXPLANATION_MAX_PER_CYCLE: z.coerce.number().int().min(1).max(50).default(5),
 
   // Isolation Forest Anomaly Detection
@@ -180,7 +203,7 @@ export const envSchema = z.object({
   // ISOLATION_FOREST_CONTAMINATION are intentionally env-only: they control model
   // structure and changing them at runtime would invalidate cached models without
   // retraining. A restart ensures models are retrained with the new parameters.
-  ISOLATION_FOREST_ENABLED: z.coerce.boolean().default(true),
+  ISOLATION_FOREST_ENABLED: boolStr(true),
   ISOLATION_FOREST_TREES: z.coerce.number().int().min(10).max(500).default(100),
   ISOLATION_FOREST_SAMPLE_SIZE: z.coerce.number().int().min(32).max(512).default(256),
   // Lowered 0.15 → 0.05 in #1294 (epic #1291). The Isolation Forest threshold
@@ -193,17 +216,17 @@ export const envSchema = z.object({
   ISOLATION_FOREST_RETRAIN_HOURS: z.coerce.number().int().min(1).default(6),
 
   // NLP Log Analysis (LLM)
-  NLP_LOG_ANALYSIS_ENABLED: z.coerce.boolean().default(true),
+  NLP_LOG_ANALYSIS_ENABLED: boolStr(true),
   NLP_LOG_ANALYSIS_MAX_PER_CYCLE: z.coerce.number().int().min(1).max(20).default(3),
   NLP_LOG_ANALYSIS_TAIL_LINES: z.coerce.number().int().min(10).max(500).default(100),
 
   // Smart Alert Grouping
-  SMART_GROUPING_ENABLED: z.coerce.boolean().default(true),
+  SMART_GROUPING_ENABLED: boolStr(true),
   SMART_GROUPING_SIMILARITY_THRESHOLD: z.coerce.number().min(0.1).max(1.0).default(0.3),
-  INCIDENT_SUMMARY_ENABLED: z.coerce.boolean().default(true),
+  INCIDENT_SUMMARY_ENABLED: boolStr(true),
 
   // Investigation (Root Cause Analysis)
-  INVESTIGATION_ENABLED: z.coerce.boolean().default(true),
+  INVESTIGATION_ENABLED: boolStr(true),
   INVESTIGATION_COOLDOWN_MINUTES: z.coerce.number().int().min(1).default(20),
   INVESTIGATION_MAX_CONCURRENT: z.coerce.number().int().min(1).default(2),
   INVESTIGATION_LOG_TAIL_LINES: z.coerce.number().int().min(10).default(50),
@@ -211,7 +234,7 @@ export const envSchema = z.object({
   INVESTIGATION_MIN_SEVERITY: z.enum(['critical', 'warning', 'info']).default('warning'),
 
   // Packet Capture (PCAP)
-  PCAP_ENABLED: z.coerce.boolean().default(false),
+  PCAP_ENABLED: boolStr(false),
   PCAP_MAX_DURATION_SECONDS: z.coerce.number().int().min(1).max(3600).default(300),
   PCAP_MAX_FILE_SIZE_MB: z.coerce.number().int().min(1).max(500).default(50),
   PCAP_MAX_CONCURRENT: z.coerce.number().int().min(1).max(10).default(2),
@@ -246,7 +269,7 @@ export const envSchema = z.object({
     ),
 
   // Cache
-  CACHE_ENABLED: z.coerce.boolean().default(true),
+  CACHE_ENABLED: boolStr(true),
   CACHE_TTL_SECONDS: z.coerce.number().int().min(10).default(900),
   REDIS_URL: z.string().url().optional(),
   REDIS_PASSWORD: z.string().optional(),
@@ -268,8 +291,15 @@ export const envSchema = z.object({
   // Server
   PORT: z.coerce.number().int().min(1).max(65535).default(3051),
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
+  // Access-log verbosity (#1552). Fastify's automatic per-request logging is
+  // disabled; the request-logging plugin emits one access-log line per request
+  // instead. 'true' (default) keeps successful (2xx/3xx) requests at info;
+  // 'false' demotes them to debug for quieter production logs. 4xx/5xx always
+  // log at warn/error. Health probes, Socket.IO, and static assets are never
+  // access-logged.
+  LOG_HTTP_SUCCESS: boolStr(true),
   // HTTP/2 (opt-in, requires TLS cert/key)
-  HTTP2_ENABLED: z.coerce.boolean().default(false),
+  HTTP2_ENABLED: boolStr(false),
   TLS_CERT_PATH: z.string().optional(),
   TLS_KEY_PATH: z.string().optional(),
   // Trusted proxy IPs/CIDRs for Fastify trustProxy (#1099). Comma-separated list of
@@ -285,35 +315,35 @@ export const envSchema = z.object({
   // hstspreload.org submission requirement). Submission is *irrevocable* for
   // ~6 months — only enable for HTTPS-only deployments. Default false keeps
   // the current 1-year max-age without the preload directive.
-  HSTS_PRELOAD: z.coerce.boolean().default(false),
+  HSTS_PRELOAD: boolStr(false),
 
   // Notifications — Teams
   TEAMS_WEBHOOK_URL: z.string().url().optional(),
-  TEAMS_NOTIFICATIONS_ENABLED: z.coerce.boolean().default(false),
+  TEAMS_NOTIFICATIONS_ENABLED: boolStr(false),
 
   // Notifications — Discord
   DISCORD_WEBHOOK_URL: z.string().url().optional(),
-  DISCORD_NOTIFICATIONS_ENABLED: z.coerce.boolean().default(false),
+  DISCORD_NOTIFICATIONS_ENABLED: boolStr(false),
 
   // Notifications — Telegram
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   TELEGRAM_CHAT_ID: z.string().optional(),
-  TELEGRAM_NOTIFICATIONS_ENABLED: z.coerce.boolean().default(false),
+  TELEGRAM_NOTIFICATIONS_ENABLED: boolStr(false),
 
   // Notifications — Email
   // SMTP_HOST is intentionally env-only for SSRF protection.
   // getSafeSmtpHost() blocks private/loopback hosts and ignores DB overrides.
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),
-  SMTP_SECURE: z.coerce.boolean().default(true),
+  SMTP_SECURE: boolStr(true),
   SMTP_USER: z.string().optional(),
   SMTP_PASSWORD: z.string().optional(),
   SMTP_FROM: z.string().default('AI Portainer Dashboard <notifications@example.com>'),
-  EMAIL_NOTIFICATIONS_ENABLED: z.coerce.boolean().default(false),
+  EMAIL_NOTIFICATIONS_ENABLED: boolStr(false),
   EMAIL_RECIPIENTS: z.string().default(''),
 
   // Webhooks
-  WEBHOOKS_ENABLED: z.coerce.boolean().default(false),
+  WEBHOOKS_ENABLED: boolStr(false),
   WEBHOOKS_MAX_RETRIES: z.coerce.number().int().min(0).max(10).default(5),
   WEBHOOKS_RETRY_INTERVAL_SECONDS: z.coerce.number().int().min(10).default(60),
 
@@ -321,8 +351,8 @@ export const envSchema = z.object({
   HARBOR_API_URL: optionalUrl,
   HARBOR_ROBOT_NAME: z.string().optional(),
   HARBOR_ROBOT_SECRET: z.string().optional(),
-  HARBOR_VERIFY_SSL: z.string().default('true').transform((v) => v === 'true' || v === '1'),
-  HARBOR_SYNC_ENABLED: z.coerce.boolean().default(false),
+  HARBOR_VERIFY_SSL: boolStr(true),
+  HARBOR_SYNC_ENABLED: boolStr(false),
   HARBOR_SYNC_INTERVAL_MINUTES: z.coerce.number().int().min(5).max(1440).default(30),
   HARBOR_CONCURRENCY: z.coerce.number().int().min(1).max(50).default(5),
   // Maximum pages fetched per Harbor sync (100 items/page → default 500 = 50k items).
@@ -331,12 +361,12 @@ export const envSchema = z.object({
   HARBOR_MAX_PAGES: z.coerce.number().int().min(0).default(500),
 
   // Image Staleness
-  IMAGE_STALENESS_CHECK_ENABLED: z.coerce.boolean().default(true),
+  IMAGE_STALENESS_CHECK_ENABLED: boolStr(true),
   IMAGE_STALENESS_CHECK_INTERVAL_HOURS: z.coerce.number().int().min(1).default(24),
 
   // Prompt Injection Guard
-  LLM_PROMPT_GUARD_STRICT: z.string().default('true').transform((v) => v === 'true' || v === '1'),
-  PROMPT_GUARD_NEAR_MISS_ENABLED: z.string().default('true').transform((v) => v === 'true' || v === '1'),
+  LLM_PROMPT_GUARD_STRICT: boolStr(true),
+  PROMPT_GUARD_NEAR_MISS_ENABLED: boolStr(true),
   PROMPT_GUARD_NEAR_MISS_LOW_STRICT: z.coerce.number().min(0).max(1).default(0.2),
   PROMPT_GUARD_NEAR_MISS_HIGH_STRICT: z.coerce.number().min(0).max(1).default(0.4),
   PROMPT_GUARD_NEAR_MISS_LOW_RELAXED: z.coerce.number().min(0).max(1).default(0.3),
@@ -347,7 +377,7 @@ export const envSchema = z.object({
   LLM_MAX_TOOL_ITERATIONS: z.coerce.number().int().min(1).max(20).default(10),
 
   // eBPF Trace Ingestion (Grafana Beyla)
-  TRACES_INGESTION_ENABLED: z.string().default('false').transform((v) => v === 'true' || v === '1'),
+  TRACES_INGESTION_ENABLED: boolStr(false),
   TRACES_INGESTION_API_KEY: z.string().default(''),
   // How many days of spans to retain. Daily cleanup runs alongside
   // METRICS_RETENTION_DAYS in scheduler.runCleanup().
@@ -391,17 +421,14 @@ export const envSchema = z.object({
     .default('api.anthropic.com,api.openai.com,api.mistral.ai,api.deepseek.com,api.groq.com'),
 
   // OpenTelemetry Span Export (OTLP/HTTP JSON)
-  OTEL_EXPORTER_ENABLED: z.string().default('false').transform((v) => v === 'true' || v === '1'),
+  OTEL_EXPORTER_ENABLED: boolStr(false),
   OTEL_EXPORTER_ENDPOINT: z.string().url().optional(),
   OTEL_EXPORTER_HEADERS: z.string().optional(),
   OTEL_EXPORTER_BATCH_SIZE: z.coerce.number().int().min(1).max(1000).default(100),
   OTEL_EXPORTER_FLUSH_INTERVAL_MS: z.coerce.number().int().min(500).max(60000).default(5000),
 
   // Log Shipping (Elasticsearch)
-  LOG_SHIPPING_ENABLED: z
-    .string()
-    .default('false')
-    .transform((v) => v === 'true' || v === '1'),
+  LOG_SHIPPING_ENABLED: boolStr(false),
   LOG_SHIPPING_ENDPOINT: z.string().url().optional(),
   LOG_SHIPPING_INDEX_PREFIX: z.string().default('dashboard-logs'),
   LOG_SHIPPING_USERNAME: z.string().optional(),
