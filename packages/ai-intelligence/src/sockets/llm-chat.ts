@@ -439,6 +439,11 @@ async function streamLlmCall(
 
   let fullResponse = '';
   const chatUrl = resolveChatCompletionsUrl(llmConfig.apiUrl);
+  // Bound the stream even when the client never cancels: combine the caller's
+  // abort signal (frontend cancel button) with a server-side ceiling so a hung
+  // upstream can't hold the socket open indefinitely (#1514).
+  const timeoutSignal = AbortSignal.timeout(getConfig().LLM_STREAM_TIMEOUT_MS);
+  const effectiveSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
   const response = await llmFetch(chatUrl, {
     method: 'POST',
     headers: {
@@ -452,7 +457,7 @@ async function streamLlmCall(
       max_tokens: llmConfig.maxTokens,
       ...(llmConfig.temperature !== undefined ? { temperature: llmConfig.temperature } : {}),
     }),
-    signal,
+    signal: effectiveSignal,
   });
 
   if (!response.ok) {

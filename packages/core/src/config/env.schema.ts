@@ -359,6 +359,17 @@ export const envSchema = z.object({
   EMAIL_NOTIFICATIONS_ENABLED: boolStr(false),
   EMAIL_RECIPIENTS: z.string().default(''),
 
+  // Outbound HTTP deadlines (#1514) — every outbound fetch must bound its wait
+  // so a hung remote (Teams/Discord/Telegram, Elasticsearch) cannot pin a
+  // notification/log-ship call open indefinitely.
+  NOTIFICATION_HTTP_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120000).default(10000),
+  LOG_SHIP_HTTP_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60000).default(5000),
+  // Ceiling for a single streaming LLM completion (#1514). Combined with the
+  // caller's abort signal via AbortSignal.any, so an idle/hung upstream is cut
+  // off even when the client never cancels. Generous by default — legitimate
+  // streams finish well within it.
+  LLM_STREAM_TIMEOUT_MS: z.coerce.number().int().min(5000).max(600000).default(120000),
+
   // Webhooks
   WEBHOOKS_ENABLED: boolStr(false),
   WEBHOOKS_MAX_RETRIES: z.coerce.number().int().min(0).max(10).default(5),

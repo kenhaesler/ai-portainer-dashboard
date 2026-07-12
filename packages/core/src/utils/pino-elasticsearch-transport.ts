@@ -41,6 +41,9 @@ export function buildBulkBody(
 
 const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 1000;
+// This transport runs inside a pino worker thread with no access to getConfig();
+// bound every _bulk POST so a hung Elasticsearch cannot stall the log pipeline (#1514).
+const DEFAULT_SHIP_TIMEOUT_MS = 5000;
 
 /**
  * Sends a batch of logs to Elasticsearch via the _bulk API.
@@ -52,6 +55,7 @@ export async function sendBulk(
   endpoint: string,
   headers: Record<string, string>,
   retryDelayFn: (ms: number) => Promise<void> = defaultDelay,
+  timeoutMs: number = DEFAULT_SHIP_TIMEOUT_MS,
 ): Promise<boolean> {
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
@@ -62,6 +66,7 @@ export async function sendBulk(
           ...headers,
         },
         body,
+        signal: AbortSignal.timeout(timeoutMs),
       });
 
       if (response.ok) {

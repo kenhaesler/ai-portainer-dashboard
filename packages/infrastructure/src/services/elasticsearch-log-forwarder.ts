@@ -2,6 +2,7 @@ import { Agent } from 'undici';
 import { getContainers, getContainerLogs, getEndpoints } from '@dashboard/core/portainer/portainer-client.js';
 import { getElasticsearchConfig, type ElasticsearchConfig } from './elasticsearch-config.js';
 import { cachedFetch, cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
+import { getConfig } from '@dashboard/core/config/index.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 
 const log = createChildLogger('es-log-forwarder');
@@ -122,6 +123,7 @@ async function indexBatch(esConfig: ElasticsearchConfig, docs: ContainerLogDoc[]
         headers,
         body: bulkBody,
         dispatcher,
+        signal: AbortSignal.timeout(getConfig().LOG_SHIP_HTTP_TIMEOUT_MS),
       } as RequestInit);
 
       if (!response.ok) {
