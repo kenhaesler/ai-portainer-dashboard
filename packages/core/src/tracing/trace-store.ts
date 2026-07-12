@@ -218,7 +218,7 @@ export async function getTraces(options: GetTracesOptions = {}): Promise<Array<{
        MIN(s.service_name) as root_service,
        MIN(s.name) as root_name,
        MIN(s.start_time) as start_time,
-       SUM(s.duration_ms) as duration_ms,
+       SUM(s.duration_ms)::integer as duration_ms,
        COUNT(*)::integer as span_count,
        CASE WHEN SUM(CASE WHEN s.status = 'error' THEN 1 ELSE 0 END) > 0
             THEN 'error' ELSE 'ok' END as status
@@ -243,7 +243,7 @@ export async function getServiceMap(): Promise<{
        service_name as id,
        service_name as name,
        COUNT(*)::integer as "callCount",
-       AVG(duration_ms) as "avgDuration",
+       AVG(duration_ms)::float as "avgDuration",
        CAST(SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS REAL) / COUNT(*) as "errorRate"
      FROM spans
      GROUP BY service_name`,
@@ -255,7 +255,7 @@ export async function getServiceMap(): Promise<{
        parent.service_name as source,
        child.service_name as target,
        COUNT(*)::integer as "callCount",
-       AVG(child.duration_ms) as "avgDuration"
+       AVG(child.duration_ms)::float as "avgDuration"
      FROM spans child
      INNER JOIN spans parent ON child.parent_span_id = parent.id
      WHERE parent.service_name != child.service_name
@@ -297,11 +297,11 @@ export async function getTraceSummary(
     services: number;
   }>(
     `SELECT
-       COUNT(DISTINCT trace_id) as "totalTraces",
-       AVG(duration_ms) as "avgDuration",
+       COUNT(DISTINCT trace_id)::integer as "totalTraces",
+       AVG(duration_ms)::float as "avgDuration",
        CAST(SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS REAL) /
          NULLIF(COUNT(*), 0) as "errorRate",
-       COUNT(DISTINCT service_name) as services
+       COUNT(DISTINCT service_name)::integer as services
      FROM spans
      ${where}`,
     params,

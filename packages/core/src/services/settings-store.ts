@@ -13,6 +13,16 @@ export async function getSetting(key: string): Promise<Setting | null> {
   return db().queryOne<Setting>('SELECT * FROM settings WHERE key = ?', [key]);
 }
 
+/**
+ * Fetch multiple settings in a single query. Missing keys are simply absent
+ * from the result — callers should fall back to their defaults per key.
+ */
+export async function getSettingsByKeys(keys: string[]): Promise<Setting[]> {
+  if (keys.length === 0) return [];
+  const placeholders = keys.map(() => '?').join(', ');
+  return db().query<Setting>(`SELECT * FROM settings WHERE key IN (${placeholders})`, keys);
+}
+
 export async function setSetting(key: string, value: string, category: string): Promise<void> {
   await db().execute(`
     INSERT INTO settings (key, value, category, updated_at)
