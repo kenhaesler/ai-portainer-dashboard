@@ -1,5 +1,6 @@
 import pLimit from 'p-limit';
 import { getConfig } from '@dashboard/core/config/index.js';
+import { resolveRawMetricsRetentionDays } from '@dashboard/core/db/timescale.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import type { AnomalyDetection } from '@dashboard/core/models/metrics.js';
 import type { MovingAverageResult } from '@dashboard/contracts';
@@ -267,7 +268,11 @@ export async function detectAnomalyRobust(
       // not raw samples, so one day's samples cannot pass as a weekly
       // baseline.
       const configuredDowLookback = config.ANOMALY_DAYOFWEEK_LOOKBACK_DAYS;
-      const rawRetentionDays = config.METRICS_RAW_RETENTION_DAYS;
+      // METRICS_RAW_RETENTION_DAYS is an optional override (#1504); when unset it
+      // follows the canonical METRICS_RETENTION_DAYS. Resolve it the same way the
+      // TimescaleDB retention policy does so the clamp matches what the raw
+      // hypertable actually holds.
+      const rawRetentionDays = resolveRawMetricsRetentionDays(config);
       const dowLookbackDays = Math.min(configuredDowLookback, rawRetentionDays);
       if (configuredDowLookback > rawRetentionDays) {
         warnDowLookbackClampedOnce(configuredDowLookback, rawRetentionDays);
