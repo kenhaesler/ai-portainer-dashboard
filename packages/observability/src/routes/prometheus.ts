@@ -158,8 +158,13 @@ async function getCachedSnapshot(): Promise<MetricsSnapshot> {
     [],
   );
 
+  // Bounded to the last 24h (#1505): the previous unbounded scan loaded the
+  // whole table (~288 rows/day forever) into memory on every cache-expired
+  // scrape. A day of cycles is plenty for the duration histogram, and the
+  // WHERE rides idx_monitoring_cycles_created_at.
   const monitoringDurations = await monitoringDb.query<{ duration_ms: number }>(
-    `SELECT duration_ms FROM monitoring_cycles`,
+    `SELECT duration_ms FROM monitoring_cycles
+     WHERE created_at >= NOW() - INTERVAL '24 hours'`,
     [],
   );
 

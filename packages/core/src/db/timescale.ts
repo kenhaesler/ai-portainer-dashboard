@@ -120,13 +120,51 @@ async function runMigrations(db: pg.Pool): Promise<void> {
   }
 }
 
-async function applyRetentionPolicies(
+// Tables whose retention is confirmed to be owned by a TimescaleDB policy
+// (applyRetentionPolicies success path). The daily scheduler consults this via
+// hasTimescaleRetentionPolicy() to skip its row-wise DELETE fallback (#1504):
+// chunk drops are near-free while a competing DELETE churns dead tuples/WAL
+// inside chunks the policy would drop wholesale (and can force decompression
+// of compressed chunks). On plain-Postgres deployments the policy install
+// fails, the set stays empty and the DELETE fallback keeps cleaning up.
+const installedRetentionPolicies = new Set<string>();
+
+export function hasTimescaleRetentionPolicy(table: string): boolean {
+  return installedRetentionPolicies.has(table);
+}
+
+/** Test-only: clear the tracked policy state between test cases. */
+export function _resetRetentionPolicyStateForTests(): void {
+  installedRetentionPolicies.clear();
+}
+
+/**
+ * Canonical raw-metrics retention (#1504). METRICS_RETENTION_DAYS is the
+ * operator-facing knob; METRICS_RAW_RETENTION_DAYS overrides it for the raw
+ * hypertables only when explicitly set. Both the TimescaleDB policy and the
+ * scheduler's plain-Postgres DELETE fallback resolve through this helper so
+ * the two mechanisms can never silently diverge.
+ */
+export function resolveRawMetricsRetentionDays(
+  config: Pick<ReturnType<typeof getConfig>, 'METRICS_RAW_RETENTION_DAYS' | 'METRICS_RETENTION_DAYS'>,
+): number {
+  return config.METRICS_RAW_RETENTION_DAYS ?? config.METRICS_RETENTION_DAYS;
+}
+
+/** Exported for tests — production callers go through getMetricsDb(). */
+export async function applyRetentionPolicies(
   db: pg.Pool,
   config: ReturnType<typeof getConfig>,
 ): Promise<void> {
+  const rawDays = resolveRawMetricsRetentionDays(config);
   const policies = [
-    { table: 'metrics', days: config.METRICS_RAW_RETENTION_DAYS },
-    { table: 'kpi_snapshots', days: config.METRICS_RAW_RETENTION_DAYS },
+    { table: 'metrics', days: rawDays },
+    { table: 'kpi_snapshots', days: rawDays },
+    // Continuous aggregates (#1504): raw-table retention does not cascade to
+    // caggs, so without their own policies the rollups grow forever.
+    { table: 'metrics_5min', days: config.METRICS_ROLLUP_5MIN_RETENTION_DAYS },
+    { table: 'metrics_1hour', days: config.METRICS_ROLLUP_1HOUR_RETENTION_DAYS },
+    { table: 'metrics_1day', days: config.METRICS_ROLLUP_1DAY_RETENTION_DAYS },
   ];
 
   for (const { table, days } of policies) {
@@ -136,8 +174,10 @@ async function applyRetentionPolicies(
       await db.query(
         `SELECT add_retention_policy('${table}', INTERVAL '${days} days', if_not_exists => true)`,
       );
+      installedRetentionPolicies.add(table);
       log.info({ table, retentionDays: days }, 'Retention policy applied');
     } catch (err) {
+      installedRetentionPolicies.delete(table);
       log.warn({ err, table }, 'Failed to apply retention policy (table may not exist yet)');
     }
   }

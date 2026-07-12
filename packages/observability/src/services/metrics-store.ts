@@ -271,7 +271,10 @@ export async function getMetricWindowByHourOfDay(
 }
 
 export async function cleanOldMetrics(retentionDays: number): Promise<number> {
-  // TimescaleDB retention is handled by policies, but this provides manual cleanup
+  // Plain-Postgres fallback (#1504): the scheduler only calls this when no
+  // TimescaleDB retention policy is confirmed installed — with a policy in
+  // place, chunk drops own retention and this row-wise DELETE is skipped
+  // (it would churn dead tuples/WAL inside chunks the policy drops for free).
   const db = await getMetricsDb();
   const { rowCount } = await db.query(
     `DELETE FROM metrics WHERE timestamp < NOW() - $1 * INTERVAL '1 day'`,

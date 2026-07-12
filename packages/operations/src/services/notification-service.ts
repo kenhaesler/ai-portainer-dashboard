@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer';
 import { z } from 'zod/v4';
 import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
+import { batchedDeleteOlderThan } from '@dashboard/core/db/retention.js';
 import { getConfig } from '@dashboard/core/config/index.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import type { Insight } from '@dashboard/core/models/monitoring.js';
@@ -574,6 +575,15 @@ export async function sendTestNotification(channel: 'teams' | 'email' | 'discord
     await logNotification(channel, payload, 'failed', msg);
     return { success: false, error: msg };
   }
+}
+
+/**
+ * Daily retention sweep (#1505). notification_log gets a row per delivery
+ * attempt on every channel and was never pruned. Batched deletes on
+ * idx_notif_log_created keep the sweep lock-friendly.
+ */
+export async function cleanOldNotificationLog(days: number): Promise<number> {
+  return batchedDeleteOlderThan(getDbForDomain('notifications'), 'notification_log', 'created_at', days);
 }
 
 // Exported for testing

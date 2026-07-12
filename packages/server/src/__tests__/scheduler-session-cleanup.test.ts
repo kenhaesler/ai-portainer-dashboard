@@ -59,6 +59,8 @@ vi.mock('@dashboard/operations', () => ({
   startWebhookListener: vi.fn(),
   stopWebhookListener: vi.fn(),
   processRetries: vi.fn().mockResolvedValue(0),
+  cleanOldNotificationLog: vi.fn().mockResolvedValue(0),
+  cleanOldWebhookDeliveries: vi.fn().mockResolvedValue(0),
 }));
 
 vi.mock('@dashboard/ai', () => ({
@@ -66,6 +68,9 @@ vi.mock('@dashboard/ai', () => ({
   stopCooldownSweep: vi.fn(),
   cleanupOldInsights: vi.fn().mockResolvedValue(0),
   runAnomalyAutoTuneJob: vi.fn().mockResolvedValue({ applied: false, skipped: 'no-change', reason: 'within-target', previous: 3.5, recommended: 3.5, rate: 0, sampleCount: 0, detector: 'ml-anomaly' }),
+  cleanOldLlmTraces: vi.fn().mockResolvedValue(0),
+  cleanOldMonitoringCycles: vi.fn().mockResolvedValue(0),
+  cleanOldMonitoringSnapshots: vi.fn().mockResolvedValue(0),
 }));
 // initCooldownStore would otherwise attempt a real Redis connect at startup.
 vi.mock('@dashboard/core/services/cooldown-store.js', () => ({
