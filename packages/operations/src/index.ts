@@ -10,11 +10,12 @@ export {
 
 // Services
 export { suggestAction, approveAction, rejectAction, initRemediationDeps } from './services/remediation-service.js';
-export { notifyInsight } from './services/notification-service.js';
+export { notifyInsight, cleanOldNotificationLog } from './services/notification-service.js';
 export {
   startWebhookListener,
   stopWebhookListener,
   processRetries,
+  cleanOldWebhookDeliveries,
 } from './services/webhook-service.js';
 export {
   createPortainerBackup,

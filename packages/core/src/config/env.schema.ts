@@ -260,7 +260,11 @@ export const envSchema = z.object({
   TIMESCALE_URL: z.string().default('postgresql://metrics_user:changeme@localhost:5432/metrics'),
   TIMESCALE_MAX_CONNECTIONS: z.coerce.number().int().min(1).max(200).default(50),
   TIMESCALE_REPORTS_MAX_CONNECTIONS: z.coerce.number().int().min(1).max(50).default(5),
-  METRICS_RAW_RETENTION_DAYS: z.coerce.number().int().min(1).default(7),
+  // Raw metrics/kpi_snapshots hypertable retention (#1504). METRICS_RETENTION_DAYS
+  // is the canonical knob; this optional override exists only for deployments that
+  // need the TimescaleDB chunk-drop policy to diverge from it. Unset (default) it
+  // follows METRICS_RETENTION_DAYS — see resolveRawMetricsRetentionDays().
+  METRICS_RAW_RETENTION_DAYS: z.coerce.number().int().min(1).optional(),
   METRICS_ROLLUP_5MIN_RETENTION_DAYS: z.coerce.number().int().min(1).default(30),
   METRICS_ROLLUP_1HOUR_RETENTION_DAYS: z.coerce.number().int().min(1).default(90),
   METRICS_ROLLUP_1DAY_RETENTION_DAYS: z.coerce.number().int().min(1).default(365),
@@ -420,6 +424,18 @@ export const envSchema = z.object({
   // descriptions, built-in tools, and infrastructure context (in that order).
   LLM_CONTEXT_BUDGET: z.coerce.number().int().min(512).default(3500),
   LOG_ANALYSIS_CONCURRENCY: z.coerce.number().int().min(1).max(20).default(3),
+
+  // Data Retention (#1505) — daily cleanup windows for app-DB history tables
+  // that previously grew without bound. Pruned by the scheduler's daily
+  // cleanup job in 10k-row batches on the created_at index.
+  AUDIT_LOG_RETENTION_DAYS: z.coerce.number().int().min(1).default(90),
+  NOTIFICATION_LOG_RETENTION_DAYS: z.coerce.number().int().min(1).default(30),
+  LLM_TRACES_RETENTION_DAYS: z.coerce.number().int().min(1).default(30),
+  WEBHOOK_DELIVERIES_RETENTION_DAYS: z.coerce.number().int().min(1).default(30),
+  MONITORING_CYCLES_RETENTION_DAYS: z.coerce.number().int().min(1).default(14),
+  // monitoring_snapshots feeds the public status page's 90-day uptime
+  // timeline (getDailyUptimeBuckets(90)) — keep this >= 90.
+  MONITORING_SNAPSHOTS_RETENTION_DAYS: z.coerce.number().int().min(1).default(90),
 
   // Rate Limiting
   API_RATE_LIMIT: z.coerce.number().int().min(10).default(
