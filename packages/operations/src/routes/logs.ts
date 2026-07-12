@@ -4,6 +4,7 @@ import '@dashboard/core/plugins/auth.js';
 import '@dashboard/core/plugins/request-tracing.js';
 import '@fastify/swagger';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
+import { errorDetails } from '@dashboard/core/plugins/error-handler.js';
 import { LogsSearchQuerySchema, LogsTestBodySchema } from '@dashboard/core/models/api-schemas.js';
 import { getElasticsearchConfig } from '@dashboard/infrastructure';
 import { validateOutboundWebhookUrl } from '@dashboard/core/utils/network-security.js';
@@ -111,7 +112,7 @@ export async function logsRoutes(fastify: FastifyInstance) {
       if (!res.ok) {
         const body = await res.text();
         log.error({ status: res.status, body }, 'Elasticsearch query failed');
-        return reply.code(502).send({ error: 'Elasticsearch query failed', details: body });
+        return reply.code(502).send({ error: 'Elasticsearch query failed', details: errorDetails(body) });
       }
 
       const data = await res.json() as any;

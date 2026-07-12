@@ -4,6 +4,7 @@ import '@dashboard/core/plugins/request-tracing.js';
 import '@fastify/swagger';
 import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
 import { writeAuditLog } from '@dashboard/core/services/audit-logger.js';
+import { errorDetails } from '@dashboard/core/plugins/error-handler.js';
 import { broadcastActionUpdate } from '../sockets/remediation.js';
 import { RemediationQuerySchema, ActionIdParamsSchema, RejectBodySchema } from '@dashboard/core/models/api-schemas.js';
 import { restartContainer, startContainer, stopContainer } from '@dashboard/core/portainer/portainer-client.js';
@@ -264,7 +265,7 @@ export async function remediationRoutes(fastify: FastifyInstance) {
 
       return reply.code(502).send({
         error: 'Failed to execute remediation action',
-        details: message,
+        details: errorDetails(err),
       });
     }
   });

@@ -6,6 +6,7 @@ import { normalizeContainer, normalizeEndpoint } from '@dashboard/core/portainer
 import { ContainerParamsSchema } from '@dashboard/core/models/api-schemas.js';
 import { isDockerEndpoint } from '@dashboard/core/models/portainer.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
+import { errorDetails } from '@dashboard/core/plugins/error-handler.js';
 
 const log = createChildLogger('route:containers');
 
@@ -82,11 +83,10 @@ export async function containersRoutes(fastify: FastifyInstance) {
     try {
       fetched = await fetchAllContainers(endpointId);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
       log.error({ err }, 'Failed to fetch endpoints from Portainer');
       return reply.code(502).send({
         error: 'Unable to connect to Portainer',
-        details: msg,
+        details: errorDetails(err),
       });
     }
 
@@ -98,7 +98,7 @@ export async function containersRoutes(fastify: FastifyInstance) {
     if (upEndpoints.length > 0 && allContainers.length === 0 && errors.length > 0) {
       return reply.code(502).send({
         error: 'Failed to fetch containers from Portainer',
-        details: errors,
+        details: errorDetails(errors),
       });
     }
 
@@ -154,9 +154,8 @@ export async function containersRoutes(fastify: FastifyInstance) {
       }
       return { total: results.length, byState };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
       log.error({ err }, 'Failed to fetch container counts');
-      return reply.code(502).send({ error: 'Unable to fetch container counts', details: msg });
+      return reply.code(502).send({ error: 'Unable to fetch container counts', details: errorDetails(err) });
     }
   });
 
@@ -224,9 +223,8 @@ export async function containersRoutes(fastify: FastifyInstance) {
         .filter((r): r is PromiseFulfilledResult<ReturnType<typeof normalizeContainer>[]> => r.status === 'fulfilled')
         .flatMap((r) => r.value);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
       log.error({ err }, 'Failed to fetch favorite containers');
-      return reply.code(502).send({ error: 'Unable to fetch containers', details: msg });
+      return reply.code(502).send({ error: 'Unable to fetch containers', details: errorDetails(err) });
     }
   });
 
@@ -252,9 +250,8 @@ export async function containersRoutes(fastify: FastifyInstance) {
       );
       return container;
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
       log.error({ err, endpointId, containerId }, 'Failed to fetch container details');
-      return reply.code(502).send({ error: 'Unable to fetch container details from Portainer', details: msg });
+      return reply.code(502).send({ error: 'Unable to fetch container details from Portainer', details: errorDetails(err) });
     }
   });
 }

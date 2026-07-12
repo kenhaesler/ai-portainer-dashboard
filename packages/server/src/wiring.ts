@@ -9,6 +9,7 @@ import {
   buildInfrastructureContext,
   getEffectivePrompt,
   runTraceAnomalyCycle,
+  ThinkingBlockFilter,
 } from '@dashboard/ai';
 import type { MonitoringDeps, ComputeRedFn } from '@dashboard/ai';
 import {
@@ -47,6 +48,10 @@ export function buildLlmAdapter(): LLMInterface {
     chatStream,
     buildInfrastructureContext,
     getEffectivePrompt,
+    // Live-stream consumers (SSE metrics summary) filter raw chunks through
+    // this before writing to the client; chatStream's return value stays the
+    // authoritative fully-sanitized message (#1516).
+    createStreamFilter: () => new ThinkingBlockFilter(),
   };
 }
 

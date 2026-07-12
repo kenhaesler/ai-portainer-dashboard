@@ -16,6 +16,7 @@ import {
 } from '@dashboard/infrastructure';
 import { consumeStreamTicket } from '@dashboard/core/services/stream-tickets.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
+import { getErrorStatusCode } from '@dashboard/core/utils/http-error.js';
 
 const log = createChildLogger('container-logs-route');
 
@@ -60,7 +61,7 @@ export async function containerLogsRoutes(fastify: FastifyInstance) {
 
       return { logs, containerId, endpointId };
     } catch (err) {
-      const statusCode = (err as any).statusCode ?? (err as any).status;
+      const statusCode = getErrorStatusCode(err);
       if (statusCode === 422) {
         return reply.status(422).send({
           error: err instanceof Error ? err.message : 'Capability unavailable',
@@ -222,7 +223,7 @@ export async function containerLogsRoutes(fastify: FastifyInstance) {
     try {
       await assertCapability(endpointId, 'realtimeLogs');
     } catch (err) {
-      const statusCode = (err as any).statusCode ?? (err as any).status;
+      const statusCode = getErrorStatusCode(err);
       if (statusCode === 422) {
         return reply.status(422).send({
           error: err instanceof Error ? err.message : 'Capability unavailable',
@@ -238,7 +239,7 @@ export async function containerLogsRoutes(fastify: FastifyInstance) {
       try {
         await waitForTunnel(endpointId);
       } catch (err) {
-        const statusCode = (err as any).statusCode ?? (err as any).status;
+        const statusCode = getErrorStatusCode(err);
         if (statusCode === 504) {
           const message = err instanceof Error ? err.message : 'Edge agent tunnel timed out';
           log.warn({ err, endpointId, containerId }, 'Edge tunnel warmup timed out for stream');

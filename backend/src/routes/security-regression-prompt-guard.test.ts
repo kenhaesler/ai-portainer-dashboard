@@ -84,7 +84,10 @@ vi.mock('ollama', async () =>
 );
 
 // ─── Imports (after mocks) ──────────────────────────────────────────────
-import { llmRoutes, chatStream } from '@dashboard/ai';
+import { llmRoutes, chatStream, ThinkingBlockFilter, sanitizeLlmOutput } from '@dashboard/ai';
+import { metricsRoutes } from '@dashboard/observability/routes/index.js';
+import { shouldBypassGlobalRateLimit } from '@dashboard/core/plugins/rate-limit.js';
+import type { LLMInterface } from '@dashboard/contracts';
 import * as portainerClient from '@dashboard/core/portainer/portainer-client.js';
 import { cache } from '@dashboard/core/portainer/portainer-cache.js';
 import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
@@ -414,5 +417,171 @@ describe('Internal LLM flows — choke-point guard (chatStream)', () => {
     // comes from the unconfigured LLM endpoint in the test environment.
     expect(err).toBeInstanceOf(Error);
     expect((err as Error).message).not.toMatch(/prompt-injection guard/);
+  });
+});
+
+// =====================================================================
+//  SSE METRICS AI-SUMMARY — OUTPUT SANITIZATION (#1516)
+// =====================================================================
+// The ai-summary SSE route hijacks the reply and writes directly to the
+// socket, bypassing every onSend hook — so sanitization must happen inside
+// the handler. Live chunks pass through the streaming ThinkingBlockFilter
+// (reasoning blocks never reach the browser) and the `done` event carries
+// chatStream's centrally sanitized return value as the authoritative
+// summary that the client keeps. This mirrors the chat-socket pattern
+// (stream think-filtered chunks, replace with the sanitized final message).
+describe('SSE metrics ai-summary — output sanitization (#1516)', () => {
+  /** Build the route app with a mock LLM that streams the given raw chunks
+   *  and honours the real chatStream contract (sanitized return value). */
+  async function buildSseApp(rawChunks: string[]) {
+    const fullResponse = rawChunks.join('');
+    const llm: LLMInterface = {
+      isAvailable: async () => true,
+      chatStream: async (_messages, _systemPrompt, onChunk) => {
+        for (const chunk of rawChunks) onChunk(chunk);
+        // Real contract: llm-client sanitizes the accumulated response
+        // centrally before returning it (llm-client.ts).
+        return sanitizeLlmOutput(fullResponse);
+      },
+      getEffectivePrompt: async () => 'You are a metrics summarizer.',
+      buildInfrastructureContext: () => '',
+      // The real streaming filter wired by buildLlmAdapter() in @dashboard/server
+      createStreamFilter: () => new ThinkingBlockFilter(),
+    };
+
+    const app = Fastify({ logger: false });
+    app.setValidatorCompiler(validatorCompiler);
+    app.setSerializerCompiler(serializerCompiler);
+    app.decorate('authenticate', async () => undefined);
+    await app.register((f) => metricsRoutes(f, { llm }));
+    await app.ready();
+    return { app, fullResponse };
+  }
+
+  /** Reconstruct what the frontend hook keeps: accumulated chunks, replaced
+   *  by the authoritative `summary` on the done event when present. */
+  function clientResult(sseBody: string): { accumulated: string; final: string; events: any[] } {
+    const events = sseBody
+      .split('\n\n')
+      .map((block) => block.trim())
+      .filter((block) => block.startsWith('data: '))
+      .map((block) => JSON.parse(block.slice(6)));
+    const accumulated = events.filter((e) => typeof e.chunk === 'string').map((e) => e.chunk).join('');
+    const done = events.find((e) => e.done);
+    const final = typeof done?.summary === 'string' ? done.summary : accumulated;
+    return { accumulated, final, events };
+  }
+
+  it('never emits <think>/<thinking> reasoning content, even split across chunk boundaries', async () => {
+    const { app, fullResponse } = await buildSseApp([
+      '<thi',
+      'nk>secret chain-of-thought about internal tools</think>',
+      'CPU averaged 12% over the last hour. ',
+      '<thinking>more hidden reasoning</thinking>',
+      'Memory is stable.',
+    ]);
+
+    const res = await app.inject({ method: 'GET', url: '/api/metrics/1/abc123/ai-summary?timeRange=1h' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toBe('text/event-stream');
+    expect(res.body).not.toContain('secret chain-of-thought');
+    expect(res.body).not.toContain('more hidden reasoning');
+    expect(res.body.toLowerCase()).not.toContain('<think');
+
+    const { final } = clientResult(res.body);
+    expect(final).toBe(sanitizeLlmOutput(fullResponse));
+    expect(final).toContain('CPU averaged 12%');
+    await app.close();
+  });
+
+  it('the result the client keeps equals sanitizeLlmOutput(fullResponse) when the model leaks system-prompt content', async () => {
+    const { app, fullResponse } = await buildSseApp([
+      'Sure! BEGIN SYSTEM PROMPT ',
+      'You are a dashboard query interpreter with tools... ',
+      'END SYSTEM PROMPT',
+    ]);
+
+    const res = await app.inject({ method: 'GET', url: '/api/metrics/1/abc123/ai-summary?timeRange=1h' });
+
+    const { final, events } = clientResult(res.body);
+    // sanitizeLlmOutput replaces sentinel/system-prompt leaks with the guard
+    // message — the done event must carry it as the authoritative summary.
+    expect(final).toBe(sanitizeLlmOutput(fullResponse));
+    expect(final).toBe('I cannot provide internal system instructions. Ask about dashboard data or navigation.');
+    const done = events.find((e) => e.done);
+    expect(done.summary).not.toContain('BEGIN SYSTEM PROMPT');
+    await app.close();
+  });
+
+  it('emits nothing raw when the LLM adapter provides no stream filter', async () => {
+    const llm: LLMInterface = {
+      isAvailable: async () => true,
+      chatStream: async (_messages, _systemPrompt, onChunk) => {
+        onChunk('<think>leak</think>raw');
+        return sanitizeLlmOutput('<think>leak</think>raw');
+      },
+      getEffectivePrompt: async () => 'prompt',
+      buildInfrastructureContext: () => '',
+      // no createStreamFilter — e.g. a hand-rolled adapter double
+    };
+    const app = Fastify({ logger: false });
+    app.setValidatorCompiler(validatorCompiler);
+    app.setSerializerCompiler(serializerCompiler);
+    app.decorate('authenticate', async () => undefined);
+    await app.register((f) => metricsRoutes(f, { llm }));
+    await app.ready();
+
+    const res = await app.inject({ method: 'GET', url: '/api/metrics/1/abc123/ai-summary' });
+    expect(res.body).not.toContain('"chunk"');
+    expect(res.body).not.toContain('leak');
+    const { final } = clientResult(res.body);
+    expect(final).toBe('raw');
+    await app.close();
+  });
+});
+
+// =====================================================================
+//  SSE METRICS AI-SUMMARY — RATE LIMITING (#1517)
+// =====================================================================
+// The LLM-backed GET must not ride the '/api/metrics' observer bypass:
+// every request costs TimescaleDB aggregates plus an upstream LLM
+// completion, so it is excluded from the global bypass AND carries its own
+// per-user limit (mirroring POST /api/llm/query).
+describe('SSE metrics ai-summary — rate limiting (#1517)', () => {
+  it('is excluded from the global observer-read bypass', () => {
+    expect(shouldBypassGlobalRateLimit('GET', '/api/metrics/1/abc123/ai-summary')).toBe(false);
+    expect(shouldBypassGlobalRateLimit('GET', '/api/metrics/1/abc123/ai-summary?timeRange=24h')).toBe(false);
+    expect(shouldBypassGlobalRateLimit('GET', '/api/metrics/ai-summary')).toBe(false);
+  });
+
+  it('keeps plain metrics reads on the bypass (startup burst, #1386)', () => {
+    expect(shouldBypassGlobalRateLimit('GET', '/api/metrics/1/abc123')).toBe(true);
+    expect(shouldBypassGlobalRateLimit('GET', '/api/metrics/1/abc123/meta')).toBe(true);
+    expect(shouldBypassGlobalRateLimit('GET', '/api/metrics/anomalies?limit=10')).toBe(true);
+  });
+
+  it('carries a per-user rate-limit config keyed on the JWT subject', async () => {
+    const routeConfigs: Record<string, any> = {};
+    const app = Fastify({ logger: false });
+    app.setValidatorCompiler(validatorCompiler);
+    app.setSerializerCompiler(serializerCompiler);
+    app.decorate('authenticate', async () => undefined);
+    app.addHook('onRoute', (route) => {
+      if (route.method === 'GET') routeConfigs[route.url] = route.config;
+    });
+    await app.register((f) => metricsRoutes(f, {}));
+    await app.ready();
+
+    const config = routeConfigs['/api/metrics/:endpointId/:containerId/ai-summary'] as {
+      rateLimit?: { max: number; timeWindow: string; keyGenerator: (req: unknown) => string };
+    };
+    expect(config?.rateLimit).toBeDefined();
+    expect(config!.rateLimit!.max).toBeGreaterThan(0);
+    expect(config!.rateLimit!.timeWindow).toBe('1 minute');
+    // Keyed per user (JWT subject), falling back to IP for unauthenticated flows
+    expect(config!.rateLimit!.keyGenerator({ user: { sub: 'user-42' }, ip: '10.0.0.9' })).toBe('user-42');
+    expect(config!.rateLimit!.keyGenerator({ ip: '10.0.0.9' })).toBe('10.0.0.9');
+    await app.close();
   });
 });

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { isDockerProxyUnavailable, waitForTunnel, getContainerLogsWithRetry } from '../services/edge-log-fetcher.js';
+import { getErrorStatusCode } from '@dashboard/core/utils/http-error.js';
 
 import * as portainer from '@dashboard/core/portainer/portainer-client.js';
 
@@ -89,7 +90,9 @@ describe('waitForTunnel', () => {
 
     const err = await promise;
     expect(err.message).toBe('Edge agent tunnel did not establish within timeout');
-    expect(err.status).toBe(504);
+    // HttpError uses the canonical statusCode spelling (#1511)
+    expect(err.statusCode).toBe(504);
+    expect(getErrorStatusCode(err)).toBe(504);
   });
 });
 

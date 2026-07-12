@@ -1,6 +1,9 @@
-import { FastifyInstance } from 'fastify';
+import { FastifyInstance, FastifyRequest } from 'fastify';
 import '@dashboard/core/plugins/auth.js';
 import '@fastify/swagger';
+import '@fastify/rate-limit';
+import { getConfig } from '@dashboard/core/config/index.js';
+import { errorDetails } from '@dashboard/core/plugins/error-handler.js';
 import { getMetricsDb } from '@dashboard/core/db/timescale.js';
 import { ContainerParamsSchema, MetricsQuerySchema, MetricsResponseSchema, AnomaliesQuerySchema } from '@dashboard/core/models/api-schemas.js';
 import { getNetworkRates, getAllNetworkRates, isUndefinedTableError } from '../services/metrics-store.js';
@@ -37,6 +40,9 @@ function parseTimeRange(timeRange: string): { from: Date; to: Date } {
 }
 
 export async function metricsRoutes(fastify: FastifyInstance, opts: { llm?: LLMInterface } = {}) {
+  // Cast needed: Zod v4 type inference drops this property from the large EnvConfig union
+  const llmRateMax = (getConfig() as Record<string, unknown>).LLM_RATE_LIMIT_PER_MINUTE as number;
+
   fastify.get('/api/metrics/:endpointId/:containerId', {
     schema: {
       tags: ['Metrics'],
@@ -128,7 +134,7 @@ export async function metricsRoutes(fastify: FastifyInstance, opts: { llm?: LLMI
         return (reply as any).code(503).send({ error: 'Metrics database not ready', details: 'The metrics table has not been created yet. TimescaleDB migrations may still be pending.' });
       }
       log.error({ err, endpointId, containerId }, 'Failed to query metrics');
-      return (reply as any).code(500).send({ error: 'Failed to query metrics', details: err instanceof Error ? err.message : 'Unknown error' });
+      return (reply as any).code(500).send({ error: 'Failed to query metrics', details: errorDetails(err) });
     }
   });
 
@@ -203,9 +209,8 @@ export async function metricsRoutes(fastify: FastifyInstance, opts: { llm?: LLMI
         log.warn('Metrics table not ready for anomaly query');
         return reply.code(503).send({ error: 'Metrics database not ready', details: 'The metrics table has not been created yet.' });
       }
-      const msg = err instanceof Error ? err.message : 'Unknown error';
       log.error({ err }, 'Failed to query anomalies');
-      return reply.code(500).send({ error: 'Failed to query anomalies', details: msg });
+      return reply.code(500).send({ error: 'Failed to query anomalies', details: errorDetails(err) });
     }
   });
 
@@ -265,6 +270,20 @@ export async function metricsRoutes(fastify: FastifyInstance, opts: { llm?: LLMI
       querystring: MetricsQuerySchema,
     },
     preHandler: [fastify.authenticate],
+    // Per-user limit mirroring POST /api/llm/query: each request runs three
+    // TimescaleDB aggregate queries plus a full upstream LLM completion, so
+    // it must not be free to flood. The route is also excluded from the
+    // global observer-read bypass in core's rate-limit plugin (#1517).
+    config: {
+      rateLimit: {
+        max: llmRateMax ?? 20,
+        timeWindow: '1 minute',
+        hook: 'preHandler',
+        keyGenerator: (request: FastifyRequest) => {
+          return request.user?.sub ?? request.ip;
+        },
+      },
+    },
   }, async (request, reply) => {
     const { endpointId, containerId } = request.params as { endpointId: number; containerId: string };
     const query = request.query as { timeRange?: string };
@@ -347,15 +366,35 @@ Endpoint ID: ${endpointId}`;
     });
 
     try {
-      await opts.llm.chatStream(
+      // Output sanitization (#1516): streamed onChunk data is raw, so live
+      // chunks pass through a ThinkingBlockFilter before hitting the wire
+      // (reasoning blocks never reach the browser), and the `done` event
+      // carries chatStream's return value — the centrally sanitized full
+      // response (thinking blocks, tool-call JSON, and system-prompt-leak
+      // patterns stripped) — as the authoritative summary. The frontend
+      // replaces its accumulated stream with it, so what the client keeps
+      // always equals the sanitized response. Without a stream filter
+      // (hand-rolled LLMInterface doubles) no raw chunk is emitted at all.
+      const streamFilter = opts.llm.createStreamFilter?.();
+      const sanitized = await opts.llm.chatStream(
         [{ role: 'user', content: userPrompt }],
         systemPrompt,
         (chunk: string) => {
-          reply.raw.write(`data: ${JSON.stringify({ chunk })}\n\n`);
+          if (!streamFilter) return;
+          const filtered = streamFilter.process(chunk);
+          if (filtered) {
+            reply.raw.write(`data: ${JSON.stringify({ chunk: filtered })}\n\n`);
+          }
         },
         'metrics_summary',
       );
-      reply.raw.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+      if (streamFilter) {
+        const flushed = streamFilter.flush();
+        if (flushed) {
+          reply.raw.write(`data: ${JSON.stringify({ chunk: flushed })}\n\n`);
+        }
+      }
+      reply.raw.write(`data: ${JSON.stringify({ done: true, summary: sanitized })}\n\n`);
     } catch (err) {
       log.error({ err, containerId }, 'AI summary stream failed');
       reply.raw.write(`data: ${JSON.stringify({ error: 'AI summary generation failed' })}\n\n`);

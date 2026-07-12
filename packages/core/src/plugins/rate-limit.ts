@@ -31,6 +31,16 @@ const OBSERVER_READ_PATH_PREFIXES = [
   '/api/traces',
 ];
 
+// LLM-backed reads must NOT ride the observer bypass even though they live
+// under a bypassed prefix: each request runs TimescaleDB aggregate queries
+// and a full upstream LLM completion, so it stays subject to the global
+// limiter and carries its own per-user rate limit on the route (#1517).
+// Matched by suffix because the ai-summary route embeds path params
+// (/api/metrics/:endpointId/:containerId/ai-summary).
+const LLM_BACKED_READ_PATH_SUFFIXES = [
+  '/ai-summary',
+];
+
 function getRequestPath(url: string | undefined): string {
   if (!url) return '';
   return url.split('?')[0] ?? '';
@@ -39,6 +49,8 @@ function getRequestPath(url: string | undefined): string {
 export function shouldBypassGlobalRateLimit(method: string, url: string | undefined): boolean {
   if (method !== 'GET') return false;
   const path = getRequestPath(url);
+
+  if (LLM_BACKED_READ_PATH_SUFFIXES.some((suffix) => path.endsWith(suffix))) return false;
 
   return OBSERVER_READ_PATH_PREFIXES.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
 }
