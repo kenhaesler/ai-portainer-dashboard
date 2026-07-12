@@ -25,6 +25,13 @@ All per-endpoint container counts, host CPU/memory, and stack totals are obtaine
 
 **Kill-switch:** Setting `EDGE_LIVE_QUERY_ENABLED=false` disables all live queries; affected endpoints remain `unavailable` with no snapshot fallback.
 
+## Portainer cache (L1 memory + L2 Redis, SWR)
+
+`packages/core/src/portainer/portainer-cache.ts` provides a two-layer cache (`HybridCache`: in-memory `TtlCache` L1 + optional Redis L2) with `cachedFetch` (blocking, stampede-deduplicated via a shared `inFlight` map) and `cachedFetchSWR` (stale-while-revalidate). Key semantics (#1495, #1499):
+
+- **Freshness follows the caller's TTL.** Entries become stale at 80% of their TTL (`STALE_FRACTION`) and expire at 100%. L2 values are stored in a staleness envelope (`{ __swrEnvelope: 1, staleAt, data }`), so an L2 hit inside its fresh window is served without a background origin fetch; legacy bare-JSON entries are treated as stale and revalidated. In multi-layer mode L1 remains a 30s hot layer but carries the full-TTL `staleAt`; in memory-only mode (no `REDIS_URL`, or Redis in failure backoff) L1 honors the full TTL instead of capping at 30s. Result: the `TTL` presets (ENDPOINTS 900s, CONTAINERS 300s, ...) bound Portainer load in both modes.
+- **Background revalidations resolve to data.** SWR revalidation promises are registered in the same `inFlight` map that `cachedFetch` consults before any cache lookup, so they MUST resolve to the fetched value (`Promise<T>`, never `Promise<void>`); on fetch failure the cache entry is invalidated (next call retries) but the promise resolves to the previously-served stale value, so a concurrent `cachedFetch` sharing it never receives `undefined`.
+
 ## CI E2E Portainer fixture
 
 The opt-in `e2e` CI job runs the production compose stack with a CI-only override (`docker/docker-compose.e2e.yml`) that adds a **WireMock `portainer-mock`** service serving canned fleet data from `docker/portainer-mock/{mappings,__files}`, with the backend's `PORTAINER_API_URL` pointed at it. This lets the data-dependent E2E specs (container list/detail, the #1310 dropdown-anchor regression guard) run against real data instead of timing out. The fixtures are contract-tested against the backend's actual Zod schemas + normalizers in `packages/core/src/portainer/portainer-mock-fixtures.test.ts`, so they fail loudly if a parser changes. See #1420.

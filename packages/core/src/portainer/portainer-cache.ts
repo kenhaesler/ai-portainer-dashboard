@@ -8,6 +8,9 @@ import { promisify } from 'node:util';
 const gzipAsync = promisify(gzip);
 const gunzipAsync = promisify(gunzip);
 const COMPRESSION_THRESHOLD = 10_000; // 10 KB
+// Entries become stale (eligible for SWR revalidation) at this fraction of
+// their TTL and expire at 100%. Shared by L1 (TtlCache) and the L2 envelope.
+const STALE_FRACTION = 0.8;
 
 const log = createChildLogger('portainer-cache');
 // ReturnType of the uninstantiated createClient signature resolves the RESP
@@ -58,12 +61,21 @@ class TtlCache {
     return { data: entry.data as T, isStale: now > entry.staleAt };
   }
 
-  set<T>(key: string, data: T, ttlSeconds: number, staleFraction = 0.8): void {
-    const now = Date.now();
+  set<T>(key: string, data: T, ttlSeconds: number, staleFraction = STALE_FRACTION): void {
+    this.setWithStaleAt(key, data, ttlSeconds, Date.now() + ttlSeconds * 1000 * staleFraction);
+  }
+
+  /**
+   * Like set(), but with an explicit absolute staleAt timestamp (epoch ms).
+   * Used when the freshness window is dictated by the L2 envelope rather
+   * than the L1 TTL — staleAt may exceed expiresAt, in which case the entry
+   * simply expires before it ever reports stale (#1499).
+   */
+  setWithStaleAt<T>(key: string, data: T, ttlSeconds: number, staleAtMs: number): void {
     this.store.set(key, {
       data,
-      staleAt: now + ttlSeconds * 1000 * staleFraction,
-      expiresAt: now + ttlSeconds * 1000,
+      staleAt: staleAtMs,
+      expiresAt: Date.now() + ttlSeconds * 1000,
     });
     // LRU eviction: remove oldest entries (by staleAt) when over maxSize
     if (this.store.size > this.maxSize) {
@@ -137,6 +149,36 @@ class TtlCache {
         : 'N/A',
     };
   }
+}
+
+/**
+ * L2 (Redis) staleness envelope. Redis TTLs only bound expiry, so without
+ * this envelope every L2 hit looked stale and forced a background origin
+ * fetch (#1499). Values written by set() are wrapped; legacy bare-JSON
+ * entries (pre-envelope deploys, setMany) unwrap as immediately stale.
+ */
+interface CacheEnvelope<T> {
+  __swrEnvelope: 1;
+  staleAt: number;
+  data: T;
+}
+
+function isCacheEnvelope<T>(value: unknown): value is CacheEnvelope<T> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    (value as Record<string, unknown>).__swrEnvelope === 1 &&
+    typeof (value as Record<string, unknown>).staleAt === 'number' &&
+    'data' in value
+  );
+}
+
+function unwrapEnvelope<T>(parsed: unknown): { data: T; staleAt: number } {
+  if (isCacheEnvelope<T>(parsed)) {
+    return { data: parsed.data, staleAt: parsed.staleAt };
+  }
+  // Legacy bare-JSON entry — treat as immediately stale so SWR revalidates it.
+  return { data: parsed as T, staleAt: 0 };
 }
 
 class HybridCache {
@@ -270,6 +312,38 @@ class HybridCache {
     return client.keys(`${prefix}*`);
   }
 
+  /**
+   * Read a key from L2 (Redis), unwrap the staleness envelope, and repopulate
+   * L1 as a short hot layer carrying the envelope's staleAt so SWR freshness
+   * follows the caller's TTL rather than the L1 window (#1499). Legacy
+   * bare-JSON entries are treated as immediately stale.
+   */
+  private async readL2<T>(key: string): Promise<{ data: T; staleAt: number } | undefined> {
+    const client = await this.ensureRedisClient();
+    if (!client) return undefined;
+    try {
+      // Check compressed key first, then plain key
+      let raw: string | null;
+      const gzB64 = await client.get(this.getRedisKey(key) + ':gz');
+      if (gzB64 != null) {
+        const decompressed = await gunzipAsync(Buffer.from(gzB64, 'base64'));
+        raw = decompressed.toString('utf8');
+      } else {
+        raw = await client.get(this.getRedisKey(key));
+      }
+      // Successful Redis operation (miss is still success)
+      this.resetRedisBackoff();
+      if (raw == null) return undefined;
+
+      const { data, staleAt } = unwrapEnvelope<T>(JSON.parse(raw));
+      this.memory.setWithStaleAt(key, data, this.l1TtlSeconds, staleAt);
+      return { data, staleAt };
+    } catch (err) {
+      this.disableRedisTemporarily('redis-get-failed', err);
+      return undefined;
+    }
+  }
+
   async get<T>(key: string): Promise<T | undefined> {
     // L1: Check in-memory cache first (instant, no network)
     const l1Value = this.memory.get<T>(key);
@@ -280,51 +354,54 @@ class HybridCache {
 
     // L2: Check Redis (traced)
     return withSpan('cache.get', 'redis-cache', 'internal', async () => {
-      const client = await this.ensureRedisClient();
-      if (client) {
-        try {
-          // Check compressed key first, then plain key
-          const gzKey = this.getRedisKey(key) + ':gz';
-          const gzB64 = await client.get(gzKey);
-          if (gzB64 != null) {
-            const decompressed = await gunzipAsync(Buffer.from(gzB64, 'base64'));
-            const parsed = JSON.parse(decompressed.toString('utf8')) as T;
-            this.memory.set(key, parsed, this.l1TtlSeconds);
-            this.hits++;
-            this.resetRedisBackoff();
-            return parsed;
-          }
-
-          const raw = await client.get(this.getRedisKey(key));
-          if (raw != null) {
-            const parsed = JSON.parse(raw) as T;
-            this.memory.set(key, parsed, this.l1TtlSeconds);
-            this.hits++;
-            this.resetRedisBackoff();
-            return parsed;
-          }
-          // Successful Redis operation (miss is still success)
-          this.resetRedisBackoff();
-        } catch (err) {
-          this.disableRedisTemporarily('redis-get-failed', err);
-        }
+      const result = await this.readL2<T>(key);
+      if (result !== undefined) {
+        this.hits++;
+        return result.data;
       }
-
       this.misses++;
       return undefined;
     });
   }
 
-  async set<T>(key: string, data: T, ttlSeconds: number): Promise<void> {
-    // Always write to L1 uncompressed (short TTL for instant reads)
-    this.memory.set(key, data, Math.min(ttlSeconds, this.l1TtlSeconds));
+  /**
+   * Check L2 (Redis) with stale info for stale-while-revalidate. Returns the
+   * unwrapped data plus whether the entry has passed its staleAt (#1499).
+   * Legacy bare-JSON entries always report stale.
+   */
+  async getL2WithStaleInfo<T>(key: string): Promise<{ data: T; isStale: boolean } | undefined> {
+    return withSpan('cache.get', 'redis-cache', 'internal', async () => {
+      const result = await this.readL2<T>(key);
+      if (result === undefined) {
+        this.misses++;
+        return undefined;
+      }
+      this.hits++;
+      return { data: result.data, isStale: Date.now() > result.staleAt };
+    });
+  }
 
-    // Write to L2 (Redis) with full TTL — compress if above threshold (traced)
+  async set<T>(key: string, data: T, ttlSeconds: number): Promise<void> {
+    const staleAt = Date.now() + ttlSeconds * 1000 * STALE_FRACTION;
+    if (!this.isRedisConfigured() || Date.now() < this.redisDisabledUntil) {
+      // Memory-only mode (no Redis, or Redis in failure backoff): L1 is the
+      // only copy, so honor the caller's full TTL — the 30s cap is only
+      // meaningful as an L1-freshness bound when L2 exists (#1499).
+      this.memory.set(key, data, ttlSeconds);
+    } else {
+      // L1 stays a short hot layer (uncompressed, instant reads), but carries
+      // the full-TTL staleAt so SWR revalidation follows the preset (#1499).
+      this.memory.setWithStaleAt(key, data, Math.min(ttlSeconds, this.l1TtlSeconds), staleAt);
+    }
+
+    // Write to L2 (Redis) with full TTL — wrapped in a staleness envelope,
+    // compressed if above threshold (traced)
     await withSpan('cache.set', 'redis-cache', 'internal', async () => {
       const client = await this.ensureRedisClient();
       if (client) {
         try {
-          const json = JSON.stringify(data);
+          const envelope: CacheEnvelope<T> = { __swrEnvelope: 1, staleAt, data };
+          const json = JSON.stringify(envelope);
           const jsonBytes = Buffer.byteLength(json, 'utf8');
 
           if (jsonBytes >= COMPRESSION_THRESHOLD) {
@@ -451,7 +528,8 @@ class HybridCache {
             return undefined;
           }
           this.hits++;
-          return JSON.parse(raw) as T;
+          // Entries written via set() carry a staleness envelope; unwrap it.
+          return unwrapEnvelope<T>(JSON.parse(raw)).data;
         });
       } catch (err) {
         this.disableRedisTemporarily('redis-mget-failed', err);
@@ -754,6 +832,55 @@ export function cachedFetch<T>(
 }
 
 /**
+ * Kick off a background SWR revalidation and register it in the shared
+ * `inFlight` map. The registered promise MUST resolve to the fetched data:
+ * cachedFetch consults `inFlight` before any cache lookup and returns the
+ * found promise as `Promise<T>`, so a void promise here made concurrent
+ * cachedFetch callers resolve to `undefined` during every revalidation
+ * window (#1495). On failure the cache entry is still invalidated (so the
+ * next call retries), but the promise resolves to the stale value the
+ * caller would otherwise have been served — never `undefined`, never a
+ * rejection (no caller is guaranteed to be awaiting it).
+ */
+function startBackgroundRevalidation<T>(
+  key: string,
+  ttlSeconds: number,
+  fetcher: () => Promise<T>,
+  staleData: T,
+  failureLogMessage: string,
+): void {
+  const revalidate: Promise<T> = (async () => {
+    try {
+      const data = await fetcher();
+      if (data !== undefined) {
+        await cache.set(key, data, ttlSeconds);
+        return data;
+      }
+      // Fetcher resolved undefined — keep the stale value for any awaiting
+      // cachedFetch caller (the cache itself is left untouched, see #1270).
+      return staleData;
+    } catch (err) {
+      // Invalidate on failure so the next call retries (#1270)…
+      try {
+        await cache.invalidate(key);
+      } catch {
+        // Best-effort
+      }
+      log.warn({ key, err }, failureLogMessage);
+      // …but still hand awaiting callers the stale data (#1495).
+      return staleData;
+    } finally {
+      inFlight.delete(key);
+    }
+  })();
+  inFlight.set(key, revalidate);
+  // Safety net: catch any error that escapes the inner try/catch (e.g. from finally)
+  revalidate.catch((err) => {
+    log.warn({ key, err }, 'SWR background revalidation unhandled error');
+  });
+}
+
+/**
  * Stale-while-revalidate variant of cachedFetch.
  * Returns stale data immediately while kicking off a background refetch.
  * Falls back to a blocking fetch when no cached data exists.
@@ -771,65 +898,23 @@ export function cachedFetchSWR<T>(
   // Check in-memory SWR data (synchronous — no Redis round-trip)
   const staleInfo = cache.getMemoryWithStaleInfo<T>(key);
   if (staleInfo) {
-    if (staleInfo.isStale) {
+    if (staleInfo.isStale && !inFlight.has(key)) {
       // Return stale data immediately, kick off background revalidation
-      if (!inFlight.has(key)) {
-        const revalidate = (async () => {
-          try {
-            const data = await fetcher();
-            if (data !== undefined) {
-              await cache.set(key, data, ttlSeconds);
-            }
-          } catch (err) {
-            try {
-              await cache.invalidate(key);
-            } catch {
-              // Best-effort
-            }
-            log.warn({ key, err }, 'SWR background revalidation failed');
-          } finally {
-            inFlight.delete(key);
-          }
-        })();
-        inFlight.set(key, revalidate);
-        // Safety net: catch any error that escapes the inner try/catch (e.g. from finally)
-        revalidate.catch((err) => {
-          log.warn({ key, err }, 'SWR background revalidation unhandled error');
-        });
-      }
+      startBackgroundRevalidation(key, ttlSeconds, fetcher, staleInfo.data, 'SWR background revalidation failed');
     }
     return Promise.resolve(staleInfo.data);
   }
 
-  // L1 missed — check L2 (Redis) for stale data before blocking on fetch
-  return cache.get<T>(key).then((l2Data) => {
-    if (l2Data !== undefined) {
-      // L2 hit: return immediately and revalidate in background
-      if (!inFlight.has(key)) {
-        const revalidate = (async () => {
-          try {
-            const data = await fetcher();
-            if (data !== undefined) {
-              await cache.set(key, data, ttlSeconds);
-            }
-          } catch (err) {
-            try {
-              await cache.invalidate(key);
-            } catch {
-              // Best-effort
-            }
-            log.warn({ key, err }, 'SWR L2 background revalidation failed');
-          } finally {
-            inFlight.delete(key);
-          }
-        })();
-        inFlight.set(key, revalidate);
-        // Safety net: catch any error that escapes the inner try/catch
-        revalidate.catch((err) => {
-          log.warn({ key, err }, 'SWR L2 background revalidation unhandled error');
-        });
+  // L1 missed — check L2 (Redis) for data before blocking on fetch
+  return cache.getL2WithStaleInfo<T>(key).then((l2Info) => {
+    if (l2Info !== undefined) {
+      // Fresh L2 entries (within their envelope's staleAt) skip revalidation
+      // entirely (#1499); stale ones are served immediately while a
+      // background refetch runs.
+      if (l2Info.isStale && !inFlight.has(key)) {
+        startBackgroundRevalidation(key, ttlSeconds, fetcher, l2Info.data, 'SWR L2 background revalidation failed');
       }
-      return l2Data;
+      return l2Info.data;
     }
 
     // No data in L1 or L2 — blocking fetch
