@@ -19,6 +19,7 @@ vi.mock('../services/harbor-client.js', () => ({
 
 // Kept: harbor-vulnerability-store mock — no PostgreSQL in CI
 const mockGetVulnerabilities = vi.fn();
+const mockGetVulnerabilitiesCount = vi.fn();
 const mockGetVulnerabilitySummary = vi.fn();
 const mockGetExceptions = vi.fn();
 const mockCreateException = vi.fn();
@@ -30,6 +31,7 @@ vi.mock('../services/harbor-vulnerability-store.js', async (importOriginal) => (
   // DB-touching functions are mocked, since there is no PostgreSQL in CI.
   ...(await importOriginal<typeof import('../services/harbor-vulnerability-store.js')>()),
   getVulnerabilities: (...args: unknown[]) => mockGetVulnerabilities(...args),
+  getVulnerabilitiesCount: (...args: unknown[]) => mockGetVulnerabilitiesCount(...args),
   getVulnerabilitySummary: (...args: unknown[]) => mockGetVulnerabilitySummary(...args),
   getExceptions: (...args: unknown[]) => mockGetExceptions(...args),
   createException: (...args: unknown[]) => mockCreateException(...args),
@@ -95,6 +97,7 @@ describe('Harbor Vulnerability Routes', () => {
     mockGetIsSyncing.mockReturnValue(false);
     mockGetVulnerabilitySummary.mockResolvedValue({ critical: 0, high: 0, medium: 0, low: 0, total: 0 });
     mockGetVulnerabilities.mockResolvedValue([]);
+    mockGetVulnerabilitiesCount.mockResolvedValue(0);
     mockGetExceptions.mockResolvedValue([]);
     mockGetLatestSyncStatus.mockResolvedValue(null);
   });
@@ -117,6 +120,31 @@ describe('Harbor Vulnerability Routes', () => {
       expect(body.vulnerabilities).toHaveLength(1);
       expect(body.vulnerabilities[0].cve_id).toBe('CVE-2024-0001');
       expect(body.summary.high).toBe(1);
+    });
+
+    it('returns the filtered total plus echoed limit/offset for pagination (#1546)', async () => {
+      // total (filtered) is distinct from summary.total (global) — a severity
+      // filter narrows the count without touching the global KPI summary.
+      mockGetVulnerabilities.mockResolvedValue([{ id: 1, cve_id: 'CVE-A', severity: 'Critical' }]);
+      mockGetVulnerabilitySummary.mockResolvedValue({ critical: 3, high: 5, medium: 0, low: 0, total: 8 });
+      mockGetVulnerabilitiesCount.mockResolvedValue(3);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/harbor/vulnerabilities?severity=Critical&limit=50&offset=100',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+      expect(body.total).toBe(3);
+      expect(body.summary.total).toBe(8); // global summary unchanged
+      expect(body.limit).toBe(50);
+      expect(body.offset).toBe(100);
+      // The count must use the same filter as the row query.
+      expect(mockGetVulnerabilitiesCount).toHaveBeenCalledWith(
+        expect.objectContaining({ severity: 'Critical', limit: 50, offset: 100 }),
+      );
     });
 
     it('passes severity filter to store', async () => {

@@ -29,6 +29,10 @@ const inUseOptions = [
   { value: 'false', label: 'Not In Use' },
 ] as const;
 
+// Server-side page size. Replaces the old fixed `limit: 500` fetch that silently
+// hid every matching CVE beyond the first 500 on large registries (#1546).
+const PAGE_SIZE = 50;
+
 function severityBadgeClass(severity: string): string {
   switch (severity) {
     case 'Critical':
@@ -75,17 +79,29 @@ export default function HarborVulnerabilitiesPage() {
   const [selectedSeverity, setSelectedSeverity] = useState<string>('all');
   const [selectedInUse, setSelectedInUse] = useState<string>('all');
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
+  const [page, setPage] = useState(1);
+
+  // Reset to the first page whenever a server-side filter changes, so we never
+  // land on an out-of-range offset (e.g. page 5 of a result set that shrank).
+  useEffect(() => {
+    setPage(1);
+  }, [selectedSeverity, selectedInUse]);
 
   const { data: status } = useHarborStatus();
   const { data, isLoading, isError, error, refetch } = useHarborVulnerabilities({
     severity: selectedSeverity !== 'all' ? selectedSeverity : undefined,
     inUse: selectedInUse !== 'all' ? selectedInUse === 'true' : undefined,
-    limit: 500,
+    limit: PAGE_SIZE,
+    offset: (page - 1) * PAGE_SIZE,
   });
   const triggerSync = useTriggerHarborSync();
 
   const vulnerabilities = data?.vulnerabilities ?? [];
   const summary = data?.summary;
+  // Count of rows matching the active severity/in-use filters (server-side),
+  // independent of the page window — the honest denominator for the count line
+  // and the pager, replacing the global `summary.total` (#1546).
+  const total = data?.total ?? 0;
 
   const filtered = useMemo(() => {
     if (!searchQuery) return vulnerabilities;
@@ -341,9 +357,9 @@ export default function HarborVulnerabilitiesPage() {
       {!isLoading && !isError && (
         <SpotlightCard>
         <section className="rounded-lg border bg-card p-4 shadow-sm">
-          {filtered.length === 0 ? (
+          {total === 0 ? (
             <div className="px-3 py-8 text-center text-muted-foreground">
-              {vulnerabilities.length === 0
+              {!summary || summary.total === 0
                 ? 'No vulnerability data yet. Click "Sync Now" to fetch from Harbor.'
                 : 'No vulnerabilities match your filters.'}
             </div>
@@ -353,13 +369,14 @@ export default function HarborVulnerabilitiesPage() {
                 columns={columns}
                 data={filtered}
                 hideSearch
-                pageSize={15}
+                serverPagination={{ total, page, pageSize: PAGE_SIZE, onPageChange: setPage }}
                 rowClassName={(v) => (v.in_use ? 'bg-amber-500/5' : '')}
                 onRowClick={(v) => setExpandedRow(expandedRow === v.id ? null : v.id)}
               />
               {expandedVuln && <VulnerabilityDetails vuln={expandedVuln} />}
               <div className="border-t px-3 py-2 text-xs text-muted-foreground">
-                Showing {filtered.length} of {summary?.total ?? vulnerabilities.length} vulnerabilities
+                Showing {filtered.length} of {total} vulnerabilities
+                {searchQuery && ' (search filters the current page)'}
               </div>
             </>
           )}
