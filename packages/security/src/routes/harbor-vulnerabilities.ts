@@ -4,6 +4,7 @@ import '@dashboard/core/plugins/auth.js';
 import '@dashboard/core/plugins/request-tracing.js';
 import '@fastify/swagger';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
+import { errorDetails } from '@dashboard/core/plugins/error-handler.js';
 import { writeAuditLog } from '@dashboard/core/services/audit-logger.js';
 import * as harborClient from '../services/harbor-client.js';
 import { getEffectiveHarborConfig } from '@dashboard/core/services/settings-store.js';
@@ -84,9 +85,8 @@ export async function harborVulnerabilityRoutes(fastify: FastifyInstance) {
     try {
       return await harborClient.getSecuritySummary();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
       log.error({ err }, 'Failed to fetch Harbor security summary');
-      return reply.code(502).send({ error: 'Failed to connect to Harbor', details: msg });
+      return reply.code(502).send({ error: 'Failed to connect to Harbor', details: errorDetails(err) });
     }
   });
 
@@ -157,9 +157,8 @@ export async function harborVulnerabilityRoutes(fastify: FastifyInstance) {
     try {
       return await harborClient.getProjects();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
       log.error({ err }, 'Failed to fetch Harbor projects');
-      return reply.code(502).send({ error: 'Failed to connect to Harbor', details: msg });
+      return reply.code(502).send({ error: 'Failed to connect to Harbor', details: errorDetails(err) });
     }
   });
 

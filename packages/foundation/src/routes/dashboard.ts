@@ -8,6 +8,7 @@ import { enrichEndpointsWithLiveDockerInfo, attachStackCounts, computeFleetTotal
 import { isDockerEndpoint } from '@dashboard/core/models/portainer.js';
 import { getKpiHistory, getLatestMetricsBatch, getLatestKpiSnapshot } from '@dashboard/observability';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
+import { errorDetails } from '@dashboard/core/plugins/error-handler.js';
 import { buildSecurityAuditSummary, getSecurityAudit } from '@dashboard/security';
 
 /**
@@ -65,11 +66,10 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
         () => portainer.getEndpoints(),
       );
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
       log.error({ err }, 'Failed to fetch endpoints from Portainer');
       return reply.code(502).send({
         error: 'Unable to connect to Portainer',
-        details: msg,
+        details: errorDetails(err),
       });
     }
 
@@ -151,11 +151,10 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
         () => portainer.getEndpoints(),
       );
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
       log.error({ err }, 'Failed to fetch endpoints from Portainer');
       return reply.code(502).send({
         error: 'Unable to connect to Portainer',
-        details: msg,
+        details: errorDetails(err),
       });
     }
 
@@ -351,11 +350,10 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
           () => portainer.getEndpoints(),
         );
       } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Unknown error';
         log.error({ err }, 'Failed to fetch endpoints from Portainer');
         return reply.code(502).send({
           error: 'Unable to connect to Portainer',
-          details: msg,
+          details: errorDetails(err),
         });
       }
     });

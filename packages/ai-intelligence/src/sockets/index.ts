@@ -1,4 +1,4 @@
-export { setupLlmNamespace, chatThrottle, CHAT_THROTTLE_MS } from './llm-chat.js';
+export { setupLlmNamespace, chatThrottle, CHAT_THROTTLE_MS, ThinkingBlockFilter } from './llm-chat.js';
 export {
   setupMonitoringNamespace,
   broadcastInsight,

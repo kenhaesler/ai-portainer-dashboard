@@ -4,6 +4,7 @@ import { cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/port
 import { normalizeNetwork, normalizeEndpoint } from '@dashboard/core/portainer/portainer-normalizers.js';
 import { EndpointIdQuerySchema } from '@dashboard/core/models/api-schemas.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
+import { errorDetails } from '@dashboard/core/plugins/error-handler.js';
 
 const log = createChildLogger('route:networks');
 
@@ -28,11 +29,10 @@ export async function networksRoutes(fastify: FastifyInstance) {
         () => portainer.getEndpoints(),
       );
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
       log.error({ err }, 'Failed to fetch endpoints from Portainer');
       return reply.code(502).send({
         error: 'Unable to connect to Portainer',
-        details: msg,
+        details: errorDetails(err),
       });
     }
 
@@ -68,7 +68,7 @@ export async function networksRoutes(fastify: FastifyInstance) {
     if (upEndpoints.length > 0 && results.length === 0 && errors.length > 0) {
       return reply.code(502).send({
         error: 'Failed to fetch networks from Portainer',
-        details: errors,
+        details: errorDetails(errors),
       });
     }
 

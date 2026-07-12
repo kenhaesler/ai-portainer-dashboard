@@ -342,6 +342,9 @@ The guard is applied to both the REST and WebSocket entry points; see CLAUDE.md 
 - **Server state**: TanStack React Query. **UI state**: Zustand.
 - **Zod validation** on all API boundaries (Portainer responses, request bodies, config).
 - `PortainerError` with retry + exponential backoff + circuit breaker.
+- **HTTP error contract (#1511)**: services attach status codes by throwing core's `HttpError` (`packages/core/src/utils/http-error.ts`, canonical `statusCode` field); consumers read them via `getErrorStatusCode()`, which also honours the legacy `status` spelling carried by `PortainerError`. The global error handler resolves both spellings.
+- **5xx detail masking (#1518)**: handler-caught errors that reply with an explicit 5xx pass `details` through `errorDetails()` (`packages/core/src/plugins/error-handler.ts`) — message in development, omitted in production.
+- **LLM live streams (#1516/#1517)**: the metrics ai-summary SSE filters chunks through `LLMInterface.createStreamFilter()` (wired to `ThinkingBlockFilter`) and emits the sanitized `chatStream` return value on the `done` event as the authoritative summary; the route carries a per-user rate limit and is excluded from the observer-read rate-limit bypass.
 - Path alias `@/*` → `./src/*` in both workspaces.
 - Vite proxies `/api` → `localhost:3051`, `/socket.io` → WebSocket.
 - Lazy-loaded pages via `React.lazy()` + `Suspense` + `ChunkLoadErrorBoundary`.

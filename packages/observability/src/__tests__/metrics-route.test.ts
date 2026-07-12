@@ -50,11 +50,20 @@ const mockChatStream = vi.fn();
 const mockIsAvailable = vi.fn();
 const mockGetEffectivePrompt = vi.fn().mockResolvedValue('You are a test assistant.');
 
+// Minimal stream filter double mirroring the DI'd ThinkingBlockFilter contract:
+// strips complete <think>...</think> blocks from each chunk (#1516). The real
+// incremental filter is exercised in backend/src/routes/security-regression-prompt-guard.test.ts.
+const createTestStreamFilter = () => ({
+  process: (chunk: string) => chunk.replace(/<think>[\s\S]*?<\/think>/gi, ''),
+  flush: () => '',
+});
+
 const mockLlm: LLMInterface = {
   isAvailable: mockIsAvailable,
   chatStream: mockChatStream,
   getEffectivePrompt: mockGetEffectivePrompt,
   buildInfrastructureContext: vi.fn().mockReturnValue('context'),
+  createStreamFilter: createTestStreamFilter,
 };
 
 function buildApp(llm?: LLMInterface) {
@@ -302,6 +311,26 @@ describe('metrics routes', () => {
       expect(body.details).toContain('DB connection lost');
     });
 
+    it('masks 500 details in production (#1518)', async () => {
+      vi.stubEnv('NODE_ENV', 'production');
+      try {
+        mockQuery.mockRejectedValueOnce(new Error('DB connection lost'));
+
+        const response = await app.inject({
+          method: 'GET',
+          url: '/api/metrics/1/abc123?metricType=cpu&timeRange=1h',
+        });
+
+        expect(response.statusCode).toBe(500);
+        const body = JSON.parse(response.body);
+        expect(body.error).toBe('Failed to query metrics');
+        expect(body.details).toBeUndefined();
+        expect(response.body).not.toContain('DB connection lost');
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+
     it('should return 500 when anomalies query fails', async () => {
       mockQuery.mockRejectedValueOnce(new Error('timeout'));
 
@@ -401,6 +430,98 @@ describe('metrics routes', () => {
 
       expect(response.statusCode).toBe(200);
       expect(response.body).toContain('"error"');
+    });
+
+    it('filters streamed chunks through the stream filter and never emits thinking blocks (#1516)', async () => {
+      mockIsAvailable.mockResolvedValue(true);
+      mockChatStream.mockImplementation(async (_msgs: any, _sys: any, onChunk: any) => {
+        onChunk('<think>secret chain of thought</think>');
+        onChunk('CPU is stable.');
+        // Mirrors the real contract: the resolved value is the sanitized full response.
+        return 'CPU is stable.';
+      });
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/metrics/1/container-abc/ai-summary?timeRange=1h',
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body).not.toContain('secret chain of thought');
+      expect(response.body).not.toContain('<think>');
+      expect(response.body).toContain('CPU is stable.');
+    });
+
+    it('emits the sanitized chatStream return value as the authoritative summary on done (#1516)', async () => {
+      mockIsAvailable.mockResolvedValue(true);
+      mockChatStream.mockImplementation(async (_msgs: any, _sys: any, onChunk: any) => {
+        onChunk('raw streamed text');
+        return 'sanitized final summary';
+      });
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/metrics/1/container-abc/ai-summary?timeRange=1h',
+      });
+
+      const doneEvent = response.body
+        .split('\n\n')
+        .map((block) => block.replace(/^data: /, ''))
+        .filter(Boolean)
+        .map((payload) => { try { return JSON.parse(payload); } catch { return null; } })
+        .find((event) => event?.done);
+      expect(doneEvent).toBeDefined();
+      expect(doneEvent.summary).toBe('sanitized final summary');
+    });
+
+    it('emits no raw chunks when the LLM adapter provides no stream filter (#1516)', async () => {
+      const filterlessLlm: LLMInterface = {
+        isAvailable: vi.fn().mockResolvedValue(true),
+        chatStream: vi.fn().mockImplementation(async (_msgs: any, _sys: any, onChunk: any) => {
+          onChunk('<think>leak</think>raw chunk');
+          return 'sanitized summary';
+        }),
+        getEffectivePrompt: vi.fn().mockResolvedValue('prompt'),
+        buildInfrastructureContext: vi.fn().mockReturnValue('context'),
+      };
+      const filterlessApp = buildApp(filterlessLlm);
+      await filterlessApp.ready();
+
+      const response = await filterlessApp.inject({
+        method: 'GET',
+        url: '/api/metrics/1/container-abc/ai-summary?timeRange=1h',
+      });
+
+      expect(response.body).not.toContain('"chunk"');
+      expect(response.body).not.toContain('leak');
+      expect(response.body).toContain('sanitized summary');
+      await filterlessApp.close();
+    });
+
+    it('carries a per-user rate limit config keyed on the JWT subject (#1517)', async () => {
+      const routeConfigs: Record<string, any> = {};
+      const probe = Fastify();
+      probe.setValidatorCompiler(validatorCompiler);
+      probe.setSerializerCompiler(serializerCompiler);
+      probe.decorate('authenticate', async () => undefined);
+      probe.addHook('onRoute', (route) => {
+        if (route.method === 'GET') routeConfigs[route.url] = route.config;
+      });
+      probe.register(metricsRoutes, { llm: mockLlm });
+      await probe.ready();
+
+      const config = routeConfigs['/api/metrics/:endpointId/:containerId/ai-summary'] as {
+        rateLimit: { max: number; timeWindow: string; keyGenerator: (req: unknown) => string };
+      };
+      expect(config?.rateLimit).toBeDefined();
+      expect(config.rateLimit.max).toBeGreaterThan(0);
+      expect(config.rateLimit.timeWindow).toBe('1 minute');
+      expect(config.rateLimit.keyGenerator({ user: { sub: 'user-42' }, ip: '10.0.0.1' })).toBe('user-42');
+      expect(config.rateLimit.keyGenerator({ ip: '10.0.0.1' })).toBe('10.0.0.1');
+
+      // Plain metrics reads stay un-throttled (observer bypass, #1386).
+      expect(routeConfigs['/api/metrics/:endpointId/:containerId']?.rateLimit).toBeUndefined();
+      await probe.close();
     });
   });
 

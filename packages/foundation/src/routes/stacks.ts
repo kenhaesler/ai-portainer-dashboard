@@ -11,6 +11,7 @@ import {
 import { StackIdParamsSchema } from '@dashboard/core/models/api-schemas.js';
 import { isDockerEndpoint } from '@dashboard/core/models/portainer.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
+import { errorDetails } from '@dashboard/core/plugins/error-handler.js';
 
 const log = createChildLogger('route:stacks');
 
@@ -31,9 +32,8 @@ export async function stacksRoutes(fastify: FastifyInstance) {
         () => portainer.getEndpoints(),
       );
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
       log.error({ err }, 'Failed to fetch endpoints from Portainer');
-      return reply.code(502).send({ error: 'Unable to connect to Portainer', details: msg });
+      return reply.code(502).send({ error: 'Unable to connect to Portainer', details: errorDetails(err) });
     }
 
     // Only Docker endpoints have stacks/compose — K8s uses Helm charts (not yet supported)
@@ -132,7 +132,7 @@ export async function stacksRoutes(fastify: FastifyInstance) {
     }
 
     if (upEndpoints.length > 0 && results.length === 0 && errors.length > 0) {
-      return reply.code(502).send({ error: 'Failed to fetch stacks from Portainer', details: errors });
+      return reply.code(502).send({ error: 'Failed to fetch stacks from Portainer', details: errorDetails(errors) });
     }
 
     return results;
@@ -152,9 +152,8 @@ export async function stacksRoutes(fastify: FastifyInstance) {
       const stack = await portainer.getStack(id);
       return normalizeStack(stack);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
       log.error({ err, stackId: id }, 'Failed to fetch stack details from Portainer');
-      return reply.code(502).send({ error: 'Unable to fetch stack details from Portainer', details: msg });
+      return reply.code(502).send({ error: 'Unable to fetch stack details from Portainer', details: errorDetails(err) });
     }
   });
 }

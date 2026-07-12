@@ -30,6 +30,7 @@ export {
   chatThrottle,
   CHAT_THROTTLE_MS,
   monitoringThrottle,
+  ThinkingBlockFilter,
 } from './sockets/index.js';
 
 // Services — monitoring orchestration
@@ -77,6 +78,8 @@ export {
   getPromptGuardNearMissTotal,
   getPromptGuardCanaryLeakTotal,
   pruneCanaryRegistry,
+  sanitizeLlmOutput,
+  stripThinkingBlocks,
 } from './services/prompt-guard.js';
 
 // Services — MCP
