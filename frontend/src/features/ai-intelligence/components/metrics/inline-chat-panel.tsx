@@ -42,6 +42,11 @@ const SUGGESTED_QUESTIONS = [
   'Is memory trending up?',
 ];
 
+// Hoisted so memoized markdown renders are not defeated by fresh plugin
+// arrays created on every render (#1494).
+const REMARK_PLUGINS = [remarkGfm];
+const REHYPE_PLUGINS = [rehypeHighlight];
+
 export const InlineChatPanel = memo(function InlineChatPanel({ open, onClose, context }: InlineChatPanelProps) {
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -86,10 +91,14 @@ export const InlineChatPanel = memo(function InlineChatPanel({ open, onClose, co
     }
   }, [open]);  
 
-  // Auto-scroll on new messages
+  // Auto-scroll on new messages. Instant while streaming (smooth scrolling
+  // per chunk flush thrashes layout) and for reduced-motion users (#1494).
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, currentResponse, isSending]);
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    messagesEndRef.current?.scrollIntoView({
+      behavior: reduceMotion || isStreaming ? 'auto' : 'smooth',
+    });
+  }, [messages, currentResponse, isSending, isStreaming]);
 
   // Clear sending flag when streaming starts
   useEffect(() => {
@@ -326,7 +335,9 @@ interface CompactMessageProps {
   userQuery?: string;
 }
 
-function CompactMessage({ message, userQuery }: CompactMessageProps) {
+// Memoized so completed history bubbles do not re-render (and re-parse
+// their markdown) on every streamed-chunk flush of the panel (#1494).
+const CompactMessage = memo(function CompactMessage({ message, userQuery }: CompactMessageProps) {
   if (message.role === 'system') {
     return (
       <div className="flex justify-center">
@@ -394,7 +405,7 @@ function CompactMessage({ message, userQuery }: CompactMessageProps) {
       </div>
     </div>
   );
-}
+});
 
 function CompactToolIndicator({ events }: { events: ToolCallEvent[] }) {
   return (
@@ -439,12 +450,14 @@ function normalizeMarkdown(raw: string): string {
   return text;
 }
 
-function CompactMarkdown({ content }: { content: string }) {
+// Memoized (content-keyed) — ReactMarkdown re-parses on every render, so a
+// bail-out here stops streaming from re-parsing finished messages (#1494).
+const CompactMarkdown = memo(function CompactMarkdown({ content }: { content: string }) {
   return (
     <div className="prose prose-sm dark:prose-invert max-w-none prose-p:text-[13px] prose-p:leading-relaxed prose-p:my-1 prose-headings:text-sm prose-headings:font-semibold prose-pre:bg-zinc-900 prose-pre:text-xs prose-code:text-[11px] prose-li:text-[13px] prose-td:text-[12px] prose-th:text-[11px]">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+      <ReactMarkdown remarkPlugins={REMARK_PLUGINS} rehypePlugins={REHYPE_PLUGINS}>
         {normalizeMarkdown(content)}
       </ReactMarkdown>
     </div>
   );
-}
+});

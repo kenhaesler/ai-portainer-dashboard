@@ -1,6 +1,13 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useLlmChat } from './use-llm-chat';
+
+/** Advance past the chunk-batching flush interval (#1494). */
+function flushChunkBatch() {
+  act(() => {
+    vi.advanceTimersByTime(60);
+  });
+}
 
 // Mock the socket provider
 const mockOn = vi.fn();
@@ -33,10 +40,15 @@ describe('useLlmChat', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useFakeTimers();
     eventHandlers = {};
     mockOn.mockImplementation((event: string, handler: (...args: unknown[]) => void) => {
       eventHandlers[event] = handler;
     });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('should initialize with empty state', () => {
@@ -96,6 +108,8 @@ describe('useLlmChat', () => {
     act(() => {
       eventHandlers['chat:chunk']?.('world');
     });
+
+    flushChunkBatch();
 
     expect(result.current.currentResponse).toBe('Hello world');
   });
@@ -205,6 +219,8 @@ describe('useLlmChat', () => {
     act(() => {
       eventHandlers['chat:chunk']?.('{"tool_calls":');
     });
+
+    flushChunkBatch();
 
     expect(result.current.currentResponse).toBe('{"tool_calls":');
 
@@ -324,6 +340,7 @@ describe('useLlmChat', () => {
     act(() => {
       eventHandlers['chat:chunk']?.('{"tool_calls": [{"tool": "query_containers"}]}');
     });
+    flushChunkBatch();
     expect(result.current.currentResponse).toBe('{"tool_calls": [{"tool": "query_containers"}]}');
 
     // 3. Backend detects tool calls and clears streamed content
@@ -355,6 +372,7 @@ describe('useLlmChat', () => {
     act(() => {
       eventHandlers['chat:chunk']?.('running containers...');
     });
+    flushChunkBatch();
     expect(result.current.currentResponse).toBe('Here are your running containers...');
 
     // 6. Chat ends — message finalized with content and tool calls
@@ -383,5 +401,133 @@ describe('useLlmChat', () => {
 
     // Listener count should not increase (no re-subscription)
     expect(mockOn.mock.calls.length).toBe(initialOnCount);
+  });
+
+  describe('chunk batching (#1494)', () => {
+    it('batches rapid chunks into a single state flush with identical final text', () => {
+      let renderCount = 0;
+      const { result } = renderHook(() => {
+        renderCount += 1;
+        return useLlmChat();
+      });
+
+      act(() => {
+        eventHandlers['chat:start']?.();
+      });
+      const rendersAfterStart = renderCount;
+
+      const chunks = Array.from({ length: 25 }, (_, i) => `token${i} `);
+      act(() => {
+        for (const chunk of chunks) {
+          eventHandlers['chat:chunk']?.(chunk);
+        }
+      });
+
+      // No state flush yet — chunks only accumulated in the ref.
+      expect(result.current.currentResponse).toBe('');
+      expect(renderCount).toBe(rendersAfterStart);
+
+      flushChunkBatch();
+
+      // One flush renders once with all accumulated text.
+      expect(renderCount).toBe(rendersAfterStart + 1);
+      expect(result.current.currentResponse).toBe(chunks.join(''));
+    });
+
+    it('loses no text when chat:end arrives before the pending flush fires', () => {
+      const { result } = renderHook(() => useLlmChat());
+
+      act(() => {
+        eventHandlers['chat:start']?.();
+      });
+
+      act(() => {
+        eventHandlers['chat:chunk']?.('Hello ');
+        eventHandlers['chat:chunk']?.('world');
+      });
+
+      // End the stream with an empty payload before the flush timer fires —
+      // the finalized message must fall back to the full streamed text.
+      act(() => {
+        eventHandlers['chat:end']?.({ id: 'msg-1', content: '' });
+      });
+
+      expect(result.current.messages).toHaveLength(1);
+      expect(result.current.messages[0].content).toBe('Hello world');
+      expect(result.current.currentResponse).toBe('');
+
+      // A stale flush must not resurrect the streamed text afterwards.
+      flushChunkBatch();
+      expect(result.current.currentResponse).toBe('');
+    });
+
+    it('does not resurrect cleared text after chat:error', () => {
+      const { result } = renderHook(() => useLlmChat());
+
+      act(() => {
+        eventHandlers['chat:start']?.();
+      });
+      act(() => {
+        eventHandlers['chat:chunk']?.('partial resp');
+      });
+      act(() => {
+        eventHandlers['chat:error']?.({ message: 'boom' });
+      });
+
+      expect(result.current.currentResponse).toBe('');
+      flushChunkBatch();
+      expect(result.current.currentResponse).toBe('');
+    });
+
+    it('does not resurrect cleared text after tool_response_pending', () => {
+      const { result } = renderHook(() => useLlmChat());
+
+      act(() => {
+        eventHandlers['chat:start']?.();
+      });
+      act(() => {
+        eventHandlers['chat:chunk']?.('{"tool_calls":');
+      });
+      act(() => {
+        eventHandlers['chat:tool_response_pending']?.();
+      });
+
+      expect(result.current.currentResponse).toBe('');
+      flushChunkBatch();
+      expect(result.current.currentResponse).toBe('');
+    });
+
+    it('does not resurrect cleared text after cancelGeneration', () => {
+      const { result } = renderHook(() => useLlmChat());
+
+      act(() => {
+        eventHandlers['chat:start']?.();
+      });
+      act(() => {
+        eventHandlers['chat:chunk']?.('partial resp');
+      });
+      act(() => {
+        result.current.cancelGeneration();
+      });
+
+      expect(result.current.currentResponse).toBe('');
+      flushChunkBatch();
+      expect(result.current.currentResponse).toBe('');
+    });
+
+    it('clears the pending flush timer on unmount', () => {
+      const { unmount } = renderHook(() => useLlmChat());
+
+      act(() => {
+        eventHandlers['chat:start']?.();
+      });
+      act(() => {
+        eventHandlers['chat:chunk']?.('dangling');
+      });
+
+      expect(vi.getTimerCount()).toBeGreaterThan(0);
+      unmount();
+      expect(vi.getTimerCount()).toBe(0);
+    });
   });
 });

@@ -33,6 +33,11 @@ export interface ChatStatusEvent {
   phase: 'init' | 'context' | 'model' | 'generating';
 }
 
+// chat:chunk events arrive per streamed token; flushing each one to state
+// re-renders the whole conversation per token. Chunks accumulate in a ref
+// and flush to state at most once per interval instead (#1494).
+const CHUNK_FLUSH_INTERVAL_MS = 50;
+
 export function useLlmChat() {
   const { llmSocket } = useSockets();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -41,6 +46,14 @@ export function useLlmChat() {
   const [activeToolCalls, setActiveToolCalls] = useState<ToolCallEvent[]>([]);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const streamedResponseRef = useRef('');
+  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancelPendingFlush = useCallback(() => {
+    if (flushTimerRef.current !== null) {
+      clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = null;
+    }
+  }, []);
 
   // Use a ref to track tool calls so that socket listeners don't need to be
   // torn down and re-subscribed every time a tool_call event fires.
@@ -50,6 +63,7 @@ export function useLlmChat() {
     if (!llmSocket) return;
 
     const handleChatStart = () => {
+      cancelPendingFlush();
       setIsStreaming(true);
       setStatusMessage(null);
       setCurrentResponse('');
@@ -64,10 +78,20 @@ export function useLlmChat() {
 
     const handleChatChunk = (chunk: string) => {
       streamedResponseRef.current += chunk;
-      setCurrentResponse((prev) => prev + chunk);
+      // Trailing timer: the first chunk in an interval schedules a flush;
+      // subsequent chunks just accumulate in the ref until it fires.
+      if (flushTimerRef.current === null) {
+        flushTimerRef.current = setTimeout(() => {
+          flushTimerRef.current = null;
+          setCurrentResponse(streamedResponseRef.current);
+        }, CHUNK_FLUSH_INTERVAL_MS);
+      }
     };
 
     const handleChatEnd = (data: { id: string; content: string }) => {
+      // The finalized content reads streamedResponseRef synchronously, so a
+      // pending flush carries no extra text — just cancel it.
+      cancelPendingFlush();
       setIsStreaming(false);
       setStatusMessage(null);
       const snapshotToolCalls = toolCallsRef.current;
@@ -97,6 +121,7 @@ export function useLlmChat() {
     };
 
     const handleChatError = (error: { message: string }) => {
+      cancelPendingFlush();
       setIsStreaming(false);
       setStatusMessage(null);
       setCurrentResponse('');
@@ -120,6 +145,7 @@ export function useLlmChat() {
     const handleToolResponsePending = () => {
       // The LLM produced a tool call — clear the streamed tool-call JSON
       // so the next iteration's natural language response replaces it
+      cancelPendingFlush();
       streamedResponseRef.current = '';
       setCurrentResponse('');
     };
@@ -133,6 +159,7 @@ export function useLlmChat() {
     llmSocket.on('chat:tool_response_pending', handleToolResponsePending);
 
     return () => {
+      cancelPendingFlush();
       llmSocket.off('chat:start', handleChatStart);
       llmSocket.off('chat:chunk', handleChatChunk);
       llmSocket.off('chat:end', handleChatEnd);
@@ -141,7 +168,7 @@ export function useLlmChat() {
       llmSocket.off('chat:tool_call', handleToolCall);
       llmSocket.off('chat:tool_response_pending', handleToolResponsePending);
     };
-  }, [llmSocket]);
+  }, [llmSocket, cancelPendingFlush]);
 
   const sendMessage = useCallback(
     (text: string, context?: ChatContext, model?: string) => {
@@ -163,21 +190,23 @@ export function useLlmChat() {
 
   const cancelGeneration = useCallback(() => {
     if (!llmSocket || !isStreaming) return;
+    cancelPendingFlush();
     llmSocket.emit('chat:cancel');
     setIsStreaming(false);
     setStatusMessage(null);
     setCurrentResponse('');
     setActiveToolCalls([]);
-  }, [llmSocket, isStreaming]);
+  }, [llmSocket, isStreaming, cancelPendingFlush]);
 
   const clearHistory = useCallback(() => {
     if (!llmSocket) return;
+    cancelPendingFlush();
     llmSocket.emit('chat:clear');
     setMessages([]);
     setStatusMessage(null);
     setCurrentResponse('');
     setActiveToolCalls([]);
-  }, [llmSocket]);
+  }, [llmSocket, cancelPendingFlush]);
 
   return {
     messages,
