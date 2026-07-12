@@ -19,6 +19,10 @@
  *   Bounded by `EDGE_LIVE_QUERY_TIMEOUT_MS` (default 5000ms).
  * - **Graceful degradation.** On failure or when disabled, returns `null` so
  *   the caller can mark the endpoint as `snapshotSource: 'unavailable'`.
+ * - **Negative caching.** A failed probe is remembered for
+ *   `EDGE_LIVE_NEGATIVE_TTL_SECONDS` so an endpoint that Portainer reports
+ *   "up" but whose agent is unreachable fails fast on subsequent requests
+ *   instead of re-paying the full timeout on every dashboard load (#1500).
  *
  * Defaults are tunable at runtime via the Settings UI (see
  * `getEffectiveEdgeLiveQueryConfig` in `services/settings-store.ts`), which
@@ -28,7 +32,7 @@ import pLimit from 'p-limit';
 import { fetch as undiciFetch } from 'undici';
 import { getConfig } from '../config/index.js';
 import { createChildLogger } from '../utils/logger.js';
-import { cachedFetchSWR, getCacheKey } from './portainer-cache.js';
+import { cache, cachedFetchSWR, getCacheKey } from './portainer-cache.js';
 import { buildApiUrl, buildApiHeaders } from './portainer-client.js';
 
 const log = createChildLogger('edge-live-query');
@@ -96,6 +100,24 @@ export function edgeLiveQueryCacheKey(endpointId: number): string {
   return getCacheKey('edge-live-info', endpointId);
 }
 
+/**
+ * Negative-cache TTL for failed live `/docker/info` probes (#1500).
+ *
+ * A failed blocking fetch invalidates the positive SWR entry (invalidate-on-
+ * failure in portainer-cache), so without a failure marker every subsequent
+ * dashboard request re-pays the full `EDGE_LIVE_QUERY_TIMEOUT_MS` for an
+ * endpoint that Portainer reports "up" but whose agent is unreachable.
+ * 30 seconds matches the cache's L1 TTL cap and stays well below the 60s
+ * positive-entry interval, so a recovered agent is picked up within half a
+ * normal refresh cycle.
+ */
+export const EDGE_LIVE_NEGATIVE_TTL_SECONDS = 30;
+
+/** Distinct key prefix so failure markers never collide with positive `edge-live-info:` entries. */
+export function edgeLiveQueryNegativeCacheKey(endpointId: number): string {
+  return getCacheKey('edge-live-info-failed', endpointId);
+}
+
 interface PortainerDockerInfoResponse {
   Containers?: number;
   ContainersRunning?: number;
@@ -160,6 +182,19 @@ export async function fetchLiveDockerInfo(
 ): Promise<LiveDockerInfo | null> {
   if (!cfg.enabled) return null;
 
+  // Negative caching is part of the cache layer — when caching is disabled
+  // every call must hit the real probe, exactly like cachedFetchSWR does.
+  const cacheEnabled = getConfig().CACHE_ENABLED;
+  const negativeKey = edgeLiveQueryNegativeCacheKey(endpointId);
+
+  // Fail fast on a recently-failed endpoint (#1500). The L1 lookup is
+  // synchronous, so the happy path pays no extra round-trip. The marker is
+  // only written after a blocking-fetch failure, which has already
+  // invalidated the positive entry — so it never masks fresh data.
+  if (cacheEnabled && cache.getMemoryWithStaleInfo(negativeKey)) {
+    return null;
+  }
+
   const limit = getLimiter(cfg.concurrency);
 
   try {
@@ -170,6 +205,15 @@ export async function fetchLiveDockerInfo(
     );
   } catch (err) {
     log.warn({ endpointId, err }, 'Live Docker-info fetch failed');
+    if (cacheEnabled) {
+      // Best-effort failure marker so the next EDGE_LIVE_NEGATIVE_TTL_SECONDS
+      // of requests skip the timeout for this endpoint instead of blocking.
+      try {
+        await cache.set(negativeKey, Date.now(), EDGE_LIVE_NEGATIVE_TTL_SECONDS);
+      } catch {
+        // Never let marker storage mask the graceful-degradation path.
+      }
+    }
     return null;
   }
 }

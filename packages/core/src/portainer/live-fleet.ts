@@ -95,17 +95,24 @@ export interface FleetOverview {
 export async function collectFleetOverview(cfg?: EdgeLiveQueryConfig): Promise<FleetOverview> {
   const raw = (await cachedFetchSWR(getCacheKey('endpoints'), TTL.ENDPOINTS, () => getEndpoints())) ?? [];
   const endpoints = raw.map(normalizeEndpoint);
-  await enrichEndpointsWithLiveDockerInfo(endpoints, cfg);
 
-  let stacks: Stack[] = [];
-  try { stacks = (await cachedFetchSWR(getCacheKey('stacks'), TTL.STACKS, () => getStacks())) ?? []; }
-  catch (err) { log.warn({ err }, 'stacks fetch failed — stack counts default to 0'); }
-  attachStackCounts(endpoints, stacks);
+  // Live enrichment mutates only counts/totalCpu/totalMemory/snapshotSource —
+  // never the status/type fields the up/Docker filter reads — so it runs
+  // concurrently with the stacks fetch and the container fan-out instead of
+  // serializing ahead of them (#1500).
+  const enrichPromise = enrichEndpointsWithLiveDockerInfo(endpoints, cfg);
+  const stacksPromise: Promise<Stack[]> = cachedFetchSWR(getCacheKey('stacks'), TTL.STACKS, () => getStacks())
+    .then((s) => s ?? [])
+    .catch((err) => { log.warn({ err }, 'stacks fetch failed — stack counts default to 0'); return []; });
 
   const upDocker = endpoints.filter((ep) => ep.status === 'up' && isDockerEndpoint(ep.type));
-  const settled = await Promise.allSettled(upDocker.map((ep) =>
+  const settledPromise = Promise.allSettled(upDocker.map((ep) =>
     containerFanoutLimit(() => cachedFetchSWR(getCacheKey('containers', ep.id), TTL.CONTAINERS, () => getContainers(ep.id)).then((cs) => ({ ep, cs }))),
   ));
+
+  const [, stacks, settled] = await Promise.all([enrichPromise, stacksPromise, settledPromise]);
+  attachStackCounts(endpoints, stacks);
+
   const containers: NormalizedContainer[] = [];
   for (const r of settled) {
     if (r.status === 'fulfilled') {

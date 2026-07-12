@@ -22,7 +22,7 @@ vi.mock('@dashboard/observability', async (importOriginal) => ({
 // Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
 vi.mock('@dashboard/core/portainer/portainer-client.js', async (importOriginal) => await importOriginal());
 
-import { fetchLiveDockerInfo } from '@dashboard/core/portainer/edge-live-query.js';
+import { fetchLiveDockerInfo, type LiveDockerInfo } from '@dashboard/core/portainer/edge-live-query.js';
 const mockLiveFetch = vi.mocked(fetchLiveDockerInfo);
 import * as portainerClient from '@dashboard/core/portainer/portainer-client.js';
 import { cache, waitForInFlight } from '@dashboard/core/portainer/portainer-cache.js';
@@ -164,6 +164,41 @@ describe('Dashboard Summary Route', () => {
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.security).toEqual({ totalAudited: 0, flagged: 0, ignored: 0 });
+
+    await app.close();
+  });
+
+  it('runs live enrichment concurrently with the stacks fetch (#1500)', async () => {
+    const app = Fastify();
+    app.setValidatorCompiler(validatorCompiler);
+    app.setSerializerCompiler(serializerCompiler);
+    app.decorate('authenticate', async () => undefined);
+    await app.register(dashboardRoutes);
+    await app.ready();
+
+    mockGetEndpoints.mockResolvedValue([{
+      Id: 1, Name: 'ep-1', Type: 1, URL: 'http://ep-1', Status: 1,
+    }] as any);
+    const getStacksSpy = vi.spyOn(portainerClient, 'getStacks').mockResolvedValue([] as never);
+
+    // The live /docker/info probe hangs until we resolve it — the stacks
+    // fetch must start anyway instead of serializing behind it (#1500).
+    let resolveLive!: (v: LiveDockerInfo | null) => void;
+    mockLiveFetch.mockImplementation(
+      () => new Promise<LiveDockerInfo | null>((res) => { resolveLive = res; }),
+    );
+
+    const pending = app.inject({ method: 'GET', url: '/api/dashboard/summary' });
+
+    await vi.waitFor(() => {
+      expect(mockLiveFetch).toHaveBeenCalled();
+      expect(getStacksSpy).toHaveBeenCalled();
+    });
+    resolveLive({ containers: 2, containersRunning: 2, containersStopped: 0, ncpu: 0, memTotal: 0, fetchedAt: Date.now() });
+
+    const res = await pending;
+    expect(res.statusCode).toBe(200);
+    expect(res.json().kpis.running).toBe(2);
 
     await app.close();
   });

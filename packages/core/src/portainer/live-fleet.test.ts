@@ -1,7 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { enrichEndpointsWithLiveDockerInfo, attachStackCounts, computeFleetTotals } from './live-fleet.js';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { enrichEndpointsWithLiveDockerInfo, attachStackCounts, computeFleetTotals, collectFleetOverview } from './live-fleet.js';
 import * as edgeLive from './edge-live-query.js';
+import * as portainerClient from './portainer-client.js';
 import * as settingsStore from '../services/settings-store.js';
+import { resetConfig, setConfigForTest } from '../config/index.js';
 import type { NormalizedEndpoint, NormalizedContainer } from './portainer-normalizers.js';
 
 function ep(partial: Partial<NormalizedEndpoint>): NormalizedEndpoint {
@@ -67,6 +69,60 @@ describe('enrichEndpointsWithLiveDockerInfo', () => {
     await enrichEndpointsWithLiveDockerInfo(eps); // no cfg → triggers the load path
     expect(eps[0].snapshotSource).toBe('unavailable');
     expect(spy).not.toHaveBeenCalled();
+  });
+});
+
+describe('collectFleetOverview', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    // Bypass the cache so every stage calls its (mocked) fetcher directly.
+    setConfigForTest({ CACHE_ENABLED: false, PORTAINER_API_URL: 'http://test.local' });
+  });
+
+  afterEach(() => resetConfig());
+
+  it('runs live enrichment concurrently with the stacks fetch and container fan-out (#1500)', async () => {
+    vi.spyOn(portainerClient, 'getEndpoints').mockResolvedValue([
+      { Id: 1, Name: 'ep-1', Type: 1, URL: 'tcp://x', Status: 1 },
+    ] as never);
+    const getStacksSpy = vi.spyOn(portainerClient, 'getStacks').mockResolvedValue([] as never);
+    const getContainersSpy = vi.spyOn(portainerClient, 'getContainers').mockResolvedValue([] as never);
+
+    // Live enrichment hangs until we resolve it — the independent stages must
+    // start anyway instead of serializing behind the /docker/info probes.
+    let resolveLive!: (v: null) => void;
+    vi.spyOn(edgeLive, 'fetchLiveDockerInfo').mockImplementation(
+      () => new Promise((res) => { resolveLive = res; }),
+    );
+
+    const pending = collectFleetOverview(cfg);
+
+    await vi.waitFor(() => {
+      expect(getStacksSpy).toHaveBeenCalled();
+      expect(getContainersSpy).toHaveBeenCalledWith(1);
+    });
+    resolveLive(null);
+
+    const overview = await pending;
+    expect(overview.endpoints).toHaveLength(1);
+    expect(overview.endpoints[0].snapshotSource).toBe('unavailable');
+    expect(overview.totals.endpoints).toBe(1);
+  });
+
+  it('still applies live counts to totals when enrichment succeeds', async () => {
+    vi.spyOn(portainerClient, 'getEndpoints').mockResolvedValue([
+      { Id: 1, Name: 'ep-1', Type: 1, URL: 'tcp://x', Status: 1 },
+    ] as never);
+    vi.spyOn(portainerClient, 'getStacks').mockResolvedValue([{ EndpointId: 1 }] as never);
+    vi.spyOn(portainerClient, 'getContainers').mockResolvedValue([] as never);
+    vi.spyOn(edgeLive, 'fetchLiveDockerInfo').mockResolvedValue({
+      containers: 4, containersRunning: 3, containersStopped: 1, ncpu: 2, memTotal: 8e9, fetchedAt: Date.now(),
+    });
+
+    const overview = await collectFleetOverview(cfg);
+    expect(overview.endpoints[0].snapshotSource).toBe('live');
+    expect(overview.endpoints[0].stackCount).toBe(1);
+    expect(overview.totals).toMatchObject({ running: 3, stopped: 1, total: 4, stacks: 1 });
   });
 });
 

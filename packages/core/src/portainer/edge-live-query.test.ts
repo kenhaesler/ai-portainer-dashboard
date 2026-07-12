@@ -9,11 +9,14 @@ import { fetch as undiciFetch } from 'undici';
 import {
   fetchLiveDockerInfo,
   edgeLiveQueryCacheKey,
+  edgeLiveQueryNegativeCacheKey,
   getEdgeLiveQueryConfigFromEnv,
   _resetEdgeLiveQueryState,
+  EDGE_LIVE_NEGATIVE_TTL_SECONDS,
   type EdgeLiveQueryConfig,
   type LiveDockerInfo,
 } from './edge-live-query.js';
+import { cache, waitForInFlight } from './portainer-cache.js';
 import { resetConfig, setConfigForTest } from '../config/index.js';
 
 const mockFetch = vi.mocked(undiciFetch);
@@ -144,6 +147,93 @@ describe('fetchLiveDockerInfo', () => {
     // Calling with concurrency=5 should rebuild it without throwing.
     await fetchLiveDockerInfo(2, cfg({ concurrency: 5 }));
     expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('negative caching of failed live probes (#1500)', () => {
+  // These tests run with the cache layer enabled (unlike the suite default):
+  // negative caching is a cache-layer behavior. REDIS_URL is cleared so the
+  // hybrid cache stays memory-only — no external service needed.
+  beforeEach(async () => {
+    setConfigForTest({
+      CACHE_ENABLED: true,
+      REDIS_URL: undefined,
+      PORTAINER_API_URL: 'http://test.local',
+    });
+    await cache.clear();
+  });
+
+  afterEach(async () => {
+    await waitForInFlight();
+    await cache.clear();
+  });
+
+  it('fails fast on subsequent calls within the negative-TTL window', async () => {
+    mockFetch.mockRejectedValue(new Error('connect timeout'));
+
+    expect(await fetchLiveDockerInfo(41, cfg())).toBeNull();
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+
+    // Second and third calls must not re-pay the probe timeout — the failure
+    // marker short-circuits them without touching the network.
+    expect(await fetchLiveDockerInfo(41, cfg())).toBeNull();
+    expect(await fetchLiveDockerInfo(41, cfg())).toBeNull();
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('scopes failure markers per endpoint — one down endpoint does not block others', async () => {
+    mockFetch
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockResolvedValueOnce(mockJsonResponse({ Containers: 2, ContainersRunning: 2 }));
+
+    expect(await fetchLiveDockerInfo(42, cfg())).toBeNull();
+    const other = await fetchLiveDockerInfo(43, cfg());
+    expect(other?.containers).toBe(2);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('re-probes the endpoint after the negative TTL expires', async () => {
+    mockFetch.mockRejectedValueOnce(new Error('boom'));
+    expect(await fetchLiveDockerInfo(44, cfg())).toBeNull();
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+
+    const realNow = Date.now();
+    const nowSpy = vi.spyOn(Date, 'now')
+      .mockReturnValue(realNow + (EDGE_LIVE_NEGATIVE_TTL_SECONDS + 1) * 1000);
+    try {
+      mockFetch.mockResolvedValueOnce(mockJsonResponse({ Containers: 5, ContainersRunning: 5 }));
+      const result = await fetchLiveDockerInfo(44, cfg());
+      expect(result?.containers).toBe(5);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  it('does not consult or store markers when the cache layer is disabled', async () => {
+    setConfigForTest({ CACHE_ENABLED: false, PORTAINER_API_URL: 'http://test.local' });
+    mockFetch.mockRejectedValue(new Error('boom'));
+
+    expect(await fetchLiveDockerInfo(45, cfg())).toBeNull();
+    expect(await fetchLiveDockerInfo(45, cfg())).toBeNull();
+    // No fail-fast: every call goes to the real probe, exactly as before.
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('kill-switch (enabled=false) returns null before any cache or network access', async () => {
+    // Seed a failure marker, then flip the kill-switch — semantics must be
+    // identical to the pre-negative-cache behavior: null, no fetch.
+    mockFetch.mockRejectedValueOnce(new Error('boom'));
+    expect(await fetchLiveDockerInfo(46, cfg())).toBeNull();
+
+    mockFetch.mockClear();
+    expect(await fetchLiveDockerInfo(46, cfg({ enabled: false }))).toBeNull();
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('uses a key prefix distinct from the positive cache entry', () => {
+    expect(edgeLiveQueryNegativeCacheKey(7)).toBe('edge-live-info-failed:7');
+    expect(edgeLiveQueryNegativeCacheKey(7)).not.toBe(edgeLiveQueryCacheKey(7));
   });
 });
 
