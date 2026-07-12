@@ -19,7 +19,10 @@ vi.mock('@dashboard/core/services/audit-logger.js', () => ({
   writeAuditLog: (...args: unknown[]) => mockWriteAuditLog(...args),
 }));
 
-// Kept: backup-service mock — external service boundary
+// Kept: backup-service mock — isolates the route from pg_dump/pg_restore + the
+// filesystem. The service is internal logic (its own boundary is child_process
+// .execFile, exercised directly in backup-service.test.ts, #1522); here we stub
+// it so these tests assert only the route's auth, validation, and status codes.
 vi.mock('../services/backup-service.js', () => ({
   createBackup: (...args: unknown[]) => mockCreateBackup(...args),
   listBackups: (...args: unknown[]) => mockListBackups(...args),

@@ -23,13 +23,20 @@ vi.mock('../services/session-store.js', () => ({
 }));
 
 // user-store is pulled in by the live-revalidation logic; mock so the plugin
-// loads without a real DB.
+// loads without a real DB. Controllable so the revalidation loop test (#1520)
+// can simulate an admin who lost their role.
+const mockGetUserById = vi.fn();
 vi.mock('../services/user-store.js', () => ({
-  getUserById: vi.fn(),
+  getUserById: (...args: unknown[]) => mockGetUserById(...args),
 }));
 
 import socketIoPlugin from './socket-io.js';
-import { authenticateSocketToken, verifyTransportRequest, socketRevalidationVerdict } from './socket-io.js';
+import {
+  authenticateSocketToken,
+  verifyTransportRequest,
+  socketRevalidationVerdict,
+  SOCKET_REVALIDATE_INTERVAL_MS,
+} from './socket-io.js';
 import { IncomingMessage } from 'http';
 
 describe('socket-io plugin', () => {
@@ -342,5 +349,116 @@ describe('socketRevalidationVerdict', () => {
   it('flags an admin who was downgraded (remediation namespace)', () => {
     expect(socketRevalidationVerdict(session, 'u1', true, 'operator')).toBe('role-lost');
     expect(socketRevalidationVerdict(session, 'u1', true, undefined)).toBe('role-lost');
+  });
+});
+
+// =====================================================================
+//  Live revalidation loop wiring (#1520). The pure verdict function is
+//  covered above; this drives the actual enforcement: the per-connection
+//  setInterval, the getSession/getUserById lookups, requireAdmin derived
+//  from namespace identity, socket.disconnect(true), and clearInterval on
+//  disconnect (timer-leak guard).
+// =====================================================================
+describe('live socket revalidation loop (#1520)', () => {
+  let app: FastifyInstance;
+
+  interface FakeSocket {
+    data: { user: { sub: string; username: string; sessionId: string; role?: string } };
+    disconnect: ReturnType<typeof vi.fn>;
+    on: ReturnType<typeof vi.fn>;
+    _disconnectHandler?: () => void;
+  }
+
+  function makeSocket(role?: string): FakeSocket {
+    const socket: FakeSocket = {
+      data: { user: { sub: 'u1', username: 'test', sessionId: 's1', role } },
+      disconnect: vi.fn(),
+      on: vi.fn((event: string, cb: () => void) => {
+        if (event === 'disconnect') socket._disconnectHandler = cb;
+      }),
+    };
+    return socket;
+  }
+
+  // Socket.IO overrides Namespace.emit to broadcast to connected clients, so we
+  // invoke the registered 'connection' listener directly instead of emitting.
+  function fireConnection(ns: unknown, socket: FakeSocket): void {
+    const handlers = (ns as { listeners(ev: string): Array<(s: FakeSocket) => void> }).listeners('connection');
+    handlers[handlers.length - 1](socket);
+  }
+
+  const validSession = {
+    id: 's1', user_id: 'u1', username: 'test',
+    created_at: '2026-02-07T10:00:00.000Z', expires_at: '2026-02-07T11:00:00.000Z',
+    last_active: '2026-02-07T10:30:00.000Z', is_valid: 1,
+  };
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    mockGetSession.mockReturnValue(validSession);
+    app = Fastify();
+    await app.register(socketIoPlugin);
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    vi.useRealTimers();
+    await app.close();
+  });
+
+  it('disconnects a socket whose session was revoked, after the interval elapses', async () => {
+    vi.useFakeTimers();
+    const socket = makeSocket();
+    fireConnection(app.ioNamespaces.monitoring, socket);
+
+    mockGetSession.mockReturnValue(undefined); // revoked (logout / force-revoke / deletion)
+    await vi.advanceTimersByTimeAsync(SOCKET_REVALIDATE_INTERVAL_MS);
+
+    expect(socket.disconnect).toHaveBeenCalledWith(true);
+  });
+
+  it('leaves a socket connected while its session stays valid', async () => {
+    vi.useFakeTimers();
+    const socket = makeSocket();
+    fireConnection(app.ioNamespaces.monitoring, socket);
+
+    await vi.advanceTimersByTimeAsync(SOCKET_REVALIDATE_INTERVAL_MS);
+    expect(socket.disconnect).not.toHaveBeenCalled();
+  });
+
+  it('disconnects a demoted admin on the remediation namespace (requireAdmin path)', async () => {
+    vi.useFakeTimers();
+    const socket = makeSocket('admin');
+    fireConnection(app.ioNamespaces.remediation, socket);
+
+    mockGetUserById.mockResolvedValue({ id: 'u1', role: 'operator' }); // no longer admin
+    await vi.advanceTimersByTimeAsync(SOCKET_REVALIDATE_INTERVAL_MS);
+
+    expect(mockGetUserById).toHaveBeenCalledWith('u1');
+    expect(socket.disconnect).toHaveBeenCalledWith(true);
+  });
+
+  it('does not fetch the DB role on non-admin namespaces (requireAdmin=false)', async () => {
+    vi.useFakeTimers();
+    const socket = makeSocket();
+    fireConnection(app.ioNamespaces.llm, socket);
+
+    await vi.advanceTimersByTimeAsync(SOCKET_REVALIDATE_INTERVAL_MS);
+    expect(mockGetUserById).not.toHaveBeenCalled();
+    expect(socket.disconnect).not.toHaveBeenCalled();
+  });
+
+  it('clears the interval on disconnect so a torn-down socket is never re-checked', async () => {
+    vi.useFakeTimers();
+    const socket = makeSocket();
+    fireConnection(app.ioNamespaces.monitoring, socket);
+
+    expect(socket._disconnectHandler).toBeTypeOf('function');
+    socket._disconnectHandler!(); // socket disconnected → clearInterval(timer)
+
+    // Even with a now-revoked session, the cleared interval must not fire again.
+    mockGetSession.mockReturnValue(undefined);
+    await vi.advanceTimersByTimeAsync(SOCKET_REVALIDATE_INTERVAL_MS * 3);
+    expect(socket.disconnect).not.toHaveBeenCalled();
   });
 });
