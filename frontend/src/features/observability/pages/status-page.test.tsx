@@ -6,7 +6,7 @@ import type { ReactNode } from 'react';
 // Mock framer-motion before importing component
 vi.mock('framer-motion', () => ({
   useReducedMotion: vi.fn(() => false),
-  motion: {
+  m: {
     div: ({ children, className, ...rest }: { children?: ReactNode; className?: string; [k: string]: unknown }) => {
       const safe: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(rest)) {

@@ -1,4 +1,4 @@
-import { motion, useReducedMotion } from 'framer-motion';
+import { m, useReducedMotion } from 'framer-motion';
 import { useLocation } from 'react-router-dom';
 import { cn } from '@/shared/lib/utils';
 import { pageVariants, transition, easing, duration } from '@/shared/lib/motion-tokens';
@@ -33,7 +33,7 @@ export function MotionPage({
   const skipAnimation = reducedMotion || isReturn;
 
   return (
-    <motion.div
+    <m.div
       className={cn('space-y-6', className)}
       variants={pageVariants}
       initial={skipAnimation ? false : 'initial'}
@@ -42,7 +42,7 @@ export function MotionPage({
       transition={skipAnimation ? { duration: 0 } : transition.page}
     >
       {children}
-    </motion.div>
+    </m.div>
   );
 }
 
@@ -60,7 +60,7 @@ export function MotionStagger({
   const skipAnimation = reducedMotion || isReturn;
 
   return (
-    <motion.div
+    <m.div
       className={className}
       variants={{
         hidden: { opacity: 1 },
@@ -73,7 +73,7 @@ export function MotionStagger({
       animate="visible"
     >
       {children}
-    </motion.div>
+    </m.div>
   );
 }
 
@@ -89,7 +89,7 @@ export function MotionReveal({
   const skipAnimation = reducedMotion || isReturn;
 
   return (
-    <motion.div
+    <m.div
       className={className}
       variants={{
         hidden: { opacity: skipAnimation ? 1 : 0, y: skipAnimation ? 0 : 8, scale: skipAnimation ? 1 : 0.99 },
@@ -102,6 +102,6 @@ export function MotionReveal({
       }}
     >
       {children}
-    </motion.div>
+    </m.div>
   );
 }

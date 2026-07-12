@@ -15,7 +15,7 @@ import { useKeyboardShortcut } from '@/shared/hooks/use-keyboard-shortcut';
 import { useEntrancePlayed } from '@/shared/hooks/use-entrance-played';
 import { useKeyChord } from '@/shared/hooks/use-key-chord';
 import type { ChordBinding } from '@/shared/hooks/use-key-chord';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { AnimatePresence, m, useReducedMotion } from 'framer-motion';
 import { ErrorBoundary } from '@/shared/components/feedback/error-boundary';
 
 /**
@@ -49,7 +49,11 @@ export function AppLayout() {
   const { isAuthenticated } = useAuth();
   const sidebarCollapsed = useUiStore((s) => s.sidebarCollapsed);
   const potatoMode = useUiStore((s) => s.potatoMode);
-  const { commandPaletteOpen, setCommandPaletteOpen } = useUiStore();
+  // Per-field selectors (#1529): a whole-store subscription re-rendered the
+  // entire app shell on every ui-store write (sidebar group toggles, page
+  // view-mode changes) that AppLayout never reads.
+  const commandPaletteOpen = useUiStore((s) => s.commandPaletteOpen);
+  const setCommandPaletteOpen = useUiStore((s) => s.setCommandPaletteOpen);
   const setSidebarCollapsed = useUiStore((s) => s.setSidebarCollapsed);
   const { theme, setTheme, dashboardBackground } = useThemeStore();
   const hasAnimatedBg = dashboardBackground !== 'none' && !potatoMode;
@@ -192,7 +196,7 @@ export function AppLayout() {
   const showEntrance = !hasPlayed && !disableVisualMotion;
 
   return (
-    <motion.div
+    <m.div
       data-animated-bg={hasAnimatedBg || undefined}
       data-potato-mode={potatoMode || undefined}
       className="relative flex h-screen overflow-hidden bg-background"
@@ -202,7 +206,7 @@ export function AppLayout() {
     >
       <DashboardBackground />
       {/* Sidebar — hidden on mobile, spring entrance from left */}
-      <motion.div
+      <m.div
         className="hidden md:block"
         initial={showEntrance ? { x: -80, opacity: 0 } : false}
         animate={{ x: 0, opacity: 1 }}
@@ -213,7 +217,7 @@ export function AppLayout() {
         }
       >
         <Sidebar />
-      </motion.div>
+      </m.div>
       <div
         className={cn(
           'relative z-10 flex flex-1 flex-col overflow-hidden',
@@ -222,7 +226,7 @@ export function AppLayout() {
         )}
       >
         {/* Header — drops in from top */}
-        <motion.div
+        <m.div
           initial={showEntrance ? { y: -20, opacity: 0 } : false}
           animate={{ y: 0, opacity: 1 }}
           transition={
@@ -232,10 +236,10 @@ export function AppLayout() {
           }
         >
           <Header />
-        </motion.div>
+        </m.div>
 
         {/* Main content — fades in from bottom */}
-        <motion.main
+        <m.main
           className="flex-1 overflow-y-auto p-3 pb-36 md:p-4"
           initial={showEntrance ? { y: 12, opacity: 0 } : false}
           animate={{ y: 0, opacity: 1 }}
@@ -253,7 +257,7 @@ export function AppLayout() {
             </div>
           ) : (
             <AnimatePresence mode="wait" initial={false}>
-              <motion.div
+              <m.div
                 key={location.pathname}
                 className="h-auto"
                 custom={direction}
@@ -280,10 +284,10 @@ export function AppLayout() {
                 <PageBoundary>
                   <FrozenOutlet />
                 </PageBoundary>
-              </motion.div>
+              </m.div>
             </AnimatePresence>
           )}
-        </motion.main>
+        </m.main>
       </div>
       {/* Mobile bottom nav — visible only on mobile */}
       <MobileBottomNav />
@@ -292,6 +296,6 @@ export function AppLayout() {
         open={shortcutsOpen}
         onClose={() => setShortcutsOpen(false)}
       />
-    </motion.div>
+    </m.div>
   );
 }

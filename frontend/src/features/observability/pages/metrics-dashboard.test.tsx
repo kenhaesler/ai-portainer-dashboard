@@ -474,7 +474,7 @@ describe('MetricsDashboardPage', () => {
     expect(screen.queryByText('Ask AI')).not.toBeInTheDocument();
   });
 
-  it('opens inline chat panel when Ask AI is clicked', () => {
+  it('opens inline chat panel when Ask AI is clicked', async () => {
     renderPage();
 
     // Select endpoint + container
@@ -485,9 +485,9 @@ describe('MetricsDashboardPage', () => {
     fireEvent.click(containerSelect);
     fireEvent.click(screen.getByRole('option', { name: 'api-1' }));
 
-    // Click Ask AI
+    // Click Ask AI — the panel is lazy-loaded (#1507), so it appears async.
     fireEvent.click(screen.getByText('Ask AI'));
-    expect(screen.getByTestId('inline-chat-panel')).toBeInTheDocument();
+    expect(await screen.findByTestId('inline-chat-panel')).toBeInTheDocument();
   });
 
   describe('AI Forecast Narrative', () => {

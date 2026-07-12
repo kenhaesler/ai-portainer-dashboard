@@ -6,10 +6,16 @@ const { mockLayout } = vi.hoisted(() => ({
   mockLayout: vi.fn(),
 }));
 
-vi.mock('elkjs/lib/elk.bundled.js', () => ({
+vi.mock('elkjs/lib/elk-api.js', () => ({
   default: class MockELK {
     layout = mockLayout;
   },
+}));
+
+// The worker factory wraps a Vite-specific `?worker` import that jsdom cannot
+// execute; the mocked ELK above never calls the factory anyway.
+vi.mock('./elk-worker-factory', () => ({
+  createElkWorker: vi.fn(),
 }));
 
 import {

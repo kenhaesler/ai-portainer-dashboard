@@ -30,7 +30,7 @@ import { useRemediationActions } from '@/features/operations/hooks/use-remediati
 import { useHarborEnabled } from '@/features/security/hooks/use-harbor-vulnerabilities';
 import { usePrefetch } from '@/shared/hooks/use-prefetch';
 import { cn } from '@/shared/lib/utils';
-import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
+import { m, AnimatePresence, useReducedMotion } from 'framer-motion';
 
 interface NavItem {
   label: string;
@@ -123,7 +123,7 @@ function AnimatedBadge({ count }: { count: number }) {
   if (count <= 0) return null;
 
   return (
-    <motion.span
+    <m.span
       className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-xs font-medium text-destructive-foreground"
       animate={
         animate && !reducedMotion
@@ -134,7 +134,7 @@ function AnimatedBadge({ count }: { count: number }) {
       data-testid="sidebar-badge"
     >
       {count}
-    </motion.span>
+    </m.span>
   );
 }
 
@@ -206,7 +206,7 @@ function NavLink({
     >
       <>
         {isActive && (
-          <motion.span
+          <m.span
             layoutId="sidebar-active-pill"
             data-testid="sidebar-active-indicator"
             className="absolute inset-0 -z-10 rounded-md bg-sidebar-background/55 shadow-sm ring-1 ring-sidebar-border/60 backdrop-blur-sm"
@@ -217,7 +217,7 @@ function NavLink({
             }
           />
         )}
-        <motion.span
+        <m.span
           className="shrink-0"
           layout={!reducedMotion}
           transition={
@@ -227,10 +227,10 @@ function NavLink({
           }
         >
           <item.icon className="h-4 w-4" />
-        </motion.span>
+        </m.span>
         <AnimatePresence>
           {!collapsed && (
-            <motion.span
+            <m.span
               className="flex flex-1 items-center gap-1 truncate"
               initial={reducedMotion ? false : { opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -247,7 +247,7 @@ function NavLink({
               ) : item.badge != null && item.badge > 0 ? (
                 <AnimatedBadge count={item.badge} />
               ) : null}
-            </motion.span>
+            </m.span>
           )}
         </AnimatePresence>
       </>
@@ -350,7 +350,7 @@ export function Sidebar() {
         {/* Brand */}
         <div className="flex h-14 items-center px-4">
           <div className="flex items-center gap-2 overflow-hidden">
-            <motion.div
+            <m.div
               className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground"
               layout={!reducedMotion}
               transition={
@@ -360,10 +360,10 @@ export function Sidebar() {
               }
             >
               <SidebarLogo />
-            </motion.div>
+            </m.div>
             <AnimatePresence>
               {!sidebarCollapsed && (
-                <motion.div
+                <m.div
                   className="flex flex-col"
                   initial={reducedMotion ? false : { opacity: 0, x: -8 }}
                   animate={{ opacity: 1, x: 0 }}
@@ -378,7 +378,7 @@ export function Sidebar() {
                     Docker Insights
                   </span>
                   <span className="text-[10px] text-muted-foreground">powered by AI</span>
-                </motion.div>
+                </m.div>
               )}
             </AnimatePresence>
           </div>
@@ -400,7 +400,7 @@ export function Sidebar() {
                     className="mb-1 flex w-full items-center justify-between border-b border-border/20 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
                   >
                     <span>{group.title}</span>
-                    <motion.span
+                    <m.span
                       animate={{ rotate: isGroupCollapsed ? -90 : 0 }}
                       transition={
                         reducedMotion
@@ -409,7 +409,7 @@ export function Sidebar() {
                       }
                     >
                       <ChevronDown className="h-3 w-3" />
-                    </motion.span>
+                    </m.span>
                   </button>
                 )}
                 <div
@@ -460,7 +460,7 @@ export function Sidebar() {
             className="flex w-full items-center justify-center rounded-md p-2 text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
             aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           >
-            <motion.span
+            <m.span
               animate={{ rotate: sidebarCollapsed ? 0 : 180 }}
               transition={
                 reducedMotion
@@ -469,7 +469,7 @@ export function Sidebar() {
               }
             >
               <ChevronRight className="h-4 w-4" />
-            </motion.span>
+            </m.span>
           </button>
         </div>
       </aside>

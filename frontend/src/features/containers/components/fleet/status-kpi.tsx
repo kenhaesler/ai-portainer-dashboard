@@ -1,4 +1,4 @@
-import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
+import { m, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { cn } from '@/shared/lib/utils';
 import { transition } from '@/shared/lib/motion-tokens';
 
@@ -42,7 +42,7 @@ function StatusPill({
   reduceMotion: boolean | null;
 }) {
   return (
-    <motion.button
+    <m.button
       type="button"
       initial={reduceMotion ? false : { opacity: 0, scale: 0.9 }}
       animate={reduceMotion ? { opacity: 1 } : { opacity: 1, scale: 1 }}
@@ -62,7 +62,7 @@ function StatusPill({
       <span className={cn('h-1.5 w-1.5 rounded-full', colors.dot)} />
       <span className={cn(colors.text, 'capitalize')}>{label}</span>
       <span className="text-muted-foreground">({count})</span>
-    </motion.button>
+    </m.button>
   );
 }
 

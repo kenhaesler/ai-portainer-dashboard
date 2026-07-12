@@ -1,19 +1,16 @@
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
+// jspdf / jspdf-autotable are loaded via dynamic import() inside
+// exportManagementPdf (#1507) so the ~420KB PDF machinery is fetched on the
+// first Export PDF click rather than bundled into whichever chunk imports
+// this module. Only their types may be imported statically here.
+import type { jsPDF } from 'jspdf';
 import type {
   ContainerReport,
   Recommendation,
   TrendsReport,
 } from '@/features/observability/hooks/use-reports';
+import type { ManagementPdfTheme } from './management-pdf-themes';
 
-export type ManagementPdfTheme = 'ocean' | 'forest' | 'slate' | 'sunset';
-
-export const MANAGEMENT_PDF_THEMES: Array<{ value: ManagementPdfTheme; label: string }> = [
-  { value: 'ocean', label: 'Ocean Blue' },
-  { value: 'forest', label: 'Forest Green' },
-  { value: 'slate', label: 'Slate Gray' },
-  { value: 'sunset', label: 'Sunset Orange' },
-];
+export { MANAGEMENT_PDF_THEMES, type ManagementPdfTheme } from './management-pdf-themes';
 
 export interface ManagementPdfInput {
   generatedAt: Date;
@@ -193,9 +190,13 @@ function drawKpiCard(
 }
 
 export async function exportManagementPdf(input: ManagementPdfInput, filename: string): Promise<void> {
+  const [{ default: JsPdf }, { default: autoTable }] = await Promise.all([
+    import('jspdf'),
+    import('jspdf-autotable'),
+  ]);
   const model = buildManagementPdfModel(input);
   const colors = getThemeColors(model.theme);
-  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const doc = new JsPdf({ unit: 'mm', format: 'a4' });
 
   let y = 15;
 

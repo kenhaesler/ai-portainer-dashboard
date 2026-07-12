@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import ELK, { type ElkNode, type ElkExtendedEdge } from 'elkjs/lib/elk.bundled.js';
+import ELK, { type ElkNode, type ElkExtendedEdge } from 'elkjs/lib/elk-api.js';
+import { createElkWorker } from './elk-worker-factory';
 
 export interface ElkLayoutNode {
   id: string;
@@ -35,7 +36,18 @@ export interface LayoutPosition {
   height?: number;
 }
 
-const elk = new ELK();
+// elk-api + a real Web Worker (#1508): the ~1.4MB GWT-compiled engine is
+// bundled into a separate worker asset (parsed off the main thread) and every
+// layout solve runs inside the worker, so compound fleet graphs no longer
+// block interaction. elk.layout() stays Promise-based — no consumer changes.
+// Constructed lazily: `new ELK()` spawns the Worker immediately, which must
+// not happen just because a module imported this hook (e.g. for pure helpers
+// in tests or environments without Worker support).
+let elkInstance: InstanceType<typeof ELK> | null = null;
+function getElk(): InstanceType<typeof ELK> {
+  elkInstance ??= new ELK({ workerFactory: createElkWorker });
+  return elkInstance;
+}
 
 export const DEFAULT_ROOT_LAYOUT_OPTIONS: Record<string, string> = {
   'elk.algorithm': 'stress',
@@ -134,7 +146,7 @@ export function useElkLayout({ nodes, edges, rootLayoutOptions }: ElkLayoutInput
 
     const graph = buildRootGraph(nodes, edges, rootLayoutOptions);
 
-    elk.layout(graph).then((result) => {
+    getElk().layout(graph).then((result) => {
       const map = new Map<string, LayoutPosition>();
       extractPositions(result.children, map);
       setPositions(map);

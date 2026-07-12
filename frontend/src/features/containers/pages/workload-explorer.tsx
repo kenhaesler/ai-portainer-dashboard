@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { type ColumnDef, type RowSelectionState } from '@tanstack/react-table';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { AnimatePresence, m, useReducedMotion } from 'framer-motion';
 import { AlertTriangle, Box, Boxes, Cog, Download, GitCompareArrows, X } from 'lucide-react';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { useContainers, type Container } from '@/features/containers/hooks/use-containers';
@@ -680,7 +680,7 @@ export default function WorkloadExplorerPage() {
                 <div className="flex items-center gap-2 flex-wrap" aria-live="polite">
                   <AnimatePresence mode="popLayout">
                     {activeFilters.map((filter) => (
-                      <motion.span
+                      <m.span
                         key={filter.key}
                         layout
                         initial={reduceMotion ? false : { opacity: 0, scale: 0.85 }}
@@ -699,7 +699,7 @@ export default function WorkloadExplorerPage() {
                         >
                           <X className="h-3 w-3" />
                         </button>
-                      </motion.span>
+                      </m.span>
                     ))}
                   </AnimatePresence>
                   {activeFilters.length >= 2 && (

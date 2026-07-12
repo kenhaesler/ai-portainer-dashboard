@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
+import react, { reactCompilerPreset } from '@vitejs/plugin-react';
+import babel from '@rolldown/plugin-babel';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import path from 'path';
@@ -31,6 +32,10 @@ export default defineConfig({
   },
   plugins: [
     react(),
+    // React Compiler auto-memoization (#1524). plugin-react v6 dropped the
+    // `babel` option when it moved to Oxc, which silently disabled the
+    // compiler originally enabled in 397b44c2; this is the v6 opt-in path.
+    babel({ presets: [reactCompilerPreset()] }),
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
@@ -119,19 +124,29 @@ export default defineConfig({
     cssCodeSplit: true,
     rollupOptions: {
       output: {
-        manualChunks(id) {
-          if (['react', 'react-dom', 'react-router-dom'].some(pkg => id.includes(`/node_modules/${pkg}/`))) {
-            return 'react-vendor';
-          }
-          if (id.includes('/node_modules/@tanstack/react-query/')) {
-            return 'query-vendor';
-          }
-          if (id.includes('/node_modules/recharts/')) {
-            return 'chart-vendor';
-          }
-          if (id.includes('/node_modules/framer-motion/')) {
-            return 'ui-vendor';
-          }
+        // Rolldown's native chunking API (#1507). The legacy function-form
+        // manualChunks misfired under Vite 8/Rolldown: React core itself was
+        // placed inside chart-vendor, so the entry (and every vendor chunk)
+        // statically imported the 432KB recharts chunk on first paint.
+        // recharts and framer-motion are intentionally NOT grouped: groups
+        // recursively capture dependencies (e.g. clsx via recharts), which
+        // re-creates an eager entry edge to the chart chunk. Automatic
+        // chunking keeps recharts in chunks reachable only from the lazy
+        // chart routes, and lets the async LazyMotion feature bundle
+        // (src/lib/motion-features.ts) split out of the entry-critical path.
+        codeSplitting: {
+          groups: [
+            {
+              name: 'react-vendor',
+              test: /node_modules[\\/](?:react|react-dom|scheduler|react-router|react-router-dom)[\\/]/,
+              priority: 30,
+            },
+            {
+              name: 'query-vendor',
+              test: /node_modules[\\/]@tanstack[\\/]react-query[\\/]/,
+              priority: 20,
+            },
+          ],
         },
         chunkFileNames: 'chunks/[name]-[hash].js',
         entryFileNames: 'entries/[name]-[hash].js',
