@@ -84,9 +84,11 @@ function makeCapture(overrides: Partial<Capture> = {}): Capture {
     protocol_stats: null,
     exec_id: null,
     error_message: null,
-    started_at: '2026-05-29T10:00:00.000Z',
-    completed_at: '2026-05-29T10:01:00.000Z',
-    created_at: '2026-05-29T10:00:00.000Z',
+    // Derived from "now": started_at feeds formatElapsed(), a
+    // wall-clock-relative computation (#1449).
+    started_at: new Date(Date.now() - 2 * 60 * 1000).toISOString(),
+    completed_at: new Date(Date.now() - 60 * 1000).toISOString(),
+    created_at: new Date(Date.now() - 2 * 60 * 1000).toISOString(),
     analysis_result: null,
     ...overrides,
   };

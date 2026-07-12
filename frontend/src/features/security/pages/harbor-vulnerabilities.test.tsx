@@ -14,8 +14,10 @@ vi.mock('@/features/security/hooks/use-harbor-vulnerabilities', () => ({
         vulnerabilities_synced: 42,
         in_use_matched: 5,
         error_message: null,
-        started_at: '2026-02-16T10:00:00Z',
-        completed_at: '2026-02-16T10:01:00Z',
+        // Derived from "now": completed_at feeds formatTimeAgo() ("Last
+        // sync: Xm ago"), a wall-clock-relative computation (#1449).
+        started_at: new Date(Date.now() - 2 * 60 * 1000).toISOString(),
+        completed_at: new Date(Date.now() - 60 * 1000).toISOString(),
       },
     },
   })),
