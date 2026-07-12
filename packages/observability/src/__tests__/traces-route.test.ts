@@ -272,6 +272,193 @@ describe('traces routes', () => {
     expect(body.services).toBe(3);
     expect(body.sourceCounts).toEqual({ http: 1, ebpf: 1, scheduler: 1, unknown: 0 });
   });
+
+  it('GET /api/traces/summary applies the same *Match modes as the list route (#1538)', async () => {
+    const recent = new Date(Date.now() - 60_000).toISOString();
+    const from = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+
+    await insertSpan({
+      id: 'match-hit',
+      traceId: 'trace-hit',
+      name: 'GET /users',
+      kind: 'server',
+      status: 'ok',
+      startTime: recent,
+      duration: 100,
+      service: 'api',
+      source: 'ebpf',
+      httpRoute: '/users/:id',
+      serviceNamespace: 'prod-eu-1',
+      containerName: 'api-1',
+      k8sNamespace: 'payments',
+    });
+
+    await insertSpan({
+      id: 'match-miss',
+      traceId: 'trace-miss',
+      name: 'GET /orders',
+      kind: 'server',
+      status: 'ok',
+      startTime: recent,
+      duration: 100,
+      service: 'api',
+      source: 'ebpf',
+      httpRoute: '/orders',
+      serviceNamespace: 'staging',
+      containerName: 'web-2',
+      k8sNamespace: 'ops',
+    });
+
+    // Contains-mode filters on the four fields the summary route used to drop.
+    // The values only match as substrings, so a silent exact-equality fallback
+    // would return zero rows.
+    const filters =
+      `from=${encodeURIComponent(from)}` +
+      '&httpRoute=users&httpRouteMatch=contains' +
+      '&serviceNamespace=prod&serviceNamespaceMatch=contains' +
+      '&containerName=api&containerNameMatch=contains' +
+      '&k8sNamespace=pay&k8sNamespaceMatch=contains';
+
+    const listResponse = await app.inject({
+      method: 'GET',
+      url: `/api/traces?${filters}`,
+      headers: { authorization: 'Bearer test' },
+    });
+    expect(listResponse.statusCode).toBe(200);
+    const listBody = listResponse.json() as { traces: Array<{ trace_id: string }> };
+    expect(listBody.traces.map((t) => t.trace_id)).toEqual(['trace-hit']);
+
+    const summaryResponse = await app.inject({
+      method: 'GET',
+      url: `/api/traces/summary?${filters}`,
+      headers: { authorization: 'Bearer test' },
+    });
+    expect(summaryResponse.statusCode).toBe(200);
+    const summaryBody = summaryResponse.json() as { totalTraces: number };
+    // Summary must agree with the list under the same filters
+    expect(summaryBody.totalTraces).toBe(listBody.traces.length);
+  });
+
+  it('GET /api/traces/service-map defaults to the last hour when from is omitted (#1528)', async () => {
+    await insertSpan({
+      id: 'old-root',
+      traceId: 'trace-old',
+      name: 'GET /old',
+      kind: 'server',
+      status: 'ok',
+      startTime: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+      duration: 100,
+      service: 'old-svc',
+      source: 'http',
+    });
+
+    await insertSpan({
+      id: 'fresh-root',
+      traceId: 'trace-fresh',
+      name: 'GET /fresh',
+      kind: 'server',
+      status: 'ok',
+      startTime: new Date(Date.now() - 60_000).toISOString(),
+      duration: 100,
+      service: 'fresh-svc',
+      source: 'http',
+    });
+
+    const defaulted = await app.inject({
+      method: 'GET',
+      url: '/api/traces/service-map',
+      headers: { authorization: 'Bearer test' },
+    });
+    expect(defaulted.statusCode).toBe(200);
+    const defaultedBody = defaulted.json() as { nodes: Array<{ id: string }> };
+    expect(defaultedBody.nodes.map((n) => n.id)).toEqual(['fresh-svc']);
+
+    // An explicit wider window still reaches older spans
+    const explicit = await app.inject({
+      method: 'GET',
+      url: `/api/traces/service-map?from=${encodeURIComponent(new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString())}`,
+      headers: { authorization: 'Bearer test' },
+    });
+    expect(explicit.statusCode).toBe(200);
+    const explicitBody = explicit.json() as { nodes: Array<{ id: string }> };
+    expect(explicitBody.nodes.map((n) => n.id).sort()).toEqual(['fresh-svc', 'old-svc']);
+  });
+
+  it('GET /api/traces/summary defaults to the last hour when from is omitted (#1528)', async () => {
+    await insertSpan({
+      id: 'old-root',
+      traceId: 'trace-old',
+      name: 'GET /old',
+      kind: 'server',
+      status: 'ok',
+      startTime: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+      duration: 100,
+      service: 'old-svc',
+      source: 'http',
+    });
+
+    await insertSpan({
+      id: 'fresh-root',
+      traceId: 'trace-fresh',
+      name: 'GET /fresh',
+      kind: 'server',
+      status: 'ok',
+      startTime: new Date(Date.now() - 60_000).toISOString(),
+      duration: 100,
+      service: 'fresh-svc',
+      source: 'http',
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/traces/summary',
+      headers: { authorization: 'Bearer test' },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as { totalTraces: number; services: number };
+    expect(body.totalTraces).toBe(1);
+    expect(body.services).toBe(1);
+  });
+
+  it('service-map and summary aggregates run under a statement_timeout transaction (#1528)', async () => {
+    const executed: string[] = [];
+    const realDb = appDb;
+
+    function recordingDb(real: AppDb): AppDb {
+      return {
+        query: <T = Record<string, unknown>>(sql: string, params?: unknown[]) => real.query<T>(sql, params),
+        queryOne: <T = Record<string, unknown>>(sql: string, params?: unknown[]) => real.queryOne<T>(sql, params),
+        execute: (sql: string, params?: unknown[]) => {
+          executed.push(sql);
+          return real.execute(sql, params);
+        },
+        transaction: <T>(fn: (db: AppDb) => Promise<T>) => real.transaction<T>((txDb) => fn(recordingDb(txDb))),
+        healthCheck: () => real.healthCheck(),
+      };
+    }
+
+    appDb = recordingDb(realDb);
+    try {
+      const serviceMap = await app.inject({
+        method: 'GET',
+        url: '/api/traces/service-map',
+        headers: { authorization: 'Bearer test' },
+      });
+      expect(serviceMap.statusCode).toBe(200);
+      expect(executed.some((sql) => sql.includes('SET LOCAL statement_timeout = 10000'))).toBe(true);
+
+      executed.length = 0;
+      const summary = await app.inject({
+        method: 'GET',
+        url: '/api/traces/summary',
+        headers: { authorization: 'Bearer test' },
+      });
+      expect(summary.statusCode).toBe(200);
+      expect(executed.some((sql) => sql.includes('SET LOCAL statement_timeout = 10000'))).toBe(true);
+    } finally {
+      appDb = realDb;
+    }
+  });
 });
 
 // Kept: route imports getDbForDomain directly for trace queries

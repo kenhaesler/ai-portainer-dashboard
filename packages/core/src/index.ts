@@ -22,6 +22,7 @@ export type { AppDb, QueryResult } from './db/app-db.js';
 // Tracing
 export { getCurrentTraceContext, runWithTraceContext, withSpan } from './tracing/trace-context.js';
 export { insertSpan, insertSpans, getTrace, getTraces, getServiceMap } from './tracing/trace-store.js';
+export { enqueueSpan, flushSpanBuffer, shutdownSpanBuffer, getSpanBufferStats } from './tracing/span-buffer.js';
 export { queueSpanForExport, initOtelExporter, shutdownOtelExporter } from './tracing/otel-exporter.js';
 
 // Portainer

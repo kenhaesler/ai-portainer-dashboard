@@ -126,22 +126,69 @@ export async function insertSpan(span: SpanInsert): Promise<void> {
   log.debug({ spanId: span.id, traceId: span.trace_id }, 'Span inserted');
 }
 
+// PostgreSQL cast for each column in INSERT_SQL order (excluding created_at,
+// which is appended as NOW()). Must stay aligned with spanToParams().
+const SPAN_COLUMN_CASTS = [
+  'text', 'text', 'text', 'text', 'text', 'text',           // id..status
+  'timestamptz', 'timestamptz', 'int', 'text', 'jsonb', 'text', // start_time..trace_source
+  'text', 'text', 'int',                                     // http_method..http_status_code
+  'text', 'text', 'text', 'text',                            // service_namespace..deployment_environment
+  'text', 'text',                                            // container_id, container_name
+  'text', 'text', 'text',                                    // k8s_namespace..k8s_container_name
+  'text', 'int', 'text',                                     // server_address, server_port, client_address
+  'text', 'text',                                            // url_full, url_scheme
+  'text', 'text', 'text',                                    // network_transport..network_protocol_version
+  'text', 'int',                                             // net_peer_name, net_peer_port
+  'text', 'text',                                            // host_name, os_type
+  'int', 'text', 'text',                                     // process_pid, process_executable_name, process_command
+  'text', 'text', 'text',                                    // telemetry_sdk_*
+  'text', 'text',                                            // otel_scope_name, otel_scope_version
+];
+
+/**
+ * Insert a batch of spans with a single unnest()-based multi-row INSERT
+ * (#1503) — one round-trip and one index-maintenance pass per batch instead
+ * of one INSERT per span. Mirrors the metrics-store batch pattern.
+ *
+ * Callers: the OTLP/eBPF ingest route (spans without an explicit
+ * trace_source default to 'ebpf') and the span buffer (which always sets
+ * trace_source per span, so the default never applies there).
+ */
 export async function insertSpans(spans: SpanInsert[]): Promise<number> {
   if (spans.length === 0) return 0;
 
   const db = getDbForDomain('traces');
 
-  const count = await db.transaction(async (txDb) => {
-    let inserted = 0;
-    for (const span of spans) {
-      await txDb.execute(INSERT_SQL, spanToParams(span, 'ebpf'));
-      inserted++;
-    }
-    return inserted;
-  });
+  // Transpose: one params row per span -> one array per column.
+  const rows = spans.map((span) => spanToParams(span, 'ebpf'));
+  const columns = SPAN_COLUMN_CASTS.map((_cast, i) => rows.map((row) => row[i]));
+  const unnestArgs = SPAN_COLUMN_CASTS.map((cast, i) => `$${i + 1}::${cast}[]`).join(', ');
 
-  log.info({ count }, 'Batch inserted spans');
-  return count;
+  await db.execute(
+    `INSERT INTO spans (
+       id, trace_id, parent_span_id, name, kind, status,
+       start_time, end_time, duration_ms, service_name, attributes, trace_source,
+       http_method, http_route, http_status_code,
+       service_namespace, service_instance_id, service_version, deployment_environment,
+       container_id, container_name,
+       k8s_namespace, k8s_pod_name, k8s_container_name,
+       server_address, server_port, client_address,
+       url_full, url_scheme,
+       network_transport, network_protocol_name, network_protocol_version,
+       net_peer_name, net_peer_port,
+       host_name, os_type,
+       process_pid, process_executable_name, process_command,
+       telemetry_sdk_name, telemetry_sdk_language, telemetry_sdk_version,
+       otel_scope_name, otel_scope_version,
+       created_at
+     )
+     SELECT u.*, NOW()
+     FROM unnest(${unnestArgs}) AS u`,
+    columns,
+  );
+
+  log.debug({ count: spans.length }, 'Batch inserted spans');
+  return spans.length;
 }
 
 export async function getTrace(traceId: string): Promise<Span[]> {

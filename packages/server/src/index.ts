@@ -5,6 +5,7 @@ import { startScheduler, stopScheduler } from './scheduler.js';
 import { getConfig } from '@dashboard/core/config/index.js';
 import { getMetricsDb, closeMetricsDb, closeReportsDb } from '@dashboard/core/db/timescale.js';
 import { getAppDb, closeAppDb } from '@dashboard/core/db/postgres.js';
+import { shutdownSpanBuffer } from '@dashboard/core/tracing/span-buffer.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { autoConnectAll, disconnectAll } from '@dashboard/ai';
 
@@ -39,6 +40,8 @@ async function main() {
       stopScheduler();
       await disconnectAll();
       await app.close();
+      // Flush buffered request/child spans before the pools close (#1503)
+      await shutdownSpanBuffer();
       await closeAppDb();
       await closeReportsDb();
       await closeMetricsDb();
