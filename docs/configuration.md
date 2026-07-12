@@ -2,6 +2,8 @@
 
 All configuration is done via environment variables. Copy [`.env.example`](../.env.example) for a ready-to-copy template.
 
+**Boolean variables** accept `true`/`1` and `false`/`0` (case-insensitive). Unset or empty values use the documented default; any other value (e.g. `yes`, `on`) logs a startup warning and falls back to the default (#1492 — previously several flags parsed via `Boolean(string)`, so setting them to `false` silently enabled them).
+
 ## Required
 
 | Variable | Description | Default |
