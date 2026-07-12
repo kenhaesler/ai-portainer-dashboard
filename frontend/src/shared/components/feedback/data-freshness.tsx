@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
+import { formatRelativeTime } from '@/shared/lib/format-relative-time';
 
 interface DataFreshnessProps {
   /** ISO timestamp or epoch ms of the last data update */
@@ -15,13 +16,16 @@ function getAgeSeconds(lastUpdated: string | number): number {
   return Math.floor((Date.now() - ts) / 1000);
 }
 
+// Second-granularity freshness label ("Just now" <5s, seconds, minutes, then caps at hours).
 function formatAge(seconds: number): string {
-  if (seconds < 5) return 'Just now';
-  if (seconds < 60) return `${seconds}s ago`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  return `${hours}h ago`;
+  const now = Date.now();
+  return formatRelativeTime(now - seconds * 1000, {
+    now: new Date(now),
+    nowThresholdSeconds: 5,
+    justNowLabel: 'Just now',
+    showSeconds: true,
+    maxUnit: 'hour',
+  });
 }
 
 function getAgeColor(seconds: number): string {

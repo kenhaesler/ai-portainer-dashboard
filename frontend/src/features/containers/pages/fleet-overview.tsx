@@ -22,6 +22,7 @@ import { FilterChipBar, type FilterChip } from '@/shared/components/ui/filter-ch
 import { useUiStore } from '@/stores/ui-store';
 import { api } from '@/shared/lib/api';
 import { cn } from '@/shared/lib/utils';
+import { formatRelativeTime as sharedFormatRelativeTime } from '@/shared/lib/format-relative-time';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 import { StatusKpi, ENDPOINT_STATUS_COLORS, STACK_STATUS_COLORS, type StatusKpiPill } from '@/features/containers/components/fleet/status-kpi';
 import { FleetSearch } from '@/features/containers/components/fleet/fleet-search';
@@ -43,15 +44,17 @@ function resolveTab(raw: string | null): InfraTab {
   return 'fleet';
 }
 
+// Takes an elapsed-millisecond duration (not a timestamp): raw seconds up front (no "just now"),
+// then minutes/hours, capped at days. Guards null with "N/A".
 function formatRelativeTime(ms: number | null | undefined): string {
   if (ms == null) return 'N/A';
-  const seconds = Math.floor(Math.abs(ms) / 1000);
-  if (seconds < 60) return `${seconds}s ago`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
+  const now = Date.now();
+  return sharedFormatRelativeTime(now - Math.abs(ms), {
+    now: new Date(now),
+    nowThresholdSeconds: 0,
+    showSeconds: true,
+    maxUnit: 'day',
+  });
 }
 
 function getSnapshotAgeColor(snapshotAge: number | null, thresholdMs = 5 * 60 * 1000): string {

@@ -105,6 +105,11 @@ export function useStreamingLogs(
         });
 
         if (!response.ok) {
+          // Streams can't use ApiClient (long-lived body reader), so replicate its
+          // 401 → auth:expired handling inline: clear the stale token and route to re-login.
+          if (response.status === 401) {
+            api.handleUnauthorized();
+          }
           let msg = `Stream failed: ${response.status}`;
           try {
             const body = await response.json();

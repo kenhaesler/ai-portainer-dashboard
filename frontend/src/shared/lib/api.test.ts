@@ -319,4 +319,140 @@ describe('ApiClient', () => {
       expect(headers.get('X-Request-ID')).toBe('mock-uuid-123');
     });
   });
+
+  describe('rawFetch', () => {
+    it('returns the raw Response with auth + X-Request-ID headers applied', async () => {
+      const response = { ok: true, status: 200 };
+      mockFetch.mockResolvedValueOnce(response);
+      api.setToken('tok');
+
+      const res = await api.rawFetch('/api/pcap/x/download');
+
+      expect(res).toBe(response);
+      const headers = mockFetch.mock.calls[0][1]?.headers as Headers;
+      expect(headers.get('Authorization')).toBe('Bearer tok');
+      expect(headers.get('X-Request-ID')).toBe('mock-uuid-123');
+      // No JSON Content-Type is forced for raw requests.
+      expect(headers.get('Content-Type')).toBeNull();
+    });
+
+    it('returns non-ok (non-401) responses without throwing so the caller can read the body', async () => {
+      const response = { ok: false, status: 500 };
+      mockFetch.mockResolvedValueOnce(response);
+
+      await expect(api.rawFetch('/api/x')).resolves.toBe(response);
+    });
+
+    it('clears the token and dispatches auth:expired on 401', async () => {
+      const eventSpy = vi.fn();
+      window.addEventListener('auth:expired', eventSpy);
+      mockFetch.mockResolvedValueOnce({ ok: false, status: 401 });
+      api.setToken('expired-token');
+
+      await expect(api.rawFetch('/api/x')).rejects.toThrow('Session expired');
+      expect(api.getToken()).toBeNull();
+      expect(eventSpy).toHaveBeenCalled();
+
+      window.removeEventListener('auth:expired', eventSpy);
+    });
+  });
+
+  describe('downloadBlob', () => {
+    let createObjectURLSpy: ReturnType<typeof vi.fn>;
+    let revokeObjectURLSpy: ReturnType<typeof vi.fn>;
+    let clickSpy: ReturnType<typeof vi.spyOn>;
+    let originalCreate: typeof URL.createObjectURL;
+    let originalRevoke: typeof URL.revokeObjectURL;
+    let lastDownloadName: string | undefined;
+
+    beforeEach(() => {
+      lastDownloadName = undefined;
+      originalCreate = URL.createObjectURL;
+      originalRevoke = URL.revokeObjectURL;
+      createObjectURLSpy = vi.fn(() => 'blob:mock-url');
+      revokeObjectURLSpy = vi.fn();
+      URL.createObjectURL = createObjectURLSpy as unknown as typeof URL.createObjectURL;
+      URL.revokeObjectURL = revokeObjectURLSpy as unknown as typeof URL.revokeObjectURL;
+      clickSpy = vi
+        .spyOn(HTMLAnchorElement.prototype, 'click')
+        .mockImplementation(function (this: HTMLAnchorElement) {
+          lastDownloadName = this.download;
+        });
+    });
+
+    afterEach(() => {
+      clickSpy.mockRestore();
+      URL.createObjectURL = originalCreate;
+      URL.revokeObjectURL = originalRevoke;
+    });
+
+    it('downloads with the forced filename and revokes the object URL', async () => {
+      const blob = new Blob(['data']);
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        blob: () => Promise.resolve(blob),
+      });
+
+      await api.downloadBlob('/api/pcap/abc/download', { filename: 'capture_abc.pcap' });
+
+      expect(createObjectURLSpy).toHaveBeenCalledWith(blob);
+      expect(lastDownloadName).toBe('capture_abc.pcap');
+      expect(revokeObjectURLSpy).toHaveBeenCalledWith('blob:mock-url');
+    });
+
+    it('prefers the Content-Disposition filename over the fallback', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'Content-Disposition': 'attachment; filename="server-name.json"' }),
+        blob: () => Promise.resolve(new Blob(['{}'])),
+      });
+
+      await api.downloadBlob('/api/prompt-profiles/export', { fallbackFilename: 'prompts-export.json' });
+
+      expect(lastDownloadName).toBe('server-name.json');
+    });
+
+    it('uses the fallback filename when no Content-Disposition is present', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        blob: () => Promise.resolve(new Blob(['{}'])),
+      });
+
+      await api.downloadBlob('/api/prompt-profiles/export', { fallbackFilename: 'prompts-export.json' });
+
+      expect(lastDownloadName).toBe('prompts-export.json');
+    });
+
+    it('throws with the parsed error on a non-ok download', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        json: () => Promise.resolve({ error: 'Capture not found' }),
+      });
+
+      await expect(
+        api.downloadBlob('/api/pcap/x/download', { filename: 'x.pcap' }),
+      ).rejects.toThrow('Capture not found');
+    });
+
+    it('routes an unauthorized download through the 401 → auth:expired flow', async () => {
+      const eventSpy = vi.fn();
+      window.addEventListener('auth:expired', eventSpy);
+      mockFetch.mockResolvedValueOnce({ ok: false, status: 401 });
+      api.setToken('expired-token');
+
+      await expect(
+        api.downloadBlob('/api/pcap/x/download', { filename: 'x.pcap' }),
+      ).rejects.toThrow('Session expired');
+      expect(api.getToken()).toBeNull();
+      expect(eventSpy).toHaveBeenCalled();
+
+      window.removeEventListener('auth:expired', eventSpy);
+    });
+  });
 });

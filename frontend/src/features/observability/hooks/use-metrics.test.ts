@@ -37,10 +37,12 @@ vi.mock('@/shared/hooks/use-page-visibility', () => ({
   usePageVisibility: () => true,
 }));
 
+import { api } from '@/shared/lib/api';
 import {
   getContainerMetricsRefetchInterval,
   getHeavyRefetchInterval,
   useAnomalyExplanations,
+  useAnomalies,
 } from './use-metrics';
 
 function createWrapper() {
@@ -93,6 +95,46 @@ describe('useAnomalyExplanations', () => {
     unmount();
 
     expect(mockOff).toHaveBeenCalledWith('cycle:complete', expect.any(Function));
+  });
+});
+
+describe('useAnomalies', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('unwraps the { anomalies } envelope into a bare array', async () => {
+    const anomalies = [
+      {
+        id: 'a1',
+        containerId: 'c1',
+        endpointId: 1,
+        metricType: 'cpu',
+        severity: 'high',
+        value: 95,
+        threshold: 80,
+        detectedAt: '2026-05-21T12:00:00.000Z',
+        description: 'CPU spike',
+      },
+    ];
+    vi.mocked(api.get).mockResolvedValueOnce({ anomalies });
+
+    const { Wrapper } = createWrapper();
+    const { result } = renderHook(() => useAnomalies(), { wrapper: Wrapper });
+
+    await vi.waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(api.get).toHaveBeenCalledWith('/api/metrics/anomalies');
+    expect(result.current.data).toEqual(anomalies);
+  });
+
+  it('returns an empty array when the envelope has no anomalies', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({ anomalies: [] });
+
+    const { Wrapper } = createWrapper();
+    const { result } = renderHook(() => useAnomalies(), { wrapper: Wrapper });
+
+    await vi.waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toEqual([]);
   });
 });
 

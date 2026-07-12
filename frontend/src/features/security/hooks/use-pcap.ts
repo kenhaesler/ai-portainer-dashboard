@@ -170,29 +170,16 @@ export function useAnalyzeCapture() {
   });
 }
 
-export function downloadCapture(captureId: string, token: string | null): void {
-  const baseUrl = import.meta.env.VITE_API_URL || '';
-  const url = `${baseUrl || window.location.origin}/api/pcap/captures/${captureId}/download`;
-
-  // Use fetch with auth header, then trigger browser download
-  fetch(url, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  })
-    .then((res) => {
-      if (!res.ok) throw new Error(`Download failed: ${res.status}`);
-      return res.blob();
-    })
-    .then((blob) => {
-      const objectUrl = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = objectUrl;
-      a.download = `capture_${captureId}.pcap`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(objectUrl);
+export function downloadCapture(captureId: string): void {
+  // Routes through ApiClient so the download shares base-URL/auth-header/X-Request-ID
+  // plumbing and the shared 401 → auth:expired session-expiry flow.
+  api
+    .downloadBlob(`/api/pcap/captures/${captureId}/download`, {
+      filename: `capture_${captureId}.pcap`,
     })
     .catch((err) => {
-      toast.error('Download failed', { description: err.message });
+      toast.error('Download failed', {
+        description: err instanceof Error ? err.message : String(err),
+      });
     });
 }

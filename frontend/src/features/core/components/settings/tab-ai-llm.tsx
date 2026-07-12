@@ -69,6 +69,7 @@ import { ConfirmDialog } from '@/shared/components/feedback/confirm-dialog';
 import { SkeletonList } from '@/shared/components/feedback/skeleton';
 import { DataTable } from '@/shared/components/tables/data-table';
 import { cn, formatBytes } from '@/shared/lib/utils';
+import { formatRelativeTime as sharedFormatRelativeTime } from '@/shared/lib/format-relative-time';
 import { api } from '@/shared/lib/api';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
@@ -1559,16 +1560,13 @@ function computeDiff(oldText: string, newText: string) {
   };
 }
 
+// "just now" under two minutes, minutes/hours/days, then a locale date past 30 days.
 function formatRelativeTime(isoString: string): string {
-  const diff = Date.now() - new Date(isoString).getTime();
-  const minutes = Math.floor(diff / 60_000);
-  if (minutes < 2) return 'just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 30) return `${days}d ago`;
-  return new Date(isoString).toLocaleDateString();
+  return sharedFormatRelativeTime(isoString, {
+    nowThresholdSeconds: 120,
+    maxUnit: 'day',
+    dateAfterDays: 30,
+  });
 }
 
 interface PromptHistoryPanelProps {

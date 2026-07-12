@@ -174,8 +174,9 @@ describe('useContainerCount', () => {
     vi.clearAllMocks();
   });
 
-  it('fetches container count', async () => {
-    mockApi.get.mockResolvedValueOnce({ count: 42 });
+  it('fetches container counts as a { total, byState } summary', async () => {
+    const summary = { total: 42, byState: { running: 40, exited: 2 } };
+    mockApi.get.mockResolvedValueOnce(summary);
 
     const { result } = renderHook(() => useContainerCount(), {
       wrapper: createWrapper(),
@@ -183,6 +184,6 @@ describe('useContainerCount', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(mockApi.get).toHaveBeenCalledWith('/api/containers/count');
-    expect(result.current.data).toEqual({ count: 42 });
+    expect(result.current.data).toEqual(summary);
   });
 });

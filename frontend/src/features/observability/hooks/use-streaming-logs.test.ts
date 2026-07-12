@@ -1,10 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { useStreamingLogs } from './use-streaming-logs';
+import { api } from '@/shared/lib/api';
 
 vi.mock('@/shared/lib/api', () => ({
   api: {
     getToken: vi.fn().mockReturnValue('test-token'),
+    handleUnauthorized: vi.fn(),
   },
 }));
 
@@ -157,6 +159,27 @@ describe('useStreamingLogs', () => {
 
     await waitFor(() => expect(result.current.status).toBe('error'));
     expect(result.current.error).toBe('Docker unavailable');
+  });
+
+  it('routes a 401 through the shared auth:expired handler', async () => {
+    vi.useRealTimers();
+
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 401,
+      json: vi.fn().mockResolvedValue({ error: 'Session expired' }),
+    });
+
+    const { result } = renderHook(() =>
+      useStreamingLogs(1, 'abc123', { autoReconnect: false }),
+    );
+
+    act(() => {
+      result.current.start();
+    });
+
+    await waitFor(() => expect(result.current.status).toBe('error'));
+    expect(api.handleUnauthorized).toHaveBeenCalled();
   });
 
   it('stop() prevents reconnection', async () => {
