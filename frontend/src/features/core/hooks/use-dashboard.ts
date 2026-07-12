@@ -58,6 +58,13 @@ export interface DashboardSummary {
   timestamp: string;
 }
 
+/**
+ * @deprecated No component consumes this hook — the home page uses
+ * `useDashboardFull()` (a single `/api/dashboard/full` request) instead.
+ * Kept because `/api/dashboard/summary` remains a public API; removal is
+ * tracked separately (#1543). The exported types above are still imported
+ * by `use-dashboard-full.ts`.
+ */
 export function useDashboard() {
   const { interval, enabled } = useAutoRefresh(30);
   const hasToken = hasAuthToken();
