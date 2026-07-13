@@ -7,9 +7,11 @@
  * (use-harbor-vulnerabilities.ts) reads survives serialization. The store is
  * mocked (the boundary); the DB is not under test here.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, expectTypeOf, vi, beforeEach } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
+import type { z } from 'zod/v4';
+import type { VulnerabilityRecord, VulnerabilitySummary } from '../services/harbor-vulnerability-store.js';
 
 vi.mock('../services/harbor-vulnerability-store.js', () => ({
   getVulnerabilities: vi.fn(),
@@ -29,7 +31,11 @@ vi.mock('@dashboard/core/services/settings-store.js', () => ({
 vi.mock('../services/harbor-sync.js', () => ({ runFullSync: vi.fn(), getIsSyncing: vi.fn() }));
 
 import * as vulnStore from '../services/harbor-vulnerability-store.js';
-import { harborVulnerabilityRoutes } from '../routes/harbor-vulnerabilities.js';
+import {
+  harborVulnerabilityRoutes,
+  HarborVulnerabilityRecordSchema,
+  HarborVulnerabilitySummarySchema,
+} from '../routes/harbor-vulnerabilities.js';
 
 const RECORD = {
   id: 1,
@@ -107,5 +113,19 @@ describe('GET /api/harbor/vulnerabilities response schema', () => {
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual(SUMMARY);
     await app.close();
+  });
+});
+
+// Compile-time drift guard (#1545): the response schemas are hand-written to
+// mirror the store's TS interfaces. These type assertions fail `tsc` if the two
+// ever diverge in either direction — a field added/removed/retyped on either
+// side breaks the build here, so the manual mirror can't silently rot.
+describe('harbor response schemas stay in sync with the store interfaces', () => {
+  it('record schema matches VulnerabilityRecord', () => {
+    expectTypeOf<z.infer<typeof HarborVulnerabilityRecordSchema>>().toEqualTypeOf<VulnerabilityRecord>();
+  });
+
+  it('summary schema matches VulnerabilitySummary', () => {
+    expectTypeOf<z.infer<typeof HarborVulnerabilitySummarySchema>>().toEqualTypeOf<VulnerabilitySummary>();
   });
 });

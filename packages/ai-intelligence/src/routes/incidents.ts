@@ -5,7 +5,10 @@ import { FastifyInstance } from 'fastify';
 import { getIncidents, getIncident, resolveIncident, getIncidentCount, getIncidentGroups, resolveIncidentsBatch } from '../services/incident-store.js';
 import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
 import { cachedFetchSWR, getCacheKey, cache } from '@dashboard/core/portainer/portainer-cache.js';
-import { z } from 'zod';
+// Use the explicit zod/v4 entry point (as the rest of the codebase + the
+// serializer's schemas do) so the response schema composes IncidentSchema
+// (authored under zod/v4) from the same module instance. #1545.
+import { z } from 'zod/v4';
 import { IncidentSchema } from '@dashboard/contracts';
 
 // Response schema for the list route (#1545). getIncidents does SELECT *, so

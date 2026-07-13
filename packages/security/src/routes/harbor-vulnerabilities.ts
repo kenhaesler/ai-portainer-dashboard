@@ -17,8 +17,9 @@ const log = createChildLogger('route:harbor-vulnerabilities');
 // VulnerabilitySummary (harbor-vulnerability-store.ts) and the frontend's
 // VulnerabilityListResponse (use-harbor-vulnerabilities.ts) 1:1. Declaring them
 // as `response: { 200: ... }` enables fast-json-stringify serialization and
-// unknown-field pruning. Keep field-for-field in sync with the store interfaces.
-const HarborVulnerabilityRecordSchema = z.object({
+// unknown-field pruning. Exported so a compile-time drift guard in the tests can
+// assert they stay field-for-field in sync with the store interfaces.
+export const HarborVulnerabilityRecordSchema = z.object({
   id: z.number(),
   cve_id: z.string(),
   severity: z.string(),
@@ -38,7 +39,7 @@ const HarborVulnerabilityRecordSchema = z.object({
   synced_at: z.string(),
 });
 
-const HarborVulnerabilitySummarySchema = z.object({
+export const HarborVulnerabilitySummarySchema = z.object({
   total: z.number(),
   critical: z.number(),
   high: z.number(),
