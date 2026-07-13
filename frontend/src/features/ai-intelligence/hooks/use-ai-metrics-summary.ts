@@ -67,6 +67,13 @@ export function useAiMetricsSummary(
       }
 
       if (!response.ok) {
+        // Streams can't use ApiClient (long-lived body reader), so replicate its
+        // 401 → auth:expired handling inline: clear the stale token and route to
+        // re-login instead of surfacing a raw error toast (mirrors
+        // use-streaming-logs.ts).
+        if (response.status === 401) {
+          api.handleUnauthorized();
+        }
         setState({ summary: '', isStreaming: false, error: 'Failed to generate summary' });
         return;
       }
