@@ -34,11 +34,13 @@ Secondary (local-run only): the committed `e2e/.auth/user.json` JWT is expired (
 ### B. `updatePositionStrategy="always"`
 Add `updatePositionStrategy="always"` to `<SelectPrimitive.Content>` in `themed-select.tsx`. Radix Select's `Content` extends `PopperContentProps`, which supports `updatePositionStrategy?: 'optimized' | 'always'` (`@radix-ui/react-popper/dist/index.d.ts:38`). `"always"` passes `animationFrame: true` to Floating UI's `autoUpdate`, re-anchoring every animation frame while the panel is open. A dropdown opened mid-entrance-animation therefore self-corrects the instant the trigger's transform settles. One line; applies to every `ThemedSelect` app-wide; the `.spotlight-card` guard stays untouched. Cost: a rAF reposition loop, but only while a dropdown is open.
 
-### A. Lazy-load the settings tabs
-Convert the 7 heavy tab imports in `settings.tsx` to `React.lazy()` and render the active `TabsContent` inside a `<Suspense>` fallback using an existing skeleton primitive. This shrinks the initial `/settings` chunk so the shell paints promptly; tab bodies load on demand. Keep the lightest tab (or the default-selected one) eager if it avoids a visible flash on first paint. This addresses the leading root-cause hypothesis directly rather than only relaxing the test.
+### A. Harden the settings cold navigation (revised after reproduction)
+**Reproduction result (2026-07-13):** run against the live dev stack (`:8080` Vite-dev serving working-tree src, `:3051` backend), `e2e/settings.spec.ts` **passed all 4 tests** — the sidebar renders well under 10s locally. Symptom A does **not** reproduce on a fast machine; it is single-worker-CI main-thread contention from the heavy `/settings` chunk, not a real render dependency.
 
-### Spec hardening (only if needed after the code fixes)
-If, against a running stack, the two code fixes do not fully settle the specs, apply minimal hardening: wait for a stable shell signal before the sidebar assertion and/or scope a longer timeout to the initial cold navigation. No blanket timeout inflation.
+Given that, the originally-planned `React.lazy()` tab split was **not** pursued: it is entangled (`settings.tsx:33-37` re-exports named members from four tab modules, keeping them eager regardless, so a true chunk split needs a broader refactor + consumer updates) and unverifiable locally (the spec already passes). The proportionate, evidence-based fix is to **harden the cold navigation** instead: in `e2e/settings.spec.ts`, navigate with `waitUntil: 'domcontentloaded'` and give the cold `/settings` sidebar assertion a 30s bounded budget (with 60s test-timeout headroom). The sidebar still renders — this only accommodates a slow, contended runner; a genuine regression still fails, just later. This is the "spec hardening" the plan reserved for exactly this case.
+
+### B verification
+The dropdown spec requires the WireMock canned fleet data; it cannot run against the dev stack (dev Portainer is unreachable → `/workloads` shows a "Failed to load containers" error state and the filter dropdowns never mount). The `updatePositionStrategy="always"` fix is therefore verified via CI (push the branch with the `e2e` label) rather than locally.
 
 ## Safe local verification (hard volume rule)
 
