@@ -214,6 +214,21 @@ export const AnomaliesQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(1000).default(50),
 });
 
+// Response envelope for GET /api/metrics/anomalies. Declaring it locks the
+// contract (the frontend consumes `{ anomalies: [...] }`) and lets
+// fast-json-stringify prune to exactly these projected columns instead of
+// serialising whole raw metric rows.
+export const AnomaliesResponseSchema = z.object({
+  anomalies: z.array(z.object({
+    endpoint_id: z.number(),
+    container_id: z.string(),
+    container_name: z.string(),
+    metric_type: z.string(),
+    value: z.number(),
+    timestamp: z.string(),
+  })),
+});
+
 // ─── Monitoring schemas ─────────────────────────────────────────────
 export const InsightsQuerySchema = z.object({
   severity: z.enum(['critical', 'warning', 'info']).optional(),

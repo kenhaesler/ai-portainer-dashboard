@@ -112,65 +112,107 @@ export function scoreSeverity(compositeScore: number): 'low' | 'medium' | 'high'
   return 'low';
 }
 
-/**
- * Get recent metric snapshots for a container with z-scores.
- */
-async function getMetricSnapshots(containerId: string, windowSize: number, db?: Queryable): Promise<MetricSnapshot[]> {
-  if (!db) db = await getMetricsDb();
+interface ContainerSnapshots {
+  containerName: string;
+  snapshots: MetricSnapshot[];
+}
 
-  const { rows: metricTypes } = await db.query(
-    `SELECT DISTINCT metric_type FROM metrics
-     WHERE container_id = $1 AND timestamp >= NOW() - INTERVAL '1 hour'`,
-    [containerId],
+/**
+ * Compute recent metric snapshots (mean / stddev / latest value → z-score) for
+ * the whole fleet in a single set-based query.
+ *
+ * Replaces the former per-container N+1 (one DISTINCT + two queries per metric
+ * type, looped sequentially — ~11 round-trips per container). A CTE narrows to
+ * containers with >=2 distinct metric types in the last hour, then a LATERAL
+ * subquery computes AVG / STDDEV_POP / COUNT plus the latest value over each
+ * (container, metric_type)'s last `windowSize` samples. The inner
+ * `ORDER BY timestamp DESC LIMIT windowSize` is index-served by
+ * idx_metrics_composite (container_id, metric_type, timestamp DESC), so the
+ * per-partition scan stays bounded exactly as the old LIMIT query was.
+ *
+ * Semantics match the old getMetricSnapshots: the stats window is the last
+ * `windowSize` samples regardless of age (no extra time bound), the latest
+ * value is the most recent of those, and the same >=5-sample / non-null-mean
+ * guard is applied in JS below.
+ */
+async function getAllMetricSnapshots(windowSize: number, db: Queryable): Promise<Map<string, ContainerSnapshots>> {
+  const { rows } = await db.query<{
+    container_id: string;
+    container_name: string;
+    metric_type: string;
+    mean: number | null;
+    std_dev: number | null;
+    sample_count: number;
+    latest_value: number | null;
+  }>(
+    `WITH recent_containers AS (
+       SELECT container_id
+       FROM metrics
+       WHERE timestamp >= NOW() - INTERVAL '1 hour'
+       GROUP BY container_id
+       HAVING COUNT(DISTINCT metric_type) >= 2
+     ),
+     container_metric_types AS (
+       SELECT DISTINCT m.container_id, m.metric_type
+       FROM metrics m
+       JOIN recent_containers rc ON rc.container_id = m.container_id
+       WHERE m.timestamp >= NOW() - INTERVAL '1 hour'
+     )
+     SELECT
+       cmt.container_id,
+       s.container_name,
+       cmt.metric_type,
+       s.mean,
+       s.std_dev,
+       s.sample_count,
+       s.latest_value
+     FROM container_metric_types cmt
+     CROSS JOIN LATERAL (
+       SELECT
+         AVG(value) AS mean,
+         STDDEV_POP(value) AS std_dev,
+         COUNT(*)::int AS sample_count,
+         (ARRAY_AGG(value ORDER BY timestamp DESC))[1] AS latest_value,
+         (ARRAY_AGG(container_name ORDER BY timestamp DESC))[1] AS container_name
+       FROM (
+         SELECT value, container_name, timestamp
+         FROM metrics
+         WHERE container_id = cmt.container_id AND metric_type = cmt.metric_type
+         ORDER BY timestamp DESC
+         LIMIT $1
+       ) recent
+     ) s`,
+    [windowSize],
   );
 
-  const snapshots: MetricSnapshot[] = [];
+  const byContainer = new Map<string, ContainerSnapshots>();
 
-  for (const { metric_type } of metricTypes as Array<{ metric_type: string }>) {
-    const { rows: statsRows } = await db.query(
-      `SELECT
-        AVG(value) as mean,
-        STDDEV_POP(value) as std_dev,
-        COUNT(*)::int as sample_count
-      FROM (
-        SELECT value FROM metrics
-        WHERE container_id = $1 AND metric_type = $2
-        ORDER BY timestamp DESC
-        LIMIT $3
-      ) sub`,
-      [containerId, metric_type, windowSize],
-    );
+  for (const row of rows) {
+    // Same guard as the old per-metric path: need >=5 samples and a real mean.
+    if (!row.sample_count || row.sample_count < 5 || row.mean === null) continue;
+    if (row.latest_value === null || row.latest_value === undefined) continue;
 
-    const stats = statsRows[0];
-    if (!stats || stats.sample_count < 5 || stats.mean === null) continue;
+    const mean = Number(row.mean);
+    const stdDev = Number(row.std_dev ?? 0);
+    const latest = Number(row.latest_value);
+    const zScore = stdDev > 0 ? (latest - mean) / stdDev : 0;
 
-    const mean = Number(stats.mean);
-    const stdDev = Number(stats.std_dev ?? 0);
+    let entry = byContainer.get(row.container_id);
+    if (!entry) {
+      entry = { containerName: row.container_name, snapshots: [] };
+      byContainer.set(row.container_id, entry);
+    }
 
-    // Get latest value
-    const { rows: latestRows } = await db.query(
-      `SELECT value FROM metrics
-       WHERE container_id = $1 AND metric_type = $2
-       ORDER BY timestamp DESC
-       LIMIT 1`,
-      [containerId, metric_type],
-    );
-
-    const latest = latestRows[0];
-    if (!latest) continue;
-
-    const zScore = stdDev > 0 ? (latest.value - mean) / stdDev : 0;
-
-    snapshots.push({
-      metric_type,
-      value: latest.value,
+    entry.snapshots.push({
+      metric_type: row.metric_type,
+      value: latest,
       mean,
       std_dev: stdDev,
       z_score: Math.round(zScore * 100) / 100,
     });
   }
 
-  return snapshots;
+  return byContainer;
 }
 
 // ---------------------------------------------------------------------------
@@ -201,12 +243,21 @@ export function correlationStrength(absR: number): 'very_strong' | 'strong' | 'm
  * Find strongly correlated container pairs across the fleet.
  *
  * For each metric type (cpu, memory) this function:
- * 1. Fetches 5-minute-bucketed averages per container over the given time range
+ * 1. Reads 5-minute-bucketed averages per container from the metrics_5min
+ *    continuous aggregate over the given time range
  * 2. Aligns timestamps between every container pair
  * 3. Computes Pearson correlation and retains pairs with |r| >= minCorrelation
  *
  * To keep the O(n²) manageable we limit to the top 50 most-active containers
  * and only process cpu / memory metric types.
+ *
+ * The bucketed averages are served straight from the metrics_5min continuous
+ * aggregate rather than re-aggregating time_bucket()/AVG() off the raw metrics
+ * hypertable on every request — the aggregate already materialises exactly
+ * (bucket, container_id, container_name, avg_value), matching how rollups are
+ * read elsewhere (selectRollupTable). Only the trailing ~1 minute (the
+ * aggregate's refresh end_offset) is not yet materialised, which is immaterial
+ * over a multi-hour correlation window.
  */
 export async function findCorrelatedContainers(
   hours: number = 24,
@@ -219,20 +270,17 @@ export async function findCorrelatedContainers(
   const results: CorrelationPair[] = [];
 
   for (const metricType of metricTypes) {
-    // Fetch 5-min bucketed averages for all containers
+    // Read pre-bucketed 5-min averages for all containers from the aggregate
     const { rows } = await db.query<{
       container_id: string;
       container_name: string;
       bucket: string;
       avg_value: number;
     }>(
-      `SELECT container_id, container_name,
-              time_bucket('5 minutes', timestamp) AS bucket,
-              AVG(value) AS avg_value
-       FROM metrics
+      `SELECT container_id, container_name, bucket, avg_value
+       FROM metrics_5min
        WHERE metric_type = $1
-         AND timestamp >= NOW() - make_interval(hours => $2)
-       GROUP BY container_id, container_name, bucket
+         AND bucket >= NOW() - make_interval(hours => $2)
        ORDER BY container_id, bucket`,
       [metricType, hours],
     );
@@ -313,20 +361,13 @@ export async function detectCorrelatedAnomalies(
 ): Promise<CorrelatedAnomaly[]> {
   if (!db) db = await getMetricsDb();
 
-  // Get containers with recent metrics
-  const { rows: containers } = await db.query(
-    `SELECT DISTINCT container_id, container_name
-     FROM metrics
-     WHERE timestamp >= NOW() - INTERVAL '1 hour'
-     GROUP BY container_id, container_name
-     HAVING COUNT(DISTINCT metric_type) >= 2`,
-  );
+  // Single set-based fetch for the whole fleet, replacing the former
+  // per-container N+1 loop (~11 sequential round-trips per container).
+  const snapshotsByContainer = await getAllMetricSnapshots(windowSize, db);
 
   const results: CorrelatedAnomaly[] = [];
 
-  for (const container of containers as Array<{ container_id: string; container_name: string }>) {
-    const snapshots = await getMetricSnapshots(container.container_id, windowSize, db);
-
+  for (const [containerId, { containerName, snapshots }] of snapshotsByContainer) {
     if (snapshots.length < 2) continue;
 
     // Only include metrics with elevated z-scores
@@ -350,8 +391,8 @@ export async function detectCorrelatedAnomalies(
     const severity = scoreSeverity(compositeScore);
 
     results.push({
-      containerId: container.container_id,
-      containerName: container.container_name,
+      containerId,
+      containerName,
       metrics: metricDetails,
       compositeScore,
       pattern,
