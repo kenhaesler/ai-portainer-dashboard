@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
 import Fastify, { type FastifyInstance, type FastifyRequest, type FastifyReply } from 'fastify';
+import { serializerCompiler } from 'fastify-type-provider-zod';
 import { testAdminOnly } from '@dashboard/core/test-utils/rbac-test-helper.js';
 import { incidentsRoutes } from '../routes/incidents.js';
 import { getIncidents, getIncident, resolveIncident, getIncidentCount, resolveIncidentsBatch, getIncidentGroups } from '../services/incident-store.js';
@@ -45,6 +46,7 @@ describe('incidents routes', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     app = Fastify();
+    app.setSerializerCompiler(serializerCompiler);
 
     // Mock auth decorator
     app.decorate('authenticate', async () => {});
@@ -56,7 +58,24 @@ describe('incidents routes', () => {
   describe('GET /api/incidents', () => {
     it('should return incidents list with counts', async () => {
       mockedGetIncidents.mockResolvedValue([
-        { id: 'inc-1', title: 'Test incident', severity: 'critical', status: 'active' } as never,
+        {
+          id: 'inc-1',
+          title: 'Test incident',
+          severity: 'critical',
+          status: 'active',
+          root_cause_insight_id: null,
+          related_insight_ids: [],
+          affected_containers: [],
+          endpoint_id: null,
+          endpoint_name: null,
+          correlation_type: 'temporal',
+          correlation_confidence: 'medium',
+          insight_count: 1,
+          summary: null,
+          created_at: '2026-07-13T00:00:00.000Z',
+          updated_at: '2026-07-13T00:00:00.000Z',
+          resolved_at: null,
+        } as never,
       ]);
       mockedGetIncidentCount.mockResolvedValue({ active: 1, resolved: 0, total: 1 });
 
@@ -306,6 +325,7 @@ describe('incidents RBAC', () => {
   beforeAll(async () => {
     currentRole = 'admin';
     rbacApp = Fastify({ logger: false });
+    rbacApp.setSerializerCompiler(serializerCompiler);
     rbacApp.decorate('authenticate', async () => undefined);
     rbacApp.decorate('requireRole', (minRole: 'viewer' | 'operator' | 'admin') => async (request: FastifyRequest, reply: FastifyReply) => {
       const rank = { viewer: 0, operator: 1, admin: 2 };

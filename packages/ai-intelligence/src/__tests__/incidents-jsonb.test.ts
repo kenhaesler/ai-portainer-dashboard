@@ -7,6 +7,7 @@
  */
 import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
 import Fastify from 'fastify';
+import { serializerCompiler } from 'fastify-type-provider-zod';
 import { getTestDb, truncateTestTables, closeTestDb } from '@dashboard/core/db/test-db-helper.js';
 import type { AppDb } from '@dashboard/core/db/app-db.js';
 import { incidentsRoutes } from '../routes/incidents.js';
@@ -71,6 +72,7 @@ describe('Incidents JSONB Type Regression Tests', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     app = Fastify();
+    app.setSerializerCompiler(serializerCompiler);
     app.decorate('authenticate', async () => {});
     app.decorate('requireRole', () => async () => undefined);
     await app.register(incidentsRoutes);
