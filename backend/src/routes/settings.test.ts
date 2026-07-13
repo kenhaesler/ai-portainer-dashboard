@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
 import Fastify, { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { validatorCompiler } from 'fastify-type-provider-zod';
+import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
 import { testAdminOnly } from '../test-utils/rbac-test-helper.js';
 import { settingsRoutes } from '@dashboard/foundation/routes/index.js';
 
@@ -64,6 +64,7 @@ describe('settings preference routes', () => {
   beforeAll(async () => {
     app = Fastify({ logger: false });
     app.setValidatorCompiler(validatorCompiler);
+    app.setSerializerCompiler(serializerCompiler);
     app.decorate('authenticate', async () => undefined);
     app.decorate('requireRole', () => async () => undefined);
     app.decorateRequest('user', undefined);
@@ -130,6 +131,7 @@ describe('audit-log cursor pagination', () => {
   beforeAll(async () => {
     app = Fastify({ logger: false });
     app.setValidatorCompiler(validatorCompiler);
+    app.setSerializerCompiler(serializerCompiler);
     app.decorate('authenticate', async () => undefined);
     app.decorate('requireRole', () => async () => undefined);
     app.decorateRequest('user', undefined);
@@ -230,6 +232,7 @@ describe('settings security', () => {
     currentRole = 'admin';
     secApp = Fastify({ logger: false });
     secApp.setValidatorCompiler(validatorCompiler);
+    secApp.setSerializerCompiler(serializerCompiler);
     secApp.decorate('authenticate', async () => undefined);
     secApp.decorate('requireRole', (minRole: 'viewer' | 'operator' | 'admin') => async (request: FastifyRequest, reply: FastifyReply) => {
       const rank = { viewer: 0, operator: 1, admin: 2 };
@@ -259,13 +262,16 @@ describe('settings security', () => {
   testAdminOnly(() => secApp, (r) => { currentRole = r; }, 'GET', '/api/settings/audit-log');
 
   it('redacts sensitive values for admin on GET /api/settings', async () => {
+    // updated_at is a NOT NULL column the real SELECT * always returns; the
+    // GET /api/settings response schema (SettingSchema) requires it (#1545).
+    const ts = '2026-07-13T00:00:00.000Z';
     mockQuery.mockResolvedValueOnce([
-      { key: 'oidc.client_secret', value: 'super-secret', category: 'authentication' },
-      { key: 'elasticsearch.api_key', value: 'es-key', category: 'logs' },
-      { key: 'notifications.smtp_password', value: 'smtp-pass', category: 'notifications' },
-      { key: 'notifications.teams_webhook_url', value: 'https://secret.webhook', category: 'notifications' },
-      { key: 'llm.custom_endpoint_token', value: 'llm-token', category: 'llm' },
-      { key: 'general.theme', value: 'apple-dark', category: 'general' },
+      { key: 'oidc.client_secret', value: 'super-secret', category: 'authentication', updated_at: ts },
+      { key: 'elasticsearch.api_key', value: 'es-key', category: 'logs', updated_at: ts },
+      { key: 'notifications.smtp_password', value: 'smtp-pass', category: 'notifications', updated_at: ts },
+      { key: 'notifications.teams_webhook_url', value: 'https://secret.webhook', category: 'notifications', updated_at: ts },
+      { key: 'llm.custom_endpoint_token', value: 'llm-token', category: 'llm', updated_at: ts },
+      { key: 'general.theme', value: 'apple-dark', category: 'general', updated_at: ts },
     ]);
 
     const response = await secApp.inject({
@@ -276,18 +282,19 @@ describe('settings security', () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual([
-      { key: 'oidc.client_secret', value: '••••••••', category: 'authentication' },
-      { key: 'elasticsearch.api_key', value: '••••••••', category: 'logs' },
-      { key: 'notifications.smtp_password', value: '••••••••', category: 'notifications' },
-      { key: 'notifications.teams_webhook_url', value: '••••••••', category: 'notifications' },
-      { key: 'llm.custom_endpoint_token', value: '••••••••', category: 'llm' },
-      { key: 'general.theme', value: 'apple-dark', category: 'general' },
+      { key: 'oidc.client_secret', value: '••••••••', category: 'authentication', updated_at: ts },
+      { key: 'elasticsearch.api_key', value: '••••••••', category: 'logs', updated_at: ts },
+      { key: 'notifications.smtp_password', value: '••••••••', category: 'notifications', updated_at: ts },
+      { key: 'notifications.teams_webhook_url', value: '••••••••', category: 'notifications', updated_at: ts },
+      { key: 'llm.custom_endpoint_token', value: '••••••••', category: 'llm', updated_at: ts },
+      { key: 'general.theme', value: 'apple-dark', category: 'general', updated_at: ts },
     ]);
   });
 
   it('rejects invalid schemes for security-critical URL settings', async () => {
     const app = Fastify({ logger: false });
     app.setValidatorCompiler(validatorCompiler);
+    app.setSerializerCompiler(serializerCompiler);
     app.decorate('authenticate', async () => undefined);
     app.decorate('requireRole', () => async () => undefined);
     app.decorateRequest('user', undefined);
@@ -316,6 +323,7 @@ describe('settings security', () => {
   it('accepts valid https URL for oidc.issuer_url', async () => {
     const app = Fastify({ logger: false });
     app.setValidatorCompiler(validatorCompiler);
+    app.setSerializerCompiler(serializerCompiler);
     app.decorate('authenticate', async () => undefined);
     app.decorate('requireRole', () => async () => undefined);
     app.decorateRequest('user', undefined);
@@ -346,6 +354,7 @@ describe('settings security', () => {
   it('preserves existing category when update payload omits category', async () => {
     const app = Fastify({ logger: false });
     app.setValidatorCompiler(validatorCompiler);
+    app.setSerializerCompiler(serializerCompiler);
     app.decorate('authenticate', async () => undefined);
     app.decorate('requireRole', () => async () => undefined);
     app.decorateRequest('user', undefined);
@@ -382,6 +391,7 @@ describe('prompt-features endpoint', () => {
     currentRole = 'admin';
     pfApp = Fastify({ logger: false });
     pfApp.setValidatorCompiler(validatorCompiler);
+    pfApp.setSerializerCompiler(serializerCompiler);
     pfApp.decorate('authenticate', async () => undefined);
     pfApp.decorate('requireRole', (minRole: 'viewer' | 'operator' | 'admin') => async (request: FastifyRequest, reply: FastifyReply) => {
       const rank = { viewer: 0, operator: 1, admin: 2 };
@@ -441,6 +451,7 @@ describe('prompt version history routes (#415)', () => {
   beforeAll(async () => {
     app = Fastify({ logger: false });
     app.setValidatorCompiler(validatorCompiler);
+    app.setSerializerCompiler(serializerCompiler);
     app.decorate('authenticate', async () => undefined);
     app.decorate('requireRole', () => async () => undefined);
     app.decorateRequest('user', undefined);

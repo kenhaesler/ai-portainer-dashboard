@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest';
 import { testAdminOnly } from '@dashboard/core/test-utils/rbac-test-helper.js';
 import Fastify, { FastifyInstance } from 'fastify';
-import { validatorCompiler } from 'fastify-type-provider-zod';
+import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
 import { harborVulnerabilityRoutes } from '../routes/harbor-vulnerabilities.js';
 
 // Kept: harbor-client mock — no Harbor registry in CI
@@ -62,6 +62,44 @@ vi.mock('@dashboard/core/services/audit-logger.js', () => ({
   writeAuditLog: vi.fn(),
 }));
 
+// Complete fixtures matching the real store output (#1545). GET
+// /api/harbor/vulnerabilities now declares a response schema, so its serializer
+// validates the payload; partial mocks (missing columns) would fail to
+// serialize. `makeVuln` mirrors the 17-column harbor_vulnerabilities row and
+// `makeSummary` the 9-field VulnerabilitySummary.
+const makeVuln = (overrides: Record<string, unknown> = {}) => ({
+  id: 1,
+  cve_id: 'CVE-0000-0000',
+  severity: 'High',
+  cvss_v3_score: null,
+  package: 'openssl',
+  version: '1.0.0',
+  fixed_version: null,
+  status: null,
+  description: null,
+  links: null,
+  project_id: 1,
+  repository_name: 'lib/app',
+  digest: 'sha256:abc',
+  tags: null,
+  in_use: false,
+  matching_containers: null,
+  synced_at: '2026-07-13T00:00:00.000Z',
+  ...overrides,
+});
+const makeSummary = (overrides: Record<string, unknown> = {}) => ({
+  total: 0,
+  critical: 0,
+  high: 0,
+  medium: 0,
+  low: 0,
+  in_use_total: 0,
+  in_use_critical: 0,
+  fixable: 0,
+  excepted: 0,
+  ...overrides,
+});
+
 describe('Harbor Vulnerability Routes', () => {
   let app: FastifyInstance;
   let currentRole: 'viewer' | 'operator' | 'admin';
@@ -70,6 +108,7 @@ describe('Harbor Vulnerability Routes', () => {
     currentRole = 'admin';
     app = Fastify({ logger: false });
     app.setValidatorCompiler(validatorCompiler);
+    app.setSerializerCompiler(serializerCompiler);
     app.decorate('authenticate', async () => undefined);
     app.decorate('requireRole', (minRole: 'viewer' | 'operator' | 'admin') => async (request: any, reply: any) => {
       const rank = { viewer: 0, operator: 1, admin: 2 };
@@ -95,7 +134,7 @@ describe('Harbor Vulnerability Routes', () => {
     currentRole = 'admin';
     mockIsHarborConfiguredAsync.mockResolvedValue(true);
     mockGetIsSyncing.mockReturnValue(false);
-    mockGetVulnerabilitySummary.mockResolvedValue({ critical: 0, high: 0, medium: 0, low: 0, total: 0 });
+    mockGetVulnerabilitySummary.mockResolvedValue(makeSummary());
     mockGetVulnerabilities.mockResolvedValue([]);
     mockGetVulnerabilitiesCount.mockResolvedValue(0);
     mockGetExceptions.mockResolvedValue([]);
@@ -104,8 +143,8 @@ describe('Harbor Vulnerability Routes', () => {
 
   describe('GET /api/harbor/vulnerabilities', () => {
     it('returns vulnerabilities and summary', async () => {
-      const vulns = [{ id: 1, cve_id: 'CVE-2024-0001', severity: 'HIGH', package_name: 'openssl' }];
-      const summary = { critical: 0, high: 1, medium: 0, low: 0, total: 1 };
+      const vulns = [makeVuln({ cve_id: 'CVE-2024-0001', severity: 'High' })];
+      const summary = makeSummary({ high: 1, total: 1 });
       mockGetVulnerabilities.mockResolvedValue(vulns);
       mockGetVulnerabilitySummary.mockResolvedValue(summary);
 
@@ -125,8 +164,8 @@ describe('Harbor Vulnerability Routes', () => {
     it('returns the filtered total plus echoed limit/offset for pagination (#1546)', async () => {
       // total (filtered) is distinct from summary.total (global) — a severity
       // filter narrows the count without touching the global KPI summary.
-      mockGetVulnerabilities.mockResolvedValue([{ id: 1, cve_id: 'CVE-A', severity: 'Critical' }]);
-      mockGetVulnerabilitySummary.mockResolvedValue({ critical: 3, high: 5, medium: 0, low: 0, total: 8 });
+      mockGetVulnerabilities.mockResolvedValue([makeVuln({ cve_id: 'CVE-A', severity: 'Critical' })]);
+      mockGetVulnerabilitySummary.mockResolvedValue(makeSummary({ critical: 3, high: 5, total: 8 }));
       mockGetVulnerabilitiesCount.mockResolvedValue(3);
 
       const response = await app.inject({

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest';
 import Fastify, { FastifyInstance } from 'fastify';
-import { validatorCompiler } from 'fastify-type-provider-zod';
+import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
 import { investigationRoutes } from '../routes/investigations.js';
 
 // Kept: investigation-store mock — no PostgreSQL in CI
@@ -32,7 +32,20 @@ const sampleInvestigation = {
   container_id: 'abc123',
   container_name: 'web',
   status: 'complete' as const,
+  // Nullable columns must be present (the GET /api/investigations response
+  // schema validates the full InvestigationWithInsight shape, #1545).
+  evidence_summary: null,
+  root_cause: null,
+  contributing_factors: null,
+  severity_assessment: null,
+  recommended_actions: null,
+  confidence_score: null,
+  analysis_duration_ms: null,
+  llm_model: null,
+  ai_summary: null,
+  error_message: null,
   created_at: '2026-01-01T00:00:00.000Z',
+  completed_at: null,
   insight_title: 'High CPU usage',
   insight_severity: 'critical',
   insight_category: 'anomaly',
@@ -44,6 +57,7 @@ describe('Investigation Routes', () => {
   beforeAll(async () => {
     app = Fastify({ logger: false });
     app.setValidatorCompiler(validatorCompiler);
+    app.setSerializerCompiler(serializerCompiler);
     app.decorate('authenticate', async () => undefined);
     app.decorate('requireRole', () => async () => undefined);
     app.decorateRequest('user', undefined);

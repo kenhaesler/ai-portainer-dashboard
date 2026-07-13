@@ -13,6 +13,52 @@ import { runFullSync, getIsSyncing } from '../services/harbor-sync.js';
 
 const log = createChildLogger('route:harbor-vulnerabilities');
 
+// Response schemas (#1545) — mirror the store's VulnerabilityRecord /
+// VulnerabilitySummary (harbor-vulnerability-store.ts) and the frontend's
+// VulnerabilityListResponse (use-harbor-vulnerabilities.ts) 1:1. Declaring them
+// as `response: { 200: ... }` enables fast-json-stringify serialization and
+// unknown-field pruning. Exported so a compile-time drift guard in the tests can
+// assert they stay field-for-field in sync with the store interfaces.
+export const HarborVulnerabilityRecordSchema = z.object({
+  id: z.number(),
+  cve_id: z.string(),
+  severity: z.string(),
+  cvss_v3_score: z.number().nullable(),
+  package: z.string(),
+  version: z.string(),
+  fixed_version: z.string().nullable(),
+  status: z.string().nullable(),
+  description: z.string().nullable(),
+  links: z.string().nullable(),
+  project_id: z.number(),
+  repository_name: z.string(),
+  digest: z.string(),
+  tags: z.string().nullable(),
+  in_use: z.boolean(),
+  matching_containers: z.string().nullable(),
+  synced_at: z.string(),
+});
+
+export const HarborVulnerabilitySummarySchema = z.object({
+  total: z.number(),
+  critical: z.number(),
+  high: z.number(),
+  medium: z.number(),
+  low: z.number(),
+  in_use_total: z.number(),
+  in_use_critical: z.number(),
+  fixable: z.number(),
+  excepted: z.number(),
+});
+
+const HarborVulnerabilityListResponseSchema = z.object({
+  vulnerabilities: z.array(HarborVulnerabilityRecordSchema),
+  summary: HarborVulnerabilitySummarySchema,
+  total: z.number(),
+  limit: z.number(),
+  offset: z.number(),
+});
+
 export async function harborVulnerabilityRoutes(fastify: FastifyInstance) {
   // ---------------------------------------------------------------------------
   // Connection & Status
@@ -107,6 +153,7 @@ export async function harborVulnerabilityRoutes(fastify: FastifyInstance) {
         limit: z.coerce.number().int().min(1).max(1000).default(200),
         offset: z.coerce.number().int().min(0).default(0),
       }),
+      response: { 200: HarborVulnerabilityListResponseSchema },
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {
@@ -137,6 +184,7 @@ export async function harborVulnerabilityRoutes(fastify: FastifyInstance) {
       tags: ['Harbor'],
       summary: 'Get vulnerability summary statistics (from synced local data)',
       security: [{ bearerAuth: [] }],
+      response: { 200: HarborVulnerabilitySummarySchema },
     },
     preHandler: [fastify.authenticate],
   }, async () => {
