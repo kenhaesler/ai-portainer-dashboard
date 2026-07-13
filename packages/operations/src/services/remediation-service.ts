@@ -12,7 +12,11 @@ import {
 import type { Insight } from '@dashboard/core/models/monitoring.js';
 import { eventBus } from '@dashboard/core/services/typed-event-bus.js';
 import { getContainerLogs } from '@dashboard/core/portainer/portainer-client.js';
-import type { LLMInterface, MetricsInterface } from '@dashboard/contracts';
+import type { LLMInterface, MetricsInterface, RemediationAnalysisResult } from '@dashboard/contracts';
+
+// Re-exported for the historical import path; the canonical shape lives in
+// @dashboard/contracts (#1509).
+export type { RemediationAnalysisResult };
 
 let _llm: LLMInterface | null = null;
 let _metrics: MetricsInterface | null = null;
@@ -103,18 +107,6 @@ const ACTION_PATTERNS: Array<{
 interface RemediationEvidence {
   logs?: string;
   metrics?: Record<string, number>;
-}
-
-export interface RemediationAnalysisResult {
-  root_cause: string;
-  severity: 'critical' | 'warning' | 'info';
-  recommended_actions: Array<{
-    action: string;
-    priority: 'high' | 'medium' | 'low';
-    rationale: string;
-  }>;
-  log_analysis: string;
-  confidence_score: number;
 }
 
 function tryParseAnalysisPayload(raw: string): Record<string, unknown> | null {

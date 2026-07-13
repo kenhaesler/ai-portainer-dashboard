@@ -5,6 +5,20 @@ import {
   ANOMALY_DETECTORS,
   InsightSchema,
 } from './monitoring.js';
+import * as contracts from '@dashboard/contracts';
+
+// #1509: core/models/monitoring.ts is a thin re-export of the canonical
+// definitions in @dashboard/contracts — there must be exactly ONE physical
+// schema/constant object shared by the backend and frontend, not two copies
+// that can drift.
+describe('monitoring model is the single source of truth (#1509)', () => {
+  it('re-exports the identical contracts objects (same reference)', () => {
+    expect(InsightSchema).toBe(contracts.InsightSchema);
+    expect(ANOMALY_DETECTORS).toBe(contracts.ANOMALY_DETECTORS);
+    expect(PERSISTED_ANOMALY_DETECTORS).toBe(contracts.PERSISTED_ANOMALY_DETECTORS);
+    expect(IN_MEMORY_ANOMALY_DETECTORS).toBe(contracts.IN_MEMORY_ANOMALY_DETECTORS);
+  });
+});
 
 describe('InsightSchema', () => {
   const valid = {

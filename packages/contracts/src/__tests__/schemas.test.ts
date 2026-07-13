@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   InsightSchema,
+  PERSISTED_ANOMALY_DETECTORS,
+  IN_MEMORY_ANOMALY_DETECTORS,
+  ANOMALY_DETECTORS,
   MetricSchema,
   AnomalyDetectionSchema,
   NormalizedContainerSchema,
@@ -58,6 +61,35 @@ describe('InsightSchema', () => {
         container_name: null, severity: 'fatal', category: 'c', title: 't', description: 'd',
         suggested_action: null, created_at: '2024-01-01T00:00:00.000Z' })
     ).toThrow();
+  });
+
+  // #1509: the contract is the single source of truth for the anomaly fields the
+  // backend persists (#1308/#1314). These used to be missing from the contract
+  // copy, forcing the frontend to hand-redeclare them — guard against regression.
+  it('accepts the persisted anomaly fields (metric_type/detection_method/z_score)', () => {
+    const result = InsightSchema.parse({
+      id: 'x', endpoint_id: 1, endpoint_name: 'e', container_id: 'c', container_name: 'n',
+      severity: 'critical', category: 'anomaly', title: 't', description: 'd',
+      suggested_action: null, is_acknowledged: 0, created_at: '2024-01-01T00:00:00.000Z',
+      metric_type: 'cpu', detection_method: 'ml-anomaly', z_score: '4.2',
+    });
+    expect(result.metric_type).toBe('cpu');
+    expect(result.detection_method).toBe('ml-anomaly');
+    expect(result.z_score).toBe(4.2); // coerced from the pg NUMERIC string
+  });
+
+  it('rejects an in-memory detector on detection_method (persisted subset only)', () => {
+    expect(InsightSchema.shape.detection_method.safeParse('correlated-zscore').success).toBe(false);
+    expect(InsightSchema.shape.detection_method.safeParse('ml-anomaly').success).toBe(true);
+  });
+});
+
+describe('anomaly detector constants (#1314/#1509)', () => {
+  it('ANOMALY_DETECTORS is the union of persisted + in-memory, in order', () => {
+    expect(ANOMALY_DETECTORS).toEqual([
+      ...PERSISTED_ANOMALY_DETECTORS,
+      ...IN_MEMORY_ANOMALY_DETECTORS,
+    ]);
   });
 });
 

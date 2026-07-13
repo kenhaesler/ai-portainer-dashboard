@@ -97,7 +97,7 @@ vi.mock('@dashboard/core/portainer/portainer-client.js', async (importOriginal) 
 vi.mock('@dashboard/core/portainer/portainer-cache.js', async (importOriginal) => await importOriginal());
 
 // ─── Imports (after mocks) ──────────────────────────────────────────────
-import { authRoutes, containerLogsRoutes } from '@dashboard/foundation';
+import { authRoutes, containerLogsRoutes } from '@dashboard/foundation/routes/index.js';
 import * as portainerClient from '@dashboard/core/portainer/portainer-client.js';
 import { cache } from '@dashboard/core/portainer/portainer-cache.js';
 import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';

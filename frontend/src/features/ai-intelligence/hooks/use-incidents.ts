@@ -1,25 +1,11 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import type { Incident } from '@dashboard/contracts';
 import { api } from '@/shared/lib/api';
 import { usePageVisibility } from '@/shared/hooks/use-page-visibility';
 
-export interface Incident {
-  id: string;
-  title: string;
-  severity: 'critical' | 'warning' | 'info';
-  status: 'active' | 'resolved';
-  root_cause_insight_id: string | null;
-  related_insight_ids: string[]; // JSONB returns native array (pg driver auto-parses)
-  affected_containers: string[]; // JSONB returns native array (pg driver auto-parses)
-  endpoint_id: number | null;
-  endpoint_name: string | null;
-  correlation_type: string;
-  correlation_confidence: 'high' | 'medium' | 'low';
-  insight_count: number;
-  summary: string | null;
-  created_at: string;
-  updated_at: string;
-  resolved_at: string | null;
-}
+// Canonical wire shape lives in @dashboard/contracts (#1509). Re-exported so
+// existing `import { Incident } from '.../use-incidents'` call sites keep working.
+export type { Incident };
 
 interface IncidentCounts {
   active: number;

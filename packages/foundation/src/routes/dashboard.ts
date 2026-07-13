@@ -1,4 +1,11 @@
 import { FastifyInstance } from 'fastify';
+// Fastify type augmentations (`fastify.authenticate`/`requireRole`,
+// `request.user`/`requestId`, swagger `schema.tags`) used to arrive implicitly
+// via the domain barrels this file imports; those barrels no longer re-export
+// routes (#1533), so import the declaring core plugin modules explicitly.
+import '@dashboard/core/plugins/auth.js';
+import '@dashboard/core/plugins/request-tracing.js';
+import '@fastify/swagger';
 import { z } from 'zod/v4';
 import pLimit from 'p-limit';
 import * as portainer from '@dashboard/core/portainer/portainer-client.js';

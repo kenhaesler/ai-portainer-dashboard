@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
 import Fastify from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
-import { containersRoutes } from '@dashboard/foundation';
+import { containersRoutes } from '@dashboard/foundation/routes/index.js';
 // Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
 vi.mock('@dashboard/core/portainer/portainer-client.js', async (importOriginal) => await importOriginal());
 import * as portainerClient from '@dashboard/core/portainer/portainer-client.js';

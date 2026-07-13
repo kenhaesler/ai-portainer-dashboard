@@ -1,4 +1,11 @@
 import { FastifyInstance } from 'fastify';
+// Fastify type augmentations (`fastify.authenticate`/`requireRole`,
+// `request.user`/`requestId`, swagger `schema.tags`) used to arrive implicitly
+// via the `@dashboard/ai` barrel this file imports; that barrel no longer
+// re-exports routes (#1533), so import the declaring core plugin modules here.
+import '@dashboard/core/plugins/auth.js';
+import '@dashboard/core/plugins/request-tracing.js';
+import '@fastify/swagger';
 import { z } from 'zod/v4';
 import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';

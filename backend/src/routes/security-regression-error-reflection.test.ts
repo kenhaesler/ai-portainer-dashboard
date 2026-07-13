@@ -69,7 +69,7 @@ describe('Reflected input — llm-feedback routes', () => {
   let app: FastifyInstance;
 
   beforeEach(async () => {
-    const { llmFeedbackRoutes } = await import('@dashboard/ai');
+    const { llmFeedbackRoutes } = await import('@dashboard/ai/routes/index.js');
 
     app = Fastify();
     app.setValidatorCompiler(validatorCompiler);
@@ -131,7 +131,7 @@ describe('Reflected input — webhook routes', () => {
   let app: FastifyInstance;
 
   beforeEach(async () => {
-    const { webhookRoutes } = await import('@dashboard/operations');
+    const { webhookRoutes } = await import('@dashboard/operations/routes/index.js');
 
     app = Fastify();
     app.setValidatorCompiler(validatorCompiler);

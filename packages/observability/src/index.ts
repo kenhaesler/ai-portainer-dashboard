@@ -1,8 +1,10 @@
 // Public API for the observability module.
 // Import from this file in cross-domain consumers (scheduler, AI services, other routes).
-
-// Routes
-export { observabilityRoutes } from './routes/index.js';
+//
+// Routes are NOT re-exported here (core/src/CLAUDE.md rule) — register them via
+// `@dashboard/observability/routes/index.js` in the composition root. Keeping
+// routes out of the barrel also stops barrel consumers from transitively
+// evaluating route modules (and their lazy cache-sweep timers) at import (#1533).
 
 // Services — metrics collection and storage
 export type { CollectedMetrics } from './services/metrics-collector.js';
@@ -117,19 +119,6 @@ export {
   detectCorrelatedAnomalies,
 } from './services/metric-correlator.js';
 
-// Route helpers (exported for testing)
-export {
-  clearNarrativeCache,
-  getNarrativeCacheSize,
-  setCachedNarrative,
-  MAX_NARRATIVE_CACHE,
-  buildForecastPrompt,
-} from './routes/forecasts.js';
-
-export {
-  resetPrometheusMetricsCacheForTests,
-} from './routes/prometheus.js';
-
-export {
-  clearReportCache,
-} from './routes/reports.js';
+// Route-internal test helpers are intentionally NOT re-exported from the barrel
+// (they live in ./routes/*.js and pull in route modules + their timers). Tests
+// import them directly from the route files (see src/__tests__).

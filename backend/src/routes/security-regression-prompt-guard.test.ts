@@ -84,7 +84,8 @@ vi.mock('ollama', async () =>
 );
 
 // ─── Imports (after mocks) ──────────────────────────────────────────────
-import { llmRoutes, chatStream, ThinkingBlockFilter, sanitizeLlmOutput } from '@dashboard/ai';
+import { llmRoutes } from '@dashboard/ai/routes/index.js';
+import { chatStream, ThinkingBlockFilter, sanitizeLlmOutput } from '@dashboard/ai';
 import { metricsRoutes } from '@dashboard/observability/routes/index.js';
 import { shouldBypassGlobalRateLimit } from '@dashboard/core/plugins/rate-limit.js';
 import type { LLMInterface } from '@dashboard/contracts';
