@@ -31,7 +31,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@types/node": "^25.9.2",
+    "@types/node": "^26.1.1",
     "@types/pg": "^8.20.0",
     "@vitest/coverage-v8": "^4.1.8",
     "protobufjs": "^8.6.1",
