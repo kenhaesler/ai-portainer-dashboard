@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import { getConfig } from '../config/index.js';
 import { getDbForDomain } from '../db/app-db-router.js';
 import { writeAuditLog } from './audit-logger.js';
@@ -50,7 +50,7 @@ export async function createSession(userId: string, username: string): Promise<S
   const db = getDbForDomain('auth');
   const cfg = getConfig();
   const maxSessions = cfg.MAX_CONCURRENT_SESSIONS_PER_USER;
-  const id = uuidv4();
+  const id = randomUUID();
   const now = new Date().toISOString();
   const expiresAt = new Date(Date.now() + getSessionTtlMs()).toISOString();
 

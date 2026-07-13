@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import pLimit from 'p-limit';
 import type { Namespace } from 'socket.io';
 import { getConfig } from '@dashboard/core/config/index.js';
@@ -377,7 +377,7 @@ export function createMonitoringService(deps: MonitoringDeps) {
         await getCooldownStore().mark(cooldownKey);
 
         anomalyInsights.push({
-          id: uuidv4(),
+          id: randomUUID(),
           endpoint_id: item.endpointId,
           endpoint_name: item.endpointName,
           container_id: item.containerId,
@@ -426,7 +426,7 @@ export function createMonitoringService(deps: MonitoringDeps) {
             await getCooldownStore().mark(cooldownKey);
 
             anomalyInsights.push({
-              id: uuidv4(),
+              id: randomUUID(),
               endpoint_id: container.endpointId,
               endpoint_name: container.endpointName,
               container_id: container.raw.Id,
@@ -497,7 +497,7 @@ export function createMonitoringService(deps: MonitoringDeps) {
             if (!ifAnomaly?.is_anomalous) return null;
 
             return {
-              id: uuidv4(),
+              id: randomUUID(),
               endpoint_id: container.endpointId,
               endpoint_name: container.endpointName,
               container_id: container.raw.Id,
@@ -546,7 +546,7 @@ export function createMonitoringService(deps: MonitoringDeps) {
                 forecast.timeToThreshold < 12 ? 'warning' : 'info';
 
               predictiveInsights.push({
-                id: uuidv4(),
+                id: randomUUID(),
                 endpoint_id: null,
                 endpoint_name: null,
                 container_id: forecast.containerId,
@@ -614,7 +614,7 @@ export function createMonitoringService(deps: MonitoringDeps) {
           for (const result of logResults) {
             const container = runningContainers.find((c) => c.raw.Id === result.containerId);
             logAnalysisInsights.push({
-              id: uuidv4(),
+              id: randomUUID(),
               endpoint_id: container?.endpointId ?? null,
               endpoint_name: container?.endpointName ?? null,
               container_id: result.containerId,
@@ -641,7 +641,7 @@ export function createMonitoringService(deps: MonitoringDeps) {
 
       // 5. Create insights from security findings
       const securityInsights: InsightInsert[] = allFindings.map((f) => ({
-        id: uuidv4(),
+        id: randomUUID(),
         endpoint_id: f.endpointId,
         endpoint_name: f.endpointName,
         container_id: f.containerId,
@@ -677,7 +677,7 @@ export function createMonitoringService(deps: MonitoringDeps) {
 
             if (aiResponse.trim()) {
               const aiInsight: InsightInsert = {
-                id: uuidv4(),
+                id: randomUUID(),
                 endpoint_id: null,
                 endpoint_name: null,
                 container_id: null,

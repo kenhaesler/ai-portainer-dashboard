@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import type { Namespace } from 'socket.io';
 import { getConfig } from '@dashboard/core/config/index.js';
 import { getEffectiveMonitoringConfig } from '@dashboard/core/services/settings-store.js';
@@ -524,7 +524,7 @@ export async function triggerInvestigation(insight: Insight): Promise<void> {
   }
 
   // All guards passed — create and run
-  const investigationId = uuidv4();
+  const investigationId = randomUUID();
 
   await insertInvestigation({
     id: investigationId,

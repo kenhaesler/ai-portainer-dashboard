@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import {
   insertAction,
@@ -401,7 +401,7 @@ export async function suggestAction(
     return null;
   }
 
-  const actionId = uuidv4();
+  const actionId = randomUUID();
   const action: ActionInsert = {
     id: actionId,
     insight_id: insight.id,
