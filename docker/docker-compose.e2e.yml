@@ -54,6 +54,14 @@ services:
     # exceeded"). Raise it for the disposable CI stack only. (#1420)
     environment:
       - LOGIN_RATE_LIMIT=1000
+      # Every spec logs in as the SAME `admin` user (global-setup + auth.spec +
+      # remediation helpers + retries), so with the prod default of 5 the
+      # per-user concurrent-session cap evicts the OLDEST session — which is the
+      # storage-state session global-setup minted. Its token then 401s and the
+      # frontend redirects to /login, so late-running protected specs (settings,
+      # workload-explorer) intermittently fail with no sidebar. Raise the cap for
+      # the disposable CI stack so the shared-admin churn never evicts it. (#1560)
+      - MAX_CONCURRENT_SESSIONS_PER_USER=100
       # Point the backend at the deterministic LLM stub. The base compose reads
       # LLM_API_URL from the host env (empty in CI); this authoritative override
       # wins the environment merge so chat is always wired to the stub. (#1521)

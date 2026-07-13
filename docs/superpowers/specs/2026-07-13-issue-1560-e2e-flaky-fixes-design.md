@@ -1,4 +1,4 @@
-# Issue #1560 — E2E flaky failures: settings sidebar timeout + workload-explorer dropdown (0,0)
+# Issue #1560 — E2E flaky failures (settings + workload-explorer specs)
 
 - **Issue:** #1560 (bug, frontend, priority/low, e2e)
 - **Branch:** `feature/1560-e2e-flaky-fixes` (off `dev`)
@@ -6,82 +6,51 @@
 
 ## Problem
 
-The label-gated Playwright E2E suite has 11 pre-existing flaky failures, in two unrelated clusters:
+The label-gated Playwright E2E suite has 11 intermittently-failing tests — 3 in `e2e/settings.spec.ts` and 8 in `e2e/workload-explorer-dropdown-position.spec.ts`. Both clusters fail at the same point: `expect(page.locator('[data-testid="sidebar"]')).toBeVisible()` in `beforeEach`.
 
-1. **Workload Explorer filter dropdowns (8 tests, `e2e/workload-explorer-dropdown-position.spec.ts`)** — the Endpoint/Group/Stack/State selects sometimes render at viewport `(0,0)` instead of anchoring to their trigger.
-2. **Settings page (3 tests, `e2e/settings.spec.ts`)** — `expect(page.locator('[data-testid="sidebar"]')).toBeVisible()` in `beforeEach` times out (10s) on `/settings`.
+## Root cause (confirmed) — session eviction, not render timing
 
-Both are render/timing failures independent of backend data.
+The issue's title (and an initial pass on this branch) attributed these to **settings-chunk paint contention** and **Radix dropdown `(0,0)` positioning**. Both were wrong. Evidence disproving them:
 
-## Root Causes (traced)
+- Against a live stack, `settings.spec.ts` **passes locally** (sidebar renders well under 10s) — so it is not slow-paint contention.
+- In the failing CI run, the accessibility snapshot of the failing pages is the **login screen** (`"Sign in to your account"`): the specs are **unauthenticated**, redirected to `/login`, so the sidebar never mounts. The dropdown specs die at the same `beforeEach` sidebar wait and never reach any positioning assertion.
 
-### B. Dropdown (0,0)
-`ThemedSelect` (`frontend/src/shared/components/ui/themed-select.tsx`) uses Radix Select with `position="popper"`. Radix computes the popper coordinates from `trigger.getBoundingClientRect()` **once at open time**, then relies on Floating UI's default `autoUpdate` (scroll / resize / ResizeObserver / layout-shift) to keep it anchored. `autoUpdate` does **not** observe an ancestor CSS-transform transition.
+**Actual mechanism (traced end-to-end):**
 
-AppLayout (`frontend/src/features/core/components/layout/app-layout.tsx`) animates the content region on entrance: `m.main` runs `initial={{ y: 12 }} → animate={{ y: 0 }}` and the per-pathname `m.div` runs `x: ±16 → 0`. Both put a live `transform` on ancestors of the trigger. When a dropdown is opened during that window (the specs deliberately race it with `force: true`), Radix snapshots a transient, offset trigger rect and never re-anchors after the transform settles — at the extreme the panel lands near viewport origin.
+1. `e2e/global-setup.ts` REST-logs-in as `admin` **once**, minting session **A**; its JWT is written to `e2e/.auth/user.json` (the `storageState` every spec loads).
+2. The suite keeps logging in as the **same `admin`** — `auth.spec.ts`, `remediation-approval.spec.ts`, and the `e2e/helpers/{login,api}.ts` helpers all hardcode `admin` — and Playwright `retries: 2` amplifies it.
+3. `createSession` (`packages/core/src/services/session-store.ts:76-92`) enforces `MAX_CONCURRENT_SESSIONS_PER_USER` (default **5**, `env.schema.ts:58`) by **DELETE-ing the oldest** valid sessions. Session A is the oldest, so it is the first evicted.
+4. Once A is gone, every protected spec loading its token hits `authenticate` → `getSession(A)` returns undefined → **401** (`packages/core/src/plugins/auth.ts:54-57`).
+5. The frontend API client clears auth on 401 only (`frontend/src/shared/lib/api.ts:94-97` → `auth:expired`), `isAuthenticated` becomes `!!token === false` (`auth-provider.tsx:210`), and `ProtectedRoute` renders `<Navigate to="/login">`.
 
-The prior `.spotlight-card { transform: translateZ(0) }` fix (#1310) is already in place at `frontend/src/index.css:2012-2021` and is **correct** — because Radix Select portals to `document.body`, ancestor transforms don't re-parent the fixed popper; this is purely a position-snapshot timing race, not a containing-block bug.
+This is the **only** code path that turns a valid, non-expired token into a 401. Corroboration: the CI backend log shows **59 × 401** during the run. It's intermittent because it depends on how many `admin` logins have landed when each late-running protected spec loads (settings/workload sort last alphabetically). The `FST_ERR_REP_ALREADY_SENT` / `@fastify/compress` `ERR_HTTP_HEADERS_SENT` 500s on `/api/endpoints|stacks|harbor/enabled|remediation/actions` are **benign abort noise** — the redirect unmounts the page and cancels those in-flight GETs; they are a fingerprint of the redirect, not its cause (client never sees them; 500 ≠ 401).
 
-### A. Settings sidebar timeout
-`/settings` is the heaviest route chunk in the app. `frontend/src/features/core/pages/settings.tsx:22-29` **eagerly** (statically) imports all 8 tab modules (~1,900 lines of TSX; `tab-integrations.tsx` alone is 583 lines and several pull in `@tanstack/react-table` / `DataTable`). On the single-worker CI runner (`playwright.config.ts` `workers: 1`), downloading + parsing + evaluating that chunk contends for the main thread with the app-shell's first paint, the async `LazyMotion` features chunk, and the entrance animation. That contention occasionally pushes the sidebar's first paint past the 10s `expect` timeout — on `/settings` specifically, because `/workloads` is a lighter single-table page.
-
-The sidebar (`<aside data-testid="sidebar">` in `sidebar.tsx`) is a **sibling** of the page's Suspense boundary, so this is main-thread/resource contention, not a hard render dependency. `useSettings()` is a non-suspense `useQuery`, so data fetching is ruled out as the cause.
-
-Secondary (local-run only): the committed `e2e/.auth/user.json` JWT is expired (`exp` ~2026-02-21). CI regenerates it every run via the `setup` project (`e2e/global-setup.ts`, REST login), so it is stale-but-harmless in CI and for any local run that executes the `setup` project first.
+Ruled out: token expiry (JWT/session TTL = 60 min, run is ~12 min, refresh timer fires at ~50 min), the refresh timer, rate limiting (429 is not treated as auth-expiry), and the viewer-session invalidation in the remediation spec (scoped to a different `user_id`).
 
 ## Fixes
 
-### B. `updatePositionStrategy="always"`
-Add `updatePositionStrategy="always"` to `<SelectPrimitive.Content>` in `themed-select.tsx`. Radix Select's `Content` extends `PopperContentProps`, which supports `updatePositionStrategy?: 'optimized' | 'always'` (`@radix-ui/react-popper/dist/index.d.ts:38`). `"always"` passes `animationFrame: true` to Floating UI's `autoUpdate`, re-anchoring every animation frame while the panel is open. A dropdown opened mid-entrance-animation therefore self-corrects the instant the trigger's transform settles. One line; applies to every `ThemedSelect` app-wide; the `.spotlight-card` guard stays untouched. Cost: a rAF reposition loop, but only while a dropdown is open.
+### 1. Raise the E2E session cap (the fix)
+Add `MAX_CONCURRENT_SESSIONS_PER_USER=100` to the `backend` service env in `docker/docker-compose.e2e.yml`. This completes the existing mitigation there: the same block already raises `LOGIN_RATE_LIMIT=1000` for exactly the "many real logins from one admin" reason (#1420) — it just never raised the session cap. 100 is the schema max and far exceeds the suite's total admin logins (≈10-25 with retries), so the shared-admin churn can never evict the storage-state session. Product code and the production security feature are untouched; this is a disposable-CI-stack override only.
 
-### A. Harden the settings cold navigation (revised after reproduction)
-**Reproduction result (2026-07-13):** run against the live dev stack (`:8080` Vite-dev serving working-tree src, `:3051` backend), `e2e/settings.spec.ts` **passed all 4 tests** — the sidebar renders well under 10s locally. Symptom A does **not** reproduce on a fast machine; it is single-worker-CI main-thread contention from the heavy `/settings` chunk, not a real render dependency.
+### 2. Radix Select re-anchoring — defensive (kept)
+`updatePositionStrategy="always"` on `ThemedSelect`'s Radix `Content` (+ a source-guard test). This addresses the class of Radix-Select-opened-during-entrance-transform `(0,0)` bug the issue described. That bug could **not** be reproduced or verified here — the dropdown specs never reached positioning (they died at the auth redirect) — so this is low-risk insurance, and will be confirmed (or shown unnecessary) once the specs actually run under fix #1.
 
-Given that, the originally-planned `React.lazy()` tab split was **not** pursued: it is entangled (`settings.tsx:33-37` re-exports named members from four tab modules, keeping them eager regardless, so a true chunk split needs a broader refactor + consumer updates) and unverifiable locally (the spec already passes). The proportionate, evidence-based fix is to **harden the cold navigation** instead: in `e2e/settings.spec.ts`, navigate with `waitUntil: 'domcontentloaded'` and give the cold `/settings` sidebar assertion a 30s bounded budget (with 60s test-timeout headroom). The sidebar still renders — this only accommodates a slow, contended runner; a genuine regression still fails, just later. This is the "spec hardening" the plan reserved for exactly this case.
+### 3. E2E compose volume isolation (kept)
+`name: ai-portainer-e2e` in `docker/docker-compose.e2e.yml` so the stack's volumes are `ai-portainer-e2e_*` and CI's `down -v` can never destroy the dev `docker_postgres-app-data` / `docker_timescale-data` volumes. Verified transparent to CI via `docker compose config` (CI invokes every op via the layered `-f` form, service names only).
 
-### B verification
-The dropdown spec requires the WireMock canned fleet data; it cannot run against the dev stack (dev Portainer is unreachable → `/workloads` shows a "Failed to load containers" error state and the filter dropdowns never mount). The `updatePositionStrategy="always"` fix is therefore verified via CI (push the branch with the `e2e` label) rather than locally.
+### Reverted
+The settings cold-nav timeout hardening (`waitUntil: 'domcontentloaded'` + 30s sidebar budget) was based on the incorrect paint-contention diagnosis and is removed — with fix #1 the sidebar renders normally within the default budget.
 
-## Safe local verification (hard volume rule)
+## Verification
 
-The E2E stack (`docker compose -f docker/docker-compose.yml -f docker/docker-compose.e2e.yml`) defaults to compose project **`docker`**, whose named volumes materialize as `docker_postgres-app-data` / `docker_timescale-data` — the **same volumes the dev stack uses**. CI's teardown runs `down -v`. Running that locally would wipe the developer's dev data, which the project rules forbid.
+CI E2E run gated by the `e2e` label (the suite needs WireMock fleet data and can't run against a dev stack with an unreachable Portainer). Expect all 11 previously-failing specs to pass once the storage-state session is no longer evicted; the dropdown specs will then actually exercise positioning, validating (or retiring) fix #2.
 
-Mitigations (both applied):
-- **Run only under an isolated project:** `-p ai-portainer-e2e` for every `up`/`down`, so volumes become `ai-portainer-e2e_*`. Never run `down -v` (or any `-v` teardown) against the `docker` project. Teardown uses `down` without `-v`, or `down -v` scoped to `-p ai-portainer-e2e` only.
-- **Durable fix:** add `name: ai-portainer-e2e` to `docker/docker-compose.e2e.yml` so the E2E stack (including CI) can never share or destroy the dev `docker_*` volumes. Note: `redis-data` is not a real volume today (redis runs ephemerally), so only `postgres-app-data` and `timescale-data` are at risk.
-
-Docker commands run outside the Claude sandbox.
-
-## Verification flow
-
-1. Bring up the isolated E2E stack (`-p ai-portainer-e2e`); wait for `:3051/health`, `:8080/`, WireMock `:9000`.
-2. Run the two specs (the `setup` project regenerates fresh auth first). Reproduce the failures; capture timing/screenshots/trace as real evidence for the root causes.
-3. Apply the two code fixes (+ compose `name:`).
-4. Re-run the two specs → green. Run them a few times to confirm the flakiness is gone under `workers: 1`.
-5. Tear down the isolated stack safely.
-
-## Tests
-
-- The two existing specs are the regression coverage and must pass.
-- Add/keep a focused unit assertion for the `themed-select` prop if practical (e.g. that `Content` carries `updatePositionStrategy="always"`), so the anchoring guarantee is pinned at the component level, mirroring the `.spotlight-card` guard comment.
-
-## Acceptance criteria (as shipped)
-
-- [x] `themed-select.tsx` sets `updatePositionStrategy="always"` (+ a source-guard test); dropdown spec verified via CI (the `e2e` label), since it needs WireMock fleet data and can't run against the dev stack.
-- [x] `settings.spec.ts` cold-nav hardened (`domcontentloaded` + 30s bounded sidebar wait, 60s test timeout). **Not** the originally-planned `settings.tsx` lazy-load — symptom A does not reproduce locally, so the invasive/entangled refactor was dropped in favour of proportionate spec hardening (see Fix A above). Verified green locally (4/4).
-- [x] `docker-compose.e2e.yml` carries an isolated project `name:` (`ai-portainer-e2e`), verified via `docker compose config`.
-- [x] No dev volume (`docker_postgres-app-data` / `docker_timescale-data`) is destroyed — the isolated name scopes E2E volumes to `ai-portainer-e2e_*`; CI's `down -v` is now transparent to the dev stack (ci.yml uses the layered `-f` form throughout, service names only).
-- [x] Docs updated; PR links `Closes #1560`.
-
-## Files (as shipped)
-
-- `frontend/src/shared/components/ui/themed-select.tsx` — add `updatePositionStrategy="always"`.
-- `frontend/src/shared/components/ui/themed-select.test.ts` — source-guard test (jsdom has no layout).
-- `e2e/settings.spec.ts` — cold-nav hardening (`gotoSettings` helper + `SHELL_TIMEOUT`).
-- `docker/docker-compose.e2e.yml` — isolated project `name`.
-- **Not changed:** `frontend/src/features/core/pages/settings.tsx` (lazy-load dropped — see Fix A) and `.github/workflows/ci.yml` (the compose `name` change is project-name-transparent to CI, which invokes every op via the layered `-f` form using service names).
+## Files
+- `docker/docker-compose.e2e.yml` — `MAX_CONCURRENT_SESSIONS_PER_USER=100` (fix) + isolated project `name`.
+- `frontend/src/shared/components/ui/themed-select.tsx` (+ `.test.ts`) — defensive `updatePositionStrategy="always"`.
+- **Reverted:** `e2e/settings.spec.ts` (back to original).
+- **Not changed:** `frontend/src/features/core/pages/settings.tsx`, `.github/workflows/ci.yml`.
 
 ## Out of scope
-
-- Ungating the E2E job to run on every PR (issue calls this optional; revisit once green).
-- Broad restructuring of the entrance-animation system.
+- The `FST_ERR_REP_ALREADY_SENT` abort-noise on cancelled requests (cosmetic log noise; could be quieted by handling client-abort in the compress `onSend`, tracked separately if desired).
+- Making the login helpers use distinct ephemeral users (a more thorough test-hygiene change; the cap raise is the minimal fix).

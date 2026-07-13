@@ -7,29 +7,10 @@ import { test, expect } from '@playwright/test';
  * for categories and stores theme preferences in Zustand with
  * localStorage persistence.
  */
-
-// The /settings route is the heaviest chunk in the app (it eagerly imports all
-// eight tab modules). On the single-worker CI runner its download+parse+eval
-// contends with the app-shell's first paint, occasionally pushing the sidebar
-// past the default 10s expect timeout — the flake tracked in #1560. The sidebar
-// still renders (it does so well under 10s locally); it just needs a more
-// generous, bounded budget on a cold, contended navigation. Waiting for
-// `domcontentloaded` first (rather than the default `load`, which blocks on the
-// full chunk graph) plus a longer sidebar timeout hardens the cold nav without
-// masking a genuine failure — a real regression still fails, just later.
-const SHELL_TIMEOUT = 30_000;
-
-async function gotoSettings(page: import('@playwright/test').Page) {
-  await page.goto('/settings', { waitUntil: 'domcontentloaded' });
-  await expect(page.locator('[data-testid="sidebar"]')).toBeVisible({ timeout: SHELL_TIMEOUT });
-}
-
 test.describe('Settings Page', () => {
   test.beforeEach(async ({ page }) => {
-    // Give the heaviest route headroom over the 30s default test timeout so the
-    // generous sidebar wait can't collide with it on a slow runner.
-    test.setTimeout(60_000);
-    await gotoSettings(page);
+    await page.goto('/settings');
+    await expect(page.locator('[data-testid="sidebar"]')).toBeVisible();
   });
 
   test('theme change persists after page reload', async ({ page }) => {
@@ -50,9 +31,9 @@ test.describe('Settings Page', () => {
       // Theme class should have changed
       expect(newTheme).not.toBe(initialTheme);
 
-      // Reload the page (same cold-nav contention as the initial load, #1560)
-      await page.reload({ waitUntil: 'domcontentloaded' });
-      await expect(page.locator('[data-testid="sidebar"]')).toBeVisible({ timeout: SHELL_TIMEOUT });
+      // Reload the page
+      await page.reload();
+      await expect(page.locator('[data-testid="sidebar"]')).toBeVisible();
 
       // Theme should persist after reload
       const afterReloadTheme = await page
