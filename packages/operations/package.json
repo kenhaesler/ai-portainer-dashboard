@@ -37,7 +37,7 @@
   "devDependencies": {
     "@types/node": "^25.9.2",
     "@types/nodemailer": "^8.0.0",
-    "@vitest/coverage-v8": "^4.1.8",
+    "@vitest/coverage-v8": "^4.1.10",
     "typescript": "^6.0.3",
     "vitest": "^4.0.18"
   }
