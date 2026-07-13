@@ -62,6 +62,7 @@ vi.mock('@dashboard/core/services/settings-store.js', () => ({
 vi.mock('../services/prompt-store.js', () => ({
   getEffectivePrompt: vi.fn(() => 'You are an AI assistant.'),
   getEffectiveLlmConfig: mockGetEffectiveLlmConfig,
+  estimateTokens: (text: string) => Math.ceil(text.length / 4),
 }));
 
 // Mock collectFleetOverview (live fleet data) — the source builds the infra

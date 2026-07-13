@@ -2,6 +2,7 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { getConfig } from '@dashboard/core/config/index.js';
+import { extractLlmJson } from '@dashboard/core/utils/llm-json.js';
 import type { LLMInterface } from '@dashboard/contracts';
 import { getCapture, updateCaptureAnalysis } from './pcap-store.js';
 import { getCaptureFilePath } from './pcap-service.js';
@@ -220,21 +221,10 @@ export function buildAnalysisPrompt(summary: PcapSummary, containerName: string)
  * Follows the same pattern as investigation-service.ts parseInvestigationResponse.
  */
 export function parseAnalysisResponse(raw: string): PcapAnalysisResult {
-  // Try direct JSON parse
-  try {
-    return validateAnalysisResult(JSON.parse(raw));
-  } catch {
-    // not direct JSON
-  }
-
-  // Try to extract JSON from markdown code fences
-  const jsonMatch = raw.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
-  if (jsonMatch) {
-    try {
-      return validateAnalysisResult(JSON.parse(jsonMatch[1]));
-    } catch {
-      // invalid JSON inside fence
-    }
+  // Direct JSON or a ```json``` fenced block via the shared extractor (#1512).
+  const parsed = extractLlmJson<Record<string, unknown>>(raw);
+  if (parsed && typeof parsed === 'object') {
+    return validateAnalysisResult(parsed);
   }
 
   // Fallback

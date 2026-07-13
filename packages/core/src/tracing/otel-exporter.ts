@@ -258,6 +258,56 @@ export function initOtelExporter(config: OtelExporterConfig): OtelSpanExporter {
   return exporter;
 }
 
+/** Config subset consumed by the startup wiring (mirrors env.schema OTEL vars). */
+export interface OtelExporterEnv {
+  OTEL_EXPORTER_ENABLED: boolean;
+  OTEL_EXPORTER_ENDPOINT?: string;
+  OTEL_EXPORTER_HEADERS?: string;
+  OTEL_EXPORTER_BATCH_SIZE: number;
+  OTEL_EXPORTER_FLUSH_INTERVAL_MS: number;
+}
+
+/**
+ * Parse OTEL_EXPORTER_HEADERS (a JSON string like
+ * `{"Authorization":"Bearer token"}`) into a header map. Malformed JSON logs a
+ * warning and is ignored rather than blocking startup.
+ */
+export function parseOtelHeaders(raw: string | undefined): Record<string, string> | undefined {
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== 'object') return undefined;
+    const headers: Record<string, string> = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      headers[key] = String(value);
+    }
+    return Object.keys(headers).length > 0 ? headers : undefined;
+  } catch {
+    log.warn('Failed to parse OTEL_EXPORTER_HEADERS as JSON — no custom headers will be sent');
+    return undefined;
+  }
+}
+
+/**
+ * Startup wiring (#1515): initialize the exporter only when
+ * OTEL_EXPORTER_ENABLED is true and an endpoint is configured. Returns the
+ * exporter, or null when disabled/misconfigured (a no-op deployment). Without
+ * this call the singleton stays null and queueSpanForExport() silently no-ops.
+ */
+export function initOtelExporterFromConfig(config: OtelExporterEnv): OtelSpanExporter | null {
+  if (!config.OTEL_EXPORTER_ENABLED) return null;
+  if (!config.OTEL_EXPORTER_ENDPOINT) {
+    log.warn('OTEL_EXPORTER_ENABLED is true but OTEL_EXPORTER_ENDPOINT is not set — span export disabled');
+    return null;
+  }
+  return initOtelExporter({
+    endpoint: config.OTEL_EXPORTER_ENDPOINT,
+    headers: parseOtelHeaders(config.OTEL_EXPORTER_HEADERS),
+    batchSize: config.OTEL_EXPORTER_BATCH_SIZE,
+    flushIntervalMs: config.OTEL_EXPORTER_FLUSH_INTERVAL_MS,
+  });
+}
+
 /**
  * Queue a span for export if the exporter is enabled.
  * Safe to call even when the exporter is disabled (no-op).
