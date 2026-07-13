@@ -317,7 +317,9 @@ jobs:
       # dashboard-net by service name. (#1420)
       PORTAINER_API_URL: http://portainer-mock:8080
       PORTAINER_API_KEY: e2e-mock-key
-      OLLAMA_BASE_URL: http://127.0.0.1:11434
+      # AI chat is driven by the deterministic llm-stub service; the backend is
+      # pointed at it via LLM_API_URL inside docker-compose.e2e.yml (not here),
+      # so the ai-chat spec exercises the real streamed chat path offline. (#1521)
       LOG_LEVEL: info
     steps:
       - name: Checkout repository
@@ -369,8 +371,8 @@ jobs:
       - name: Start application (phase 2)
         run: |
           # Compose `depends_on: condition: service_healthy` blocks `up` until
-          # redis + DBs are healthy and the backend healthcheck passes.
-          docker compose -f docker/docker-compose.yml -f docker/docker-compose.e2e.yml up -d redis backend frontend
+          # redis + DBs + llm-stub are healthy and the backend healthcheck passes.
+          docker compose -f docker/docker-compose.yml -f docker/docker-compose.e2e.yml up -d redis llm-stub backend frontend
 
           echo "Waiting for backend /health..."
           timeout 180 bash -c 'until curl -sf http://localhost:3051/health > /dev/null 2>&1; do sleep 3; done'
@@ -393,7 +395,7 @@ jobs:
           {
             echo "=== docker compose ps ==="
             docker compose -f docker/docker-compose.yml -f docker/docker-compose.e2e.yml ps
-            for svc in portainer-mock backend frontend redis postgres-app timescaledb; do
+            for svc in portainer-mock llm-stub backend frontend redis postgres-app timescaledb; do
               echo
               echo "=== ${svc} logs ==="
               docker compose -f docker/docker-compose.yml -f docker/docker-compose.e2e.yml logs --tail 200 "${svc}" || true
