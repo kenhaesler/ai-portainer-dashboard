@@ -56,6 +56,16 @@ export type MetricSnapshot = z.infer<typeof MetricSnapshotSchema>;
 export type EvidenceSummary = z.infer<typeof EvidenceSummarySchema>;
 export type Investigation = z.infer<typeof InvestigationSchema>;
 
+// The list/detail endpoints LEFT JOIN the triggering insight, so the wire shape
+// carries three extra columns (nullable because the join may miss). Kept in sync
+// with the InvestigationWithInsight interface below; used as the GET
+// /api/investigations response schema (#1545).
+export const InvestigationWithInsightSchema = InvestigationSchema.extend({
+  insight_title: z.string().nullable().optional(),
+  insight_severity: z.string().nullable().optional(),
+  insight_category: z.string().nullable().optional(),
+});
+
 export interface InvestigationWithInsight extends Investigation {
   insight_title?: string;
   insight_severity?: string;

@@ -2,6 +2,7 @@ import '@dashboard/core/plugins/auth.js';
 import '@dashboard/core/plugins/request-tracing.js';
 import '@fastify/swagger';
 import { FastifyInstance } from 'fastify';
+import { z } from 'zod/v4';
 import {
   getInvestigations,
   getInvestigation,
@@ -9,6 +10,7 @@ import {
 } from '../services/investigation-store.js';
 import type { InvestigationStatus } from '@dashboard/core/models/investigation.js';
 import { InvestigationsQuerySchema, InvestigationIdParamsSchema, InsightIdParamsForInvestigationSchema } from '@dashboard/core/models/api-schemas.js';
+import { InvestigationWithInsightSchema } from '@dashboard/contracts';
 
 export async function investigationRoutes(fastify: FastifyInstance) {
   fastify.get('/api/investigations', {
@@ -17,6 +19,7 @@ export async function investigationRoutes(fastify: FastifyInstance) {
       summary: 'List investigations with optional filters',
       security: [{ bearerAuth: [] }],
       querystring: InvestigationsQuerySchema,
+      response: { 200: z.object({ investigations: z.array(InvestigationWithInsightSchema) }) },
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {
