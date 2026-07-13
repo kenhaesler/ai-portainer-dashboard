@@ -11,6 +11,7 @@ export { hashPassword, comparePassword, signJwt, verifyJwt } from './utils/crypt
 export { sanitize } from './utils/log-sanitizer.js';
 export { validateOutboundWebhookUrl } from './utils/network-security.js';
 export { HttpError, getErrorStatusCode } from './utils/http-error.js';
+export { extractLlmJson } from './utils/llm-json.js';
 
 // DB
 export { getAppDb, closeAppDb, isAppDbReady, isAppDbHealthy } from './db/postgres.js';

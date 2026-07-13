@@ -6,6 +6,7 @@ import { getConfig } from '@dashboard/core/config/index.js';
 import { getMetricsDb, closeMetricsDb, closeReportsDb } from '@dashboard/core/db/timescale.js';
 import { getAppDb, closeAppDb } from '@dashboard/core/db/postgres.js';
 import { shutdownSpanBuffer } from '@dashboard/core/tracing/span-buffer.js';
+import { initOtelExporterFromConfig, shutdownOtelExporter } from '@dashboard/core/tracing/otel-exporter.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { autoConnectAll, disconnectAll } from '@dashboard/ai';
 
@@ -19,6 +20,11 @@ process.on('unhandledRejection', (reason) => {
 async function main() {
   const config = getConfig();
   const { app, metricsAdapter } = await buildApp();
+
+  // Optionally forward completed spans to an external OTLP/HTTP collector
+  // (Jaeger/Tempo/Datadog). No-op unless OTEL_EXPORTER_ENABLED and an endpoint
+  // are set; queueSpanForExport() stays a no-op until this initializes it (#1515).
+  initOtelExporterFromConfig(config);
 
   // Initialize databases (runs migrations)
   await getAppDb();
@@ -42,6 +48,8 @@ async function main() {
       await app.close();
       // Flush buffered request/child spans before the pools close (#1503)
       await shutdownSpanBuffer();
+      // Flush any spans still queued for the external OTLP collector (#1515)
+      await shutdownOtelExporter();
       await closeAppDb();
       await closeReportsDb();
       await closeMetricsDb();

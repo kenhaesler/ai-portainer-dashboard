@@ -3,6 +3,7 @@ import type { Namespace } from 'socket.io';
 import { getConfig } from '@dashboard/core/config/index.js';
 import { getEffectiveMonitoringConfig } from '@dashboard/core/services/settings-store.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
+import { extractLlmJson } from '@dashboard/core/utils/llm-json.js';
 import { getContainerLogs, getContainers } from '@dashboard/core/portainer/portainer-client.js';
 import { cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
 import { isLlmAvailable, chatStream } from './llm-client.js';
@@ -64,23 +65,10 @@ export interface ParsedInvestigationResult {
 }
 
 export function parseInvestigationResponse(raw: string): ParsedInvestigationResult {
-  // Try direct JSON parse
-  try {
-    const parsed = JSON.parse(raw);
+  // Direct JSON or a ```json``` fenced block via the shared extractor (#1512).
+  const parsed = extractLlmJson<Record<string, unknown>>(raw);
+  if (parsed && typeof parsed === 'object') {
     return validateParsedResult(parsed);
-  } catch {
-    // not direct JSON
-  }
-
-  // Try to extract JSON from markdown code fences
-  const jsonMatch = raw.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
-  if (jsonMatch) {
-    try {
-      const parsed = JSON.parse(jsonMatch[1]);
-      return validateParsedResult(parsed);
-    } catch {
-      // invalid JSON inside fence
-    }
   }
 
   // Fallback: treat raw text as the root cause with low confidence
