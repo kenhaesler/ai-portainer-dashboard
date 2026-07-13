@@ -41,7 +41,7 @@ frontend/src/
        ↑
 @dashboard/ai         (imports ONLY core + contracts — never other domains)
        ↑
-@dashboard/foundation (foundational routes — imports core, contracts, ai, observability, security)
+@dashboard/foundation (foundational routes — imports core, contracts, ai, infrastructure, observability, security)
        ↑
 @dashboard/server     (composition root — wires all packages via DI)
 ```

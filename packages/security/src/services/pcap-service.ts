@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import { getConfig } from '@dashboard/core/config/index.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { safePath, PathTraversalError } from '@dashboard/core/utils/safe-path.js';
@@ -130,7 +130,7 @@ export async function startCapture(params: StartCaptureRequest): Promise<Capture
     ? Math.min(params.durationSeconds, config.PCAP_MAX_DURATION_SECONDS)
     : config.PCAP_MAX_DURATION_SECONDS;
 
-  const captureId = uuidv4();
+  const captureId = randomUUID();
 
   // Insert DB record
   await insertCapture({

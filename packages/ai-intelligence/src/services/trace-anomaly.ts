@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import { getConfig } from '@dashboard/core/config/index.js';
 import { getCooldownStore } from '@dashboard/core/services/cooldown-store.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
@@ -535,7 +535,7 @@ export async function runTraceAnomalyCycle(deps: TraceAnomalyDeps): Promise<void
         if ((await inCooldown(dimKey)) || (await inCooldown(`correlated:${service}:${minuteKey}`))) continue;
         await markInserted(dimKey, service);
         insights.push({
-          id: uuidv4(),
+          id: randomUUID(),
           endpoint_id: null,
           endpoint_name: null,
           container_id: null,
@@ -615,7 +615,7 @@ export async function runTraceAnomalyCycle(deps: TraceAnomalyDeps): Promise<void
       for (const c of group) await markInserted(`${c.dimension.type}:${service}`, service);
 
       insights.push({
-        id: uuidv4(),
+        id: randomUUID(),
         endpoint_id: null,
         endpoint_name: null,
         container_id: null,

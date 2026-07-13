@@ -16,7 +16,6 @@
  * frontend/nginx.conf.
  */
 import crypto from 'crypto';
-import { v4 as uuidv4 } from 'uuid';
 import { getDbForDomain } from '../db/app-db-router.js';
 import { createChildLogger } from '../utils/logger.js';
 
@@ -57,7 +56,7 @@ export interface ValidatedTicket {
  */
 function newTicketId(): string {
   const random = crypto.randomBytes(16).toString('hex');
-  return `st_${uuidv4()}_${random}`;
+  return `st_${crypto.randomUUID()}_${random}`;
 }
 
 /**
