@@ -4,9 +4,14 @@ import { readFileSync } from 'fs';
 import pLimit from 'p-limit';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { getConfig } from '@dashboard/core/config/index.js';
-import { getEffectiveLlmConfig, type PromptFeature } from './prompt-store.js';
+import { getEffectiveLlmConfig, estimateTokens, type PromptFeature } from './prompt-store.js';
 import { insertLlmTrace } from './llm-trace-store.js';
+import { streamOpenAiContent } from './sse-stream.js';
 import { isPromptInjection, sanitizeLlmOutput } from './prompt-guard.js';
+
+// Re-exported for backward compatibility: extractApiError now lives with the
+// shared SSE reader (#1510). Callers and tests importing it from here still work.
+export { extractApiError } from './sse-stream.js';
 import { withSpan } from '@dashboard/core/tracing/trace-context.js';
 import { scrubPii, scrubPiiDeep } from '@dashboard/core/utils/pii-scrubber.js';
 import type { NormalizedEndpoint, NormalizedContainer } from '@dashboard/core/portainer/portainer-normalizers.js';
@@ -66,11 +71,6 @@ export function getLlmDispatcher(): Agent | undefined {
   return undefined;
 }
 
-/** Rough token estimate: ~4 chars per token for English text */
-function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4);
-}
-
 /**
  * Normalize the configured LLM API URL so users can enter just the base URL
  * (e.g. `http://lmstudio:1234`) without remembering the exact path. Most
@@ -102,29 +102,6 @@ export function resolveChatCompletionsUrl(rawUrl: string): string {
 export function resolveModelsUrl(rawUrl: string): string {
   const chatUrl = resolveChatCompletionsUrl(rawUrl);
   return chatUrl.replace(/\/chat\/completions$/i, '/models');
-}
-
-/**
- * Extract a human-readable error message from a non-streaming JSON response
- * body that the OpenAI-compatible parser would otherwise drop silently.
- *
- * Servers like LM Studio (when called on the wrong path), OpenRouter, and
- * vLLM return `200 OK` with a JSON body shaped like `{ "error": "..." }` or
- * `{ "error": { "message": "..." } }`. Without this, the streaming parser
- * skips these because they have no `choices[0].delta.content`, leading to
- * silent empty responses.
- */
-export function extractApiError(json: unknown): string | null {
-  if (!json || typeof json !== 'object') return null;
-  const err = (json as { error?: unknown }).error;
-  if (!err) return null;
-  if (typeof err === 'string') return err;
-  if (typeof err === 'object' && err !== null) {
-    const message = (err as { message?: unknown }).message;
-    if (typeof message === 'string') return message;
-    return JSON.stringify(err);
-  }
-  return String(err);
 }
 
 /**
@@ -277,47 +254,11 @@ async function chatStreamInner(
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
 
-    const reader = response.body?.getReader();
-    if (!reader) {
-      throw new Error('Response body is not readable');
-    }
-
-    const decoder = new TextDecoder();
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      const chunk = decoder.decode(value);
-      const lines = chunk.split('\n').filter((line) => line.trim() !== '');
-
-      for (const raw of lines) {
-        // Strip SSE "data: " prefix (OpenAI-compatible streaming format)
-        let payload = raw.trim();
-        if (payload.startsWith('data: ')) payload = payload.slice(6);
-        else if (payload.startsWith('data:')) payload = payload.slice(5);
-
-        // Skip SSE end sentinel and comment lines
-        if (payload === '[DONE]' || payload.startsWith(':')) continue;
-
-        try {
-          const json = JSON.parse(payload);
-          const apiError = extractApiError(json);
-          if (apiError) {
-            throw new Error(`LLM endpoint returned an error: ${apiError}. Verify Settings → AI & LLM → API Endpoint URL points at an OpenAI-compatible chat-completions endpoint.`);
-          }
-          const content = json.choices?.[0]?.delta?.content || json.message?.content || '';
-          if (content) {
-            fullResponse += content;
-            onChunk(content);
-          }
-        } catch (parseErr) {
-          // Re-throw API errors; swallow JSON parse errors for non-JSON SSE lines.
-          if (parseErr instanceof Error && parseErr.message.startsWith('LLM endpoint returned an error')) {
-            throw parseErr;
-          }
-          // Skip non-JSON lines (e.g. SSE event types)
-        }
-      }
+    // Shared buffered SSE reader (#1510): reassembles `data:` lines split
+    // across reads and surfaces `{ error }` bodies via extractApiError.
+    for await (const content of streamOpenAiContent(response)) {
+      fullResponse += content;
+      onChunk(content);
     }
 
     const latencyMs = Date.now() - startTime;

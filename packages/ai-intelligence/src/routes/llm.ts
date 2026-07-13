@@ -10,7 +10,7 @@ import * as portainer from '@dashboard/core/portainer/portainer-client.js';
 import { normalizeEndpoint, normalizeContainer } from '@dashboard/core/portainer/portainer-normalizers.js';
 import { isDockerEndpoint } from '@dashboard/core/models/portainer.js';
 import { cachedFetch, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
-import { getEffectivePrompt, getEffectiveLlmConfig, PROMPT_FEATURES, type PromptFeature } from '../services/prompt-store.js';
+import { getEffectivePrompt, getEffectiveLlmConfig, estimateTokens, PROMPT_FEATURES, type PromptFeature } from '../services/prompt-store.js';
 import { insertLlmTrace } from '../services/llm-trace-store.js';
 import { LlmQueryBodySchema, LlmTestConnectionBodySchema, LlmModelsQuerySchema, LlmTestPromptBodySchema } from '@dashboard/core/models/api-schemas.js';
 import { PROMPT_TEST_FIXTURES } from '../services/prompt-test-fixtures.js';
@@ -19,10 +19,7 @@ import { getAuthHeaders, getFetchErrorMessage, llmFetch, REDACTED_TOKEN_PLACEHOL
 
 const log = createChildLogger('route:llm');
 
-/** Rough token estimate: ~4 chars per token for English text */
-function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4);
-}
+// `estimateTokens` is imported from the shared prompt-store util (#1510).
 
 /**
  * True when two LLM endpoint URLs share the same origin (scheme + host + port).

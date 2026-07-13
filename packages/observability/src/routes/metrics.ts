@@ -5,7 +5,7 @@ import '@fastify/rate-limit';
 import { getConfig } from '@dashboard/core/config/index.js';
 import { errorDetails } from '@dashboard/core/plugins/error-handler.js';
 import { getMetricsDb } from '@dashboard/core/db/timescale.js';
-import { ContainerParamsSchema, MetricsQuerySchema, MetricsResponseSchema, AnomaliesQuerySchema } from '@dashboard/core/models/api-schemas.js';
+import { ContainerParamsSchema, MetricsQuerySchema, MetricsResponseSchema, AnomaliesQuerySchema, AnomaliesResponseSchema } from '@dashboard/core/models/api-schemas.js';
 import { getNetworkRates, getAllNetworkRates, isUndefinedTableError } from '../services/metrics-store.js';
 import { getRatesForEndpoint, getAllRates } from '../services/network-rate-tracker.js';
 import { selectRollupTable } from '../services/metrics-rollup-selector.js';
@@ -182,6 +182,7 @@ export async function metricsRoutes(fastify: FastifyInstance, opts: { llm?: LLMI
       summary: 'Get recent anomaly detections',
       security: [{ bearerAuth: [] }],
       querystring: AnomaliesQuerySchema,
+      response: { 200: AnomaliesResponseSchema },
     },
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {
@@ -189,16 +190,16 @@ export async function metricsRoutes(fastify: FastifyInstance, opts: { llm?: LLMI
     try {
       const db = await getMetricsDb();
 
+      // Time-pruned index scan for the most recent samples: the 24h WHERE prunes
+      // to recent hypertable chunks and the explicit column list keeps the
+      // payload to the shape declared by AnomaliesResponseSchema. Replaces the
+      // former `SELECT m1.*` plus per-row correlated-subquery AVG, whose result
+      // no consumer ever read.
       const { rows: recentMetrics } = await db.query(
-        `SELECT m1.*,
-          (SELECT AVG(value) FROM metrics m2
-           WHERE m2.container_id = m1.container_id
-           AND m2.metric_type = m1.metric_type
-           AND m2.timestamp > m1.timestamp - INTERVAL '1 hour'
-          ) as avg_value
-        FROM metrics m1
-        WHERE m1.timestamp > NOW() - INTERVAL '24 hours'
-        ORDER BY m1.timestamp DESC
+        `SELECT endpoint_id, container_id, container_name, metric_type, value, timestamp
+        FROM metrics
+        WHERE timestamp > NOW() - INTERVAL '24 hours'
+        ORDER BY timestamp DESC
         LIMIT $1`,
         [limit],
       );
@@ -207,10 +208,11 @@ export async function metricsRoutes(fastify: FastifyInstance, opts: { llm?: LLMI
     } catch (err) {
       if (isUndefinedTableError(err)) {
         log.warn('Metrics table not ready for anomaly query');
-        return reply.code(503).send({ error: 'Metrics database not ready', details: 'The metrics table has not been created yet.' });
+        // Cast required: the 200-only `response` schema narrows reply.code() (#1544).
+        return (reply as any).code(503).send({ error: 'Metrics database not ready', details: 'The metrics table has not been created yet.' });
       }
       log.error({ err }, 'Failed to query anomalies');
-      return reply.code(500).send({ error: 'Failed to query anomalies', details: errorDetails(err) });
+      return (reply as any).code(500).send({ error: 'Failed to query anomalies', details: errorDetails(err) });
     }
   });
 

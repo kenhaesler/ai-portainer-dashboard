@@ -1,5 +1,6 @@
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
+import { extractLlmJson } from '@dashboard/core/utils/llm-json.js';
 import {
   insertAction,
   getAction,
@@ -117,28 +118,9 @@ export interface RemediationAnalysisResult {
 }
 
 function tryParseAnalysisPayload(raw: string): Record<string, unknown> | null {
-  try {
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === 'object') {
-      return parsed as Record<string, unknown>;
-    }
-  } catch {
-    // try code-fence extraction below
-  }
-
-  const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (!fenceMatch) return null;
-
-  try {
-    const parsed = JSON.parse(fenceMatch[1]);
-    if (parsed && typeof parsed === 'object') {
-      return parsed as Record<string, unknown>;
-    }
-  } catch {
-    // fall through to null
-  }
-
-  return null;
+  // Direct JSON or a ```json``` fenced block via the shared extractor (#1512).
+  const parsed = extractLlmJson<Record<string, unknown>>(raw);
+  return parsed && typeof parsed === 'object' ? parsed : null;
 }
 
 function pickActionPattern(text: string): ActionPattern | null {
@@ -401,7 +383,7 @@ export async function suggestAction(
     return null;
   }
 
-  const actionId = uuidv4();
+  const actionId = randomUUID();
   const action: ActionInsert = {
     id: actionId,
     insight_id: insight.id,

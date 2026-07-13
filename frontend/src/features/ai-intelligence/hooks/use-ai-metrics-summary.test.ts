@@ -1,10 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { useAiMetricsSummary } from './use-ai-metrics-summary';
+import { api } from '@/shared/lib/api';
 
 vi.mock('@/shared/lib/api', () => ({
   api: {
     getToken: vi.fn().mockReturnValue('test-token'),
+    handleUnauthorized: vi.fn(),
   },
 }));
 
@@ -89,5 +91,15 @@ describe('useAiMetricsSummary', () => {
 
     await waitFor(() => expect(result.current.error).toBe('unavailable'));
     expect(result.current.summary).toBe('');
+  });
+
+  it('routes a 401 through the shared auth:expired handler (#1531)', async () => {
+    mockFetch.mockResolvedValue({ ok: false, status: 401 } as Response);
+
+    const { result } = renderHook(() => useAiMetricsSummary(1, 'abc123', '1h'));
+
+    await waitFor(() => expect(result.current.error).toBe('Failed to generate summary'));
+    expect(api.handleUnauthorized).toHaveBeenCalled();
+    expect(result.current.isStreaming).toBe(false);
   });
 });

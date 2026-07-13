@@ -46,6 +46,7 @@ import { flushTestCache, closeTestRedis } from '@dashboard/core/test-utils/test-
 vi.mock('../services/prompt-store.js', () => ({
   getEffectivePrompt: vi.fn().mockReturnValue('default prompt'),
   getEffectiveLlmConfig: mockGetEffectiveLlmConfig,
+  estimateTokens: (text: string) => Math.ceil(text.length / 4),
   PROMPT_FEATURES: [
     { key: 'chat_assistant', label: 'Chat Assistant', description: 'Main AI chat' },
     { key: 'anomaly_explainer', label: 'Anomaly Explainer', description: 'Explains anomalies' },

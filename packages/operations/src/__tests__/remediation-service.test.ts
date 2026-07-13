@@ -8,8 +8,9 @@ const mockHasPendingAction = vi.fn().mockReturnValue(false);
 const mockBroadcastNewAction = vi.fn();
 const mockBroadcastActionUpdate = vi.fn();
 
-vi.mock('uuid', () => ({
-  v4: () => 'action-123',
+vi.mock('node:crypto', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('node:crypto')>()),
+  randomUUID: () => 'action-123',
 }));
 
 // Kept: actions-store mock — tests control action persistence

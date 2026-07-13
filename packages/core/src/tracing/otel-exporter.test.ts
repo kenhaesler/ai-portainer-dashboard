@@ -3,11 +3,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   OtelSpanExporter,
   initOtelExporter,
+  initOtelExporterFromConfig,
+  parseOtelHeaders,
   queueSpanForExport,
   shutdownOtelExporter,
   getOtelExporter,
   _resetExporter,
   type OtelExporterConfig,
+  type OtelExporterEnv,
 } from './otel-exporter.js';
 import type { SpanInsert } from './trace-store.js';
 
@@ -373,5 +376,49 @@ describe('OtelSpanExporter', () => {
 
       clearInterval((first as unknown as { flushTimer: ReturnType<typeof setInterval> }).flushTimer);
     });
+  });
+});
+
+describe('initOtelExporterFromConfig (#1515 startup wiring)', () => {
+  const baseEnv: OtelExporterEnv = {
+    OTEL_EXPORTER_ENABLED: true,
+    OTEL_EXPORTER_ENDPOINT: 'http://collector:4318/v1/traces',
+    OTEL_EXPORTER_HEADERS: undefined,
+    OTEL_EXPORTER_BATCH_SIZE: 100,
+    OTEL_EXPORTER_FLUSH_INTERVAL_MS: 5000,
+  };
+
+  afterEach(async () => {
+    await shutdownOtelExporter();
+    _resetExporter();
+  });
+
+  it('returns null and leaves the singleton uninitialized when disabled', () => {
+    expect(initOtelExporterFromConfig({ ...baseEnv, OTEL_EXPORTER_ENABLED: false })).toBeNull();
+    expect(getOtelExporter()).toBeNull();
+  });
+
+  it('returns null when enabled but no endpoint is configured', () => {
+    expect(initOtelExporterFromConfig({ ...baseEnv, OTEL_EXPORTER_ENDPOINT: undefined })).toBeNull();
+    expect(getOtelExporter()).toBeNull();
+  });
+
+  it('initializes the singleton when enabled with an endpoint', () => {
+    const exp = initOtelExporterFromConfig(baseEnv);
+    expect(exp).not.toBeNull();
+    expect(getOtelExporter()).toBe(exp);
+  });
+});
+
+describe('parseOtelHeaders', () => {
+  it('parses a JSON header map', () => {
+    expect(parseOtelHeaders('{"Authorization":"Bearer tok"}')).toEqual({ Authorization: 'Bearer tok' });
+  });
+
+  it('returns undefined for empty, malformed, or empty-object input', () => {
+    expect(parseOtelHeaders(undefined)).toBeUndefined();
+    expect(parseOtelHeaders('')).toBeUndefined();
+    expect(parseOtelHeaders('not json')).toBeUndefined();
+    expect(parseOtelHeaders('{}')).toBeUndefined();
   });
 });

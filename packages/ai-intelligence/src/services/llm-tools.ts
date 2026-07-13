@@ -6,6 +6,7 @@ import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
 import { getMetricsDb } from '@dashboard/core/db/timescale.js';
 import { getTraces, getTrace, getTraceSummary } from '@dashboard/core/tracing/trace-store.js';
 import { scrubPii } from '@dashboard/core/utils/pii-scrubber.js';
+import { extractLlmJson } from '@dashboard/core/utils/llm-json.js';
 import { z } from 'zod/v4';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { withSpan } from '@dashboard/core/tracing/trace-context.js';
@@ -791,22 +792,15 @@ export function parseToolCalls(responseText: string): ToolCallRequest[] | null {
 
   const trimmed = responseText.trim();
 
-  // Try direct parse first (response is just the JSON)
-  const directParsed = tryParseToolCallJson(trimmed);
-  if (directParsed?.tool_calls && Array.isArray(directParsed.tool_calls)) {
-    return validateToolCalls(directParsed.tool_calls);
+  // Direct JSON or a ```json``` fenced block via the shared extractor (#1512).
+  const extracted = extractLlmJson<{ tool_calls?: unknown }>(trimmed);
+  if (extracted?.tool_calls && Array.isArray(extracted.tool_calls)) {
+    return validateToolCalls(extracted.tool_calls);
   }
 
-  // Try to find JSON block in markdown code fence
-  const codeBlockMatch = trimmed.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
-  if (codeBlockMatch) {
-    const parsed = tryParseToolCallJson(codeBlockMatch[1].trim());
-    if (parsed?.tool_calls && Array.isArray(parsed.tool_calls)) {
-      return validateToolCalls(parsed.tool_calls);
-    }
-  }
-
-  // Try to find inline JSON object with tool_calls
+  // Try to find an inline JSON object with tool_calls embedded mid-prose
+  // (e.g. "I'll call: {\"tool_calls\": [...]}") — beyond what the shared
+  // extractor handles, so this strategy is preserved.
   const jsonMatch = trimmed.match(/\{[\s\S]*"tool_calls"[\s\S]*\}/);
   if (jsonMatch) {
     const parsed = tryParseToolCallJson(jsonMatch[0]);

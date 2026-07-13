@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { getEffectiveMonitoringConfig } from '@dashboard/core/services/settings-store.js';
 import { isLlmAvailable } from './llm-client.js';
@@ -329,7 +329,7 @@ function buildIncident(group: InsightGroup): IncidentInsert {
   });
 
   return {
-    id: uuidv4(),
+    id: randomUUID(),
     title,
     severity,
     root_cause_insight_id: rootCause.id,

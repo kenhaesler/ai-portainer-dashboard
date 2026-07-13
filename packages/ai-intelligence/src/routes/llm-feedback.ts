@@ -23,6 +23,7 @@ import { writeAuditLog } from '@dashboard/core/services/audit-logger.js';
 import { getAuthHeaders, llmFetch, resolveChatCompletionsUrl } from '../services/llm-client.js';
 import { isPromptInjection } from '../services/prompt-guard.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
+import { extractLlmJson } from '@dashboard/core/utils/llm-json.js';
 
 const log = createChildLogger('llm-feedback-routes');
 
@@ -460,24 +461,14 @@ Respond with ONLY valid JSON (no markdown fences, no explanation outside JSON):
 }
 
 function parseSuggestionResponse(response: string): { suggestedPrompt: string; reasoning: string } | null {
-  try {
-    // Try to extract JSON from the response (handle markdown fences)
-    let jsonStr = response.trim();
-    const fenceMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (fenceMatch) {
-      jsonStr = fenceMatch[1].trim();
-    }
-
-    const parsed = JSON.parse(jsonStr) as { suggestedPrompt?: string; reasoning?: string };
-    if (!parsed.suggestedPrompt || !parsed.reasoning) {
-      return null;
-    }
-
-    return {
-      suggestedPrompt: parsed.suggestedPrompt,
-      reasoning: parsed.reasoning,
-    };
-  } catch {
+  // Direct JSON or a ```json``` fenced block via the shared extractor (#1512).
+  const parsed = extractLlmJson<{ suggestedPrompt?: string; reasoning?: string }>(response);
+  if (!parsed || !parsed.suggestedPrompt || !parsed.reasoning) {
     return null;
   }
+
+  return {
+    suggestedPrompt: parsed.suggestedPrompt,
+    reasoning: parsed.reasoning,
+  };
 }

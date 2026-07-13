@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import fp from 'fastify-plugin';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import { enqueueSpan } from '../tracing/span-buffer.js';
 import { runWithTraceContext, getCurrentTraceContext } from '../tracing/trace-context.js';
 import { createChildLogger } from '../utils/logger.js';
@@ -16,7 +16,7 @@ const EXCLUDED_PREFIXES = ['/health', '/socket.io', '/assets/', '/favicon'];
 async function requestTracingPlugin(fastify: FastifyInstance) {
   // Merged from request-context: assign requestId and set up logging context
   fastify.addHook('onRequest', async (request, reply) => {
-    const requestId = (request.headers['x-request-id'] as string) || uuidv4();
+    const requestId = (request.headers['x-request-id'] as string) || randomUUID();
     request.requestId = requestId;
     reply.header('X-Request-ID', requestId);
     request.log = request.log.child({ requestId });

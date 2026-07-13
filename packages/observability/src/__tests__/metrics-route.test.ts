@@ -268,6 +268,52 @@ describe('metrics routes', () => {
     });
   });
 
+  describe('GET /api/metrics/anomalies (#1544)', () => {
+    it('runs a projected time-pruned scan and returns the {anomalies} envelope', async () => {
+      mockQuery.mockResolvedValueOnce({
+        rows: [
+          {
+            endpoint_id: 1,
+            container_id: 'abc123',
+            container_name: 'web',
+            metric_type: 'cpu',
+            value: 42.5,
+            timestamp: '2026-07-12T00:00:00.000Z',
+            // Column that the response schema must prune (would previously have
+            // leaked via SELECT m1.* / the correlated avg_value subquery):
+            avg_value: 10,
+          },
+        ],
+      });
+
+      const response = await app.inject({ method: 'GET', url: '/api/metrics/anomalies?limit=10' });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+      expect(body.anomalies).toEqual([
+        {
+          endpoint_id: 1,
+          container_id: 'abc123',
+          container_name: 'web',
+          metric_type: 'cpu',
+          value: 42.5,
+          timestamp: '2026-07-12T00:00:00.000Z',
+        },
+      ]);
+      // Response schema pruned the unknown column instead of serialising it.
+      expect(response.body).not.toContain('avg_value');
+
+      // The query is a plain projected index scan: no SELECT *, no correlated
+      // subquery, still time-pruned to 24h, with the limit parameterised.
+      const sql = String(mockQuery.mock.calls[0][0]);
+      expect(sql).not.toContain('m1.*');
+      expect(sql).not.toMatch(/SELECT AVG\(value\) FROM metrics m2/);
+      expect(sql).toContain('FROM metrics');
+      expect(sql).toContain("NOW() - INTERVAL '24 hours'");
+      expect(mockQuery.mock.calls[0][1]).toEqual([10]);
+    });
+  });
+
   describe('error handling', () => {
     it('should return 503 when metrics table does not exist (42P01)', async () => {
       const pgError = Object.assign(new Error('relation "metrics" does not exist'), { code: '42P01' });

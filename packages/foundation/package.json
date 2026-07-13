@@ -27,6 +27,7 @@
     "@dashboard/contracts": "*",
     "@dashboard/core": "*",
     "@dashboard/ai": "*",
+    "@dashboard/infrastructure": "*",
     "@dashboard/observability": "*",
     "@dashboard/security": "*",
     "fastify": "^5.8.5",
