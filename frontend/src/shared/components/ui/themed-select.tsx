@@ -83,6 +83,13 @@ export function ThemedSelect({
         <SelectPrimitive.Content
           position="popper"
           sideOffset={4}
+          // Re-anchor every animation frame while open (#1560). Radix Select
+          // snapshots the trigger rect once at open time; if opened while an
+          // ancestor entrance transform (AppLayout m.main/m.div) is still
+          // animating, Floating UI's default autoUpdate never re-reads it and
+          // the panel detaches (worst case: viewport 0,0). 'always' passes
+          // animationFrame:true so it self-corrects once the transform settles.
+          updatePositionStrategy="always"
           className={cn(
             'relative z-50 max-h-72 min-w-[8rem] overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-md',
             'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95',

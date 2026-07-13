@@ -3,6 +3,15 @@
 # exercisable offline. Layer it AFTER the base file:
 #   docker compose -f docker/docker-compose.yml -f docker/docker-compose.e2e.yml ...
 # The production compose file is never modified. (#1420, #1521)
+#
+# Isolated project name (#1560): the base compose has no `name:`, so on its own
+# it derives the project from the directory → `docker`, whose named volumes
+# materialize as docker_postgres-app-data / docker_timescale-data — the SAME
+# volumes the dev stack uses. Because CI (and local reproduction) tears the E2E
+# stack down with `down -v`, sharing that project would destroy the developer's
+# dev database. Setting the name here scopes every E2E volume to
+# ai-portainer-e2e_* so `down -v` can never touch the dev `docker_*` volumes.
+name: ai-portainer-e2e
 services:
   portainer-mock:
     image: wiremock/wiremock:3.13.1
