@@ -17,6 +17,7 @@ import {
   AuditLogQuerySchema,
   PreferencesUpdateBodySchema,
 } from '@dashboard/core/models/api-schemas.js';
+import { SettingSchema } from '@dashboard/core/models/settings.js';
 import { getUserDefaultLandingPage, setUserDefaultLandingPage } from '@dashboard/core/services/user-store.js';
 import { PROMPT_FEATURES, DEFAULT_PROMPTS, getEffectivePrompt, createPromptVersion, getPromptHistory, getPromptVersionById } from '@dashboard/ai';
 
@@ -144,6 +145,7 @@ export async function settingsRoutes(fastify: FastifyInstance) {
       summary: 'Get all settings',
       security: [{ bearerAuth: [] }],
       querystring: SettingsQuerySchema,
+      response: { 200: z.array(SettingSchema) },
     },
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
