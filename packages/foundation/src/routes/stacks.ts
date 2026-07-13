@@ -8,7 +8,7 @@ import {
   syntheticStackId,
   type NormalizedStack,
 } from '@dashboard/core/portainer/portainer-normalizers.js';
-import { StackIdParamsSchema } from '@dashboard/core/models/api-schemas.js';
+import { StackIdParamsSchema, StacksListResponseSchema, StackResponseSchema, ErrorWithDetailsSchema } from '@dashboard/core/models/api-schemas.js';
 import { isDockerEndpoint } from '@dashboard/core/models/portainer.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { errorDetails } from '@dashboard/core/plugins/error-handler.js';
@@ -21,6 +21,7 @@ export async function stacksRoutes(fastify: FastifyInstance) {
       tags: ['Stacks'],
       summary: 'List all stacks across all endpoints',
       security: [{ bearerAuth: [] }],
+      response: { 200: StacksListResponseSchema, 502: ErrorWithDetailsSchema },
     },
     preHandler: [fastify.authenticate],
   }, async (_request, reply) => {
@@ -144,6 +145,7 @@ export async function stacksRoutes(fastify: FastifyInstance) {
       summary: 'Get stack details',
       security: [{ bearerAuth: [] }],
       params: StackIdParamsSchema,
+      response: { 200: StackResponseSchema, 502: ErrorWithDetailsSchema },
     },
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {

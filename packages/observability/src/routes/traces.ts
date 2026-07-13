@@ -4,7 +4,7 @@ import '@fastify/swagger';
 import { z } from 'zod/v4';
 import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
 import type { AppDb } from '@dashboard/core/db/app-db.js';
-import { TracesQuerySchema, TraceIdParamsSchema } from '@dashboard/core/models/api-schemas.js';
+import { TracesQuerySchema, TraceIdParamsSchema, TracesListResponseSchema, ServiceMapResponseSchema, TraceSummaryResponseSchema } from '@dashboard/core/models/api-schemas.js';
 import { computeRed } from '../services/trace-red.js';
 import { getSamplerStats } from './traces-ingest.js';
 
@@ -164,6 +164,7 @@ export async function tracesRoutes(fastify: FastifyInstance) {
       summary: 'List traces',
       security: [{ bearerAuth: [] }],
       querystring: TracesQuerySchema,
+      response: { 200: TracesListResponseSchema },
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {
@@ -328,6 +329,7 @@ export async function tracesRoutes(fastify: FastifyInstance) {
       description: 'Aggregates spans into service nodes and edges. When `from` is omitted the window defaults to the last hour (#1528).',
       security: [{ bearerAuth: [] }],
       querystring: TracesQuerySchema,
+      response: { 200: ServiceMapResponseSchema },
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {
@@ -470,6 +472,7 @@ export async function tracesRoutes(fastify: FastifyInstance) {
       description: 'KPI aggregates over root spans. Applies the same filters (including *Match modes) as the list endpoint. When `from` is omitted the window defaults to the last hour (#1528).',
       security: [{ bearerAuth: [] }],
       querystring: TracesQuerySchema,
+      response: { 200: TraceSummaryResponseSchema },
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {

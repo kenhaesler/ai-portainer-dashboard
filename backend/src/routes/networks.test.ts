@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import Fastify from 'fastify';
-import { validatorCompiler } from 'fastify-type-provider-zod';
+import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
 import { networksRoutes } from '@dashboard/foundation';
 
 // Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
@@ -24,6 +24,7 @@ afterAll(async () => {
 function buildApp() {
   const app = Fastify();
   app.setValidatorCompiler(validatorCompiler);
+  app.setSerializerCompiler(serializerCompiler);
   app.decorate('authenticate', async () => undefined);
   app.register(networksRoutes);
   return app;
@@ -75,6 +76,13 @@ describe('networks routes', () => {
     expect(body).toHaveLength(2);
     expect(body[0].name).toBe('bridge');
     expect(body[1].name).toBe('app-network');
+    // Full-payload lock (#1545): NetworksListResponseSchema does a full Zod
+    // parse, so assert the exact normalized shape survives (nothing stripped).
+    expect(body[0]).toEqual({
+      id: 'net1', name: 'bridge', driver: 'bridge', scope: 'local',
+      subnet: '172.17.0.0/16', gateway: '172.17.0.1',
+      endpointId: 1, endpointName: 'prod', containers: [],
+    });
   });
 
   it('should return 502 when all up endpoints fail', async () => {

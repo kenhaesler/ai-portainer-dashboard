@@ -538,3 +538,245 @@ export const ReportsQuerySchema = z.object({
   includeInfrastructure: QueryBooleanSchema.optional(),
   excludeInfrastructure: QueryBooleanSchema.optional(),
 });
+
+// ─── Response schemas for fleet/dashboard/traces read routes (#1545) ──
+//
+// These lock the wire envelope for the hottest read endpoints so that
+// fastify-type-provider-zod's serializerCompiler (a full Zod parse) prunes
+// unknown fields — defence against accidental sensitive-field leaks — and
+// catches backend/frontend contract drift at dev time.
+//
+// IMPORTANT: the serializer runs `safeParse` and STRIPS any key not listed
+// here, so each schema enumerates every field the frontend actually reads.
+// Enum-like string fields (status/state/source) are modelled as `z.string()`
+// (matching the existing MetricsResponseSchema/HealthResponseSchema
+// convention) so an unexpected value serialises instead of throwing 500.
+// Timestamps come back from pg as ISO strings (global type parser in
+// db/postgres.ts + db/timescale.ts), so `z.string()` is correct for them.
+
+/** Edge feature-capability flags (mirrors EdgeCapabilities in portainer-normalizers.ts). */
+export const EdgeCapabilitiesSchema = z.object({
+  exec: z.boolean(),
+  realtimeLogs: z.boolean(),
+  liveStats: z.boolean(),
+  immediateActions: z.boolean(),
+});
+
+/**
+ * The live-enriched normalized endpoint — the exact runtime shape produced by
+ * `normalizeEndpoint` + `applyLiveDockerInfo` and consumed by the frontend
+ * `Endpoint` type (frontend/src/features/containers/hooks/use-endpoints.ts).
+ * Distinct from the legacy `NormalizedEndpointSchema` above (which is unused
+ * and predates live-fleet enrichment — `type` is a number here, not a string).
+ */
+export const LiveEndpointSchema = z.object({
+  id: z.number(),
+  name: z.string(),
+  type: z.number(),
+  url: z.string(),
+  status: z.string(),
+  containersRunning: z.number(),
+  containersStopped: z.number(),
+  totalContainers: z.number(),
+  stackCount: z.number(),
+  totalCpu: z.number(),
+  totalMemory: z.number(),
+  isEdge: z.boolean(),
+  edgeMode: z.string().nullable(),
+  snapshotAge: z.number().nullable(),
+  checkInInterval: z.number().nullable(),
+  capabilities: EdgeCapabilitiesSchema,
+  agentVersion: z.string().optional(),
+  lastCheckIn: z.number().optional(),
+  snapshotSource: z.string(),
+  snapshotFetchedAt: z.number().optional(),
+});
+
+export const EndpointsListResponseSchema = z.array(LiveEndpointSchema);
+
+/**
+ * Normalized stack wire shape — `normalizeStack` output plus the compose-label
+ * fallback rows built in routes/stacks.ts. Matches the frontend `Stack` type
+ * (frontend/src/features/containers/hooks/use-stacks.ts).
+ */
+export const StackResponseSchema = z.object({
+  id: z.number(),
+  name: z.string(),
+  type: z.number(),
+  endpointId: z.number(),
+  status: z.string(),
+  createdAt: z.number().optional(),
+  updatedAt: z.number().optional(),
+  envCount: z.number(),
+  source: z.string(),
+  containerCount: z.number().optional(),
+});
+
+export const StacksListResponseSchema = z.array(StackResponseSchema);
+
+/**
+ * Normalized network wire shape — `normalizeNetwork` output. Matches the
+ * frontend `Network` type (frontend/src/features/containers/hooks/use-networks.ts).
+ */
+export const NetworkResponseSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  driver: z.string().optional(),
+  scope: z.string().optional(),
+  subnet: z.string().optional(),
+  gateway: z.string().optional(),
+  endpointId: z.number(),
+  endpointName: z.string(),
+  containers: z.array(z.string()),
+});
+
+export const NetworksListResponseSchema = z.array(NetworkResponseSchema);
+
+/** Security-audit rollup surfaced on the dashboard (buildSecurityAuditSummary). */
+export const SecurityAuditSummarySchema = z.object({
+  totalAudited: z.number(),
+  flagged: z.number(),
+  ignored: z.number(),
+});
+
+/** Per-stack resource aggregate (buildFleetResources → topStacks). */
+export const StackResourceUsageSchema = z.object({
+  name: z.string(),
+  containerCount: z.number(),
+  runningCount: z.number(),
+  stoppedCount: z.number(),
+  cpuPercent: z.number(),
+  memoryPercent: z.number(),
+  memoryBytes: z.number(),
+});
+
+/** One row of KPI history (kpi_snapshots) — snake_case, timestamp is an ISO string. */
+export const KpiSnapshotSchema = z.object({
+  endpoints: z.number(),
+  endpoints_up: z.number(),
+  endpoints_down: z.number(),
+  running: z.number(),
+  stopped: z.number(),
+  healthy: z.number(),
+  unhealthy: z.number(),
+  total: z.number(),
+  stacks: z.number(),
+  timestamp: z.string(),
+});
+
+export const KpiHistoryResponseSchema = z.object({
+  snapshots: z.array(KpiSnapshotSchema),
+});
+
+// GET /api/dashboard/summary
+export const DashboardSummaryResponseSchema = z.object({
+  kpis: DashboardKpisSchema,
+  security: SecurityAuditSummarySchema,
+  timestamp: z.string(),
+});
+
+// GET /api/dashboard/resources — partial/failedEndpoints appear only on
+// per-endpoint container-fetch failures.
+export const DashboardResourcesResponseSchema = z.object({
+  fleetCpuPercent: z.number(),
+  fleetMemoryPercent: z.number(),
+  topStacks: z.array(StackResourceUsageSchema),
+  partial: z.boolean().optional(),
+  failedEndpoints: z.array(z.string()).optional(),
+});
+
+// GET /api/dashboard/full — summary + resources + endpoints in one round-trip.
+export const DashboardFullResponseSchema = z.object({
+  summary: DashboardSummaryResponseSchema,
+  resources: z.object({
+    fleetCpuPercent: z.number(),
+    fleetMemoryPercent: z.number(),
+    topStacks: z.array(StackResourceUsageSchema),
+  }),
+  endpoints: z.array(LiveEndpointSchema),
+  kpiHistory: z.array(KpiSnapshotSchema).optional(),
+  partial: z.boolean().optional(),
+  failedEndpoints: z.array(z.string()).optional(),
+});
+
+// GET /api/traces — root-span list rows. Enumerates exactly the columns the
+// SELECT in routes/traces.ts projects; nullable columns are `.nullable()` so
+// absent OTLP attributes serialise as null instead of throwing.
+export const TraceListItemSchema = z.object({
+  trace_id: z.string(),
+  root_span: z.string(),
+  duration_ms: z.number().nullable(),
+  status: z.string(),
+  service_name: z.string(),
+  start_time: z.string(),
+  trace_source: z.string().nullable(),
+  http_method: z.string().nullable(),
+  http_route: z.string().nullable(),
+  http_status_code: z.number().nullable(),
+  service_namespace: z.string().nullable(),
+  service_instance_id: z.string().nullable(),
+  service_version: z.string().nullable(),
+  deployment_environment: z.string().nullable(),
+  container_id: z.string().nullable(),
+  container_name: z.string().nullable(),
+  k8s_namespace: z.string().nullable(),
+  k8s_pod_name: z.string().nullable(),
+  k8s_container_name: z.string().nullable(),
+  server_address: z.string().nullable(),
+  server_port: z.number().nullable(),
+  client_address: z.string().nullable(),
+  url_full: z.string().nullable(),
+  url_scheme: z.string().nullable(),
+  network_transport: z.string().nullable(),
+  network_protocol_name: z.string().nullable(),
+  network_protocol_version: z.string().nullable(),
+  net_peer_name: z.string().nullable(),
+  net_peer_port: z.number().nullable(),
+  host_name: z.string().nullable(),
+  os_type: z.string().nullable(),
+  process_pid: z.number().nullable(),
+  process_executable_name: z.string().nullable(),
+  process_command: z.string().nullable(),
+  telemetry_sdk_name: z.string().nullable(),
+  telemetry_sdk_language: z.string().nullable(),
+  telemetry_sdk_version: z.string().nullable(),
+  otel_scope_name: z.string().nullable(),
+  otel_scope_version: z.string().nullable(),
+  span_count: z.number(),
+});
+
+export const TracesListResponseSchema = z.object({
+  traces: z.array(TraceListItemSchema),
+});
+
+// GET /api/traces/service-map — aggregated service nodes + edges. avgDuration
+// is AVG(duration_ms) which is null when a group has no timed spans.
+export const ServiceMapResponseSchema = z.object({
+  nodes: z.array(z.object({
+    id: z.string(),
+    name: z.string(),
+    callCount: z.number(),
+    avgDuration: z.number().nullable(),
+    errorRate: z.number(),
+  })),
+  edges: z.array(z.object({
+    source: z.string(),
+    target: z.string(),
+    callCount: z.number(),
+    avgDuration: z.number().nullable(),
+  })),
+});
+
+// GET /api/traces/summary — KPI aggregates (all defaulted to 0 in the handler).
+export const TraceSummaryResponseSchema = z.object({
+  totalTraces: z.number(),
+  avgDuration: z.number(),
+  errorRate: z.number(),
+  services: z.number(),
+  sourceCounts: z.object({
+    http: z.number(),
+    ebpf: z.number(),
+    scheduler: z.number(),
+    unknown: z.number(),
+  }),
+});

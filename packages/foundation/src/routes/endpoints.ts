@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify';
 import * as portainer from '@dashboard/core/portainer/portainer-client.js';
 import { cachedFetch, cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
 import { normalizeEndpoint } from '@dashboard/core/portainer/portainer-normalizers.js';
-import { EndpointIdParamsSchema } from '@dashboard/core/models/api-schemas.js';
+import { EndpointIdParamsSchema, EndpointsListResponseSchema, LiveEndpointSchema, ErrorWithDetailsSchema } from '@dashboard/core/models/api-schemas.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { errorDetails } from '@dashboard/core/plugins/error-handler.js';
 import { enrichEndpointsWithLiveDockerInfo, attachStackCounts } from '@dashboard/core/portainer/live-fleet.js';
@@ -15,6 +15,7 @@ export async function endpointsRoutes(fastify: FastifyInstance) {
       tags: ['Endpoints'],
       summary: 'List all Portainer endpoints',
       security: [{ bearerAuth: [] }],
+      response: { 200: EndpointsListResponseSchema, 502: ErrorWithDetailsSchema },
     },
     preHandler: [fastify.authenticate],
   }, async (_request, reply) => {
@@ -87,6 +88,7 @@ export async function endpointsRoutes(fastify: FastifyInstance) {
       summary: 'Get a specific endpoint',
       security: [{ bearerAuth: [] }],
       params: EndpointIdParamsSchema,
+      response: { 200: LiveEndpointSchema, 502: ErrorWithDetailsSchema },
     },
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {
