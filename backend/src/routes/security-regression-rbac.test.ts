@@ -203,12 +203,12 @@ vi.mock('@dashboard/ai', async (importOriginal) => {
 });
 
 // ─── Imports (after mocks) ──────────────────────────────────────────────
-import { remediationRoutes } from '@dashboard/operations';
+import { remediationRoutes } from '@dashboard/operations/routes/index.js';
 import { securityRoutes } from '@dashboard/security/routes/index.js';
 import { edgeJobsRoutes } from '@dashboard/infrastructure/routes/index.js';
-import { imagesRoutes, userRoutes, oidcRoutes } from '@dashboard/foundation';
-import { notificationRoutes } from '@dashboard/operations';
-import { incidentsRoutes, monitoringRoutes, type MonitoringRoutesOpts } from '@dashboard/ai';
+import { imagesRoutes, userRoutes, oidcRoutes } from '@dashboard/foundation/routes/index.js';
+import { notificationRoutes } from '@dashboard/operations/routes/index.js';
+import { incidentsRoutes, monitoringRoutes, type MonitoringRoutesOpts } from '@dashboard/ai/routes/index.js';
 import type { LLMInterface } from '@dashboard/contracts';
 
 import * as portainerClient from '@dashboard/core/portainer/portainer-client.js';
@@ -904,7 +904,7 @@ describe('Monitoring Sensitivity Preset RBAC (#1297)', () => {
 
   beforeAll(async () => {
     currentRole = 'viewer';
-    const { monitoringRoutes } = await import('@dashboard/ai');
+    const { monitoringRoutes } = await import('@dashboard/ai/routes/index.js');
 
     app = Fastify({ logger: false });
     app.setValidatorCompiler(validatorCompiler);

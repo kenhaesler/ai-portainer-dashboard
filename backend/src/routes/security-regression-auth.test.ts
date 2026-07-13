@@ -263,7 +263,7 @@ import {
   cacheAdminRoutes,
   systemInfoRoutes,
   userRoutes,
-} from '@dashboard/foundation';
+} from '@dashboard/foundation/routes/index.js';
 import {
   monitoringRoutes,
   investigationRoutes,
@@ -275,7 +275,7 @@ import {
   promptProfileRoutes,
   type MonitoringRoutesOpts,
   type CorrelationRoutesOpts,
-} from '@dashboard/ai';
+} from '@dashboard/ai/routes/index.js';
 import {
   remediationRoutes,
   backupRoutes,
@@ -283,7 +283,7 @@ import {
   logsRoutes,
   notificationRoutes,
   webhookRoutes,
-} from '@dashboard/operations';
+} from '@dashboard/operations/routes/index.js';
 import { securityRoutes } from '@dashboard/security/routes/index.js';
 import type { LLMInterface } from '@dashboard/contracts';
 import { edgeJobsRoutes } from '@dashboard/infrastructure/routes/index.js';

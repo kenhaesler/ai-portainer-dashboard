@@ -1,22 +1,10 @@
 import { useQueries } from '@tanstack/react-query';
+import type { Insight } from '@dashboard/contracts';
 import { api } from '@/shared/lib/api';
 
-export interface IncidentInsight {
-  id: string;
-  endpoint_id: number | null;
-  endpoint_name: string | null;
-  container_id: string | null;
-  container_name: string | null;
-  severity: 'critical' | 'warning' | 'info';
-  category: string;
-  title: string;
-  description: string;
-  suggested_action: string | null;
-  is_acknowledged: number;
-  created_at: string;
-  metric_type?: string;
-  detection_method?: string;
-}
+// The related-insights payload is a plain Insight row (#1509 — was a
+// hand-maintained copy that drifted from the shared contract).
+export type IncidentInsight = Insight;
 
 interface IncidentDetailResponse {
   id: string;

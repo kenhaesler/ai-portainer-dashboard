@@ -1,7 +1,7 @@
 import { beforeEach, afterEach, afterAll, describe, expect, it, vi } from 'vitest';
 import Fastify from 'fastify';
 import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
-import { dashboardRoutes } from '@dashboard/foundation';
+import { dashboardRoutes } from '@dashboard/foundation/routes/index.js';
 
 const mockGetKpiHistory = vi.fn();
 const mockGetSecurityAudit = vi.fn();

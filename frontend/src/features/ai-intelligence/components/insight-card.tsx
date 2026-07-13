@@ -20,13 +20,15 @@ import {
   FileText,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import type { AnomalyDimension } from '@dashboard/contracts';
+import type { AnomalyDimension, Severity } from '@dashboard/contracts';
 import { cn, formatDate } from '@/shared/lib/utils';
 import { safeParseJson } from '@/features/ai-intelligence/hooks/use-investigations';
 import type { Investigation, RecommendedAction } from '@/features/ai-intelligence/hooks/use-investigations';
 import { getModelUseCase } from '@/features/core/components/settings/model-use-cases';
 
-export type Severity = 'critical' | 'warning' | 'info';
+// Canonical Severity lives in @dashboard/contracts (#1509); re-exported so
+// existing `import { Severity } from '.../insight-card'` call sites keep working.
+export type { Severity };
 
 export interface InsightCardProps {
   insight: {

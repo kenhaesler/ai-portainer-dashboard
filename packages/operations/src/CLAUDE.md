@@ -5,9 +5,11 @@ Remediation workflow (suggest → approve → execute), notifications, backup, a
 ## Public API (barrel: `index.ts`)
 
 ```typescript
-import { suggestAction, approveAction, rejectAction } from '../../operations/index.js';
-import { notifyInsight } from '../../operations/index.js';
-import { remediationRoutes, backupRoutes, logsRoutes } from '../../operations/index.js';
+import { suggestAction, approveAction, rejectAction } from '@dashboard/operations';
+import { notifyInsight } from '@dashboard/operations';
+// Routes are registered from the routes subpath, NOT the package barrel
+// (core/src/CLAUDE.md rule; the barrel no longer re-exports them, #1533)
+import { remediationRoutes, backupRoutes, logsRoutes } from '@dashboard/operations/routes/index.js';
 ```
 
 ## Cross-domain Imports (Phase 3 Exceptions)

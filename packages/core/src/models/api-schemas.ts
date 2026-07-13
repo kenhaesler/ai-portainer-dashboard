@@ -129,25 +129,11 @@ export const ReadinessDetailResponseSchema = z.object({
 // ─── Version schema ──────────────────────────────────────────────────
 
 // ─── Container schemas ──────────────────────────────────────────────
-export const NormalizedContainerSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  image: z.string(),
-  state: z.string(),
-  status: z.string(),
-  endpointId: z.number(),
-  endpointName: z.string(),
-  ports: z.array(z.object({
-    private: z.number().optional(),
-    public: z.number().optional(),
-    type: z.string().optional(),
-  })),
-  created: z.number(),
-  labels: z.record(z.string(), z.string()),
-  networks: z.array(z.string()),
-  healthStatus: z.string().optional(),
-});
-
+// NOTE: the container/endpoint *shape* schemas (NormalizedContainer/
+// NormalizedEndpoint) live in @dashboard/contracts and the live runtime
+// interfaces in @dashboard/core/portainer/portainer-normalizers.ts. The dead
+// hand-maintained copies that used to live here were removed in #1509; this
+// file keeps only the request param/query schemas actually attached to routes.
 export const ContainerParamsSchema = z.object({
   endpointId: z.coerce.number(),
   containerId: z.string(),
@@ -158,19 +144,8 @@ export const EndpointIdQuerySchema = z.object({
 });
 
 // ─── Endpoint schemas ───────────────────────────────────────────────
-export const NormalizedEndpointSchema = z.object({
-  id: z.number(),
-  name: z.string(),
-  type: z.string(),
-  url: z.string(),
-  status: z.string(),
-  containersRunning: z.number(),
-  containersStopped: z.number(),
-  totalContainers: z.number(),
-  stackCount: z.number(),
-  agentVersion: z.string().optional(),
-});
-
+// NormalizedEndpoint shape schema removed in #1509 (see the container note
+// above) — it was a dead copy that had drifted from the live normalizer.
 export const EndpointIdParamsSchema = z.object({
   id: z.coerce.number(),
 });

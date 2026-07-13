@@ -56,12 +56,25 @@ function sweepExpiredEntries(): void {
   }
 }
 
-const _sweepTimer = setInterval(sweepExpiredEntries, SWEEP_INTERVAL_MS);
-_sweepTimer.unref();
+// The sweep timer is started lazily when the forecast routes are registered
+// (see forecastRoutes) rather than at module load, so merely importing this
+// module — including transitively via a package barrel — starts no background
+// timer (#1533).
+let sweepTimer: ReturnType<typeof setInterval> | null = null;
+
+/** Start the periodic TTL sweep. Idempotent; called from route registration. */
+export function startCacheSweep(): void {
+  if (sweepTimer) return;
+  sweepTimer = setInterval(sweepExpiredEntries, SWEEP_INTERVAL_MS);
+  sweepTimer.unref();
+}
 
 /** Stop the periodic TTL sweep (for testing / clean shutdown) */
 export function stopCacheSweep(): void {
-  clearInterval(_sweepTimer);
+  if (sweepTimer) {
+    clearInterval(sweepTimer);
+    sweepTimer = null;
+  }
 }
 
 /** @internal Exported for testing only */
@@ -103,6 +116,10 @@ Confidence: ${forecast.confidence}`;
 }
 
 export async function forecastRoutes(fastify: FastifyInstance, opts: { llm?: LLMInterface } = {}) {
+  // Start the narrative-cache TTL sweep now that the routes are actually being
+  // registered (the timer no longer runs on bare module import — #1533).
+  startCacheSweep();
+
   fastify.get('/api/forecasts', {
     schema: {
       tags: ['Forecasts'],

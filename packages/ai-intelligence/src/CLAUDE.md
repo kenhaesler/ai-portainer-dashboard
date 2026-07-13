@@ -10,9 +10,10 @@ Cross-domain data flows through DI adapters wired in `@dashboard/server/src/wiri
 ## Public API (barrel: `index.ts`)
 
 ```typescript
-// Routes
-import { monitoringRoutes, investigationRoutes, incidentsRoutes, correlationRoutes } from '@dashboard/ai';
-import { llmRoutes, llmObservabilityRoutes, llmFeedbackRoutes, mcpRoutes, promptProfileRoutes } from '@dashboard/ai';
+// Routes — registered from the composition root via the routes subpath, NOT the
+// package barrel (core/src/CLAUDE.md rule; the barrel no longer re-exports them, #1533)
+import { monitoringRoutes, investigationRoutes, incidentsRoutes, correlationRoutes } from '@dashboard/ai/routes/index.js';
+import { llmRoutes, llmObservabilityRoutes, llmFeedbackRoutes, mcpRoutes, promptProfileRoutes } from '@dashboard/ai/routes/index.js';
 
 // Sockets
 import { setupLlmNamespace, setupMonitoringNamespace, broadcastInsight, broadcastInsightBatch } from '@dashboard/ai';
