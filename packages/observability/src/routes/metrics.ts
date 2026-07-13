@@ -208,10 +208,11 @@ export async function metricsRoutes(fastify: FastifyInstance, opts: { llm?: LLMI
     } catch (err) {
       if (isUndefinedTableError(err)) {
         log.warn('Metrics table not ready for anomaly query');
-        return reply.code(503).send({ error: 'Metrics database not ready', details: 'The metrics table has not been created yet.' });
+        // Cast required: the 200-only `response` schema narrows reply.code() (#1544).
+        return (reply as any).code(503).send({ error: 'Metrics database not ready', details: 'The metrics table has not been created yet.' });
       }
       log.error({ err }, 'Failed to query anomalies');
-      return reply.code(500).send({ error: 'Failed to query anomalies', details: errorDetails(err) });
+      return (reply as any).code(500).send({ error: 'Failed to query anomalies', details: errorDetails(err) });
     }
   });
 
