@@ -11,7 +11,9 @@ import { detectCorrelatedAnomalies, findCorrelatedContainers, findSimilarInsight
 import { generateForecast, getCapacityForecasts } from '../../observability/index.js';
 ```
 
-Routes are registered in `app.ts` via `observabilityRoutes` from the barrel.
+Routes are registered in `app.ts` via `observabilityRoutes` imported from
+`@dashboard/observability/routes/index.js` — **not** the package barrel, which no
+longer re-exports routes (core/src/CLAUDE.md rule, #1533).
 
 ## Cross-domain Imports (Phase 3 Exceptions)
 

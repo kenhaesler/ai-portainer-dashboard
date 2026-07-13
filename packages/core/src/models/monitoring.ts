@@ -1,86 +1,24 @@
-import { z } from 'zod/v4';
-
 /**
- * Per-signal payload carried by `Insight.dimensions` when an anomaly fires
- * for the same `(service, minute)` window across more than one dimension
- * (e.g. trace-anomaly's correlated p95-latency + error-rate suppression — see
- * `packages/ai-intelligence/src/services/trace-anomaly.ts` and issue #1296).
+ * Anomaly / insight domain model.
  *
- * `type` mirrors `metric_type` so consumers can derive severity per signal.
+ * The canonical definitions live in `@dashboard/contracts` so there is exactly
+ * ONE physical `InsightSchema` / `AnomalyDimensionSchema` / detector-constant
+ * set shared by the backend (which imports from `@dashboard/core/models/monitoring.js`)
+ * and the frontend (which imports from `@dashboard/contracts`) — see #1509.
+ * This module is a thin re-export kept for the many backend call sites that
+ * already import from here; do not redeclare the shapes below.
  */
-export const AnomalyDimensionSchema = z.object({
-  type: z.enum(['cpu', 'memory', 'disk', 'network', 'restart', 'latency_p95', 'error_rate']),
-  value: z.number(),
-  baseline: z.number(),
-  zScore: z.number(),
-  severity: z.enum(['critical', 'warning']),
-});
+export {
+  AnomalyDimensionSchema,
+  PERSISTED_ANOMALY_DETECTORS,
+  IN_MEMORY_ANOMALY_DETECTORS,
+  ANOMALY_DETECTORS,
+  InsightSchema,
+} from '@dashboard/contracts';
 
-export type AnomalyDimension = z.infer<typeof AnomalyDimensionSchema>;
-
-/**
- * Canonical anomaly-detector identifiers — single source of truth (#1314).
- *
- * `PERSISTED_ANOMALY_DETECTORS` are the only values that can land in
- * `insights.detection_method`. `IN_MEMORY_ANOMALY_DETECTORS` are correlated /
- * in-memory detectors that never reach the `insights` table but DO appear on
- * `anomaly_feedback.detector`. The anomaly-feedback route allowlist accepts the
- * union (`ANOMALY_DETECTORS`); the persisted-record schema accepts only the
- * persisted subset. Adding a detector source is now a single edit here.
- */
-export const PERSISTED_ANOMALY_DETECTORS = [
-  'threshold',
-  'ml-anomaly',
-  'prediction',
-  'health-check',
-  'log-pattern',
-  'security-scan',
-] as const;
-
-export const IN_MEMORY_ANOMALY_DETECTORS = [
-  'correlated-zscore',
-  'isolation-forest',
-] as const;
-
-export const ANOMALY_DETECTORS = [
-  ...PERSISTED_ANOMALY_DETECTORS,
-  ...IN_MEMORY_ANOMALY_DETECTORS,
-] as const;
-
-export type PersistedAnomalyDetector = (typeof PERSISTED_ANOMALY_DETECTORS)[number];
-export type AnomalyDetector = (typeof ANOMALY_DETECTORS)[number];
-
-export const InsightSchema = z.object({
-  id: z.string(),
-  endpoint_id: z.number().nullable(),
-  endpoint_name: z.string().nullable(),
-  container_id: z.string().nullable(),
-  container_name: z.string().nullable(),
-  severity: z.enum(['critical', 'warning', 'info']),
-  category: z.string(),
-  title: z.string(),
-  description: z.string(),
-  suggested_action: z.string().nullable(),
-  is_acknowledged: z.number().default(0),
-  created_at: z.string(),
-  metric_type: z.enum(['cpu', 'memory', 'disk', 'network', 'restart', 'latency_p95', 'error_rate']).optional(),
-  detection_method: z.enum(PERSISTED_ANOMALY_DETECTORS).optional(),
-  /**
-   * Typed z-score for anomaly insights (#1308). Replaces regex-scraping the
-   * value out of `description`. NULL for records that never carried a z-score
-   * (isolation-forest, threshold, prediction, error-rate-only trace anomalies).
-   * pg returns NUMERIC as a string, so coerce on read.
-   */
-  z_score: z.coerce.number().nullable().optional(),
-  /**
-   * When set, this insight collapses multiple co-occurring signals (e.g.
-   * latency p95 + error-rate spiking in the same minute for the same
-   * service). The legacy `metric_type` field still carries the dominant /
-   * primary signal so existing signature derivation keeps working;
-   * `dimensions` carries the full multi-signal payload for richer UI
-   * rendering. Single-dimension records have `dimensions === undefined`.
-   */
-  dimensions: z.array(AnomalyDimensionSchema).optional(),
-});
-
-export type Insight = z.infer<typeof InsightSchema>;
+export type {
+  AnomalyDimension,
+  PersistedAnomalyDetector,
+  AnomalyDetector,
+  Insight,
+} from '@dashboard/contracts';

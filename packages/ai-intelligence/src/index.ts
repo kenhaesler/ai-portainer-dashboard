@@ -1,25 +1,8 @@
 // Public API for the @dashboard/ai package.
-
-// Routes
-export {
-  monitoringRoutes,
-  investigationRoutes,
-  incidentsRoutes,
-  correlationRoutes,
-  dedupTelemetryRoutes,
-  llmRoutes,
-  llmObservabilityRoutes,
-  llmFeedbackRoutes,
-  mcpRoutes,
-  promptProfileRoutes,
-} from './routes/index.js';
-export type {
-  MonitoringRoutesOpts,
-  CorrelationRoutesOpts,
-  CorrelationPair,
-  CorrelationInsight,
-  Queryable,
-} from './routes/index.js';
+//
+// Routes are NOT re-exported from this barrel (core/src/CLAUDE.md rule — avoids
+// TDZ issues and import-time route/side-effect evaluation). Register them via
+// `@dashboard/ai/routes/index.js` in the composition root (#1533).
 
 // Sockets
 export {

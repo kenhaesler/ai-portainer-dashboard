@@ -14,7 +14,9 @@ import cacheControlPlugin from '@dashboard/core/plugins/cache-control.js';
 import errorHandlerPlugin from '@dashboard/core/plugins/error-handler.js';
 import staticPlugin from '@dashboard/core/plugins/static.js';
 
-// Foundational routes (cross-domain, Portainer API glue)
+// Route registration imports every package's routes from `<pkg>/routes/index.js`
+// (never the package barrel) so a route module is only evaluated when it is
+// actually registered here — consistent across all packages (#1533).
 import {
   healthRoutes,
   authRoutes,
@@ -32,9 +34,7 @@ import {
   systemInfoRoutes,
   userRoutes,
   kubernetesRoutes,
-} from '@dashboard/foundation';
-
-// Routes from domain packages
+} from '@dashboard/foundation/routes/index.js';
 import {
   remediationRoutes,
   backupRoutes,
@@ -42,8 +42,7 @@ import {
   logsRoutes,
   notificationRoutes,
   webhookRoutes,
-  initRemediationDeps,
-} from '@dashboard/operations';
+} from '@dashboard/operations/routes/index.js';
 import {
   monitoringRoutes,
   investigationRoutes,
@@ -55,12 +54,14 @@ import {
   llmFeedbackRoutes,
   mcpRoutes,
   promptProfileRoutes,
-  getPromptGuardNearMissTotal,
-  initInvestigationDeps,
-} from '@dashboard/ai';
+} from '@dashboard/ai/routes/index.js';
 import { infrastructureRoutes } from '@dashboard/infrastructure/routes/index.js';
 import { securityRoutes } from '@dashboard/security/routes/index.js';
 import { observabilityRoutes } from '@dashboard/observability/routes/index.js';
+
+// Service-level DI helpers come from the package barrels (not routes).
+import { initRemediationDeps } from '@dashboard/operations';
+import { getPromptGuardNearMissTotal, initInvestigationDeps } from '@dashboard/ai';
 
 import {
   detectCorrelatedAnomalies,

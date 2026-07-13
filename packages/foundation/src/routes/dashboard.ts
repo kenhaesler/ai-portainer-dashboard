@@ -1,4 +1,11 @@
 import { FastifyInstance } from 'fastify';
+// Fastify type augmentations (`fastify.authenticate`/`requireRole`,
+// `request.user`/`requestId`, swagger `schema.tags`) used to arrive implicitly
+// via the domain barrels this file imports; those barrels no longer re-export
+// routes (#1533), so import the declaring core plugin modules explicitly.
+import '@dashboard/core/plugins/auth.js';
+import '@dashboard/core/plugins/request-tracing.js';
+import '@fastify/swagger';
 import { z } from 'zod/v4';
 import pLimit from 'p-limit';
 import * as portainer from '@dashboard/core/portainer/portainer-client.js';
@@ -6,6 +13,13 @@ import { cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/port
 import { normalizeEndpoint, normalizeContainer, type NormalizedEndpoint, type NormalizedContainer } from '@dashboard/core/portainer/portainer-normalizers.js';
 import { enrichEndpointsWithLiveDockerInfo, attachStackCounts, computeFleetTotals } from '@dashboard/core/portainer/live-fleet.js';
 import { isDockerEndpoint } from '@dashboard/core/models/portainer.js';
+import {
+  DashboardSummaryResponseSchema,
+  DashboardResourcesResponseSchema,
+  DashboardFullResponseSchema,
+  KpiHistoryResponseSchema,
+  ErrorWithDetailsSchema,
+} from '@dashboard/core/models/api-schemas.js';
 import { getKpiHistory, getLatestMetricsBatch, getLatestKpiSnapshot } from '@dashboard/observability';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { errorDetails } from '@dashboard/core/plugins/error-handler.js';
@@ -206,6 +220,7 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
       tags: ['Dashboard'],
       summary: 'Get dashboard summary with KPIs',
       security: [{ bearerAuth: [] }],
+      response: { 200: DashboardSummaryResponseSchema, 502: ErrorWithDetailsSchema },
     },
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {
@@ -273,6 +288,7 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
       querystring: z.object({
         hours: z.coerce.number().default(24),
       }),
+      response: { 200: KpiHistoryResponseSchema },
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {
@@ -297,6 +313,7 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
       querystring: z.object({
         topN: z.coerce.number().int().min(1).max(20).default(10),
       }),
+      response: { 200: DashboardResourcesResponseSchema, 502: ErrorWithDetailsSchema },
     },
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {
@@ -351,6 +368,7 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
         topN: z.coerce.number().int().min(1).max(20).default(10),
         kpiHistoryHours: z.coerce.number().int().min(0).max(168).default(0),
       }),
+      response: { 200: DashboardFullResponseSchema, 502: ErrorWithDetailsSchema },
     },
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {

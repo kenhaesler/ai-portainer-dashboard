@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import Fastify from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
-import { kubernetesRoutes } from '@dashboard/foundation';
+import { kubernetesRoutes } from '@dashboard/foundation/routes/index.js';
 vi.mock('@dashboard/core/portainer/portainer-client.js', async (importOriginal) => await importOriginal());
 import * as portainerClient from '@dashboard/core/portainer/portainer-client.js';
 import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';

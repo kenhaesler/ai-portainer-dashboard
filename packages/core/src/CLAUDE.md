@@ -27,6 +27,8 @@ Shared foundation — all domain modules depend on core.
 ```
 @dashboard/server  (composition root — wires everything)
        ↓
+@dashboard/foundation  (cross-domain routes / BFF layer — imports 4 of 5 domains)
+       ↓
 @dashboard/ai, @dashboard/observability, @dashboard/operations,
 @dashboard/security, @dashboard/infrastructure
        ↓
@@ -38,8 +40,14 @@ Shared foundation — all domain modules depend on core.
 ```
 
 - `@dashboard/ai` imports ONLY core + contracts (never other domains)
-- Cross-domain deps resolved via DI in `@dashboard/server/src/wiring.ts`
-- Routes NOT re-exported from barrel (import directly from `routes/index.js`)
+- Cross-domain deps for the domain packages are resolved via DI in `@dashboard/server/src/wiring.ts`
+- `@dashboard/foundation` is a sanctioned exception: its route handlers may import
+  domain-package **services** directly (ai, observability, security, infrastructure —
+  never operations) as an aggregation/BFF layer. See `packages/foundation/src/CLAUDE.md`.
+  Because it depends on 4 of 5 domains, no domain package may import from foundation.
+- Routes NOT re-exported from any package barrel — register them from
+  `@dashboard/<pkg>/routes/index.js` (foundation included). This avoids TDZ issues and
+  keeps route-module side effects (e.g. cache-sweep timers) off the barrel import path.
 
 ## Domain Packages (`packages/<domain>/`)
 

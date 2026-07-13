@@ -155,6 +155,53 @@ describe('traces routes', () => {
     expect(body.traces[0].http_method).toBe('GET');
   });
 
+  it('GET /api/traces preserves every schema-enumerated column, including NULLs (#1545)', async () => {
+    // The response schema (TraceListItemSchema) does a full Zod parse. Assert
+    // it enumerates the whole SELECT — populated AND absent OTLP columns — so a
+    // nullable column that the frontend reads is never silently stripped, and a
+    // NULL value serialises as null rather than throwing.
+    await insertSpan({
+      id: 'shape-root',
+      traceId: 'trace-shape',
+      name: 'GET /orders',
+      kind: 'server',
+      status: 'ok',
+      startTime: '2026-02-12T10:00:00.000Z',
+      duration: 42,
+      service: 'orders',
+      source: 'ebpf',
+      httpMethod: 'GET',
+      httpStatusCode: 200,
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/traces?serviceName=orders',
+      headers: { authorization: 'Bearer test' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const row = (response.json() as { traces: Array<Record<string, unknown>> }).traces[0];
+
+    // Populated, non-null columns.
+    expect(row.trace_id).toBe('trace-shape');
+    expect(row.root_span).toBe('GET /orders');
+    expect(row.duration_ms).toBe(42);
+    expect(row.status).toBe('ok');
+    expect(row.service_name).toBe('orders');
+    expect(typeof row.start_time).toBe('string');
+    expect(row.span_count).toBe(1);
+
+    // Nullable columns the frontend reads must be PRESENT (as null), not dropped.
+    for (const key of [
+      'server_port', 'net_peer_port', 'process_pid', 'url_scheme',
+      'service_instance_id', 'client_address', 'os_type', 'otel_scope_name',
+    ]) {
+      expect(row, `nullable column "${key}" was stripped by the response schema`).toHaveProperty(key);
+      expect(row[key]).toBeNull();
+    }
+  });
+
   it('GET /api/traces/service-map uses source + time filters', async () => {
     await insertSpan({
       id: 'root-http',

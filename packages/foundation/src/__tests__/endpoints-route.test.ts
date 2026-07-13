@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest';
 import Fastify, { FastifyInstance } from 'fastify';
-import { validatorCompiler } from 'fastify-type-provider-zod';
+import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
 import { endpointsRoutes } from '../routes/endpoints.js';
 
 // Passthrough mock: keeps real normalizer logic but makes the module writable for spying
@@ -30,15 +30,18 @@ import * as portainerClient from '@dashboard/core/portainer/portainer-client.js'
 import { fetchLiveDockerInfo } from '@dashboard/core/portainer/edge-live-query.js';
 const mockLiveFetch = vi.mocked(fetchLiveDockerInfo);
 
+// URL is required on real Portainer endpoints (EndpointSchema.parse in
+// getEndpoints guarantees it) — include it so the response schema serialises.
+// LastCheckInDate/EdgeCheckinInterval are omitted (not null): getEndpoints'
+// z.number().optional() parse produces undefined, never null, for absent values.
 const fakeEndpoint = (id: number, name: string, type = 1, status = 1) => ({
   Id: id,
   Name: name,
   Type: type,
+  URL: 'tcp://10.0.0.1:9001',
   Status: status,
   Snapshots: [],
   EdgeID: null,
-  LastCheckInDate: null,
-  EdgeCheckinInterval: null,
 });
 
 describe('Endpoints Routes', () => {
@@ -47,6 +50,7 @@ describe('Endpoints Routes', () => {
   beforeAll(async () => {
     app = Fastify({ logger: false });
     app.setValidatorCompiler(validatorCompiler);
+    app.setSerializerCompiler(serializerCompiler);
     app.decorate('authenticate', async () => undefined);
     app.decorate('requireRole', () => async () => undefined);
     app.decorateRequest('user', undefined);
@@ -166,6 +170,34 @@ describe('Endpoints Routes', () => {
       expect(mockLiveFetch).toHaveBeenCalledTimes(1);
     });
 
+    it('preserves the full endpoint payload through the response schema (#1545)', async () => {
+      // The response schema (LiveEndpointSchema) does a full Zod parse that
+      // strips unknown keys — assert every field the frontend `Endpoint` type
+      // reads survives serialization, so schema drift can never silently drop one.
+      vi.spyOn(portainerClient, 'getEndpoints').mockResolvedValue([fakeEndpoint(1, 'local', 1, 1)] as never);
+      vi.spyOn(portainerClient, 'getStacks').mockResolvedValue([{ EndpointId: 1 }] as never);
+      mockLiveFetch.mockResolvedValue({ containers: 5, containersRunning: 4, containersStopped: 1, ncpu: 8, memTotal: 16e9, fetchedAt: 1_700_000_000_000 });
+
+      const res = await app.inject({ method: 'GET', url: '/api/endpoints' });
+      expect(res.statusCode).toBe(200);
+      const ep = res.json()[0];
+
+      for (const key of [
+        'id', 'name', 'type', 'url', 'status',
+        'containersRunning', 'containersStopped', 'totalContainers', 'stackCount',
+        'totalCpu', 'totalMemory', 'isEdge', 'edgeMode', 'snapshotAge',
+        'checkInInterval', 'capabilities', 'snapshotSource', 'snapshotFetchedAt',
+      ]) {
+        expect(ep, `missing "${key}" — response schema stripped a field`).toHaveProperty(key);
+      }
+      expect(ep.capabilities).toEqual({
+        exec: true, realtimeLogs: true, liveStats: true, immediateActions: true,
+      });
+      expect(ep.url).toBe('tcp://10.0.0.1:9001');
+      expect(ep.totalCpu).toBe(8);
+      expect(ep.snapshotSource).toBe('live');
+    });
+
     it('marks an endpoint unavailable when the live fetch returns null', async () => {
       vi.spyOn(portainerClient, 'getEndpoints').mockResolvedValue([fakeEndpoint(1, 'local', 1, 1)] as never);
       vi.spyOn(portainerClient, 'getStacks').mockResolvedValue([] as never);
@@ -193,6 +225,7 @@ describe('Endpoints Routes', () => {
     it('requires authentication', async () => {
       const unauthApp = Fastify({ logger: false });
       unauthApp.setValidatorCompiler(validatorCompiler);
+      unauthApp.setSerializerCompiler(serializerCompiler);
       // authenticate throws to simulate real auth check
       unauthApp.decorate('authenticate', async (_req: any, reply: any) => {
         reply.code(401).send({ error: 'Unauthorized' });

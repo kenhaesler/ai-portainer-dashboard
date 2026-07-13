@@ -1,7 +1,8 @@
 # CI-only override: a canned Portainer (WireMock) so the E2E stack has fleet
-# data. Layer it AFTER the base file:
+# data, plus a deterministic OpenAI-compatible LLM stub so the AI chat flow is
+# exercisable offline. Layer it AFTER the base file:
 #   docker compose -f docker/docker-compose.yml -f docker/docker-compose.e2e.yml ...
-# The production compose file is never modified. (#1420)
+# The production compose file is never modified. (#1420, #1521)
 services:
   portainer-mock:
     image: wiremock/wiremock:3.13.1
@@ -16,6 +17,27 @@ services:
     networks:
       - dashboard-net
 
+  # Deterministic OpenAI-compatible LLM so `e2e/ai-chat.spec.ts` can drive the
+  # real streamed chat path offline. Zero-dependency Node script mounted into a
+  # bare node image — no build step. The backend reaches it via service DNS
+  # (llm-stub:8090) and is pointed at it with LLM_API_URL below. (#1521)
+  llm-stub:
+    image: node:22-alpine
+    command: ["node", "/app/server.mjs"]
+    working_dir: /app
+    volumes:
+      - ./llm-stub:/app:ro
+    environment:
+      - PORT=8090
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8090/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 3s
+    networks:
+      - dashboard-net
+
   backend:
     # The E2E suite performs many real logins (smoke specs ×3 + Playwright
     # retries + auth.spec + global-setup), all from one runner IP. The prod
@@ -23,6 +45,10 @@ services:
     # exceeded"). Raise it for the disposable CI stack only. (#1420)
     environment:
       - LOGIN_RATE_LIMIT=1000
+      # Point the backend at the deterministic LLM stub. The base compose reads
+      # LLM_API_URL from the host env (empty in CI); this authoritative override
+      # wins the environment merge so chat is always wired to the stub. (#1521)
+      - LLM_API_URL=http://llm-stub:8090/v1
     depends_on:
       redis:
         condition: service_healthy
@@ -32,3 +58,13 @@ services:
         condition: service_healthy
       portainer-mock:
         condition: service_started
+      llm-stub:
+        condition: service_healthy
+
+  # Publish the app Postgres to the host (loopback only) so the E2E remediation
+  # spec can seed a `pending` action row directly — there is no create-action
+  # API (observer-first: actions are AI-proposed, never client-created), so the
+  # spec inserts one row via `pg` to exercise the approval state machine. (#1521)
+  postgres-app:
+    ports:
+      - "127.0.0.1:5442:5432"

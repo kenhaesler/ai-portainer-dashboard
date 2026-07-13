@@ -1,12 +1,6 @@
-// Routes
-export {
-  remediationRoutes,
-  webhookRoutes,
-  backupRoutes,
-  portainerBackupRoutes,
-  notificationRoutes,
-  logsRoutes,
-} from './routes/index.js';
+// Routes are NOT re-exported from this barrel (core/src/CLAUDE.md rule).
+// Register them via `@dashboard/operations/routes/index.js` in the composition
+// root (#1533).
 
 // Services
 export { suggestAction, approveAction, rejectAction, initRemediationDeps } from './services/remediation-service.js';

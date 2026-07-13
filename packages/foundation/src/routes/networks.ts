@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify';
 import * as portainer from '@dashboard/core/portainer/portainer-client.js';
 import { cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
 import { normalizeNetwork, normalizeEndpoint } from '@dashboard/core/portainer/portainer-normalizers.js';
-import { EndpointIdQuerySchema } from '@dashboard/core/models/api-schemas.js';
+import { EndpointIdQuerySchema, NetworksListResponseSchema, ErrorWithDetailsSchema } from '@dashboard/core/models/api-schemas.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { errorDetails } from '@dashboard/core/plugins/error-handler.js';
 
@@ -16,6 +16,7 @@ export async function networksRoutes(fastify: FastifyInstance) {
       summary: 'List networks across all endpoints',
       security: [{ bearerAuth: [] }],
       querystring: EndpointIdQuerySchema,
+      response: { 200: NetworksListResponseSchema, 502: ErrorWithDetailsSchema },
     },
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {

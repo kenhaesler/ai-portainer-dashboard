@@ -1,39 +1,15 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import type { InvestigationStatus, RecommendedAction, InvestigationWithInsight } from '@dashboard/contracts';
 import { api } from '@/shared/lib/api';
 import { useSockets } from '@/providers/socket-provider';
 
-export type InvestigationStatus = 'pending' | 'gathering' | 'analyzing' | 'complete' | 'failed';
-
-export interface RecommendedAction {
-  action: string;
-  priority: 'high' | 'medium' | 'low';
-  rationale?: string;
-}
-
-export interface Investigation {
-  id: string;
-  insight_id: string;
-  endpoint_id: number | null;
-  container_id: string | null;
-  container_name: string | null;
-  status: InvestigationStatus;
-  evidence_summary: string | null;
-  root_cause: string | null;
-  contributing_factors: string | null;
-  severity_assessment: string | null;
-  recommended_actions: string | null;
-  confidence_score: number | null;
-  analysis_duration_ms: number | null;
-  llm_model: string | null;
-  ai_summary: string | null;
-  error_message: string | null;
-  created_at: string;
-  completed_at: string | null;
-  insight_title?: string;
-  insight_severity?: string;
-  insight_category?: string;
-}
+// Canonical wire shapes live in @dashboard/contracts (#1509). The list/detail
+// endpoints return the investigation joined with its insight metadata, i.e.
+// contracts' `InvestigationWithInsight`. Re-exported under the historical names
+// so existing call sites keep working.
+export type { InvestigationStatus, RecommendedAction };
+export type Investigation = InvestigationWithInsight;
 
 export function safeParseJson<T>(value: string | null | undefined): T | null {
   if (!value) return null;
