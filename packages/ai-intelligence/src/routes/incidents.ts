@@ -6,6 +6,18 @@ import { getIncidents, getIncident, resolveIncident, getIncidentCount, getIncide
 import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
 import { cachedFetchSWR, getCacheKey, cache } from '@dashboard/core/portainer/portainer-cache.js';
 import { z } from 'zod';
+import { IncidentSchema } from '@dashboard/contracts';
+
+// Response schema for the list route (#1545). getIncidents does SELECT *, so
+// rows also carry the internal `signature` column (migration 029) which the
+// frontend Incident type omits — IncidentSchema prunes it. counts/limit/offset
+// mirror the handler's returned envelope.
+const IncidentsListResponseSchema = z.object({
+  incidents: z.array(IncidentSchema),
+  counts: z.object({ active: z.number(), resolved: z.number(), total: z.number() }),
+  limit: z.number(),
+  offset: z.number(),
+});
 
 export async function incidentsRoutes(fastify: FastifyInstance) {
   // Bounded query schema — without this, limit/offset were read via a raw cast
@@ -25,6 +37,7 @@ export async function incidentsRoutes(fastify: FastifyInstance) {
       tags: ['Incidents'],
       summary: 'List correlated incidents',
       security: [{ bearerAuth: [] }],
+      response: { 200: IncidentsListResponseSchema },
     },
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {
@@ -32,7 +45,8 @@ export async function incidentsRoutes(fastify: FastifyInstance) {
     // route does not depend on a Zod validator compiler being registered.
     const parsed = ListQ.safeParse(request.query);
     if (!parsed.success) {
-      return reply.code(400).send({ error: 'invalid query', details: parsed.error.flatten() });
+      // Cast: the 200 response schema narrows `reply.send` to the success shape.
+      return (reply as any).code(400).send({ error: 'invalid query', details: parsed.error.flatten() });
     }
     const { status, severity, signature, limit, offset } = parsed.data;
 
