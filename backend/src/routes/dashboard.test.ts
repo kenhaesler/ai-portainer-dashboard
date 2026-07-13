@@ -585,6 +585,19 @@ describe('Dashboard Routes', () => {
       expect(data.endpoints).toBeDefined();
       expect(data.endpoints).toHaveLength(1);
 
+      // Full-payload field presence (#1545): the DashboardFullResponseSchema
+      // does a full Zod parse, so assert every KPI + section key survives.
+      expect(Object.keys(data.summary.kpis).sort()).toEqual([
+        'endpoints', 'endpointsDown', 'endpointsUp', 'healthy',
+        'running', 'stacks', 'stopped', 'total', 'unhealthy',
+      ]);
+      expect(data.summary.security).toEqual({ totalAudited: 0, flagged: 0, ignored: 0 });
+      for (const key of ['name', 'containerCount', 'runningCount', 'stoppedCount', 'cpuPercent', 'memoryPercent', 'memoryBytes']) {
+        expect(data.resources.topStacks[0]).toHaveProperty(key);
+      }
+      expect(data.endpoints[0]).toHaveProperty('capabilities');
+      expect(data.endpoints[0]).toHaveProperty('snapshotSource');
+
       await app.close();
     });
 
