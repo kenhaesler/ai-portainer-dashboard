@@ -18,9 +18,11 @@ packages/
 ├── foundation/      @dashboard/foundation      Foundational routes (auth, containers, settings, etc.)
 └── server/          @dashboard/server          App assembly, DI wiring, scheduler
 
-backend/src/
-├── routes/          Tests for foundational routes (source now in @dashboard/foundation)
-└── test/            Shared test utilities
+backend/  (integration-test workspace only — ships NOTHING to production)
+└── src/
+    ├── routes/      Tests for foundational routes (source now in @dashboard/foundation)
+    └── test/        Shared test mock factories (mocks.ts)
+    └── test-utils/  Shared test helpers (Portainer/LLM/Redis/Ollama, RBAC)
 
 frontend/src/
 ├── features/        Domain-specific pages, components, hooks
@@ -28,6 +30,10 @@ frontend/src/
 ├── providers/       Context providers (auth, query, socket, theme, search)
 └── stores/          Zustand state stores
 ```
+
+**`backend/` is a test-only workspace.** After the route extraction into `packages/`, `backend/src` contains only Vitest suites + shared test utilities (its `dev` script runs `@dashboard/server`). It is **not** compiled into or installed in the production Docker image — `backend/Dockerfile` builds and installs only the `@dashboard/*` workspaces. Its tests still run in CI via `npm run test -w backend` and exercise the assembled app by importing from `@dashboard/*`.
+
+**Root-hoisted production deps (`undici`, `p-limit`, `redis`).** The production image copies only the root `node_modules` (plus each `@dashboard/*` package's `dist`), never a per-workspace `node_modules`. `jsdom` (frontend test dev-dep) and `eslint` pull incompatible transitive versions of `undici`/`p-limit` into the root slot during a full install, which would otherwise force the packages' versions into per-workspace `node_modules` that the image never copies. The root `package.json` therefore pins `undici`, `p-limit` and `redis` as direct production dependencies so `npm ci --omit=dev` hoists them to the root tree the image ships. **Do not remove these three root deps** — they are load-bearing for the runtime image, not app-level imports (a regression guard lives in `backend/src/docker-security.test.ts`).
 
 ## Dependency Graph
 

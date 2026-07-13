@@ -7,7 +7,6 @@ RUN apk add --no-cache python3 make g++
 
 WORKDIR /app
 COPY package.json package-lock.json ./
-COPY backend/package.json ./backend/
 COPY packages/contracts/package.json ./packages/contracts/
 COPY packages/core/package.json ./packages/core/
 COPY packages/infrastructure/package.json ./packages/infrastructure/
@@ -17,7 +16,7 @@ COPY packages/operations/package.json ./packages/operations/
 COPY packages/ai-intelligence/package.json ./packages/ai-intelligence/
 COPY packages/foundation/package.json ./packages/foundation/
 COPY packages/server/package.json ./packages/server/
-RUN --mount=type=cache,target=/root/.npm npm ci -w backend -w @dashboard/contracts -w @dashboard/core -w @dashboard/infrastructure -w @dashboard/security -w @dashboard/observability -w @dashboard/operations -w @dashboard/ai -w @dashboard/foundation -w @dashboard/server
+RUN --mount=type=cache,target=/root/.npm npm ci -w @dashboard/contracts -w @dashboard/core -w @dashboard/infrastructure -w @dashboard/security -w @dashboard/observability -w @dashboard/operations -w @dashboard/ai -w @dashboard/foundation -w @dashboard/server
 COPY packages/contracts/ ./packages/contracts/
 COPY packages/core/ ./packages/core/
 COPY packages/infrastructure/ ./packages/infrastructure/
@@ -28,10 +27,6 @@ COPY packages/ai-intelligence/ ./packages/ai-intelligence/
 RUN npm run build -w @dashboard/contracts && npm run build -w @dashboard/core && npm run build -w @dashboard/infrastructure && npm run build -w @dashboard/security && npm run build -w @dashboard/observability && npm run build -w @dashboard/operations && npm run build -w @dashboard/ai
 COPY packages/foundation/ ./packages/foundation/
 RUN npm run build -w @dashboard/foundation
-COPY backend/tsconfig.json ./backend/
-COPY backend/tsconfig.build.json ./backend/
-COPY backend/src/ backend/src/
-RUN npm run build -w backend
 COPY packages/server/ ./packages/server/
 RUN npm run build -w @dashboard/server
 # Bake the product version (root package.json) into the server dist. The runtime
@@ -48,7 +43,6 @@ RUN apk add --no-cache python3 make g++
 
 WORKDIR /app
 COPY package.json package-lock.json ./
-COPY backend/package.json ./backend/
 COPY packages/contracts/package.json ./packages/contracts/
 COPY packages/core/package.json ./packages/core/
 COPY packages/infrastructure/package.json ./packages/infrastructure/
@@ -58,7 +52,7 @@ COPY packages/operations/package.json ./packages/operations/
 COPY packages/ai-intelligence/package.json ./packages/ai-intelligence/
 COPY packages/foundation/package.json ./packages/foundation/
 COPY packages/server/package.json ./packages/server/
-RUN --mount=type=cache,target=/root/.npm npm ci -w backend -w @dashboard/contracts -w @dashboard/core -w @dashboard/infrastructure -w @dashboard/security -w @dashboard/observability -w @dashboard/operations -w @dashboard/ai -w @dashboard/foundation -w @dashboard/server --omit=dev
+RUN --mount=type=cache,target=/root/.npm npm ci -w @dashboard/contracts -w @dashboard/core -w @dashboard/infrastructure -w @dashboard/security -w @dashboard/observability -w @dashboard/operations -w @dashboard/ai -w @dashboard/foundation -w @dashboard/server --omit=dev
 
 # Utility stage — install runtime tools and prepare filesystem
 FROM dhi.io/node:24-alpine3.23-dev AS tools
@@ -84,15 +78,16 @@ COPY --from=tools /usr/lib/libssl* /usr/lib/
 COPY --from=tools --chown=node:node /opt/app/data /app/data
 
 WORKDIR /app
-# Use @dashboard/server package.json as the root — if backend/package.json were used here,
-# Node ESM would treat /app/ as the "backend" package and self-referencing imports like
-# `import 'backend/routes/health.js'` from dist/app.js would resolve to /app/dist/routes/health.js
-# (via the exports map) instead of /app/node_modules/backend/dist/routes/health.js.
+# Ship @dashboard/server's package.json as the image-root package.json. The runtime
+# entry point is its dist/index.js (see CMD), and its "type": "module" + "main" anchor
+# Node's ESM resolution for the whole app module graph. readProductVersion() reads the
+# product version baked into dist/product-version above (not from this package.json).
 COPY --chown=node:node --from=builder /app/packages/server/package.json ./
-# Copy production node_modules (hoisted to root by npm workspaces)
+# Copy production node_modules. The prod-deps stage installs with --omit=dev (no jsdom /
+# eslint), so every production dependency — including undici, p-limit and redis, which the
+# root package.json pins so they hoist here instead of into per-workspace node_modules —
+# resolves to this single hoisted root tree. Nothing needs to be merged from a workspace.
 COPY --chown=node:node --from=prod-deps /app/node_modules ./node_modules
-# Merge any backend-workspace-local packages not hoisted to root (e.g. fastify-type-provider-zod)
-COPY --chown=node:node --from=prod-deps /app/backend/node_modules ./node_modules
 # Copy built workspace packages so backend can resolve them at runtime
 COPY --chown=node:node --from=builder /app/packages/contracts/dist/ ./node_modules/@dashboard/contracts/dist/
 COPY --chown=node:node --from=builder /app/packages/contracts/package.json ./node_modules/@dashboard/contracts/package.json

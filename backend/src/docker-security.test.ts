@@ -452,3 +452,53 @@ describe('docker/docker-compose.yml resource limits (#1550)', () => {
     });
   }
 });
+
+describe('backend test workspace is not shipped to production (#1534)', () => {
+  const dockerfile = readFile('backend/Dockerfile');
+  const rootPkg = JSON.parse(readFile('package.json')) as {
+    dependencies?: Record<string, string>;
+    workspaces?: string[];
+  };
+  const backendPkg = JSON.parse(readFile('backend/package.json')) as {
+    scripts?: Record<string, string>;
+    dependencies?: Record<string, string>;
+  };
+
+  it('production Dockerfile does not compile the tests-only backend workspace', () => {
+    // backend/src contains only tests + test utilities; compiling it into the
+    // image is wasted build time and its dist is never copied to the runtime.
+    expect(dockerfile).not.toMatch(/COPY\s+backend\/src/);
+    expect(dockerfile).not.toMatch(/npm run build -w backend\b/);
+    expect(dockerfile).not.toMatch(/COPY\s+backend\/tsconfig/);
+  });
+
+  it('production Dockerfile does not install the backend workspace or merge its node_modules', () => {
+    // -w backend would pull backend's dependency ranges into the image, and the
+    // node_modules merge used to be the only way undici/p-limit/redis reached the
+    // runtime. Both are gone; every prod dep now hoists to the root node_modules.
+    expect(dockerfile).not.toMatch(/npm ci[^\n]*-w backend\b/);
+    expect(dockerfile).not.toMatch(/COPY\s+backend\/package\.json/);
+    expect(dockerfile).not.toMatch(/backend\/node_modules/);
+  });
+
+  it('root package.json pins undici/p-limit/redis so the prod image ships them', () => {
+    // These three do not hoist to the root node_modules the image copies unless the
+    // root declares them (jsdom/eslint occupy the root slot otherwise). Removing any
+    // silently drops it from the runtime image. See docs/ai-instructions/architecture.md.
+    for (const dep of ['undici', 'p-limit', 'redis']) {
+      expect(rootPkg.dependencies?.[dep]).toBeTruthy();
+    }
+  });
+
+  it('backend stays a workspace whose tests run in CI, with no dead start script', () => {
+    expect(rootPkg.workspaces).toContain('backend');
+    expect(backendPkg.scripts?.test).toBeTruthy();
+    // `start: node dist/index.js` was dead — no src/index.ts exists — and must not return.
+    expect(backendPkg.scripts?.start).toBeUndefined();
+    // backend ships nothing, so it must not re-declare runtime libs as prod deps —
+    // only the @dashboard/* workspace packages it exercises.
+    for (const dep of Object.keys(backendPkg.dependencies ?? {})) {
+      expect(dep.startsWith('@dashboard/')).toBe(true);
+    }
+  });
+});
