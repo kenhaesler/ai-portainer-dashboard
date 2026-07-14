@@ -46,6 +46,42 @@ const AnomalyFeedbackRatesQuerySchema = z.object({
   scope: z.enum(['mine', 'fleet']).optional(),
 });
 
+// Raw `SELECT * FROM insights` rows: is_acknowledged is BOOLEAN, and
+// metric_type/detection_method/dimensions come back present-as-null, so
+// InsightSchema (a produced-shape contract) would 500 the serializer.
+// Passthrough keeps every column byte-identical and 500-safe; the anchor
+// fields below are the ones present on every row (and the test fixtures).
+const InsightRowSchema = z.object({
+  id: z.string(),
+  severity: z.string(),
+  created_at: z.string(),
+}).passthrough();
+
+const InsightsListResponseSchema = z.object({
+  insights: z.array(InsightRowSchema),
+  total: z.number(),
+  visibleTotal: z.number(),
+  sensitivity: z.string(),
+  limit: z.number(),
+  offset: z.number(),
+  nextCursor: z.string().nullable(),
+  hasMore: z.boolean(),
+});
+
+const ContainerInsightsResponseSchema = z.object({
+  explanations: z.array(z.object({
+    id: z.string(),
+    severity: z.string(),
+    category: z.string(),
+    title: z.string(),
+    description: z.string(),
+    aiExplanation: z.string().nullable(),
+    suggestedAction: z.string().nullable(),
+    timestamp: z.string(),
+  })),
+  sensitivity: z.string(),
+});
+
 interface RateRow {
   detector: string;
   anomalies: number;
@@ -79,6 +115,7 @@ export async function monitoringRoutes(fastify: FastifyInstance, opts: Monitorin
       summary: 'Get monitoring insights',
       security: [{ bearerAuth: [] }],
       querystring: InsightsQuerySchema,
+      response: { 200: InsightsListResponseSchema },
     },
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {
@@ -188,7 +225,7 @@ export async function monitoringRoutes(fastify: FastifyInstance, opts: Monitorin
       };
     } catch (err) {
       log.error({ err }, 'Failed to query insights');
-      return reply.code(500).send({ error: 'Failed to query insights', details: errorDetails(err) });
+      return (reply as any).code(500).send({ error: 'Failed to query insights', details: errorDetails(err) });
     }
   });
 
@@ -197,6 +234,7 @@ export async function monitoringRoutes(fastify: FastifyInstance, opts: Monitorin
       tags: ['Monitoring'],
       summary: 'Get anomaly explanations for a specific container',
       security: [{ bearerAuth: [] }],
+      response: { 200: ContainerInsightsResponseSchema },
     },
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {
@@ -281,7 +319,7 @@ export async function monitoringRoutes(fastify: FastifyInstance, opts: Monitorin
       return { explanations, sensitivity: preset };
     } catch (err) {
       log.error({ err, containerId }, 'Failed to query container insights');
-      return reply.code(500).send({ error: 'Failed to query container insights', details: errorDetails(err) });
+      return (reply as any).code(500).send({ error: 'Failed to query container insights', details: errorDetails(err) });
     }
   });
 
