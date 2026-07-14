@@ -230,10 +230,10 @@ describe('containers routes', () => {
     vi.spyOn(portainerClient, 'getContainers').mockResolvedValue([fakeContainer('abc123', 'web')] as any);
 
     const app = buildApp();
-    const res = await app.inject({ method: 'GET', url: '/api/containers', headers: { authorization: 'Bearer t' } });
+    const res = await app.inject({ method: 'GET', url: '/api/containers' });
 
     expect(res.statusCode).toBe(200);
-    const body = res.json();
+    const body = JSON.parse(res.body);
     const list = Array.isArray(body) ? body : body.data;
     expect(list[0].networkIPs).toEqual({ bridge: '172.17.0.2' });
   });
