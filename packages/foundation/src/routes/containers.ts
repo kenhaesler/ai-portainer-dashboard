@@ -3,7 +3,7 @@ import { FastifyInstance } from 'fastify';
 import * as portainer from '@dashboard/core/portainer/portainer-client.js';
 import { cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
 import { normalizeContainer, normalizeEndpoint } from '@dashboard/core/portainer/portainer-normalizers.js';
-import { ContainerParamsSchema } from '@dashboard/core/models/api-schemas.js';
+import { ContainerParamsSchema, ErrorWithDetailsSchema } from '@dashboard/core/models/api-schemas.js';
 import { isDockerEndpoint } from '@dashboard/core/models/portainer.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { errorDetails } from '@dashboard/core/plugins/error-handler.js';
@@ -105,7 +105,7 @@ export async function containersRoutes(fastify: FastifyInstance) {
       summary: 'List containers across all endpoints',
       security: [{ bearerAuth: [] }],
       querystring: ContainerListQuerySchema,
-      response: { 200: ContainerListResponseSchema },
+      response: { 200: ContainerListResponseSchema, 502: ErrorWithDetailsSchema },
     },
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {
@@ -116,7 +116,7 @@ export async function containersRoutes(fastify: FastifyInstance) {
       fetched = await fetchAllContainers(endpointId);
     } catch (err) {
       log.error({ err }, 'Failed to fetch endpoints from Portainer');
-      return (reply as any).code(502).send({
+      return reply.code(502).send({
         error: 'Unable to connect to Portainer',
         details: errorDetails(err),
       });
@@ -128,7 +128,7 @@ export async function containersRoutes(fastify: FastifyInstance) {
     const partial = errors.length > 0;
 
     if (upEndpoints.length > 0 && allContainers.length === 0 && errors.length > 0) {
-      return (reply as any).code(502).send({
+      return reply.code(502).send({
         error: 'Failed to fetch containers from Portainer',
         details: errorDetails(errors),
       });
@@ -175,7 +175,7 @@ export async function containersRoutes(fastify: FastifyInstance) {
       tags: ['Containers'],
       summary: 'Get container counts by state',
       security: [{ bearerAuth: [] }],
-      response: { 200: ContainerCountResponseSchema },
+      response: { 200: ContainerCountResponseSchema, 502: ErrorWithDetailsSchema },
     },
     preHandler: [fastify.authenticate],
   }, async (_request, reply) => {
@@ -188,7 +188,7 @@ export async function containersRoutes(fastify: FastifyInstance) {
       return { total: results.length, byState };
     } catch (err) {
       log.error({ err }, 'Failed to fetch container counts');
-      return (reply as any).code(502).send({ error: 'Unable to fetch container counts', details: errorDetails(err) });
+      return reply.code(502).send({ error: 'Unable to fetch container counts', details: errorDetails(err) });
     }
   });
 
@@ -199,7 +199,7 @@ export async function containersRoutes(fastify: FastifyInstance) {
       summary: 'Get specific containers by endpoint:container ID pairs',
       security: [{ bearerAuth: [] }],
       querystring: FavoritesQuerySchema,
-      response: { 200: ContainerListItemsSchema },
+      response: { 200: ContainerListItemsSchema, 502: ErrorWithDetailsSchema },
     },
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {
@@ -258,7 +258,7 @@ export async function containersRoutes(fastify: FastifyInstance) {
         .flatMap((r) => r.value);
     } catch (err) {
       log.error({ err }, 'Failed to fetch favorite containers');
-      return (reply as any).code(502).send({ error: 'Unable to fetch containers', details: errorDetails(err) });
+      return reply.code(502).send({ error: 'Unable to fetch containers', details: errorDetails(err) });
     }
   });
 

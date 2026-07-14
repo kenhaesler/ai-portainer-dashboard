@@ -18,6 +18,9 @@ describe('NormalizedContainerSchema ⇄ normalizeContainer drift guard', () => {
     const parsed = NormalizedContainerSchema.parse(normalized);
     // If the schema omits a field the normalizer emits, parse() strips it and
     // the key sets diverge — catching the exact class of drift as networkIPs.
+    // Scope: top-level keys only. Drift nested inside `ports[]`/`ContainerPortSchema`
+    // is NOT covered here (those fields are all-optional today, so nothing to strip);
+    // extend this if the port shape ever gains required fields.
     expect(Object.keys(parsed).sort()).toEqual(Object.keys(normalized).sort());
     expect(parsed.networkIPs).toEqual({ bridge: '172.17.0.2' });
   });

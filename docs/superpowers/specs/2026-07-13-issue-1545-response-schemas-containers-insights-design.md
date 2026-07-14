@@ -12,7 +12,7 @@
 - **`GET /api/containers`** — the only ready-made `NormalizedContainerSchema` is stale (omits `networkIPs`, which the frontend reads in 3 components), and the route is a 3-way polymorphic union.
 - **`GET /api/monitoring/insights`** — returns raw `SELECT * FROM insights` rows whose real column types diverge from `InsightSchema` (see audit below).
 
-This batch does those audits and lands **non-breaking, permissive** schemas — locking each envelope and speeding serialization **without changing any wire value**. (Scope decision confirmed with the maintainer: permissive unions, keep the frontend shape-sniffer, do not retire the polymorphic form.)
+This batch does those audits and lands **non-breaking, permissive** schemas — locking each envelope and (on the strict container schemas) pruning unknown fields, **without changing any wire value**. Note: `fastify-type-provider-zod`'s serializer `safeParse`s then `JSON.stringify`s the payload (no fast-json-stringify), so a response schema adds a small parse cost rather than *speeding* serialization — the real gains are contract enforcement / drift detection, unknown-field pruning, and accurate OpenAPI. (Scope decision confirmed with the maintainer: permissive unions, keep the frontend shape-sniffer, do not retire the polymorphic form.)
 
 ## Audit findings (the reason these were deferred)
 
@@ -48,7 +48,7 @@ The live interface (`packages/core/src/portainer/portainer-normalizers.ts:45`) h
 Returns **raw Portainer/Docker inspect JSON** (`containers.ts:251`). A strict schema is infeasible and would 500; a passthrough `z.unknown()` prunes nothing and contracts nothing (pure noise). It also has a **pre-existing** concern — raw inspect leaks filesystem paths (`Mounts[].Source`, `LogPath`, `HostConfig.Binds`), which the "strip sensitive metadata" rule wants normalized away — but that is a **behavior change**, out of this non-breaking scope. **File a separate follow-up issue** for a normalize+strip pass; do not bolt a no-op schema on here.
 
 ### Why passthrough for insights rows (not a strict per-field schema)
-The issue's primary value is "lock the envelope + speed serialization." Insights rows are our own internal data (no filesystem-path leak risk that per-field pruning defends against). A `.loose()` row schema validates the stable anchor fields, **keeps every field byte-identical on the wire**, and is 500-safe against the `is_acknowledged`/present-null divergences above and any future column. Containers use exact (non-loose) schemas because `normalizeContainer` output is fully controlled by us.
+The issue's real value is locking the envelope + catching contract drift (not serialization speed — see the note above). Insights rows are our own internal data (no filesystem-path leak risk that per-field pruning defends against). A `.loose()` row schema validates the stable anchor fields, **keeps every field byte-identical on the wire**, and is 500-safe against the `is_acknowledged`/present-null divergences above and any future column. Containers use exact (non-loose) schemas because `normalizeContainer` output is fully controlled by us.
 
 ## Established pattern to copy
 - Response block + error cast: `monitoring.ts:288-311` and `settings.ts` — `return (reply as any).code(5xx).send({ error, details: errorDetails(err) })` (the zod type-provider narrows `reply` to the 200 shape). Where an error status is already declared in the response map (e.g. `dashboard.ts:223`), prefer that.

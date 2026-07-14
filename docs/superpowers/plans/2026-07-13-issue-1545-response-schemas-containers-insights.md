@@ -4,7 +4,7 @@
 
 **Goal:** Add non-breaking Fastify `response:` schemas to `GET /api/containers` (+ `/count`, `/favorites`) and `GET /api/monitoring/insights` (+ container variant), fixing the `NormalizedContainerSchema` `networkIPs` drift that blocked them.
 
-**Architecture:** Attach permissive Zod response schemas that lock each envelope and speed serialization **without changing any wire value**. Containers reuse the (repaired) `NormalizedContainerSchema`; the polymorphic list route gets an ordered 3-shape union. Insights rows use a `.passthrough()` schema (rows are internal `SELECT *` data with type divergences that would otherwise 500 the serializer); the insights envelope and the container-insights route get exact schemas.
+**Architecture:** Attach permissive Zod response schemas that lock each envelope and (on strict schemas) prune unknown fields, catching contract drift at the boundary **without changing any wire value**. Note: `fastify-type-provider-zod` `safeParse`s then `JSON.stringify`s (no fast-json-stringify), so this adds a small parse cost rather than speeding serialization. Containers reuse the (repaired) `NormalizedContainerSchema`; the polymorphic list route gets an ordered 3-shape union. Insights rows use a `.passthrough()` schema (rows are internal `SELECT *` data with type divergences that would otherwise 500 the serializer); the insights envelope and the container-insights route get exact schemas.
 
 **Tech Stack:** Fastify 5, `fastify-type-provider-zod` (serializerCompiler wired globally via `swagger.ts`), Zod v4.3.6 (`zod/v4`, `.passthrough()` convention), Vitest, real PostgreSQL for DB-backed tests.
 
