@@ -7,6 +7,7 @@ import { ContainerParamsSchema } from '@dashboard/core/models/api-schemas.js';
 import { isDockerEndpoint } from '@dashboard/core/models/portainer.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { errorDetails } from '@dashboard/core/plugins/error-handler.js';
+import { NormalizedContainerSchema } from '@dashboard/contracts';
 
 const log = createChildLogger('route:containers');
 
@@ -21,6 +22,36 @@ const ContainerListQuerySchema = z.object({
 const FavoritesQuerySchema = z.object({
   ids: z.string(), // comma-separated "endpointId:containerId" pairs
 });
+
+// Ordered union: [bare array, paginated, partial]. `total` is REQUIRED on the
+// paginated member so a paginated-with-partial payload (which also carries
+// partial/failedEndpoints) cannot false-match the partial member and lose its
+// total/page/pageSize to object-stripping. The partial member requires
+// partial+failedEndpoints and has no `total`, so it only matches the
+// no-pagination partial-failure shape.
+const ContainerListResponseSchema = z.union([
+  z.array(NormalizedContainerSchema),
+  z.object({
+    data: z.array(NormalizedContainerSchema),
+    total: z.number(),
+    page: z.number(),
+    pageSize: z.number(),
+    partial: z.boolean().optional(),
+    failedEndpoints: z.array(z.string()).optional(),
+  }),
+  z.object({
+    data: z.array(NormalizedContainerSchema),
+    partial: z.boolean(),
+    failedEndpoints: z.array(z.string()),
+  }),
+]);
+
+const ContainerCountResponseSchema = z.object({
+  total: z.number(),
+  byState: z.record(z.string(), z.number()),
+});
+
+const ContainerListItemsSchema = z.array(NormalizedContainerSchema);
 
 /** Fetch all normalized containers across endpoints */
 async function fetchAllContainers(endpointIdFilter?: number) {
@@ -74,6 +105,7 @@ export async function containersRoutes(fastify: FastifyInstance) {
       summary: 'List containers across all endpoints',
       security: [{ bearerAuth: [] }],
       querystring: ContainerListQuerySchema,
+      response: { 200: ContainerListResponseSchema },
     },
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {
@@ -84,7 +116,7 @@ export async function containersRoutes(fastify: FastifyInstance) {
       fetched = await fetchAllContainers(endpointId);
     } catch (err) {
       log.error({ err }, 'Failed to fetch endpoints from Portainer');
-      return reply.code(502).send({
+      return (reply as any).code(502).send({
         error: 'Unable to connect to Portainer',
         details: errorDetails(err),
       });
@@ -96,7 +128,7 @@ export async function containersRoutes(fastify: FastifyInstance) {
     const partial = errors.length > 0;
 
     if (upEndpoints.length > 0 && allContainers.length === 0 && errors.length > 0) {
-      return reply.code(502).send({
+      return (reply as any).code(502).send({
         error: 'Failed to fetch containers from Portainer',
         details: errorDetails(errors),
       });
@@ -143,6 +175,7 @@ export async function containersRoutes(fastify: FastifyInstance) {
       tags: ['Containers'],
       summary: 'Get container counts by state',
       security: [{ bearerAuth: [] }],
+      response: { 200: ContainerCountResponseSchema },
     },
     preHandler: [fastify.authenticate],
   }, async (_request, reply) => {
@@ -155,7 +188,7 @@ export async function containersRoutes(fastify: FastifyInstance) {
       return { total: results.length, byState };
     } catch (err) {
       log.error({ err }, 'Failed to fetch container counts');
-      return reply.code(502).send({ error: 'Unable to fetch container counts', details: errorDetails(err) });
+      return (reply as any).code(502).send({ error: 'Unable to fetch container counts', details: errorDetails(err) });
     }
   });
 
@@ -166,6 +199,7 @@ export async function containersRoutes(fastify: FastifyInstance) {
       summary: 'Get specific containers by endpoint:container ID pairs',
       security: [{ bearerAuth: [] }],
       querystring: FavoritesQuerySchema,
+      response: { 200: ContainerListItemsSchema },
     },
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {
@@ -224,7 +258,7 @@ export async function containersRoutes(fastify: FastifyInstance) {
         .flatMap((r) => r.value);
     } catch (err) {
       log.error({ err }, 'Failed to fetch favorite containers');
-      return reply.code(502).send({ error: 'Unable to fetch containers', details: errorDetails(err) });
+      return (reply as any).code(502).send({ error: 'Unable to fetch containers', details: errorDetails(err) });
     }
   });
 

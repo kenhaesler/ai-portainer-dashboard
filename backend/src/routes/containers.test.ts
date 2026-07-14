@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
 import Fastify from 'fastify';
-import { validatorCompiler } from 'fastify-type-provider-zod';
+import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
 import { containersRoutes } from '@dashboard/foundation/routes/index.js';
 // Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
 vi.mock('@dashboard/core/portainer/portainer-client.js', async (importOriginal) => await importOriginal());
@@ -26,6 +26,7 @@ afterAll(async () => {
 function buildApp() {
   const app = Fastify();
   app.setValidatorCompiler(validatorCompiler);
+  app.setSerializerCompiler(serializerCompiler);
   app.decorate('authenticate', async () => undefined);
   app.register(containersRoutes);
   return app;
@@ -48,7 +49,7 @@ const fakeContainer = (id: string, name: string, state = 'running') => ({
   Created: 1700000000,
   Ports: [],
   Labels: {},
-  NetworkSettings: { Networks: {} },
+  NetworkSettings: { Networks: { bridge: { IPAddress: '172.17.0.2' } } },
 });
 
 describe('containers routes', () => {
@@ -221,6 +222,20 @@ describe('containers routes', () => {
     const body = JSON.parse(res.body);
     expect(body.error).toBe('Unable to fetch container details from Portainer');
     expect(body.details).toContain('Container not found');
+  });
+
+  it('serializes networkIPs through the response schema', async () => {
+    // Kept: vi.spyOn for controlled endpoint + container fixtures
+    vi.spyOn(portainerClient, 'getEndpoints').mockResolvedValue([fakeEndpoint(1, 'prod')] as any);
+    vi.spyOn(portainerClient, 'getContainers').mockResolvedValue([fakeContainer('abc123', 'web')] as any);
+
+    const app = buildApp();
+    const res = await app.inject({ method: 'GET', url: '/api/containers', headers: { authorization: 'Bearer t' } });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    const list = Array.isArray(body) ? body : body.data;
+    expect(list[0].networkIPs).toEqual({ bridge: '172.17.0.2' });
   });
 
   it('should cache container detail responses via cachedFetchSWR (#728)', async () => {
