@@ -284,3 +284,72 @@ describe('GET /api/monitoring/insights — per-user Sensitivity post-filter', ()
     expect(body.insights[0].id).toBe('p1');
   });
 });
+
+describe('GET /api/monitoring/insights — response-schema serialization (#1545)', () => {
+  // The list route carries a Fastify `response: { 200: InsightsListResponseSchema }`
+  // whose row member is `.passthrough()`. The zod serializer VALIDATES the payload,
+  // so a schema mismatched against the real `SELECT *` row would surface as a 500 or
+  // silently drop a column. This test drives real Postgres rows through the serializer
+  // to lock the passthrough decision: `is_acknowledged` is BOOLEAN (not the number
+  // `InsightSchema` declares), and `metric_type`/`detection_method`/`dimensions` come
+  // back present-as-NULL — the exact divergences that ruled `InsightSchema` out here.
+  it('passes raw SELECT * columns (boolean/JSONB/present-null) through without 500 or field loss', async () => {
+    // Row 1: every structured column populated, is_acknowledged = true, JSONB dimensions.
+    await testDb.execute(
+      `INSERT INTO insights (
+        id, endpoint_id, endpoint_name, container_id, container_name,
+        severity, category, title, description, suggested_action,
+        is_acknowledged, created_at, metric_type, detection_method, z_score, dimensions
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, true, NOW(), ?, ?, ?, ?::jsonb)`,
+      [
+        'schema-1', 1, 'local', 'c1', 'web', 'critical', 'anomaly',
+        'correlated anomaly', 'p95 latency + error rate spike (z-score: 4.20)', 'investigate',
+        'latency_p95', 'ml-anomaly', 4.2,
+        JSON.stringify([
+          { type: 'latency_p95', value: 900, baseline: 200, zScore: 4.2, severity: 'critical' },
+          { type: 'error_rate', value: 8, baseline: 1, zScore: 3.1, severity: 'warning' },
+        ]),
+      ],
+    );
+    // Row 2: nullable structured columns left NULL (present-as-null on SELECT *),
+    // is_acknowledged = false. No z-score, category predictive → passes the filter.
+    await testDb.execute(
+      `INSERT INTO insights (
+        id, endpoint_id, endpoint_name, container_id, container_name,
+        severity, category, title, description, suggested_action, is_acknowledged, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, false, NOW())`,
+      ['schema-2', 1, 'local', 'c2', 'db', 'info', 'predictive', 'forecast', 'memory trend', null],
+    );
+
+    userId = 'u-alice';
+    const res = await app.inject({ method: 'GET', url: '/api/monitoring/insights' });
+
+    // The load-bearing assertion: real rows serialize through the strict envelope +
+    // passthrough rows without the zod serializer throwing (which would be a 500).
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+
+    const byId = Object.fromEntries(body.insights.map((i: { id: string }) => [i.id, i]));
+    expect(byId['schema-1']).toBeDefined();
+    expect(byId['schema-2']).toBeDefined();
+
+    // BOOLEAN is_acknowledged preserved as a boolean (not coerced, not dropped).
+    expect(byId['schema-1'].is_acknowledged).toBe(true);
+    expect(byId['schema-2'].is_acknowledged).toBe(false);
+    // JSONB dimensions preserved intact through .passthrough().
+    expect(byId['schema-1'].dimensions).toHaveLength(2);
+    expect(byId['schema-1'].dimensions[0].type).toBe('latency_p95');
+    // Present structured columns preserved.
+    expect(byId['schema-1'].metric_type).toBe('latency_p95');
+    expect(byId['schema-1'].detection_method).toBe('ml-anomaly');
+    // Present-as-NULL columns survive as null (not dropped, not a parse failure).
+    expect(byId['schema-2'].metric_type).toBeNull();
+    expect(byId['schema-2'].dimensions).toBeNull();
+
+    // Strict envelope shape is locked.
+    expect(typeof body.total).toBe('number');
+    expect(typeof body.visibleTotal).toBe('number');
+    expect(body).toHaveProperty('nextCursor');
+    expect(typeof body.hasMore).toBe('boolean');
+  });
+});

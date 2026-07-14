@@ -18,6 +18,7 @@ export const NormalizedContainerSchema = z.object({
   created: z.number(),
   labels: z.record(z.string(), z.string()),
   networks: z.array(z.string()),
+  networkIPs: z.record(z.string(), z.string()),
   healthStatus: z.string().optional(),
 });
 

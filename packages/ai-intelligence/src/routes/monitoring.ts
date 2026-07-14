@@ -4,7 +4,7 @@ import '@fastify/swagger';
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod/v4';
 import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
-import { InsightsQuerySchema, InsightIdParamsSchema, SuccessResponseSchema } from '@dashboard/core/models/api-schemas.js';
+import { InsightsQuerySchema, InsightIdParamsSchema, SuccessResponseSchema, ErrorWithDetailsSchema } from '@dashboard/core/models/api-schemas.js';
 import { ANOMALY_DETECTORS } from '@dashboard/core/models/monitoring.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { errorDetails } from '@dashboard/core/plugins/error-handler.js';
@@ -46,6 +46,46 @@ const AnomalyFeedbackRatesQuerySchema = z.object({
   scope: z.enum(['mine', 'fleet']).optional(),
 });
 
+// Raw `SELECT * FROM insights` rows: is_acknowledged is BOOLEAN, and
+// metric_type/detection_method/dimensions come back present-as-null, so
+// InsightSchema (a produced-shape contract) would 500 the serializer.
+// Passthrough keeps every column byte-identical and 500-safe; the anchor
+// fields below are the ones present on every row (and the test fixtures).
+// Trade-off: unlike the strict container schemas, passthrough performs NO
+// field pruning — a future migration adding a sensitive column to `insights`
+// would be surfaced here. Acceptable today (insights are internal, non-PII);
+// revisit if per-user or otherwise sensitive columns ever land on the table.
+const InsightRowSchema = z.object({
+  id: z.string(),
+  severity: z.string(),
+  created_at: z.string(),
+}).passthrough();
+
+const InsightsListResponseSchema = z.object({
+  insights: z.array(InsightRowSchema),
+  total: z.number(),
+  visibleTotal: z.number(),
+  sensitivity: z.string(),
+  limit: z.number(),
+  offset: z.number(),
+  nextCursor: z.string().nullable(),
+  hasMore: z.boolean(),
+});
+
+const ContainerInsightsResponseSchema = z.object({
+  explanations: z.array(z.object({
+    id: z.string(),
+    severity: z.string(),
+    category: z.string(),
+    title: z.string(),
+    description: z.string(),
+    aiExplanation: z.string().nullable(),
+    suggestedAction: z.string().nullable(),
+    timestamp: z.string(),
+  })),
+  sensitivity: z.string(),
+});
+
 interface RateRow {
   detector: string;
   anomalies: number;
@@ -79,6 +119,7 @@ export async function monitoringRoutes(fastify: FastifyInstance, opts: Monitorin
       summary: 'Get monitoring insights',
       security: [{ bearerAuth: [] }],
       querystring: InsightsQuerySchema,
+      response: { 200: InsightsListResponseSchema, 500: ErrorWithDetailsSchema },
     },
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {
@@ -197,6 +238,7 @@ export async function monitoringRoutes(fastify: FastifyInstance, opts: Monitorin
       tags: ['Monitoring'],
       summary: 'Get anomaly explanations for a specific container',
       security: [{ bearerAuth: [] }],
+      response: { 200: ContainerInsightsResponseSchema, 500: ErrorWithDetailsSchema },
     },
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {

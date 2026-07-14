@@ -3,10 +3,11 @@ import { FastifyInstance } from 'fastify';
 import * as portainer from '@dashboard/core/portainer/portainer-client.js';
 import { cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
 import { normalizeContainer, normalizeEndpoint } from '@dashboard/core/portainer/portainer-normalizers.js';
-import { ContainerParamsSchema } from '@dashboard/core/models/api-schemas.js';
+import { ContainerParamsSchema, ErrorWithDetailsSchema } from '@dashboard/core/models/api-schemas.js';
 import { isDockerEndpoint } from '@dashboard/core/models/portainer.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { errorDetails } from '@dashboard/core/plugins/error-handler.js';
+import { NormalizedContainerSchema } from '@dashboard/contracts';
 
 const log = createChildLogger('route:containers');
 
@@ -21,6 +22,36 @@ const ContainerListQuerySchema = z.object({
 const FavoritesQuerySchema = z.object({
   ids: z.string(), // comma-separated "endpointId:containerId" pairs
 });
+
+// Ordered union: [bare array, paginated, partial]. `total` is REQUIRED on the
+// paginated member so a paginated-with-partial payload (which also carries
+// partial/failedEndpoints) cannot false-match the partial member and lose its
+// total/page/pageSize to object-stripping. The partial member requires
+// partial+failedEndpoints and has no `total`, so it only matches the
+// no-pagination partial-failure shape.
+const ContainerListResponseSchema = z.union([
+  z.array(NormalizedContainerSchema),
+  z.object({
+    data: z.array(NormalizedContainerSchema),
+    total: z.number(),
+    page: z.number(),
+    pageSize: z.number(),
+    partial: z.boolean().optional(),
+    failedEndpoints: z.array(z.string()).optional(),
+  }),
+  z.object({
+    data: z.array(NormalizedContainerSchema),
+    partial: z.boolean(),
+    failedEndpoints: z.array(z.string()),
+  }),
+]);
+
+const ContainerCountResponseSchema = z.object({
+  total: z.number(),
+  byState: z.record(z.string(), z.number()),
+});
+
+const ContainerListItemsSchema = z.array(NormalizedContainerSchema);
 
 /** Fetch all normalized containers across endpoints */
 async function fetchAllContainers(endpointIdFilter?: number) {
@@ -74,6 +105,7 @@ export async function containersRoutes(fastify: FastifyInstance) {
       summary: 'List containers across all endpoints',
       security: [{ bearerAuth: [] }],
       querystring: ContainerListQuerySchema,
+      response: { 200: ContainerListResponseSchema, 502: ErrorWithDetailsSchema },
     },
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {
@@ -143,6 +175,7 @@ export async function containersRoutes(fastify: FastifyInstance) {
       tags: ['Containers'],
       summary: 'Get container counts by state',
       security: [{ bearerAuth: [] }],
+      response: { 200: ContainerCountResponseSchema, 502: ErrorWithDetailsSchema },
     },
     preHandler: [fastify.authenticate],
   }, async (_request, reply) => {
@@ -166,6 +199,7 @@ export async function containersRoutes(fastify: FastifyInstance) {
       summary: 'Get specific containers by endpoint:container ID pairs',
       security: [{ bearerAuth: [] }],
       querystring: FavoritesQuerySchema,
+      response: { 200: ContainerListItemsSchema, 502: ErrorWithDetailsSchema },
     },
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {

@@ -78,6 +78,9 @@ describe('monitoring insights cursor pagination', () => {
     expect(body.hasMore).toBe(true);
     expect(body.nextCursor).toBe('2025-01-02T00:00:00Z|i2');
     expect(body.total).toBe(5);
+    expect(body.visibleTotal).toBe(2);
+    expect(body.sensitivity).toBe('default');
+    expect(typeof body.hasMore).toBe('boolean');
   });
 
   it('returns hasMore=false when fewer results than limit', async () => {
