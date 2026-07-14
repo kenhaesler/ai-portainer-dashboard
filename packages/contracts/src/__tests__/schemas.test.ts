@@ -139,15 +139,22 @@ describe('NormalizedContainerSchema', () => {
     const raw = { id: 'c1', name: 'nginx', image: 'nginx:latest', state: 'running',
       status: 'Up 2 hours', endpointId: 1, endpointName: 'local',
       ports: [{ private: 80, public: 8080, type: 'tcp' }],
-      created: 1700000000, labels: { app: 'web' }, networks: ['bridge'] };
+      created: 1700000000, labels: { app: 'web' }, networks: ['bridge'], networkIPs: {} };
     expect(NormalizedContainerSchema.parse(raw).name).toBe('nginx');
   });
 
   it('accepts optional healthStatus', () => {
     const raw = { id: 'c1', name: 'nginx', image: 'nginx:latest', state: 'running',
       status: 'Up', endpointId: 1, endpointName: 'local', ports: [], created: 1700000000,
-      labels: {}, networks: [], healthStatus: 'healthy' };
+      labels: {}, networks: [], networkIPs: {}, healthStatus: 'healthy' };
     expect(NormalizedContainerSchema.parse(raw).healthStatus).toBe('healthy');
+  });
+
+  it('preserves networkIPs (drift guard for the live normalizer field)', () => {
+    const raw = { id: 'c1', name: 'nginx', image: 'nginx:latest', state: 'running',
+      status: 'Up', endpointId: 1, endpointName: 'local', ports: [], created: 1700000000,
+      labels: {}, networks: ['bridge'], networkIPs: { bridge: '172.17.0.2' } };
+    expect(NormalizedContainerSchema.parse(raw).networkIPs).toEqual({ bridge: '172.17.0.2' });
   });
 });
 
