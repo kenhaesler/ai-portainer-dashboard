@@ -204,6 +204,26 @@ export const AnomaliesResponseSchema = z.object({
   })),
 });
 
+// GET /api/metrics/:endpointId/:containerId/meta — mirrors the route's own
+// return shape 1:1 (#1429). Both the happy path and every catch/degrade path
+// return exactly these three keys, so no `.passthrough()` is needed.
+export const ContainerMetricsMetaResponseSchema = z.object({
+  memoryLimitBytes: z.number().nullable(),
+  onlineCpus: z.number().nullable(),
+  usedBytes: z.number().nullable(),
+});
+
+// GET /api/metrics/network-rates and /api/metrics/network-rates/:endpointId —
+// shared shape for both the TimescaleDB-backed NetworkRate (metrics-store.ts)
+// and the in-memory fallback LiveNetworkRate (network-rate-tracker.ts), which
+// are structurally identical.
+export const NetworkRatesResponseSchema = z.object({
+  rates: z.record(z.string(), z.object({
+    rxBytesPerSec: z.number(),
+    txBytesPerSec: z.number(),
+  })),
+});
+
 // ─── Monitoring schemas ─────────────────────────────────────────────
 export const InsightsQuerySchema = z.object({
   severity: z.enum(['critical', 'warning', 'info']).optional(),

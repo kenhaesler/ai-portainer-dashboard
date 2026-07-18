@@ -5,7 +5,7 @@ import '@fastify/rate-limit';
 import { getConfig } from '@dashboard/core/config/index.js';
 import { errorDetails } from '@dashboard/core/plugins/error-handler.js';
 import { getMetricsDb } from '@dashboard/core/db/timescale.js';
-import { ContainerParamsSchema, MetricsQuerySchema, MetricsResponseSchema, AnomaliesQuerySchema, AnomaliesResponseSchema } from '@dashboard/core/models/api-schemas.js';
+import { ContainerParamsSchema, MetricsQuerySchema, MetricsResponseSchema, AnomaliesQuerySchema, AnomaliesResponseSchema, ContainerMetricsMetaResponseSchema, NetworkRatesResponseSchema } from '@dashboard/core/models/api-schemas.js';
 import { getNetworkRates, getAllNetworkRates, isUndefinedTableError } from '../services/metrics-store.js';
 import { getRatesForEndpoint, getAllRates } from '../services/network-rate-tracker.js';
 import { selectRollupTable } from '../services/metrics-rollup-selector.js';
@@ -147,6 +147,7 @@ export async function metricsRoutes(fastify: FastifyInstance, opts: { llm?: LLMI
       summary: 'Get per-container memory limit and online CPU count (label denominators)',
       security: [{ bearerAuth: [] }],
       params: ContainerParamsSchema,
+      response: { 200: ContainerMetricsMetaResponseSchema },
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {
@@ -221,6 +222,7 @@ export async function metricsRoutes(fastify: FastifyInstance, opts: { llm?: LLMI
       tags: ['Metrics'],
       summary: 'Get network I/O rates for all containers in an endpoint',
       security: [{ bearerAuth: [] }],
+      response: { 200: NetworkRatesResponseSchema },
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {
@@ -247,6 +249,7 @@ export async function metricsRoutes(fastify: FastifyInstance, opts: { llm?: LLMI
       tags: ['Metrics'],
       summary: 'Get network I/O rates for all containers across all endpoints',
       security: [{ bearerAuth: [] }],
+      response: { 200: NetworkRatesResponseSchema },
     },
     preHandler: [fastify.authenticate],
   }, async () => {
