@@ -6,7 +6,7 @@ import '@fastify/swagger';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { errorDetails } from '@dashboard/core/plugins/error-handler.js';
 import { writeAuditLog } from '@dashboard/core/services/audit-logger.js';
-import { SuccessResponseSchema } from '@dashboard/core/models/api-schemas.js';
+import { RouteErrorResponseSchema, SuccessResponseSchema } from '@dashboard/core/models/api-schemas.js';
 import * as harborClient from '../services/harbor-client.js';
 import { getEffectiveHarborConfig } from '@dashboard/core/services/settings-store.js';
 import * as vulnStore from '../services/harbor-vulnerability-store.js';
@@ -293,16 +293,20 @@ export async function harborVulnerabilityRoutes(fastify: FastifyInstance) {
       tags: ['Harbor'],
       summary: 'Trigger a full vulnerability sync from Harbor',
       security: [{ bearerAuth: [] }],
-      response: { 200: HarborSyncTriggeredResponseSchema },
+      response: {
+        200: HarborSyncTriggeredResponseSchema,
+        409: RouteErrorResponseSchema,
+        503: RouteErrorResponseSchema,
+      },
     },
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
     if (!await harborClient.isHarborConfiguredAsync()) {
-      return (reply as any).code(503).send({ error: 'Harbor is not configured' });
+      return reply.code(503).send({ error: 'Harbor is not configured' });
     }
 
     if (getIsSyncing()) {
-      return (reply as any).code(409).send({ error: 'Sync already in progress' });
+      return reply.code(409).send({ error: 'Sync already in progress' });
     }
 
     writeAuditLog({
@@ -397,7 +401,7 @@ export async function harborVulnerabilityRoutes(fastify: FastifyInstance) {
       params: z.object({
         id: z.coerce.number().int(),
       }),
-      response: { 200: SuccessResponseSchema },
+      response: { 200: SuccessResponseSchema, 404: RouteErrorResponseSchema },
     },
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
@@ -405,7 +409,7 @@ export async function harborVulnerabilityRoutes(fastify: FastifyInstance) {
     const success = await vulnStore.deactivateException(id);
 
     if (!success) {
-      return (reply as any).code(404).send({ error: 'Exception not found' });
+      return reply.code(404).send({ error: 'Exception not found' });
     }
 
     writeAuditLog({

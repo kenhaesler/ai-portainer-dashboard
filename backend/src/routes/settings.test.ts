@@ -121,6 +121,25 @@ describe('settings preference routes', () => {
     });
 
     expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({ error: 'Invalid landing page route' });
+    expect(mockSetUserDefaultLandingPage).not.toHaveBeenCalled();
+  });
+
+  it('preserves Fastify validation fields in the documented 400 response', async () => {
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/settings/preferences',
+      headers: { authorization: 'Bearer test' },
+      payload: {},
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual(expect.objectContaining({
+      statusCode: 400,
+      code: 'FST_ERR_VALIDATION',
+      error: 'Bad Request',
+      message: expect.stringContaining('defaultLandingPage'),
+    }));
     expect(mockSetUserDefaultLandingPage).not.toHaveBeenCalled();
   });
 });
@@ -551,7 +570,10 @@ describe('prompt version history routes (#415)', () => {
     });
 
     expect(response.statusCode).toBe(404);
-    expect(response.json().error).toMatch(/unknown feature/i);
+    expect(response.json()).toEqual({
+      error: 'Unknown feature',
+      code: 'unknown_feature',
+    });
   });
 
   it('returns empty versions list when no history exists', async () => {
@@ -629,6 +651,10 @@ describe('prompt version history routes (#415)', () => {
     });
 
     expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual({
+      error: 'Unknown feature',
+      code: 'unknown_feature',
+    });
   });
 
   it('POST rollback returns 404 when target version not found', async () => {

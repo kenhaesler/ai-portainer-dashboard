@@ -23,6 +23,7 @@ import {
   PromptHistoryResponseSchema,
   PromptRollbackResponseSchema,
   SuccessResponseSchema,
+  RouteErrorResponseSchema,
 } from '@dashboard/core/models/api-schemas.js';
 import { SettingSchema } from '@dashboard/core/models/settings.js';
 import { getUserDefaultLandingPage, setUserDefaultLandingPage } from '@dashboard/core/services/user-store.js';
@@ -129,18 +130,22 @@ export async function settingsRoutes(fastify: FastifyInstance) {
       summary: 'Update current user preferences',
       security: [{ bearerAuth: [] }],
       body: PreferencesUpdateBodySchema,
-      response: { 200: PreferencesResponseSchema },
+      response: {
+        200: PreferencesResponseSchema,
+        400: RouteErrorResponseSchema,
+        401: RouteErrorResponseSchema,
+      },
     },
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {
     const userId = request.user?.sub;
     if (!userId) {
-      return (reply as any).code(401).send({ error: 'Not authenticated' });
+      return reply.code(401).send({ error: 'Not authenticated' });
     }
 
     const { defaultLandingPage } = request.body as { defaultLandingPage: string };
     if (!LANDING_PAGE_OPTIONS.has(defaultLandingPage)) {
-      return (reply as any).code(400).send({ error: 'Invalid landing page route' });
+      return reply.code(400).send({ error: 'Invalid landing page route' });
     }
 
     await setUserDefaultLandingPage(userId, defaultLandingPage);
@@ -175,7 +180,7 @@ export async function settingsRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
       params: SettingKeyParamsSchema,
       body: SettingUpdateBodySchema,
-      response: { 200: SettingPutResponseSchema },
+      response: { 200: SettingPutResponseSchema, 400: RouteErrorResponseSchema },
     },
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
@@ -185,7 +190,7 @@ export async function settingsRoutes(fastify: FastifyInstance) {
     const validationError = validateSecurityCriticalUrl(key, value);
 
     if (validationError) {
-      return (reply as any).code(400).send({ error: validationError });
+      return reply.code(400).send({ error: validationError });
     }
 
     const existingSetting = await db
@@ -327,13 +332,13 @@ export async function settingsRoutes(fastify: FastifyInstance) {
       summary: 'Get prompt version history for a feature',
       security: [{ bearerAuth: [] }],
       params: PromptFeatureParamsSchema,
-      response: { 200: PromptHistoryResponseSchema },
+      response: { 200: PromptHistoryResponseSchema, 404: RouteErrorResponseSchema },
     },
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
     const { feature } = request.params as z.infer<typeof PromptFeatureParamsSchema>;
     if (!PROMPT_FEATURES.some((f) => f.key === feature)) {
-      return (reply as any).code(404).send({
+      return reply.code(404).send({
         error: 'Unknown feature',
         code: 'unknown_feature',
       });
@@ -352,7 +357,7 @@ export async function settingsRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
       params: PromptFeatureParamsSchema,
       body: RollbackBodySchema,
-      response: { 200: PromptRollbackResponseSchema },
+      response: { 200: PromptRollbackResponseSchema, 404: RouteErrorResponseSchema },
     },
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
@@ -360,7 +365,7 @@ export async function settingsRoutes(fastify: FastifyInstance) {
     const { versionId } = request.body as z.infer<typeof RollbackBodySchema>;
 
     if (!PROMPT_FEATURES.some((f) => f.key === feature)) {
-      return (reply as any).code(404).send({
+      return reply.code(404).send({
         error: 'Unknown feature',
         code: 'unknown_feature',
       });
@@ -368,7 +373,7 @@ export async function settingsRoutes(fastify: FastifyInstance) {
 
     const targetVersion = await getPromptVersionById(versionId, feature);
     if (!targetVersion) {
-      return (reply as any).code(404).send({ error: 'Version not found' });
+      return reply.code(404).send({ error: 'Version not found' });
     }
 
     // Write the rolled-back prompt to settings

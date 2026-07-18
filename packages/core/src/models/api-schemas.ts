@@ -19,6 +19,16 @@ export const ErrorWithDetailsSchema = ErrorResponseSchema.extend({
   message: z.string().optional(),
 });
 
+// Full route-error envelope. Explicit handler errors normally return only
+// `error` (and sometimes an application `code`), while Fastify validation
+// errors can also include statusCode/code/message/details. Enumerating every
+// supported key preserves those framework fields without allowing unrelated
+// data to leak through error responses.
+export const RouteErrorResponseSchema = ErrorWithDetailsSchema.extend({
+  statusCode: z.number().optional(),
+  code: z.string().optional(),
+});
+
 // ─── Success response ───────────────────────────────────────────────
 export const SuccessResponseSchema = z.object({
   success: z.boolean(),

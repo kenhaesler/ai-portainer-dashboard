@@ -301,6 +301,7 @@ describe('Harbor Vulnerability Routes', () => {
       });
 
       expect(response.statusCode).toBe(404);
+      expect(response.json()).toEqual({ error: 'Exception not found' });
     });
 
     testAdminOnly(
@@ -334,6 +335,7 @@ describe('Harbor Vulnerability Routes', () => {
       });
 
       expect(response.statusCode).toBe(503);
+      expect(response.json()).toEqual({ error: 'Harbor is not configured' });
     });
 
     it('returns 409 when a sync is already in progress', async () => {
