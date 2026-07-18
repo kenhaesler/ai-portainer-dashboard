@@ -16,6 +16,13 @@ import {
   SettingUpdateBodySchema,
   AuditLogQuerySchema,
   PreferencesUpdateBodySchema,
+  PreferencesResponseSchema,
+  SettingPutResponseSchema,
+  AuditLogResponseSchema,
+  PromptFeaturesResponseSchema,
+  PromptHistoryResponseSchema,
+  PromptRollbackResponseSchema,
+  SuccessResponseSchema,
 } from '@dashboard/core/models/api-schemas.js';
 import { SettingSchema } from '@dashboard/core/models/settings.js';
 import { getUserDefaultLandingPage, setUserDefaultLandingPage } from '@dashboard/core/services/user-store.js';
@@ -106,6 +113,7 @@ export async function settingsRoutes(fastify: FastifyInstance) {
       tags: ['Settings'],
       summary: 'Get current user preferences',
       security: [{ bearerAuth: [] }],
+      response: { 200: PreferencesResponseSchema },
     },
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {
@@ -121,17 +129,18 @@ export async function settingsRoutes(fastify: FastifyInstance) {
       summary: 'Update current user preferences',
       security: [{ bearerAuth: [] }],
       body: PreferencesUpdateBodySchema,
+      response: { 200: PreferencesResponseSchema },
     },
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {
     const userId = request.user?.sub;
     if (!userId) {
-      return reply.code(401).send({ error: 'Not authenticated' });
+      return (reply as any).code(401).send({ error: 'Not authenticated' });
     }
 
     const { defaultLandingPage } = request.body as { defaultLandingPage: string };
     if (!LANDING_PAGE_OPTIONS.has(defaultLandingPage)) {
-      return reply.code(400).send({ error: 'Invalid landing page route' });
+      return (reply as any).code(400).send({ error: 'Invalid landing page route' });
     }
 
     await setUserDefaultLandingPage(userId, defaultLandingPage);
@@ -166,6 +175,7 @@ export async function settingsRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
       params: SettingKeyParamsSchema,
       body: SettingUpdateBodySchema,
+      response: { 200: SettingPutResponseSchema },
     },
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
@@ -175,7 +185,7 @@ export async function settingsRoutes(fastify: FastifyInstance) {
     const validationError = validateSecurityCriticalUrl(key, value);
 
     if (validationError) {
-      return reply.code(400).send({ error: validationError });
+      return (reply as any).code(400).send({ error: validationError });
     }
 
     const existingSetting = await db
@@ -221,6 +231,7 @@ export async function settingsRoutes(fastify: FastifyInstance) {
       summary: 'Delete a setting',
       security: [{ bearerAuth: [] }],
       params: SettingKeyParamsSchema,
+      response: { 200: SuccessResponseSchema },
     },
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request) => {
@@ -237,6 +248,7 @@ export async function settingsRoutes(fastify: FastifyInstance) {
       summary: 'Get audit log entries',
       security: [{ bearerAuth: [] }],
       querystring: AuditLogQuerySchema,
+      response: { 200: AuditLogResponseSchema },
     },
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request) => {
@@ -292,6 +304,7 @@ export async function settingsRoutes(fastify: FastifyInstance) {
       tags: ['Settings'],
       summary: 'Get prompt feature definitions and default prompts',
       security: [{ bearerAuth: [] }],
+      response: { 200: PromptFeaturesResponseSchema },
     },
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async () => {
@@ -314,6 +327,7 @@ export async function settingsRoutes(fastify: FastifyInstance) {
       summary: 'Get prompt version history for a feature',
       security: [{ bearerAuth: [] }],
       params: PromptFeatureParamsSchema,
+      response: { 200: PromptHistoryResponseSchema },
     },
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
@@ -338,6 +352,7 @@ export async function settingsRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
       params: PromptFeatureParamsSchema,
       body: RollbackBodySchema,
+      response: { 200: PromptRollbackResponseSchema },
     },
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {

@@ -351,6 +351,75 @@ export const AuditLogQuerySchema = z.object({
   cursor: z.string().optional(),
 });
 
+// PUT /api/settings/:key — always `{ success: true, key, value }`; value is
+// the REDACTED placeholder for sensitive keys (settings.ts isSensitiveSettingKey).
+export const SettingPutResponseSchema = z.object({
+  success: z.literal(true),
+  key: z.string(),
+  value: z.string(),
+});
+
+// GET /api/settings/audit-log — raw `SELECT * FROM audit_log` rows.
+// Passthrough (like the insights list convention): the anchor fields are every
+// column on the table today, but `details` is a JSONB free-form bag whose
+// shape varies per audit action, so keeping the row open avoids the strict
+// schema 500ing on an action-specific details shape.
+const AuditLogRowSchema = z.object({
+  id: z.number(),
+  user_id: z.string().nullable(),
+  username: z.string().nullable(),
+  action: z.string(),
+  target_type: z.string().nullable(),
+  target_id: z.string().nullable(),
+  details: z.record(z.string(), z.unknown()).nullable(),
+  request_id: z.string().nullable(),
+  ip_address: z.string().nullable(),
+  created_at: z.string(),
+}).passthrough();
+
+export const AuditLogResponseSchema = z.object({
+  entries: z.array(AuditLogRowSchema),
+  limit: z.number(),
+  offset: z.number(),
+  nextCursor: z.string().nullable(),
+  hasMore: z.boolean(),
+});
+
+// GET /api/settings/prompt-features — PROMPT_FEATURES (ai-intelligence)
+// enriched per-feature with the default and currently-effective prompt text.
+export const PromptFeaturesResponseSchema = z.object({
+  features: z.array(z.object({
+    key: z.string(),
+    label: z.string(),
+    description: z.string(),
+    defaultPrompt: z.string(),
+    effectivePrompt: z.string(),
+  })),
+});
+
+// Mirrors PromptVersion (prompt-version-store.ts) 1:1 — already a normalized,
+// hand-built object (not a raw row), so a strict schema is safe.
+const PromptVersionSchema = z.object({
+  id: z.number(),
+  feature: z.string(),
+  version: z.number(),
+  systemPrompt: z.string(),
+  model: z.string().nullable(),
+  temperature: z.number().nullable(),
+  changedBy: z.string(),
+  changedAt: z.string(),
+  changeNote: z.string().nullable(),
+});
+
+export const PromptHistoryResponseSchema = z.object({
+  versions: z.array(PromptVersionSchema),
+});
+
+export const PromptRollbackResponseSchema = z.object({
+  success: z.literal(true),
+  newVersion: PromptVersionSchema,
+});
+
 // ─── Logs schemas ───────────────────────────────────────────────────
 export const LogsSearchQuerySchema = z.object({
   query: z.string().max(500).optional(),
