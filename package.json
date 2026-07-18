@@ -38,9 +38,9 @@
     "prepare": "husky || true"
   },
   "devDependencies": {
-    "@playwright/test": "^1.60.0",
+    "@playwright/test": "^1.61.1",
     "@testing-library/user-event": "^14.6.1",
-    "@vitest/coverage-v8": "^4.1.8",
+    "@vitest/coverage-v8": "^4.1.10",
     "concurrently": "^10.0.3",
     "eslint": "^10.4.1",
     "husky": "^9.1.7",
