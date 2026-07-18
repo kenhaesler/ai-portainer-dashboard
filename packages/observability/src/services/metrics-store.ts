@@ -288,7 +288,7 @@ export async function cleanOldMetrics(retentionDays: number): Promise<number> {
 
 /**
  * Recency bound for "latest" metric reads (#1493). Without a timestamp
- * predicate the DISTINCT ON queries below cannot prune TimescaleDB chunks and
+ * predicate the latest-cycle queries below cannot prune TimescaleDB chunks and
  * walk the container's entire retention window (days of rows) on every call.
  * Metrics are collected every METRICS_COLLECTION_INTERVAL_SECONDS (default
  * 60s), so 15 minutes ≈ 15 missed cycles — anything older is stale for a live
@@ -301,11 +301,16 @@ export async function getLatestMetrics(
 ): Promise<Record<string, number>> {
   const db = await getMetricsDb();
   const { rows } = await db.query(
-    `SELECT DISTINCT ON (metric_type) metric_type, value
-     FROM metrics
-     WHERE container_id = $1
-       AND timestamp > NOW() - ($2::int * INTERVAL '1 minute')
-     ORDER BY metric_type, timestamp DESC`,
+    `WITH latest_cycle AS (
+       SELECT MAX(timestamp) AS timestamp
+       FROM metrics
+       WHERE container_id = $1
+         AND timestamp > NOW() - ($2::int * INTERVAL '1 minute')
+     )
+     SELECT m.metric_type, m.value
+     FROM metrics m
+     JOIN latest_cycle latest ON m.timestamp = latest.timestamp
+     WHERE m.container_id = $1`,
     [containerId, LATEST_METRICS_MAX_AGE_MINUTES],
   );
 
@@ -329,11 +334,18 @@ export async function getLatestMetricsBatch(
 
   const db = await getMetricsDb();
   const { rows } = await db.query(
-    `SELECT DISTINCT ON (container_id, metric_type) container_id, metric_type, value
-     FROM metrics
-     WHERE container_id = ANY($1)
-       AND timestamp > NOW() - ($2::int * INTERVAL '1 minute')
-     ORDER BY container_id, metric_type, timestamp DESC`,
+    `WITH latest_cycles AS (
+       SELECT container_id, MAX(timestamp) AS timestamp
+       FROM metrics
+       WHERE container_id = ANY($1)
+         AND timestamp > NOW() - ($2::int * INTERVAL '1 minute')
+       GROUP BY container_id
+     )
+     SELECT m.container_id, m.metric_type, m.value
+     FROM metrics m
+     JOIN latest_cycles latest
+       ON m.container_id = latest.container_id
+      AND m.timestamp = latest.timestamp`,
     [containerIds, LATEST_METRICS_MAX_AGE_MINUTES],
   );
 

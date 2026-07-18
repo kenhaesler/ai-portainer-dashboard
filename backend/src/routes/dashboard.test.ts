@@ -467,6 +467,33 @@ describe('Dashboard Routes', () => {
       await app.close();
     });
 
+    it('keeps known memory bytes when both percentage samples are unknown (#1567)', async () => {
+      const endpoints = [makeEndpoint(1, 'ep-1')];
+      const containers = [
+        makeContainer('c-1', 1000, 'running', { 'com.docker.compose.project': 'web' }),
+        makeContainer('c-2', 1001, 'running', { 'com.docker.compose.project': 'web' }),
+      ];
+
+      mockGetEndpoints.mockResolvedValue(endpoints);
+      mockGetContainers.mockResolvedValue(containers);
+      mockGetLatestMetricsBatch.mockResolvedValue(new Map([
+        ['c-1', { cpu: 50.0, memory: 60.0, memory_bytes: 500 }],
+        // The collector knew raw usage but could not compute either percentage.
+        ['c-2', { memory_bytes: 700 }],
+      ]));
+
+      const app = await buildApp();
+      const res = await app.inject({ method: 'GET', url: '/api/dashboard/resources' });
+
+      expect(res.statusCode).toBe(200);
+      const data = res.json();
+      expect(data.fleetCpuPercent).toBe(50);
+      expect(data.fleetMemoryPercent).toBe(60);
+      expect(data.topStacks[0].memoryBytes).toBe(1200);
+
+      await app.close();
+    });
+
     it('handles complete metrics store failure gracefully', async () => {
       const endpoints = [makeEndpoint(1, 'ep-1')];
       const containers = [

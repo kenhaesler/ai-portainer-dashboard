@@ -17,9 +17,9 @@ export interface CollectedMetrics {
   cpu: number | null;
   /**
    * Memory utilization percent (`used / limit * 100`). `null` when
-   * `memory_stats.limit` is missing or non-positive, so no meaningful
-   * denominator exists. Same "exclude, don't zero-fill" contract as `cpu`
-   * (#1567).
+   * `memory_stats.usage` is missing, or `memory_stats.limit` is missing or
+   * non-positive, so no meaningful percentage can be computed. Same
+   * "exclude, don't zero-fill" contract as `cpu` (#1567).
    */
   memory: number | null;
   memoryBytes: number;
@@ -76,16 +76,19 @@ export async function collectMetrics(
   // malformed or incomplete stats payload, not a "no limit configured"
   // container. Guessing a divisor for data we already know is untrustworthy
   // would trade one silent wrong number for another; `null` is honest.
-  const memoryUsage = stats.memory_stats.usage ?? 0;
+  const memoryUsage = stats.memory_stats.usage;
   const memoryCache =
     stats.memory_stats.stats?.cache ??
     stats.memory_stats.stats?.total_cache ??
     0;
-  const memoryBytes = Math.max(0, memoryUsage - memoryCache);
+  // Keep the existing numeric byte contract for downstream counters, but do
+  // not let its fallback participate in the percentage calculation when the
+  // source usage value itself is absent.
+  const memoryBytes = memoryUsage == null ? 0 : Math.max(0, memoryUsage - memoryCache);
 
   let memoryPercent: number | null = null;
   const memoryLimit = stats.memory_stats.limit;
-  if (memoryLimit != null && memoryLimit > 0) {
+  if (memoryUsage != null && memoryLimit != null && memoryLimit > 0) {
     memoryPercent = Math.max(0, Math.min((memoryBytes / memoryLimit) * 100, 100));
   }
 

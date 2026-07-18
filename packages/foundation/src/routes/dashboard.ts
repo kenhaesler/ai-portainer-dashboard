@@ -155,8 +155,9 @@ async function buildFleetResources(
     const metrics = storedMetrics.get(container.id);
     if (!metrics) continue;
     const { cpu, memory } = metrics;
-    if (cpu === undefined && memory === undefined) continue;
-    const memoryBytes = metrics.memory_bytes ?? 0;
+    const storedMemoryBytes = metrics.memory_bytes;
+    if (cpu === undefined && memory === undefined && storedMemoryBytes === undefined) continue;
+    const memoryBytes = storedMemoryBytes ?? 0;
     containerMetrics.set(container.id, { cpu: cpu ?? null, memory: memory ?? null, memoryBytes });
     if (cpu !== undefined) {
       cpuSum += cpu;

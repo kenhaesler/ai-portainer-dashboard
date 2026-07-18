@@ -158,6 +158,31 @@ describe('metrics-collector', () => {
       expect(result.memoryBytes).toBe(1_048_576);
     });
 
+    it('reports memory as null when memory_stats.usage is missing', async () => {
+      vi.spyOn(portainerClient, 'getContainerStats').mockResolvedValue({
+        cpu_stats: {
+          cpu_usage: { total_usage: 200 },
+          system_cpu_usage: 1000,
+          online_cpus: 2,
+        },
+        precpu_stats: {
+          cpu_usage: { total_usage: 100 },
+          system_cpu_usage: 500,
+        },
+        memory_stats: {
+          // usage missing — a valid limit alone cannot establish utilization
+          limit: 2_097_152,
+          stats: { cache: 0 },
+        },
+      });
+
+      const result = await collectMetrics(1, 'missing-memory-usage');
+
+      expect(result.memory).toBeNull();
+      expect(result.cpu).toBe(40);
+      expect(result.memoryBytes).toBe(0);
+    });
+
     it('reports memory as null when memory_stats.limit is zero', async () => {
       vi.spyOn(portainerClient, 'getContainerStats').mockResolvedValue({
         cpu_stats: {
