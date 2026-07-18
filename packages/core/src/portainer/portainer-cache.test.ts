@@ -839,6 +839,7 @@ describe('getSnapshotTimestamp — origin fetch tracking (issue #1566)', () => {
 
     const { cachedFetch, cache, getSnapshotTimestamp } = await import('./portainer-cache.js');
 
+    vi.useFakeTimers({ toFake: ['Date'] });
     const fetchedAt = Date.now();
     await cachedFetch('invalidated-key', 900, vi.fn().mockResolvedValue('v1'));
     expect(getSnapshotTimestamp('invalidated-key')).toBe(fetchedAt);
