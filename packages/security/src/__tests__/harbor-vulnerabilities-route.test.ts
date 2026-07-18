@@ -223,7 +223,23 @@ describe('Harbor Vulnerability Routes', () => {
     };
 
     it('creates a CVE exception', async () => {
-      const created = { id: 1, cve_id: 'CVE-2024-9999', scope: 'global', active: true };
+      // Full ExceptionRecord shape (#1545) — the response schema now .parse()s
+      // this, so a partial fixture (e.g. the old `active` typo for `is_active`)
+      // would 500 instead of serializing.
+      const created = {
+        id: 1,
+        cve_id: 'CVE-2024-9999',
+        scope: 'global',
+        scope_ref: null,
+        justification: 'False positive in test environment',
+        created_by: 'admin',
+        approved_by: null,
+        expires_at: null,
+        is_active: true,
+        synced_to_harbor: false,
+        created_at: '2026-07-18T00:00:00.000Z',
+        updated_at: '2026-07-18T00:00:00.000Z',
+      };
       mockCreateException.mockResolvedValue(created);
 
       const response = await app.inject({
@@ -360,7 +376,18 @@ describe('Harbor Vulnerability Routes', () => {
     it('returns connection status when configured', async () => {
       mockIsHarborConfiguredAsync.mockResolvedValue(true);
       mockTestConnection.mockResolvedValue({ ok: true });
-      mockGetLatestSyncStatus.mockResolvedValue({ id: 1, status: 'completed' });
+      // Full SyncStatusRecord shape (#1545) — the response schema now .parse()s
+      // this, so a partial fixture would 500 instead of serializing.
+      mockGetLatestSyncStatus.mockResolvedValue({
+        id: 1,
+        sync_type: 'full',
+        status: 'completed',
+        vulnerabilities_synced: 42,
+        in_use_matched: 3,
+        error_message: null,
+        started_at: '2026-07-18T00:00:00.000Z',
+        completed_at: '2026-07-18T00:01:00.000Z',
+      });
 
       const response = await app.inject({
         method: 'GET',
