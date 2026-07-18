@@ -64,7 +64,7 @@ See [Architecture](docs/ai-instructions/architecture.md) for the dependency grap
 | Frontend | React 19.2 (+ React Compiler), Vite 8, TypeScript 6, Tailwind CSS 4, TanStack Query/Table/Virtual, Zustand, Radix UI, Recharts, Framer Motion, Socket.IO client |
 | Backend | Node ≥ 22, Fastify 5.8, Socket.IO 4.8, `jose` (JWT), `openid-client` v6 (OIDC/PKCE), `pg` 8 |
 | Storage | PostgreSQL (app), TimescaleDB (metrics hypertables + continuous aggregates), Redis (cache + sessions) |
-| Testing | Vitest 4 (unit/integration), Playwright 1.60 (E2E) |
+| Testing | Vitest 4 (unit/integration), Playwright 1.61 (E2E) |
 
 ---
 
