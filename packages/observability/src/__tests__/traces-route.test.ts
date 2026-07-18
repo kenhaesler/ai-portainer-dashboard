@@ -467,6 +467,67 @@ describe('traces routes', () => {
     expect(body.services).toBe(1);
   });
 
+  it('GET /api/traces/:traceId returns spans preserving snake_case columns, including unset extended attributes (#1545)', async () => {
+    await insertSpan({
+      id: 'span-root',
+      traceId: 'trace-detail',
+      name: 'GET /orders',
+      kind: 'server',
+      status: 'ok',
+      startTime: '2026-02-12T10:00:00.000Z',
+      duration: 42,
+      service: 'orders',
+      source: 'ebpf',
+    });
+    await insertSpan({
+      id: 'span-child',
+      traceId: 'trace-detail',
+      parentSpanId: 'span-root',
+      name: 'SELECT orders',
+      kind: 'internal',
+      status: 'ok',
+      startTime: '2026-02-12T10:00:00.050Z',
+      duration: 10,
+      service: 'db',
+      source: 'ebpf',
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/traces/trace-detail',
+      headers: { authorization: 'Bearer test' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as { traceId: string; spans: Array<Record<string, unknown>> };
+    expect(body.traceId).toBe('trace-detail');
+    expect(body.spans).toHaveLength(2);
+    expect(body.spans[0].id).toBe('span-root');
+    expect(body.spans[0].trace_id).toBe('trace-detail');
+    expect(body.spans[0].parent_span_id).toBeNull();
+    expect(body.spans[1].parent_span_id).toBe('span-root');
+    // The response schema (SpanRowSchema) is a passthrough anchored on a subset
+    // of columns — extended-attribute columns insertSpan() didn't set must still
+    // be present (as null), not stripped by the serializer's unknown-field pruning.
+    expect(body.spans[0]).toHaveProperty('url_scheme');
+    expect(body.spans[0].url_scheme).toBeNull();
+    expect(body.spans[0]).toHaveProperty('otel_scope_name');
+    expect(body.spans[0].otel_scope_name).toBeNull();
+  });
+
+  it('GET /api/traces/:traceId returns an empty spans array for an unknown trace id', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/traces/does-not-exist',
+      headers: { authorization: 'Bearer test' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as { traceId: string; spans: unknown[] };
+    expect(body.traceId).toBe('does-not-exist');
+    expect(body.spans).toEqual([]);
+  });
+
   it('service-map and summary aggregates run under a statement_timeout transaction (#1528)', async () => {
     const executed: string[] = [];
     const realDb = appDb;

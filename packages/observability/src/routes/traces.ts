@@ -4,7 +4,7 @@ import '@fastify/swagger';
 import { z } from 'zod/v4';
 import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
 import type { AppDb } from '@dashboard/core/db/app-db.js';
-import { TracesQuerySchema, TraceIdParamsSchema, TracesListResponseSchema, ServiceMapResponseSchema, TraceSummaryResponseSchema } from '@dashboard/core/models/api-schemas.js';
+import { TracesQuerySchema, TraceIdParamsSchema, TracesListResponseSchema, ServiceMapResponseSchema, TraceSummaryResponseSchema, TraceDetailResponseSchema, RedResponseSchema, IngestStatsResponseSchema } from '@dashboard/core/models/api-schemas.js';
 import { computeRed } from '../services/trace-red.js';
 import { getSamplerStats } from './traces-ingest.js';
 
@@ -307,6 +307,7 @@ export async function tracesRoutes(fastify: FastifyInstance) {
       summary: 'Get full trace with all spans',
       security: [{ bearerAuth: [] }],
       params: TraceIdParamsSchema,
+      response: { 200: TraceDetailResponseSchema },
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {
@@ -636,6 +637,7 @@ export async function tracesRoutes(fastify: FastifyInstance) {
       summary: 'Aggregate RED metrics (rate, errors, duration) for the given window',
       security: [{ bearerAuth: [] }],
       querystring: RedQuerySchema,
+      response: { 200: RedResponseSchema },
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {
@@ -656,6 +658,7 @@ export async function tracesRoutes(fastify: FastifyInstance) {
       tags: ['Traces'],
       summary: 'Trace ingest sampler counters (admin)',
       security: [{ bearerAuth: [] }],
+      response: { 200: IngestStatsResponseSchema },
     },
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async () => getSamplerStats());

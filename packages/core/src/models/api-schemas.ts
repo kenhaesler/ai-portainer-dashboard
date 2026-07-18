@@ -755,3 +755,63 @@ export const TraceSummaryResponseSchema = z.object({
     unknown: z.number(),
   }),
 });
+
+// GET /api/traces/:traceId — raw `SELECT * FROM spans WHERE trace_id = ?` rows.
+// Unlike TraceListItemSchema (a curated projection), this is every column on the
+// table, which has grown via several migrations (022, 036, 038) adding OTLP/Beyla
+// attributes. A strict schema would need updating every time the table gains a
+// column and would silently drop new ones in the meantime; passthrough keeps the
+// row byte-identical (500-safe) while still anchoring the fields every consumer
+// (trace-explorer.tsx) reads. `attributes` is JSONB — the pg driver parses it to
+// a plain object.
+export const SpanRowSchema = z.object({
+  id: z.string(),
+  trace_id: z.string(),
+  parent_span_id: z.string().nullable(),
+  name: z.string(),
+  kind: z.string(),
+  status: z.string(),
+  start_time: z.string(),
+  end_time: z.string().nullable(),
+  duration_ms: z.number().nullable(),
+  service_name: z.string(),
+  attributes: z.record(z.string(), z.unknown()).nullable(),
+  created_at: z.string(),
+  trace_source: z.string().nullable(),
+}).passthrough();
+
+export const TraceDetailResponseSchema = z.object({
+  traceId: z.string(),
+  spans: z.array(SpanRowSchema),
+});
+
+// GET /api/traces/red — RED (rate/errors/duration) aggregate. All numeric
+// fields are coerced with `Number(x ?? 0)` in computeRed(), so none are
+// nullable here even though the underlying percentile_cont() can be NULL for
+// an empty group.
+export const RedResponseSchema = z.object({
+  buckets: z.array(z.object({
+    bucketStart: z.string(),
+    rows: z.array(z.object({
+      group: z.string(),
+      rate: z.number(),
+      errorRate: z.number(),
+      p50Ms: z.number(),
+      p95Ms: z.number(),
+      p99Ms: z.number(),
+      callCount: z.number(),
+    })),
+  })),
+  truncated: z.boolean(),
+});
+
+// GET /api/traces/ingest-stats — mirrors SamplerStats (trace-sampler.ts) 1:1.
+export const IngestStatsResponseSchema = z.object({
+  acceptedTotal: z.number(),
+  droppedTotal: z.number(),
+  perSource: z.array(z.object({
+    source: z.string(),
+    accepted: z.number(),
+    dropped: z.number(),
+  })),
+});
