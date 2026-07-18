@@ -240,6 +240,7 @@ describe('containers routes', () => {
 
   it('should cache container detail responses via cachedFetchSWR (#728)', async () => {
     // With real cache, verify the response is valid — caching is tested implicitly
+    vi.spyOn(portainerClient, 'getEndpoints').mockResolvedValue([fakeEndpoint(1, 'prod')] as any);
     vi.spyOn(portainerClient, 'getContainer').mockResolvedValue(fakeContainer('abc123', 'web') as any);
 
     const app = buildApp();
@@ -250,7 +251,96 @@ describe('containers routes', () => {
 
     expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.body);
-    expect(body).toHaveProperty('Id');
+    expect(body.id).toBe('abc123');
+    expect(body.name).toBe('web');
+  });
+
+  it('returns the normalized detail shape with endpoint name resolved (#1564)', async () => {
+    vi.spyOn(portainerClient, 'getEndpoints').mockResolvedValue([
+      fakeEndpoint(1, 'prod'),
+      fakeEndpoint(2, 'staging'),
+    ] as any);
+    vi.spyOn(portainerClient, 'getContainer').mockResolvedValue(fakeContainer('abc123', 'web') as any);
+
+    const app = buildApp();
+    const res = await app.inject({ method: 'GET', url: '/api/containers/1/abc123' });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body).toEqual({
+      id: 'abc123',
+      name: 'web',
+      image: 'nginx:latest',
+      state: 'running',
+      status: 'Up 2 hours',
+      endpointId: 1,
+      endpointName: 'prod',
+      ports: [],
+      created: 1700000000,
+      labels: {},
+      networks: ['bridge'],
+      networkIPs: { bridge: '172.17.0.2' },
+    });
+  });
+
+  it('falls back to the numeric endpoint id when the endpoint is unknown (#1564)', async () => {
+    vi.spyOn(portainerClient, 'getEndpoints').mockResolvedValue([] as any);
+    vi.spyOn(portainerClient, 'getContainer').mockResolvedValue(fakeContainer('abc123', 'web') as any);
+
+    const app = buildApp();
+    const res = await app.inject({ method: 'GET', url: '/api/containers/1/abc123' });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.endpointName).toBe('1');
+  });
+
+  it('normalizes a stopped container with no ports, networks, or health check (#1564)', async () => {
+    vi.spyOn(portainerClient, 'getEndpoints').mockResolvedValue([fakeEndpoint(1, 'prod')] as any);
+    vi.spyOn(portainerClient, 'getContainer').mockResolvedValue({
+      Id: 'stopped1',
+      Names: ['/stopped-app'],
+      Image: 'alpine:latest',
+      State: 'exited',
+      Status: 'Exited (0) 3 hours ago',
+      Created: 1699000000,
+      Ports: [],
+      Labels: {},
+    } as any);
+
+    const app = buildApp();
+    const res = await app.inject({ method: 'GET', url: '/api/containers/1/stopped1' });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.state).toBe('stopped');
+    expect(body.ports).toEqual([]);
+    expect(body.networks).toEqual([]);
+    expect(body.networkIPs).toEqual({});
+    expect(body.healthStatus).toBeUndefined();
+  });
+
+  it('surfaces a healthy container health status derived from the status string (#1564)', async () => {
+    vi.spyOn(portainerClient, 'getEndpoints').mockResolvedValue([fakeEndpoint(1, 'prod')] as any);
+    vi.spyOn(portainerClient, 'getContainer').mockResolvedValue({
+      Id: 'healthy1',
+      Names: ['/healthy-app'],
+      Image: 'nginx:latest',
+      State: 'running',
+      Status: 'Up 10 minutes (healthy)',
+      Created: 1700000000,
+      Ports: [{ PrivatePort: 80, PublicPort: 8080, Type: 'tcp' }],
+      Labels: {},
+      NetworkSettings: { Networks: { bridge: { IPAddress: '172.17.0.5' } } },
+    } as any);
+
+    const app = buildApp();
+    const res = await app.inject({ method: 'GET', url: '/api/containers/1/healthy1' });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.healthStatus).toBe('healthy');
+    expect(body.ports).toEqual([{ private: 80, public: 8080, type: 'tcp' }]);
   });
 });
 
