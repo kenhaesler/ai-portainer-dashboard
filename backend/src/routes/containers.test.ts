@@ -295,6 +295,19 @@ describe('containers routes', () => {
     expect(body.endpointName).toBe('1');
   });
 
+  it('keeps detail available when endpoint-name resolution fails (#1564)', async () => {
+    vi.spyOn(portainerClient, 'getEndpoints').mockRejectedValue(new Error('Endpoint list unavailable'));
+    vi.spyOn(portainerClient, 'getContainer').mockResolvedValue(fakeContainer('abc123', 'web') as any);
+
+    const app = buildApp();
+    const res = await app.inject({ method: 'GET', url: '/api/containers/1/abc123' });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.id).toBe('abc123');
+    expect(body.endpointName).toBe('1');
+  });
+
   it('normalizes a stopped container with no ports, networks, or health check (#1564)', async () => {
     vi.spyOn(portainerClient, 'getEndpoints').mockResolvedValue([fakeEndpoint(1, 'prod')] as any);
     vi.spyOn(portainerClient, 'getContainer').mockResolvedValue({

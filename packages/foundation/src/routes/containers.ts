@@ -301,12 +301,20 @@ export async function containersRoutes(fastify: FastifyInstance) {
         TTL.STATS, // 60s TTL — detail changes infrequently, matches scheduler interval
         () => portainer.getContainer(endpointId, containerId),
       );
-      const endpoints = await cachedFetchSWR(
-        getCacheKey('endpoints'),
-        TTL.ENDPOINTS,
-        () => portainer.getEndpoints(),
-      );
-      const endpointName = endpoints.find((e) => e.Id === endpointId)?.Name ?? String(endpointId);
+      let endpointName = String(endpointId);
+      try {
+        const endpoints = await cachedFetchSWR(
+          getCacheKey('endpoints'),
+          TTL.ENDPOINTS,
+          () => portainer.getEndpoints(),
+        );
+        endpointName = endpoints.find((e) => e.Id === endpointId)?.Name ?? endpointName;
+      } catch (err) {
+        // The endpoint name is display metadata. A transient failure of the
+        // independent endpoint-list call must not hide a successfully fetched
+        // container detail response.
+        log.warn({ err, endpointId }, 'Failed to resolve endpoint name; using endpoint id');
+      }
       return normalizeContainer(container, endpointId, endpointName);
     } catch (err) {
       log.error({ err, endpointId, containerId }, 'Failed to fetch container details');
