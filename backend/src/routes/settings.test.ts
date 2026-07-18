@@ -121,9 +121,51 @@ describe('settings preference routes', () => {
     });
 
     expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({ error: 'Invalid landing page route' });
+    expect(mockSetUserDefaultLandingPage).not.toHaveBeenCalled();
+  });
+
+  it('preserves Fastify validation fields in the documented 400 response', async () => {
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/settings/preferences',
+      headers: { authorization: 'Bearer test' },
+      payload: {},
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual(expect.objectContaining({
+      statusCode: 400,
+      code: 'FST_ERR_VALIDATION',
+      error: 'Bad Request',
+      message: expect.stringContaining('defaultLandingPage'),
+    }));
     expect(mockSetUserDefaultLandingPage).not.toHaveBeenCalled();
   });
 });
+
+// Every column the real `SELECT * FROM audit_log` returns (present-as-null for
+// unset ones, per the AuditLogResponseSchema contract, #1545). Test fixtures
+// below only override the fields each case cares about (id/action/created_at).
+function auditRow(overrides: Partial<{
+  id: number;
+  action: string;
+  created_at: string;
+}>): Record<string, unknown> {
+  return {
+    id: 0,
+    user_id: 'u1',
+    username: 'admin',
+    action: 'login',
+    target_type: null,
+    target_id: null,
+    details: {},
+    request_id: null,
+    ip_address: '127.0.0.1',
+    created_at: '2025-01-01T00:00:00Z',
+    ...overrides,
+  };
+}
 
 describe('audit-log cursor pagination', () => {
   let app: FastifyInstance;
@@ -153,9 +195,9 @@ describe('audit-log cursor pagination', () => {
   it('returns hasMore=true and nextCursor when more items exist', async () => {
     // Simulate N+1 rows returned (limit=2 → fetch 3 rows)
     const rows = [
-      { id: 3, action: 'login', created_at: '2025-01-03T00:00:00Z' },
-      { id: 2, action: 'login', created_at: '2025-01-02T00:00:00Z' },
-      { id: 1, action: 'login', created_at: '2025-01-01T00:00:00Z' },
+      auditRow({ id: 3, action: 'login', created_at: '2025-01-03T00:00:00Z' }),
+      auditRow({ id: 2, action: 'login', created_at: '2025-01-02T00:00:00Z' }),
+      auditRow({ id: 1, action: 'login', created_at: '2025-01-01T00:00:00Z' }),
     ];
     mockQuery.mockResolvedValueOnce(rows);
 
@@ -174,7 +216,7 @@ describe('audit-log cursor pagination', () => {
 
   it('returns hasMore=false when no more items', async () => {
     const rows = [
-      { id: 2, action: 'login', created_at: '2025-01-02T00:00:00Z' },
+      auditRow({ id: 2, action: 'login', created_at: '2025-01-02T00:00:00Z' }),
     ];
     mockQuery.mockResolvedValueOnce(rows);
 
@@ -193,7 +235,7 @@ describe('audit-log cursor pagination', () => {
 
   it('accepts cursor parameter for next page', async () => {
     mockQuery.mockResolvedValueOnce([
-      { id: 1, action: 'login', created_at: '2025-01-01T00:00:00Z' },
+      auditRow({ id: 1, action: 'login', created_at: '2025-01-01T00:00:00Z' }),
     ]);
 
     const response = await app.inject({
@@ -351,6 +393,32 @@ describe('settings security', () => {
     await app.close();
   });
 
+  it('DELETE /api/settings/:key returns { success: true } (#1545)', async () => {
+    const app = Fastify({ logger: false });
+    app.setValidatorCompiler(validatorCompiler);
+    app.setSerializerCompiler(serializerCompiler);
+    app.decorate('authenticate', async () => undefined);
+    app.decorate('requireRole', () => async () => undefined);
+    app.decorateRequest('user', undefined);
+    app.addHook('preHandler', async (request) => {
+      request.user = { sub: 'u1', username: 'admin', sessionId: 's1', role: 'admin' as const };
+    });
+    await app.register(settingsRoutes);
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'DELETE',
+      url: '/api/settings/llm.model',
+      headers: { authorization: 'Bearer test' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ success: true });
+    expect(mockExecute).toHaveBeenCalledWith('DELETE FROM settings WHERE key = ?', ['llm.model']);
+
+    await app.close();
+  });
+
   it('preserves existing category when update payload omits category', async () => {
     const app = Fastify({ logger: false });
     app.setValidatorCompiler(validatorCompiler);
@@ -502,7 +570,10 @@ describe('prompt version history routes (#415)', () => {
     });
 
     expect(response.statusCode).toBe(404);
-    expect(response.json().error).toMatch(/unknown feature/i);
+    expect(response.json()).toEqual({
+      error: 'Unknown feature',
+      code: 'unknown_feature',
+    });
   });
 
   it('returns empty versions list when no history exists', async () => {
@@ -533,7 +604,17 @@ describe('prompt version history routes (#415)', () => {
       changeNote: null,
     };
     mockGetPromptVersionById.mockResolvedValueOnce(targetVersion);
-    mockCreatePromptVersion.mockResolvedValueOnce({ id: 3, version: 3 });
+    mockCreatePromptVersion.mockResolvedValueOnce({
+      id: 3,
+      feature: 'chat_assistant',
+      version: 3,
+      systemPrompt: 'Old reliable prompt.',
+      model: null,
+      temperature: null,
+      changedBy: 'admin',
+      changedAt: '2026-01-03T00:00:00Z',
+      changeNote: 'Rolled back to v1',
+    });
 
     const response = await app.inject({
       method: 'POST',
@@ -570,6 +651,10 @@ describe('prompt version history routes (#415)', () => {
     });
 
     expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual({
+      error: 'Unknown feature',
+      code: 'unknown_feature',
+    });
   });
 
   it('POST rollback returns 404 when target version not found', async () => {

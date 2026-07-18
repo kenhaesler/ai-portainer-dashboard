@@ -6,6 +6,7 @@ import '@fastify/swagger';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { errorDetails } from '@dashboard/core/plugins/error-handler.js';
 import { writeAuditLog } from '@dashboard/core/services/audit-logger.js';
+import { RouteErrorResponseSchema, SuccessResponseSchema } from '@dashboard/core/models/api-schemas.js';
 import * as harborClient from '../services/harbor-client.js';
 import { getEffectiveHarborConfig } from '@dashboard/core/services/settings-store.js';
 import * as vulnStore from '../services/harbor-vulnerability-store.js';
@@ -59,6 +60,72 @@ const HarborVulnerabilityListResponseSchema = z.object({
   offset: z.number(),
 });
 
+// Mirrors SyncStatusRecord (harbor-vulnerability-store.ts) 1:1 — a fixed-column
+// table (023_harbor_vulnerabilities.sql), not a SELECT *-of-anything shape, so a
+// strict (non-passthrough) schema is safe. Exported for the same drift-guard
+// pattern as the vulnerability/summary schemas above.
+export const HarborSyncStatusRecordSchema = z.object({
+  id: z.number(),
+  sync_type: z.string(),
+  status: z.string(),
+  vulnerabilities_synced: z.number(),
+  in_use_matched: z.number(),
+  error_message: z.string().nullable(),
+  started_at: z.string(),
+  completed_at: z.string().nullable(),
+});
+
+// GET /api/harbor/status — either the "not configured" shape or the full
+// connection-status shape (including the #1392 truncated-sync reclassification).
+const HarborStatusResponseSchema = z.union([
+  z.object({
+    configured: z.literal(true),
+    connected: z.boolean(),
+    connectionError: z.string().optional(),
+    lastSync: HarborSyncStatusRecordSchema.nullable(),
+    truncated: z.boolean(),
+    syncWarning: z.string().nullable(),
+  }),
+  z.object({
+    configured: z.literal(false),
+    connected: z.literal(false),
+    lastSync: z.null(),
+  }),
+]);
+
+const HarborEnabledResponseSchema = z.object({
+  enabled: z.boolean(),
+});
+
+const HarborSyncTriggeredResponseSchema = z.object({
+  message: z.string(),
+  status: z.string(),
+});
+
+// Mirrors ExceptionRecord (harbor-vulnerability-store.ts) 1:1 — same
+// fixed-column-table reasoning as HarborSyncStatusRecordSchema above.
+export const HarborExceptionRecordSchema = z.object({
+  id: z.number(),
+  cve_id: z.string(),
+  scope: z.string(),
+  scope_ref: z.string().nullable(),
+  justification: z.string(),
+  created_by: z.string(),
+  approved_by: z.string().nullable(),
+  expires_at: z.string().nullable(),
+  is_active: z.boolean(),
+  synced_to_harbor: z.boolean(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
+const HarborExceptionsListResponseSchema = z.array(HarborExceptionRecordSchema);
+
+// createException()'s store signature returns `ExceptionRecord | null` (the
+// post-insert re-SELECT could theoretically miss), so the response schema
+// must tolerate the same null the handler already passes through unchanged.
+const HarborExceptionCreateResponseSchema = HarborExceptionRecordSchema.nullable();
+
 export async function harborVulnerabilityRoutes(fastify: FastifyInstance) {
   // ---------------------------------------------------------------------------
   // Connection & Status
@@ -69,6 +136,7 @@ export async function harborVulnerabilityRoutes(fastify: FastifyInstance) {
       tags: ['Harbor'],
       summary: 'Check Harbor connection status and sync info',
       security: [{ bearerAuth: [] }],
+      response: { 200: HarborStatusResponseSchema },
     },
     preHandler: [fastify.authenticate],
   }, async () => {
@@ -103,6 +171,7 @@ export async function harborVulnerabilityRoutes(fastify: FastifyInstance) {
       tags: ['Harbor'],
       summary: 'Check if Harbor integration is enabled (for sidebar visibility)',
       security: [{ bearerAuth: [] }],
+      response: { 200: HarborEnabledResponseSchema },
     },
     preHandler: [fastify.authenticate],
   }, async () => {
@@ -224,6 +293,11 @@ export async function harborVulnerabilityRoutes(fastify: FastifyInstance) {
       tags: ['Harbor'],
       summary: 'Trigger a full vulnerability sync from Harbor',
       security: [{ bearerAuth: [] }],
+      response: {
+        200: HarborSyncTriggeredResponseSchema,
+        409: RouteErrorResponseSchema,
+        503: RouteErrorResponseSchema,
+      },
     },
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
@@ -266,6 +340,7 @@ export async function harborVulnerabilityRoutes(fastify: FastifyInstance) {
       querystring: z.object({
         activeOnly: z.coerce.boolean().default(true),
       }),
+      response: { 200: HarborExceptionsListResponseSchema },
     },
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request) => {
@@ -285,6 +360,7 @@ export async function harborVulnerabilityRoutes(fastify: FastifyInstance) {
         justification: z.string().min(10),
         expires_at: z.string().optional(),
       }),
+      response: { 200: HarborExceptionCreateResponseSchema },
     },
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request) => {
@@ -325,6 +401,7 @@ export async function harborVulnerabilityRoutes(fastify: FastifyInstance) {
       params: z.object({
         id: z.coerce.number().int(),
       }),
+      response: { 200: SuccessResponseSchema, 404: RouteErrorResponseSchema },
     },
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {

@@ -10,9 +10,10 @@ vi.mock('@dashboard/core/db/timescale.js', () => ({
 import { getLatestMetrics, getLatestMetricsBatch } from '../services/metrics-store.js';
 
 // #1493 — "latest" reads must carry a recency bound so TimescaleDB can prune
-// chunks. Without it the DISTINCT ON queries walk the container's ENTIRE
-// retention window (days of rows) on every dashboard poll / monitoring cycle.
-describe('getLatestMetrics — recency bound (#1493)', () => {
+// chunks. #1567 additionally requires a coherent collection cycle: when the
+// scheduler omits an unknown CPU row but writes memory/network rows, readers
+// must not carry an older CPU row forward from another cycle.
+describe('getLatestMetrics — latest-cycle coherence and recency bound (#1493/#1567)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockQuery.mockResolvedValue({
@@ -23,10 +24,11 @@ describe('getLatestMetrics — recency bound (#1493)', () => {
     });
   });
 
-  it('bounds the DISTINCT ON scan to a recent window (chunk pruning)', async () => {
+  it('returns only rows from the newest collection timestamp', async () => {
     await getLatestMetrics('c1');
     const sql: string = mockQuery.mock.calls[0][0];
-    expect(sql).toMatch(/DISTINCT ON \(metric_type\)/i);
+    expect(sql).toMatch(/MAX\(timestamp\) AS timestamp/i);
+    expect(sql).toMatch(/JOIN latest_cycle latest ON m\.timestamp = latest\.timestamp/i);
     expect(sql).toMatch(/timestamp\s*>\s*NOW\(\)\s*-\s*\(\$2::int \* INTERVAL '1 minute'\)/i);
   });
 
@@ -45,7 +47,7 @@ describe('getLatestMetrics — recency bound (#1493)', () => {
   });
 });
 
-describe('getLatestMetricsBatch — recency bound (#1493)', () => {
+describe('getLatestMetricsBatch — latest-cycle coherence and recency bound (#1493/#1567)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockQuery.mockResolvedValue({
@@ -56,10 +58,12 @@ describe('getLatestMetricsBatch — recency bound (#1493)', () => {
     });
   });
 
-  it('bounds the batch DISTINCT ON scan to the same recent window', async () => {
+  it('returns each container only from its own newest collection timestamp', async () => {
     await getLatestMetricsBatch(['c1', 'c2']);
     const sql: string = mockQuery.mock.calls[0][0];
-    expect(sql).toMatch(/DISTINCT ON \(container_id, metric_type\)/i);
+    expect(sql).toMatch(/SELECT container_id, MAX\(timestamp\) AS timestamp/i);
+    expect(sql).toMatch(/GROUP BY container_id/i);
+    expect(sql).toMatch(/m\.timestamp = latest\.timestamp/i);
     expect(sql).toMatch(/timestamp\s*>\s*NOW\(\)\s*-\s*\(\$2::int \* INTERVAL '1 minute'\)/i);
     expect(mockQuery).toHaveBeenCalledWith(expect.any(String), [['c1', 'c2'], 15]);
   });

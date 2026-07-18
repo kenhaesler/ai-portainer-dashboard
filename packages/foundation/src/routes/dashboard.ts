@@ -134,35 +134,56 @@ async function buildFleetResources(
     log.warn({ err }, 'Failed to read stored metrics from TimescaleDB, resource data will be empty');
   }
 
-  // Aggregate fleet-wide CPU/memory
-  let totalCpuPercent = 0;
-  let totalMemoryPercent = 0;
-  let statsCount = 0;
-  const containerMetrics = new Map<string, { cpu: number; memory: number; memoryBytes: number }>();
+  // Aggregate fleet-wide CPU/memory.
+  //
+  // #1567: the metrics collector no longer writes a `cpu`/`memory` row when
+  // that metric couldn't be reliably computed for a cycle (e.g. missing
+  // system_cpu_usage or memory limit) — so `metrics.cpu`/`metrics.memory` can
+  // now be legitimately absent for a container that DOES have other metrics
+  // (e.g. memory known, CPU unknown). Each metric type must therefore be
+  // averaged over only the containers for which IT is known — a shared
+  // `statsCount` would let an unknown CPU sample (silently defaulted to 0)
+  // drag the fleet CPU average down even though memory data was fine, and
+  // vice versa. CPU and memory get independent sums/counts.
+  let cpuSum = 0;
+  let cpuCount = 0;
+  let memorySum = 0;
+  let memoryCount = 0;
+  const containerMetrics = new Map<string, { cpu: number | null; memory: number | null; memoryBytes: number }>();
 
   for (const { container } of runningContainers) {
     const metrics = storedMetrics.get(container.id);
-    if (metrics && (metrics.cpu !== undefined || metrics.memory !== undefined)) {
-      const cpu = metrics.cpu ?? 0;
-      const memory = metrics.memory ?? 0;
-      const memoryBytes = metrics.memory_bytes ?? 0;
-      containerMetrics.set(container.id, { cpu, memory, memoryBytes });
-      totalCpuPercent += cpu;
-      totalMemoryPercent += memory;
-      statsCount++;
+    if (!metrics) continue;
+    const { cpu, memory } = metrics;
+    const storedMemoryBytes = metrics.memory_bytes;
+    if (cpu === undefined && memory === undefined && storedMemoryBytes === undefined) continue;
+    const memoryBytes = storedMemoryBytes ?? 0;
+    containerMetrics.set(container.id, { cpu: cpu ?? null, memory: memory ?? null, memoryBytes });
+    if (cpu !== undefined) {
+      cpuSum += cpu;
+      cpuCount++;
+    }
+    if (memory !== undefined) {
+      memorySum += memory;
+      memoryCount++;
     }
   }
 
-  const fleetCpuPercent = statsCount > 0 ? Math.round((totalCpuPercent / statsCount) * 100) / 100 : 0;
-  const fleetMemoryPercent = statsCount > 0 ? Math.round((totalMemoryPercent / statsCount) * 100) / 100 : 0;
+  const fleetCpuPercent = cpuCount > 0 ? Math.round((cpuSum / cpuCount) * 100) / 100 : 0;
+  const fleetMemoryPercent = memoryCount > 0 ? Math.round((memorySum / memoryCount) * 100) / 100 : 0;
 
-  // Group containers by stack and aggregate
+  // Group containers by stack and aggregate. Same #1567 fix as the fleet
+  // totals above: cpu/memory get their own sample counts per stack so an
+  // unknown metric on one container doesn't drag down the other metric's
+  // (or another container's) average.
   const stackMap = new Map<string, {
     containerCount: number;
     runningCount: number;
     stoppedCount: number;
-    cpuPercent: number;
-    memoryPercent: number;
+    cpuSum: number;
+    cpuCount: number;
+    memorySum: number;
+    memoryCount: number;
     memoryBytes: number;
   }>();
 
@@ -173,8 +194,10 @@ async function buildFleetResources(
         containerCount: 0,
         runningCount: 0,
         stoppedCount: 0,
-        cpuPercent: 0,
-        memoryPercent: 0,
+        cpuSum: 0,
+        cpuCount: 0,
+        memorySum: 0,
+        memoryCount: 0,
         memoryBytes: 0,
       });
     }
@@ -184,8 +207,14 @@ async function buildFleetResources(
       stack.runningCount++;
       const m = containerMetrics.get(container.id);
       if (m) {
-        stack.cpuPercent += m.cpu;
-        stack.memoryPercent += m.memory;
+        if (m.cpu !== null) {
+          stack.cpuSum += m.cpu;
+          stack.cpuCount++;
+        }
+        if (m.memory !== null) {
+          stack.memorySum += m.memory;
+          stack.memoryCount++;
+        }
         stack.memoryBytes += m.memoryBytes;
       }
     } else if (container.state === 'stopped') {
@@ -200,11 +229,11 @@ async function buildFleetResources(
       containerCount: stats.containerCount,
       runningCount: stats.runningCount,
       stoppedCount: stats.stoppedCount,
-      cpuPercent: stats.runningCount > 0
-        ? Math.round((stats.cpuPercent / stats.runningCount) * 100) / 100
+      cpuPercent: stats.cpuCount > 0
+        ? Math.round((stats.cpuSum / stats.cpuCount) * 100) / 100
         : 0,
-      memoryPercent: stats.runningCount > 0
-        ? Math.round((stats.memoryPercent / stats.runningCount) * 100) / 100
+      memoryPercent: stats.memoryCount > 0
+        ? Math.round((stats.memorySum / stats.memoryCount) * 100) / 100
         : 0,
       memoryBytes: stats.memoryBytes,
     }))

@@ -15,6 +15,7 @@ vi.mock('@dashboard/core/db/timescale.js', () => ({
 // Kept: metrics-store mock — no TimescaleDB in CI
 vi.mock('../services/metrics-store.js', () => ({
   getNetworkRates: vi.fn(),
+  getAllNetworkRates: vi.fn(),
   isUndefinedTableError: (err: unknown) =>
     err instanceof Error && 'code' in err && (err as { code: string }).code === '42P01',
 }));
@@ -39,8 +40,10 @@ vi.mock('@dashboard/core/portainer/portainer-cache.js', () => ({
   TTL: { STATS: 5 },
 }));
 
-import { getNetworkRates } from '../services/metrics-store.js';
+import { getAllNetworkRates, getNetworkRates } from '../services/metrics-store.js';
+import { _resetTracker, recordNetworkSample } from '../services/network-rate-tracker.js';
 const mockGetNetworkRates = vi.mocked(getNetworkRates);
+const mockGetAllNetworkRates = vi.mocked(getAllNetworkRates);
 
 import { getContainerStats } from '@dashboard/core/portainer/portainer-client.js';
 const mockGetContainerStats = vi.mocked(getContainerStats);
@@ -91,6 +94,8 @@ describe('metrics routes', () => {
     vi.clearAllMocks();
     mockIsAvailable.mockResolvedValue(false);
     mockQuery.mockResolvedValue({ rows: [] });
+    mockGetAllNetworkRates.mockResolvedValue({});
+    _resetTracker();
   });
 
   describe('GET /api/metrics/:endpointId/:containerId', () => {
@@ -265,6 +270,48 @@ describe('metrics routes', () => {
       });
 
       expect(mockGetNetworkRates).toHaveBeenCalledWith(42);
+    });
+  });
+
+  describe('GET /api/metrics/network-rates', () => {
+    it('returns DB-backed rates and prunes fields outside the response schema', async () => {
+      mockGetAllNetworkRates.mockResolvedValue({
+        'container-abc': {
+          rxBytesPerSec: 2048,
+          txBytesPerSec: 1024,
+          internalSampleCount: 3,
+        },
+      } as never);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/metrics/network-rates',
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({
+        rates: {
+          'container-abc': { rxBytesPerSec: 2048, txBytesPerSec: 1024 },
+        },
+      });
+      expect(mockGetAllNetworkRates).toHaveBeenCalledOnce();
+    });
+
+    it('falls back to the in-memory tracker when TimescaleDB is unavailable', async () => {
+      mockGetAllNetworkRates.mockRejectedValueOnce(new Error('TimescaleDB unavailable'));
+      recordNetworkSample(7, 'container-live', 100, 50);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/metrics/network-rates',
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({
+        rates: {
+          'container-live': { rxBytesPerSec: 0, txBytesPerSec: 0 },
+        },
+      });
     });
   });
 
