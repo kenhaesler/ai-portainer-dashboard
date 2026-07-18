@@ -36,9 +36,23 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Enforcing (#1578). This step used to carry `continue-on-error: true`,
+      # which made it advisory-only — three separate High advisories reached
+      # `dev` with CI green (undici x3, nodemailer, ws) before being found by
+      # hand. A gate that cannot fail is not a gate.
+      #
+      # If this blocks your PR on an advisory you did not introduce: prefer a
+      # lockfile refresh (`npm update <pkg>`) or a root `overrides` entry, which
+      # removes the vulnerable code rather than hiding it. Every production High
+      # this repo has seen so far was fixable that way — including one npm
+      # reported as `fixAvailable: false`.
+      #
+      # Do not re-add `continue-on-error`, `|| true`, or `--offline` here.
+      # `--offline` in particular exits 0 with an empty report, which is
+      # indistinguishable from a clean audit. backend/src/ci-audit-gate.test.ts
+      # asserts against all three.
       - name: Audit production dependencies (high+)
         run: npm audit --omit=dev --audit-level=high
-        continue-on-error: true
 
       - name: Audit all dependencies (critical gate)
         run: npm audit --audit-level=critical
