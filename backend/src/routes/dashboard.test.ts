@@ -425,6 +425,48 @@ describe('Dashboard Routes', () => {
       await app.close();
     });
 
+    // #1567 — a container whose CPU (or memory) could not be reliably
+    // computed for a collection cycle no longer gets a fabricated 0% row
+    // written to the metrics store (see metrics-collector.ts). That means
+    // getLatestMetricsBatch can now return a record with `memory` but no
+    // `cpu` key (as opposed to being entirely absent from the map, which
+    // the previous test already covers). The fleet aggregate must exclude
+    // that container from the CPU average rather than default it to 0 and
+    // drag the average down.
+    it('excludes a container with a known-unknown CPU sample from the fleet CPU average instead of counting it as 0 (#1567)', async () => {
+      const endpoints = [makeEndpoint(1, 'ep-1')];
+      const containers = [
+        makeContainer('c-1', 1000, 'running', { 'com.docker.compose.project': 'web' }),
+        makeContainer('c-2', 1001, 'running', { 'com.docker.compose.project': 'web' }),
+      ];
+
+      mockGetEndpoints.mockResolvedValue(endpoints);
+      mockGetContainers.mockResolvedValue(containers);
+      // c-1 reports full stats. c-2's CPU could not be computed this cycle
+      // (e.g. missing system_cpu_usage) — its record has memory but no cpu
+      // key at all, matching what the collector now persists (or rather,
+      // does NOT persist) for an unknown sample.
+      mockGetLatestMetricsBatch.mockResolvedValue(new Map([
+        ['c-1', { cpu: 50.0, memory: 60.0, memory_bytes: 1024 * 1024 * 500 }],
+        ['c-2', { memory: 80.0, memory_bytes: 1024 * 1024 * 700 }],
+      ]));
+
+      const app = await buildApp();
+      const res = await app.inject({ method: 'GET', url: '/api/dashboard/resources' });
+
+      expect(res.statusCode).toBe(200);
+      const data = res.json();
+
+      // Before the #1567 fix this would have been (50 + 0) / 2 = 25 —
+      // c-2's unknown CPU silently counted as an idle 0% sample. Only c-1
+      // has a known CPU value, so the average must be exactly that value.
+      expect(data.fleetCpuPercent).toBe(50);
+      // Both containers report memory, so that average is unaffected: (60 + 80) / 2 = 70.
+      expect(data.fleetMemoryPercent).toBe(70);
+
+      await app.close();
+    });
+
     it('handles complete metrics store failure gracefully', async () => {
       const endpoints = [makeEndpoint(1, 'ep-1')];
       const containers = [

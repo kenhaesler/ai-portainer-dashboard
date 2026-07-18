@@ -104,21 +104,34 @@ async function collectEndpointMetrics(
     const { stats, container, containerName } = value;
     // Feed in-memory rate tracker (works without TimescaleDB)
     recordNetworkSample(endpointId, container.Id, stats.networkRxBytes, stats.networkTxBytes);
-    metrics.push(
-      {
+    // #1567: `stats.cpu`/`stats.memory` are `null` when collectMetrics()
+    // could not reliably compute them this cycle (e.g. missing
+    // system_cpu_usage or memory limit). Skip the write entirely for that
+    // metric_type rather than persisting a fabricated 0 — a 0% row is
+    // indistinguishable downstream from a genuinely idle container and
+    // silently drags fleet-wide CPU/memory averages toward 0 (AVG() over the
+    // `metrics` table, and the in-process fleet aggregation in
+    // packages/foundation/src/routes/dashboard.ts, both treat "no row this
+    // cycle" as "exclude from the average" rather than "count as zero").
+    if (stats.cpu !== null) {
+      metrics.push({
         endpoint_id: endpointId,
         container_id: container.Id,
         container_name: containerName,
         metric_type: 'cpu',
         value: stats.cpu,
-      },
-      {
+      });
+    }
+    if (stats.memory !== null) {
+      metrics.push({
         endpoint_id: endpointId,
         container_id: container.Id,
         container_name: containerName,
         metric_type: 'memory',
         value: stats.memory,
-      },
+      });
+    }
+    metrics.push(
       {
         endpoint_id: endpointId,
         container_id: container.Id,
