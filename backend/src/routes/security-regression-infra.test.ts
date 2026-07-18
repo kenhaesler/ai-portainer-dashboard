@@ -200,3 +200,58 @@ describe('Docker Non-Root User Enforcement', () => {
     expect(content).toMatch(/useradd|adduser/);
   });
 });
+
+// =====================================================================
+//  VULNERABLE DEPENDENCY FLOORS
+// =====================================================================
+describe('Vulnerable Dependency Floors', () => {
+  // GHSA-p6gq-j5cr-w38f (High, CVSS 7.1): a message-level `raw` option bypasses
+  // disableFileAccess/disableUrlAccess, enabling arbitrary file read and full-response
+  // SSRF in the delivered message. The affected range is `<= 9.0.0` — note that the
+  // whole 8.x line is affected, so a downgrade to any 8.x reintroduces it.
+  // @see https://github.com/kenhaesler/ai-portainer-dashboard/issues/1574
+  const NODEMAILER_MIN = [9, 0, 1] as const;
+
+  const atLeast = (version: string, min: readonly [number, number, number]): boolean => {
+    const parts = version.split('.').map((n) => Number.parseInt(n, 10));
+    for (let i = 0; i < min.length; i++) {
+      const part = parts[i] ?? 0;
+      if (part > min[i]) return true;
+      if (part < min[i]) return false;
+    }
+    return true;
+  };
+
+  it('should declare a nodemailer range that cannot resolve to a vulnerable version', () => {
+    const file = path.resolve(process.cwd(), '..', 'packages', 'operations', 'package.json');
+    const manifest = JSON.parse(readFileSync(file, 'utf8')) as {
+      dependencies?: Record<string, string>;
+    };
+
+    const range = manifest.dependencies?.nodemailer;
+    expect(range).toBeDefined();
+
+    // A caret range's floor is its lower bound, so ^9.0.1 can never resolve below 9.0.1.
+    const floor = range!.replace(/^[\^~>=v\s]+/, '');
+    expect(atLeast(floor, NODEMAILER_MIN)).toBe(true);
+  });
+
+  it('should resolve nodemailer above the GHSA-p6gq-j5cr-w38f patch floor in the lockfile', () => {
+    const file = path.resolve(process.cwd(), '..', 'package-lock.json');
+    const lock = JSON.parse(readFileSync(file, 'utf8')) as {
+      packages: Record<string, { version?: string }>;
+    };
+
+    // Guard every copy in the tree, not just the hoisted one — a nested entry that
+    // violates its own manifest range still installs silently under `npm ci`.
+    const resolved = Object.entries(lock.packages).filter(([key]) =>
+      key.endsWith('node_modules/nodemailer'),
+    );
+    expect(resolved.length).toBeGreaterThan(0);
+
+    for (const [key, entry] of resolved) {
+      expect(entry.version, `${key} is inside the advisory range`).toBeDefined();
+      expect(atLeast(entry.version!, NODEMAILER_MIN), `${key}@${entry.version}`).toBe(true);
+    }
+  });
+});
