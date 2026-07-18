@@ -679,6 +679,129 @@ describe('stale-while-revalidate (cachedFetchSWR)', () => {
   });
 });
 
+// Issue #1566 — "All Hosts Down" flapping. `getSnapshotTimestamp` is the
+// side-channel that lets a caller (normalizeEndpoint) recover *when* the data
+// currently sitting in cache was actually fetched from its origin, instead of
+// evaluating it against whatever "now" happens to be when it's read back out
+// of a 15-minute SWR cache.
+describe('getSnapshotTimestamp — origin fetch tracking (issue #1566)', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('returns undefined for a key that was never fetched', async () => {
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({ ...baseConfig }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(),
+    }));
+
+    const { getSnapshotTimestamp } = await import('./portainer-cache.js');
+    expect(getSnapshotTimestamp('never:fetched')).toBeUndefined();
+  });
+
+  it('records the fetch instant for a fresh cachedFetch, not the read instant', async () => {
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({ ...baseConfig }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(),
+    }));
+
+    const { cachedFetch, getSnapshotTimestamp } = await import('./portainer-cache.js');
+
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const fetchedAt = Date.now();
+    const fetcher = vi.fn().mockResolvedValue({ endpoints: [] });
+
+    await cachedFetch('endpoints', 900, fetcher);
+    expect(getSnapshotTimestamp('endpoints')).toBe(fetchedAt);
+
+    // Reading the cached value again much later must NOT shift the recorded
+    // fetch instant — that's the whole point (#1566).
+    vi.setSystemTime(fetchedAt + 5 * 60 * 1000);
+    await cachedFetch('endpoints', 900, fetcher);
+    expect(getSnapshotTimestamp('endpoints')).toBe(fetchedAt);
+    expect(fetcher).toHaveBeenCalledTimes(1); // still cached, no re-fetch
+  });
+
+  it('keeps the original fetch timestamp while stale data is served, then updates it once background revalidation resolves', async () => {
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({ ...baseConfig }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(),
+    }));
+
+    const { cachedFetchSWR, getSnapshotTimestamp, waitForInFlight } = await import('./portainer-cache.js');
+
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const firstFetchedAt = Date.now();
+    const firstFetcher = vi.fn().mockResolvedValue('v1');
+    await cachedFetchSWR('endpoints', 60, firstFetcher);
+    expect(getSnapshotTimestamp('endpoints')).toBe(firstFetchedAt);
+
+    // Jump past staleAt (80% of 60s = 48s) but before expiry (60s).
+    const servedAt = firstFetchedAt + 49_000;
+    vi.setSystemTime(servedAt);
+
+    const secondFetcher = vi.fn().mockResolvedValue('v2');
+    const served = await cachedFetchSWR('endpoints', 60, secondFetcher);
+
+    // Stale value is served immediately — the timestamp still reflects the
+    // ORIGINAL fetch, not "now" (servedAt) or the not-yet-resolved refetch.
+    expect(served).toBe('v1');
+    expect(getSnapshotTimestamp('endpoints')).toBe(firstFetchedAt);
+
+    // Once the background revalidation resolves, the timestamp advances to
+    // reflect the new origin fetch.
+    await waitForInFlight();
+    expect(getSnapshotTimestamp('endpoints')).toBe(servedAt);
+  });
+
+  it('does not update the timestamp when a fetch resolves undefined (mirrors the #1270 poisoning guard)', async () => {
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({ ...baseConfig }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(),
+    }));
+
+    const { cachedFetch, getSnapshotTimestamp } = await import('./portainer-cache.js');
+
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const goodFetchedAt = Date.now();
+    await cachedFetch('endpoints', 900, vi.fn().mockResolvedValue(['ep1']));
+    expect(getSnapshotTimestamp('endpoints')).toBe(goodFetchedAt);
+
+    // A later call with a fresh key whose fetcher resolves undefined must not
+    // record a timestamp for that key.
+    await cachedFetch('undefined-key', 900, vi.fn().mockResolvedValue(undefined));
+    expect(getSnapshotTimestamp('undefined-key')).toBeUndefined();
+  });
+
+  it('does not record a timestamp when CACHE_ENABLED is false (every read is genuinely fresh)', async () => {
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({ ...baseConfig, CACHE_ENABLED: false }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(),
+    }));
+
+    const { cachedFetchSWR, getSnapshotTimestamp } = await import('./portainer-cache.js');
+    await cachedFetchSWR('endpoints', 900, vi.fn().mockResolvedValue(['ep1']));
+
+    // Untracked — callers must fall back to Date.now(), which is correct
+    // here since caching is bypassed entirely.
+    expect(getSnapshotTimestamp('endpoints')).toBeUndefined();
+  });
+});
+
 describe('inFlight promise sharing during SWR revalidation (#1495)', () => {
   beforeEach(() => {
     vi.resetModules();

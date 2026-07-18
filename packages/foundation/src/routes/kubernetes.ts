@@ -1,13 +1,13 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod/v4';
 import * as portainer from '@dashboard/core/portainer/portainer-client.js';
-import { cachedFetch, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
+import { cachedFetch, getCacheKey, getSnapshotTimestamp, TTL } from '@dashboard/core/portainer/portainer-cache.js';
 import {
   normalizePod,
   normalizeDeployment,
   normalizeService,
   normalizeNamespace,
-  normalizeEndpoint,
+  normalizeEndpointAsOf,
 } from '@dashboard/core/portainer/portainer-normalizers.js';
 import { isKubernetesEndpoint } from '@dashboard/core/models/portainer.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
@@ -17,14 +17,18 @@ const log = createChildLogger('kubernetes-routes');
 
 /** Get all "up" Kubernetes endpoints, normalized. */
 async function getK8sEndpoints() {
+  const endpointsCacheKey = getCacheKey('endpoints');
   const endpoints = await cachedFetch(
-    getCacheKey('endpoints'),
+    endpointsCacheKey,
     TTL.ENDPOINTS,
     () => portainer.getEndpoints(),
   );
+  // Evaluate Edge heartbeat status against when this snapshot was actually
+  // fetched, not "now" (issue #1566).
+  const referenceTimeMs = getSnapshotTimestamp(endpointsCacheKey) ?? Date.now();
   return endpoints
     .filter((ep) => isKubernetesEndpoint(ep.Type))
-    .map(normalizeEndpoint)
+    .map((ep) => normalizeEndpointAsOf(ep, { referenceTimeMs }))
     .filter((ep) => ep.status === 'up');
 }
 

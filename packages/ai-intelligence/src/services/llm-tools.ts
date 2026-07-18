@@ -1,6 +1,6 @@
 import * as portainer from '@dashboard/core/portainer/portainer-client.js';
-import { cachedFetch, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
-import { normalizeContainer, normalizeEndpoint } from '@dashboard/core/portainer/portainer-normalizers.js';
+import { cachedFetch, getCacheKey, getSnapshotTimestamp, TTL } from '@dashboard/core/portainer/portainer-cache.js';
+import { normalizeContainer, normalizeEndpointAsOf } from '@dashboard/core/portainer/portainer-normalizers.js';
 import { isDockerEndpoint } from '@dashboard/core/models/portainer.js';
 import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
 import { getMetricsDb } from '@dashboard/core/db/timescale.js';
@@ -257,16 +257,20 @@ After you receive the tool results, provide a natural language response to the u
 async function findContainerByName(
   name: string,
 ): Promise<{ id: string; endpointId: number; name: string } | null> {
+  const endpointsCacheKey = getCacheKey('endpoints');
   const endpoints = await cachedFetch(
-    getCacheKey('endpoints'),
+    endpointsCacheKey,
     TTL.ENDPOINTS,
     () => portainer.getEndpoints(),
   );
+  // Evaluate Edge heartbeat status against when this snapshot was actually
+  // fetched, not "now" (issue #1566).
+  const referenceTimeMs = getSnapshotTimestamp(endpointsCacheKey) ?? Date.now();
 
   const nameLower = name.toLowerCase();
   for (const ep of endpoints) {
     if (!isDockerEndpoint(ep.Type)) continue;
-    const norm = normalizeEndpoint(ep);
+    const norm = normalizeEndpointAsOf(ep, { referenceTimeMs });
     if (norm.status !== 'up') continue;
     try {
       const containers = await cachedFetch(
@@ -291,16 +295,20 @@ async function executeQueryContainers(
   args: Record<string, unknown>,
 ): Promise<ToolCallResult> {
   try {
+    const endpointsCacheKey = getCacheKey('endpoints');
     const endpoints = await cachedFetch(
-      getCacheKey('endpoints'),
+      endpointsCacheKey,
       TTL.ENDPOINTS,
       () => portainer.getEndpoints(),
     );
+    // Evaluate Edge heartbeat status against when this snapshot was actually
+    // fetched, not "now" (issue #1566).
+    const referenceTimeMs = getSnapshotTimestamp(endpointsCacheKey) ?? Date.now();
 
     const allContainers = [];
     for (const ep of endpoints) {
       if (!isDockerEndpoint(ep.Type)) continue;
-      const norm = normalizeEndpoint(ep);
+      const norm = normalizeEndpointAsOf(ep, { referenceTimeMs });
       if (norm.status !== 'up') continue;
       try {
         const containers = await cachedFetch(

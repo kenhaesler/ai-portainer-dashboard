@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import * as portainer from '@dashboard/core/portainer/portainer-client.js';
-import { cachedFetch, cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
-import { normalizeEndpoint } from '@dashboard/core/portainer/portainer-normalizers.js';
+import { cachedFetch, cachedFetchSWR, getCacheKey, getSnapshotTimestamp, TTL } from '@dashboard/core/portainer/portainer-cache.js';
+import { normalizeEndpoint, normalizeEndpointAsOf } from '@dashboard/core/portainer/portainer-normalizers.js';
 import { EndpointIdParamsSchema, EndpointsListResponseSchema, LiveEndpointSchema, ErrorWithDetailsSchema } from '@dashboard/core/models/api-schemas.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { errorDetails } from '@dashboard/core/plugins/error-handler.js';
@@ -25,8 +25,14 @@ export async function endpointsRoutes(fastify: FastifyInstance) {
     // bounce a logged-in user back to /login on every page load when the
     // dashboard's PORTAINER_API_KEY is missing or invalid.
     try {
-      const endpoints = (await cachedFetch(getCacheKey('endpoints'), TTL.ENDPOINTS, () => portainer.getEndpoints())) ?? [];
-      const normalized = endpoints.map(normalizeEndpoint);
+      const endpointsCacheKey = getCacheKey('endpoints');
+      const endpoints = (await cachedFetch(endpointsCacheKey, TTL.ENDPOINTS, () => portainer.getEndpoints())) ?? [];
+      // Evaluate Edge heartbeat status against when this snapshot was actually
+      // fetched from Portainer, not against "now" — this list can be served
+      // out of a 15-minute cache, and judging a cached-but-healthy endpoint
+      // against the current wall clock flips it to "down" (issue #1566).
+      const referenceTimeMs = getSnapshotTimestamp(endpointsCacheKey) ?? Date.now();
+      const normalized = endpoints.map((ep) => normalizeEndpointAsOf(ep, { referenceTimeMs }));
       await enrichEndpointsWithLiveDockerInfo(normalized);
       try {
         // Global stacks list (key 'stacks') — distinct from the per-endpoint 'stacks:<id>' keys used by the stacks route.
@@ -94,12 +100,14 @@ export async function endpointsRoutes(fastify: FastifyInstance) {
   }, async (request, reply) => {
     const { id } = request.params as { id: number };
     try {
+      const endpointCacheKey = getCacheKey('endpoint', id);
       const endpoint = await cachedFetch(
-        getCacheKey('endpoint', id),
+        endpointCacheKey,
         TTL.ENDPOINTS,
         () => portainer.getEndpoint(id),
       );
-      return normalizeEndpoint(endpoint);
+      const referenceTimeMs = getSnapshotTimestamp(endpointCacheKey) ?? Date.now();
+      return normalizeEndpointAsOf(endpoint, { referenceTimeMs });
     } catch (err) {
       log.error({ err, id }, 'Failed to fetch endpoint from Portainer');
       return reply.code(502).send({ error: 'Unable to connect to Portainer', details: errorDetails(err) });

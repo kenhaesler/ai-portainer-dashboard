@@ -124,6 +124,55 @@ describe('collectFleetOverview', () => {
     expect(overview.endpoints[0].stackCount).toBe(1);
     expect(overview.totals).toMatchObject({ running: 3, stopped: 1, total: 4, stacks: 1 });
   });
+
+  // Issue #1566 — "All Hosts Down" flapping. `collectFleetOverview` is the
+  // shared pipeline behind the endpoints route, the scheduler's KPI writer,
+  // and LLM context — so this is the highest-leverage place to prove the
+  // SWR-cache / Edge-heartbeat fix actually applies in the real (cached)
+  // request path, not just in normalizeEndpoint's unit tests.
+  describe('SWR-cache / heartbeat conflict (issue #1566)', () => {
+    afterEach(() => vi.useRealTimers());
+
+    it('keeps a healthy Edge endpoint "up" when the endpoints list is served stale out of the SWR cache', async () => {
+      // Re-enable the real (in-memory) cache for this scenario — the rest of
+      // this describe block bypasses it via CACHE_ENABLED: false. REDIS_URL
+      // must be explicitly cleared: the shared vitest env config points it at
+      // localhost:6379, and a reachable/unreachable Redis there would make
+      // this test's cache-layer path (L1 vs. L2) environment-dependent.
+      setConfigForTest({ CACHE_ENABLED: true, REDIS_URL: undefined, PORTAINER_API_URL: 'http://test.local' });
+
+      vi.useFakeTimers({ toFake: ['Date'] });
+      const fetchedAt = Date.now();
+      const lastCheckIn = Math.floor(fetchedAt / 1000) - 30; // healthy 30s before fetch
+
+      vi.spyOn(portainerClient, 'getEndpoints').mockResolvedValue([
+        {
+          Id: 1, Name: 'edge-1', Type: 4, URL: 'tcp://x', Status: 2,
+          EdgeID: 'edge-1', LastCheckInDate: lastCheckIn, EdgeCheckinInterval: 5,
+        },
+      ] as never);
+      vi.spyOn(portainerClient, 'getStacks').mockResolvedValue([] as never);
+      vi.spyOn(portainerClient, 'getContainers').mockResolvedValue([] as never);
+      vi.spyOn(edgeLive, 'fetchLiveDockerInfo').mockResolvedValue(null);
+
+      // First call populates the endpoints cache (TTL.ENDPOINTS = 900s) and
+      // correctly reports the endpoint as up.
+      const first = await collectFleetOverview(cfg);
+      expect(first.endpoints[0].status).toBe('up');
+
+      // Jump 13 minutes forward — past the 80% staleAt threshold (720s) but
+      // before the 900s expiry — so the SAME cached (now-stale) endpoint
+      // payload is served immediately while a background refetch kicks off.
+      vi.setSystemTime(fetchedAt + 13 * 60 * 1000);
+
+      const second = await collectFleetOverview(cfg);
+      // The endpoint's real heartbeat never actually stopped (the mock
+      // returns the same LastCheckInDate) — it must still read "up" here.
+      // Pre-fix, normalizeEndpoint measured elapsed time against the current
+      // wall clock, so this would incorrectly flip to "down".
+      expect(second.endpoints[0].status).toBe('up');
+    });
+  });
 });
 
 describe('attachStackCounts', () => {

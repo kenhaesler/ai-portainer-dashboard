@@ -1,8 +1,8 @@
 import pLimit from 'p-limit';
 import { FastifyInstance } from 'fastify';
 import * as portainer from '@dashboard/core/portainer/portainer-client.js';
-import { cachedFetch, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
-import { normalizeContainer, normalizeEndpoint, normalizeStack } from '@dashboard/core/portainer/portainer-normalizers.js';
+import { cachedFetch, getCacheKey, getSnapshotTimestamp, TTL } from '@dashboard/core/portainer/portainer-cache.js';
+import { normalizeContainer, normalizeEndpointAsOf, normalizeStack } from '@dashboard/core/portainer/portainer-normalizers.js';
 import { supportsLiveFeatures } from '@dashboard/infrastructure';
 import { isDockerEndpoint } from '@dashboard/core/models/portainer.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
@@ -84,15 +84,20 @@ async function searchContainerLogs(
   tail: number,
 ): Promise<LogSearchResult[]> {
   const results: LogSearchResult[] = [];
+  const endpointsCacheKey = getCacheKey('endpoints');
   const endpoints = await cachedFetch(
-    getCacheKey('endpoints'),
+    endpointsCacheKey,
     TTL.ENDPOINTS,
     () => portainer.getEndpoints(),
   );
 
+  // Evaluate Edge heartbeat status against when this snapshot was actually
+  // fetched, not "now" — this list can be served out of a 15-minute cache
+  // (issue #1566).
+  const referenceTimeMs = getSnapshotTimestamp(endpointsCacheKey) ?? Date.now();
   // Fetch containers from Docker endpoints only — K8s pods are searched separately
   const upEndpoints = endpoints
-    .map(normalizeEndpoint)
+    .map((ep) => normalizeEndpointAsOf(ep, { referenceTimeMs }))
     .filter((ep) => ep.status === 'up' && isDockerEndpoint(ep.type));
 
   const containerResults = await Promise.allSettled(
@@ -211,13 +216,17 @@ export async function searchRoutes(fastify: FastifyInstance) {
     const limitSafe = Math.max(1, Math.min(25, limit));
     const logLimitSafe = Math.max(1, Math.min(25, logLimit));
 
+    const endpointsCacheKey = getCacheKey('endpoints');
     const endpoints = await cachedFetch(
-      getCacheKey('endpoints'),
+      endpointsCacheKey,
       TTL.ENDPOINTS,
       () => portainer.getEndpoints(),
     );
 
-    const upEndpoints = endpoints.map(normalizeEndpoint).filter((ep) => ep.status === 'up' && isDockerEndpoint(ep.type));
+    const endpointsReferenceTimeMs = getSnapshotTimestamp(endpointsCacheKey) ?? Date.now();
+    const upEndpoints = endpoints
+      .map((ep) => normalizeEndpointAsOf(ep, { referenceTimeMs: endpointsReferenceTimeMs }))
+      .filter((ep) => ep.status === 'up' && isDockerEndpoint(ep.type));
 
     // Fetch containers, images, and stacks in parallel across all Docker endpoints
     const [endpointResults, stacksRaw] = await Promise.all([

@@ -7,9 +7,9 @@ import { randomUUID } from 'crypto';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { getConfig } from '@dashboard/core/config/index.js';
 import * as portainer from '@dashboard/core/portainer/portainer-client.js';
-import { normalizeEndpoint, normalizeContainer } from '@dashboard/core/portainer/portainer-normalizers.js';
+import { normalizeEndpointAsOf, normalizeContainer } from '@dashboard/core/portainer/portainer-normalizers.js';
 import { isDockerEndpoint } from '@dashboard/core/models/portainer.js';
-import { cachedFetch, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
+import { cachedFetch, getCacheKey, getSnapshotTimestamp, TTL } from '@dashboard/core/portainer/portainer-cache.js';
 import { getEffectivePrompt, getEffectiveLlmConfig, estimateTokens, PROMPT_FEATURES, type PromptFeature } from '../services/prompt-store.js';
 import { insertLlmTrace } from '../services/llm-trace-store.js';
 import { LlmQueryBodySchema, LlmTestConnectionBodySchema, LlmModelsQuerySchema, LlmTestPromptBodySchema } from '@dashboard/core/models/api-schemas.js';
@@ -38,12 +38,16 @@ function sameLlmOrigin(a: string | undefined, b: string | undefined): boolean {
 
 async function getInfrastructureSummary(): Promise<string> {
   try {
+    const endpointsCacheKey = getCacheKey('endpoints');
     const endpoints = await cachedFetch(
-      getCacheKey('endpoints'),
+      endpointsCacheKey,
       TTL.ENDPOINTS,
       () => portainer.getEndpoints(),
     );
-    const normalized = endpoints.map(normalizeEndpoint);
+    // Evaluate Edge heartbeat status against when this snapshot was actually
+    // fetched, not "now" (issue #1566).
+    const referenceTimeMs = getSnapshotTimestamp(endpointsCacheKey) ?? Date.now();
+    const normalized = endpoints.map((ep) => normalizeEndpointAsOf(ep, { referenceTimeMs }));
 
     const allContainers = [];
     for (const ep of normalized.filter(e => e.status === 'up' && isDockerEndpoint(e.type)).slice(0, 10)) {

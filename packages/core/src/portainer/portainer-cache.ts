@@ -765,6 +765,50 @@ export function getCacheKey(resource: string, ...args: (string | number)[]): str
  */
 const inFlight = new Map<string, Promise<unknown>>();
 
+/**
+ * Tracks, per cache key, the wall-clock instant the underlying value was last
+ * fetched fresh from its origin — as opposed to the (possibly much later)
+ * instant it is read back out of cache. This is a side-channel independent of
+ * the TtlCache/Redis staleness bookkeeping above; it exists purely so
+ * time-sensitive consumers can evaluate a cached-but-still-valid payload
+ * against the moment it was actually captured rather than the moment it
+ * happens to be read.
+ *
+ * Concretely: `normalizeEndpoint`'s Edge heartbeat check computes
+ * `elapsed = now - lastCheckIn`. The Portainer endpoints list is served from
+ * this module's SWR/TTL cache (`TTL.ENDPOINTS` = 15 minutes), so a healthy
+ * endpoint whose `LastCheckInDate` was fresh *when the snapshot was fetched*
+ * gets judged against the current wall clock on every cache read and
+ * incorrectly flips to `down` as the cached snapshot ages — the "All Hosts
+ * Down" flapping in issue #1566. Callers that read endpoints through
+ * `cachedFetch`/`cachedFetchSWR` should look up `getSnapshotTimestamp(key)`
+ * and pass it as `normalizeEndpoint`'s `referenceTimeMs`.
+ */
+const originFetchTimestamps = new Map<string, number>();
+
+/**
+ * Record that `key` was just fetched fresh from its origin at `fetchedAt`.
+ * A no-op for an undefined/failed fetch result — mirrors the "undefined
+ * never populates the cache" guard (#1270) so a failed fetch can't poison
+ * the timestamp for the next caller.
+ */
+function recordOriginFetchTimestamp(key: string, data: unknown, fetchedAt: number): void {
+  if (data === undefined) return;
+  originFetchTimestamps.set(key, fetchedAt);
+}
+
+/**
+ * Look up when the value currently cached under `key` was actually fetched
+ * from its origin, as opposed to when it is being read right now. Returns
+ * `undefined` when untracked (caching disabled, the key was never populated
+ * via `cachedFetch`/`cachedFetchSWR`, or nothing has been fetched yet) —
+ * callers must treat `undefined` as "fetched now" and fall back to
+ * `Date.now()`.
+ */
+export function getSnapshotTimestamp(key: string): number | undefined {
+  return originFetchTimestamps.get(key);
+}
+
 export function cachedFetch<T>(
   key: string,
   ttlSeconds: number,
@@ -813,6 +857,7 @@ export function cachedFetch<T>(
       if (data !== undefined) {
         await cache.set(key, data, ttlSeconds);
       }
+      recordOriginFetchTimestamp(key, data, Date.now());
       resolve(data);
     } catch (err) {
       // Invalidate stale cache entry on fetch failure so the next call
@@ -854,6 +899,7 @@ function startBackgroundRevalidation<T>(
       const data = await fetcher();
       if (data !== undefined) {
         await cache.set(key, data, ttlSeconds);
+        recordOriginFetchTimestamp(key, data, Date.now());
         return data;
       }
       // Fetcher resolved undefined — keep the stale value for any awaiting
