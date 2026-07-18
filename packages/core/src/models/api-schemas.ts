@@ -19,6 +19,16 @@ export const ErrorWithDetailsSchema = ErrorResponseSchema.extend({
   message: z.string().optional(),
 });
 
+// Full route-error envelope. Explicit handler errors normally return only
+// `error` (and sometimes an application `code`), while Fastify validation
+// errors can also include statusCode/code/message/details. Enumerating every
+// supported key preserves those framework fields without allowing unrelated
+// data to leak through error responses.
+export const RouteErrorResponseSchema = ErrorWithDetailsSchema.extend({
+  statusCode: z.number().optional(),
+  code: z.string().optional(),
+});
+
 // ─── Success response ───────────────────────────────────────────────
 export const SuccessResponseSchema = z.object({
   success: z.boolean(),
@@ -204,6 +214,26 @@ export const AnomaliesResponseSchema = z.object({
   })),
 });
 
+// GET /api/metrics/:endpointId/:containerId/meta — mirrors the route's own
+// return shape 1:1 (#1429). Both the happy path and every catch/degrade path
+// return exactly these three keys, so no `.passthrough()` is needed.
+export const ContainerMetricsMetaResponseSchema = z.object({
+  memoryLimitBytes: z.number().nullable(),
+  onlineCpus: z.number().nullable(),
+  usedBytes: z.number().nullable(),
+});
+
+// GET /api/metrics/network-rates and /api/metrics/network-rates/:endpointId —
+// shared shape for both the TimescaleDB-backed NetworkRate (metrics-store.ts)
+// and the in-memory fallback LiveNetworkRate (network-rate-tracker.ts), which
+// are structurally identical.
+export const NetworkRatesResponseSchema = z.object({
+  rates: z.record(z.string(), z.object({
+    rxBytesPerSec: z.number(),
+    txBytesPerSec: z.number(),
+  })),
+});
+
 // ─── Monitoring schemas ─────────────────────────────────────────────
 export const InsightsQuerySchema = z.object({
   severity: z.enum(['critical', 'warning', 'info']).optional(),
@@ -329,6 +359,75 @@ export const AuditLogQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(1000).default(100),
   offset: z.coerce.number().default(0),
   cursor: z.string().optional(),
+});
+
+// PUT /api/settings/:key — always `{ success: true, key, value }`; value is
+// the REDACTED placeholder for sensitive keys (settings.ts isSensitiveSettingKey).
+export const SettingPutResponseSchema = z.object({
+  success: z.literal(true),
+  key: z.string(),
+  value: z.string(),
+});
+
+// GET /api/settings/audit-log — raw `SELECT * FROM audit_log` rows.
+// Passthrough (like the insights list convention): the anchor fields are every
+// column on the table today, but `details` is a JSONB free-form bag whose
+// shape varies per audit action, so keeping the row open avoids the strict
+// schema 500ing on an action-specific details shape.
+const AuditLogRowSchema = z.object({
+  id: z.number(),
+  user_id: z.string().nullable(),
+  username: z.string().nullable(),
+  action: z.string(),
+  target_type: z.string().nullable(),
+  target_id: z.string().nullable(),
+  details: z.record(z.string(), z.unknown()).nullable(),
+  request_id: z.string().nullable(),
+  ip_address: z.string().nullable(),
+  created_at: z.string(),
+}).passthrough();
+
+export const AuditLogResponseSchema = z.object({
+  entries: z.array(AuditLogRowSchema),
+  limit: z.number(),
+  offset: z.number(),
+  nextCursor: z.string().nullable(),
+  hasMore: z.boolean(),
+});
+
+// GET /api/settings/prompt-features — PROMPT_FEATURES (ai-intelligence)
+// enriched per-feature with the default and currently-effective prompt text.
+export const PromptFeaturesResponseSchema = z.object({
+  features: z.array(z.object({
+    key: z.string(),
+    label: z.string(),
+    description: z.string(),
+    defaultPrompt: z.string(),
+    effectivePrompt: z.string(),
+  })),
+});
+
+// Mirrors PromptVersion (prompt-version-store.ts) 1:1 — already a normalized,
+// hand-built object (not a raw row), so a strict schema is safe.
+const PromptVersionSchema = z.object({
+  id: z.number(),
+  feature: z.string(),
+  version: z.number(),
+  systemPrompt: z.string(),
+  model: z.string().nullable(),
+  temperature: z.number().nullable(),
+  changedBy: z.string(),
+  changedAt: z.string(),
+  changeNote: z.string().nullable(),
+});
+
+export const PromptHistoryResponseSchema = z.object({
+  versions: z.array(PromptVersionSchema),
+});
+
+export const PromptRollbackResponseSchema = z.object({
+  success: z.literal(true),
+  newVersion: PromptVersionSchema,
 });
 
 // ─── Logs schemas ───────────────────────────────────────────────────
@@ -754,4 +853,64 @@ export const TraceSummaryResponseSchema = z.object({
     scheduler: z.number(),
     unknown: z.number(),
   }),
+});
+
+// GET /api/traces/:traceId — raw `SELECT * FROM spans WHERE trace_id = ?` rows.
+// Unlike TraceListItemSchema (a curated projection), this is every column on the
+// table, which has grown via several migrations (022, 036, 038) adding OTLP/Beyla
+// attributes. A strict schema would need updating every time the table gains a
+// column and would silently drop new ones in the meantime; passthrough keeps the
+// row byte-identical (500-safe) while still anchoring the fields every consumer
+// (trace-explorer.tsx) reads. `attributes` is JSONB — the pg driver parses it to
+// a plain object.
+export const SpanRowSchema = z.object({
+  id: z.string(),
+  trace_id: z.string(),
+  parent_span_id: z.string().nullable(),
+  name: z.string(),
+  kind: z.string(),
+  status: z.string(),
+  start_time: z.string(),
+  end_time: z.string().nullable(),
+  duration_ms: z.number().nullable(),
+  service_name: z.string(),
+  attributes: z.record(z.string(), z.unknown()).nullable(),
+  created_at: z.string(),
+  trace_source: z.string().nullable(),
+}).passthrough();
+
+export const TraceDetailResponseSchema = z.object({
+  traceId: z.string(),
+  spans: z.array(SpanRowSchema),
+});
+
+// GET /api/traces/red — RED (rate/errors/duration) aggregate. All numeric
+// fields are coerced with `Number(x ?? 0)` in computeRed(), so none are
+// nullable here even though the underlying percentile_cont() can be NULL for
+// an empty group.
+export const RedResponseSchema = z.object({
+  buckets: z.array(z.object({
+    bucketStart: z.string(),
+    rows: z.array(z.object({
+      group: z.string(),
+      rate: z.number(),
+      errorRate: z.number(),
+      p50Ms: z.number(),
+      p95Ms: z.number(),
+      p99Ms: z.number(),
+      callCount: z.number(),
+    })),
+  })),
+  truncated: z.boolean(),
+});
+
+// GET /api/traces/ingest-stats — mirrors SamplerStats (trace-sampler.ts) 1:1.
+export const IngestStatsResponseSchema = z.object({
+  acceptedTotal: z.number(),
+  droppedTotal: z.number(),
+  perSource: z.array(z.object({
+    source: z.string(),
+    accepted: z.number(),
+    dropped: z.number(),
+  })),
 });
