@@ -405,6 +405,59 @@ describe('scheduler/setup – runMetricsCollection', () => {
     expect(collectMetricsMock).toHaveBeenCalledWith(1, 'running-1');
   });
 
+  // #1567 — collectMetrics() now reports `null` (not a fabricated `0`) when
+  // CPU/memory can't be reliably computed for a cycle. The scheduler must
+  // skip writing that metric_type row entirely rather than persisting a `0`
+  // that would be indistinguishable downstream from a genuinely idle
+  // container and silently drag fleet aggregates toward 0.
+  it('does not write cpu/memory rows when collectMetrics reports them as unknown (#1567)', async () => {
+    getEndpointsMock.mockResolvedValueOnce([{ Id: 1, Name: 'ep1', Status: 1, Type: 1, URL: 'tcp://localhost' }] as any);
+    getContainersMock.mockResolvedValueOnce([
+      { Id: 'c-1', Names: ['/app'], State: 'running' },
+    ] as any);
+    collectMetricsMock.mockResolvedValueOnce({
+      cpu: null,
+      memory: null,
+      memoryBytes: 1024000,
+      networkRxBytes: 5000,
+      networkTxBytes: 3000,
+    });
+
+    await runMetricsCollection();
+
+    expect(insertMetricsMock).toHaveBeenCalledTimes(1);
+    const inserted = insertMetricsMock.mock.calls[0][0] as Array<{ metric_type: string; value: number }>;
+    // Only memory_bytes + the two network counters — no cpu/memory rows.
+    expect(inserted).toHaveLength(3);
+    expect(inserted.some((m) => m.metric_type === 'cpu')).toBe(false);
+    expect(inserted.some((m) => m.metric_type === 'memory')).toBe(false);
+    expect(inserted.map((m) => m.metric_type).sort()).toEqual(
+      ['memory_bytes', 'network_rx_bytes', 'network_tx_bytes'].sort(),
+    );
+  });
+
+  it('writes memory but skips cpu when only cpu is unknown for the cycle (#1567)', async () => {
+    getEndpointsMock.mockResolvedValueOnce([{ Id: 1, Name: 'ep1', Status: 1, Type: 1, URL: 'tcp://localhost' }] as any);
+    getContainersMock.mockResolvedValueOnce([
+      { Id: 'c-1', Names: ['/app'], State: 'running' },
+    ] as any);
+    collectMetricsMock.mockResolvedValueOnce({
+      cpu: null,
+      memory: 40.2,
+      memoryBytes: 1024000,
+      networkRxBytes: 5000,
+      networkTxBytes: 3000,
+    });
+
+    await runMetricsCollection();
+
+    const inserted = insertMetricsMock.mock.calls[0][0] as Array<{ metric_type: string; value: number }>;
+    expect(inserted).toHaveLength(4);
+    expect(inserted.some((m) => m.metric_type === 'cpu')).toBe(false);
+    const memoryRow = inserted.find((m) => m.metric_type === 'memory');
+    expect(memoryRow?.value).toBe(40.2);
+  });
+
   it('handles individual container failures gracefully', async () => {
     getEndpointsMock.mockResolvedValueOnce([{ Id: 1, Name: 'ep1', Status: 1, Type: 1, URL: 'tcp://localhost' }] as any);
     getContainersMock.mockResolvedValueOnce([

@@ -263,12 +263,28 @@ export async function containersRoutes(fastify: FastifyInstance) {
   });
 
   // Get container details
+  //
+  // Response is normalized through the same `normalizeContainer()` projection
+  // used by the list/favorites endpoints (NormalizedContainerSchema), rather
+  // than returned verbatim. `portainer.getContainer()` already bridges the raw
+  // Docker *inspect* payload into the list-shaped `Container` contract via
+  // `containerFromInspect()` (#1387), which drops `Mounts` entirely and only
+  // maps a fixed allow-list of `HostConfig` fields — so no `Mounts[].Source`,
+  // `LogPath`, or `HostConfig.Binds` reach this handler. `normalizeContainer()`
+  // is a second, independent stripping layer: it only ever reads a fixed set
+  // of known fields (id/name/image/state/status/ports/labels/networks/...)
+  // onto the response, so even a future regression upstream that reintroduced
+  // filesystem paths onto the `Container` object could not leak them here
+  // (CLAUDE.md Security §5, issue #1564). This also gives the detail route the
+  // exact same shape the container-detail UI (`ContainerOverview`) already
+  // consumes from the list endpoint, so no field the UI reads is dropped.
   fastify.get('/api/containers/:endpointId/:containerId', {
     schema: {
       tags: ['Containers'],
       summary: 'Get container details',
       security: [{ bearerAuth: [] }],
       params: ContainerParamsSchema,
+      response: { 200: NormalizedContainerSchema, 502: ErrorWithDetailsSchema },
     },
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {
@@ -277,12 +293,29 @@ export async function containersRoutes(fastify: FastifyInstance) {
       containerId: string;
     };
     try {
+      // Fetch the container first: if it fails (e.g. not found), bail before
+      // ever touching the endpoints cache — keeps error responses focused on
+      // the actual failure.
       const container = await cachedFetchSWR(
         getCacheKey('container-detail', endpointId, containerId),
         TTL.STATS, // 60s TTL — detail changes infrequently, matches scheduler interval
         () => portainer.getContainer(endpointId, containerId),
       );
-      return container;
+      let endpointName = String(endpointId);
+      try {
+        const endpoints = await cachedFetchSWR(
+          getCacheKey('endpoints'),
+          TTL.ENDPOINTS,
+          () => portainer.getEndpoints(),
+        );
+        endpointName = endpoints.find((e) => e.Id === endpointId)?.Name ?? endpointName;
+      } catch (err) {
+        // The endpoint name is display metadata. A transient failure of the
+        // independent endpoint-list call must not hide a successfully fetched
+        // container detail response.
+        log.warn({ err, endpointId }, 'Failed to resolve endpoint name; using endpoint id');
+      }
+      return normalizeContainer(container, endpointId, endpointName);
     } catch (err) {
       log.error({ err, endpointId, containerId }, 'Failed to fetch container details');
       return reply.code(502).send({ error: 'Unable to fetch container details from Portainer', details: errorDetails(err) });

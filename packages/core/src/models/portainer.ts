@@ -195,10 +195,10 @@ export function containerFromInspect(raw: unknown): Container {
       : undefined,
     // Mounts intentionally omitted: Mounts[].Source carries raw host
     // filesystem paths (CLAUDE.md §5 — strip sensitive metadata before it
-    // reaches the frontend). The detail route returns this Container verbatim,
-    // normalizeContainer discards Mounts, and no consumer reads them, so we
-    // drop the array here rather than leak host paths. ContainerSchema's
-    // `.default([])` keeps the field contract-compliant.
+    // reaches the frontend). The detail route projects this Container through
+    // normalizeContainer, which also discards Mounts, and no consumer reads
+    // them, so we drop the array here rather than leak host paths.
+    // ContainerSchema's `.default([])` keeps the field contract-compliant.
     HostConfig: i.HostConfig,
   });
 }
