@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   normalizeEndpoint,
+  normalizeEndpointAsOf,
   endpointSupportsLiveDockerInfo,
   applyLiveDockerInfo,
   markLiveUnavailable,
@@ -272,6 +273,146 @@ describe('normalizeEndpoint — Edge Agent fields', () => {
 
       const down = makeEndpoint({ Type: 1, Status: 2 });
       expect(normalizeEndpoint(down).status).toBe('down');
+    });
+  });
+
+  // Issue #1566 — "All Hosts Down" flapping caused by an SWR-cache /
+  // Edge-heartbeat conflict. The endpoints list is served from a 15-minute
+  // stale-while-revalidate cache (TTL.ENDPOINTS = 900s in portainer-cache.ts).
+  // `determineEdgeStatus` computes `elapsed = now - lastCheckIn` — if a
+  // *cached* endpoint (whose LastCheckInDate was fresh when the snapshot was
+  // originally fetched, minutes ago) is evaluated against the *current*
+  // wall clock instead of the fetch-time snapshot, every Edge endpoint
+  // appears to have gone silent even though nothing actually changed.
+  describe('SWR-cache / heartbeat conflict (issue #1566)', () => {
+    it('reproduces the bug: a healthy endpoint served from a stale SWR cache flips to "down" when evaluated against the current wall clock instead of fetch time', () => {
+      // The endpoint checked in 30s before the snapshot was fetched — well
+      // within the ~90s heartbeat threshold at fetch time.
+      const fetchedAt = Date.now();
+      const lastCheckIn = Math.floor(fetchedAt / 1000) - 30;
+      const ep = makeEndpoint({
+        Type: 4,
+        EdgeID: 'edge-swr-bug',
+        Status: 2,
+        LastCheckInDate: lastCheckIn,
+        EdgeCheckinInterval: 5,
+      });
+
+      // At fetch time, the endpoint is correctly "up".
+      expect(normalizeEndpointAsOf(ep, { referenceTimeMs: fetchedAt }).status).toBe('up');
+
+      // Wall-clock time actually advances 5 minutes (the raw endpoint payload
+      // itself is unchanged — this simulates the same cached snapshot being
+      // served again out of the 15-minute SWR cache, well past the ~90s
+      // heartbeat + jitter window, even though the endpoint never actually
+      // stopped checking in).
+      vi.setSystemTime(new Date(fetchedAt + 5 * 60 * 1000));
+
+      // BUGGY behavior: re-normalizing the identical cached payload with no
+      // reference time (i.e. evaluating against "now") incorrectly flips it
+      // to "down" — this is issue #1566.
+      expect(normalizeEndpoint(ep).status).toBe('down');
+
+      // FIXED behavior: passing the snapshot's original fetch time keeps the
+      // endpoint correctly "up", regardless of how much later it is actually
+      // read out of the cache.
+      expect(normalizeEndpointAsOf(ep, { referenceTimeMs: fetchedAt }).status).toBe('up');
+    });
+
+    it('evaluates elapsed time against the passed referenceTimeMs, not Date.now()', () => {
+      const fetchedAt = Date.now();
+      const lastCheckIn = Math.floor(fetchedAt / 1000) - 45; // 45s before fetch — within threshold
+      const ep = makeEndpoint({
+        Type: 4,
+        EdgeID: 'edge-reference-time',
+        Status: 2,
+        LastCheckInDate: lastCheckIn,
+        EdgeCheckinInterval: 5,
+      });
+
+      // Passing the original fetch time keeps it "up" even though "now"
+      // (simulated via vi.setSystemTime in the outer beforeEach, fixed at
+      // 2026-02-10T12:00:00Z) may be arbitrarily far in the future relative
+      // to fetchedAt.
+      expect(normalizeEndpointAsOf(ep, { referenceTimeMs: fetchedAt }).status).toBe('up');
+
+      // Passing a reference time far past the heartbeat threshold correctly
+      // reports "down" — proving the function is reference-time-aware in
+      // both directions, not just defaulting everything to "up".
+      const farFuture = fetchedAt + 20 * 60 * 1000; // +20 minutes
+      expect(normalizeEndpointAsOf(ep, { referenceTimeMs: farFuture }).status).toBe('down');
+    });
+
+    it('is safe under bare Array.prototype.map(normalizeEndpoint) / (normalizeEndpointAsOf) — the array index must never be mistaken for a reference time', () => {
+      // `endpoints.map(normalizeEndpoint)` is the dominant call pattern
+      // throughout the codebase, and Array.prototype.map invokes its callback
+      // as (element, index, array). This is exactly why the time-aware
+      // variant is a *separate* function (normalizeEndpointAsOf) rather than
+      // a bare `referenceTimeMs: number` second parameter bolted onto
+      // normalizeEndpoint itself: a positional number parameter would let
+      // every element's array index (0, 1, 2, ...) silently masquerade as a
+      // reference time (the classic `["1","2"].map(parseInt)` footgun),
+      // corrupting the heartbeat elapsed-time calculation. Two properties
+      // must both hold:
+      //  1. `normalizeEndpoint`'s signature is untouched, so bare `.map()` use
+      //     is unaffected (and still uses Date.now(), never an index).
+      //  2. `normalizeEndpointAsOf` takes an options *object*, so even if it
+      //     were (mis)used bare via `.map()`, the numeric index has no
+      //     `.referenceTimeMs` property and safely falls through to
+      //     Date.now() instead of being misread as a timestamp.
+      const healthyEndpoints = [
+        makeEndpoint({
+          Type: 4,
+          EdgeID: 'edge-map-0',
+          Status: 2,
+          LastCheckInDate: Math.floor(Date.now() / 1000) - 20, // healthy
+          EdgeCheckinInterval: 5,
+        }),
+        makeEndpoint({
+          Type: 4,
+          EdgeID: 'edge-map-1',
+          Status: 2,
+          LastCheckInDate: Math.floor(Date.now() / 1000) - 5000, // genuinely down (>90s threshold)
+          EdgeCheckinInterval: 5,
+        }),
+      ];
+
+      // If the index leaked in as referenceTimeMs, index 0 would compute
+      // elapsed as a huge negative number (Date.now()=0 epoch-adjacent) and
+      // always report "up" regardless of actual health, and index 1 would
+      // fare no better — the real LastCheckInDate values must be respected.
+      const viaNormalizeEndpoint = healthyEndpoints.map(normalizeEndpoint);
+      expect(viaNormalizeEndpoint[0].status).toBe('up');
+      expect(viaNormalizeEndpoint[1].status).toBe('down');
+
+      // Defense in depth: TypeScript itself already refuses to compile
+      // `.map(normalizeEndpointAsOf)` bare (a `number` index isn't assignable
+      // to the options-object parameter) — but that's a compile-time
+      // safety net, not a runtime one. Simulate a caller that bypasses it
+      // (an `any`-typed array, a JS consumer, a bad cast) via an explicit
+      // type-erasing cast, so the *runtime* behavior is proven safe too.
+      const bareNormalizeEndpointAsOf = normalizeEndpointAsOf as unknown as (ep: Endpoint) => ReturnType<typeof normalizeEndpointAsOf>;
+      const viaNormalizeEndpointAsOf = healthyEndpoints.map(bareNormalizeEndpointAsOf);
+      expect(viaNormalizeEndpointAsOf[0].status).toBe('up');
+      expect(viaNormalizeEndpointAsOf[1].status).toBe('down');
+    });
+
+    it('degrades safely to Date.now() when referenceTimeMs/options is omitted', () => {
+      const ep = makeEndpoint({
+        Type: 4,
+        EdgeID: 'edge-default-arg',
+        Status: 2,
+        LastCheckInDate: Math.floor(Date.now() / 1000) - 30,
+        EdgeCheckinInterval: 5,
+      });
+
+      // normalizeEndpoint's signature is untouched by #1566 — unaffected.
+      expect(normalizeEndpoint(ep).status).toBe('up');
+      // normalizeEndpointAsOf with no options object at all...
+      expect(normalizeEndpointAsOf(ep).status).toBe('up');
+      // ...and with an options object that omits referenceTimeMs — both
+      // degrade safely to Date.now(), matching normalizeEndpoint's behavior.
+      expect(normalizeEndpointAsOf(ep, {}).status).toBe('up');
     });
   });
 

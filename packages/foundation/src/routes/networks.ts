@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import * as portainer from '@dashboard/core/portainer/portainer-client.js';
-import { cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
-import { normalizeNetwork, normalizeEndpoint } from '@dashboard/core/portainer/portainer-normalizers.js';
+import { cachedFetchSWR, cachedFetchSWRSnapshot, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
+import { normalizeNetwork, normalizeEndpointAsOf } from '@dashboard/core/portainer/portainer-normalizers.js';
 import { EndpointIdQuerySchema, NetworksListResponseSchema, ErrorWithDetailsSchema } from '@dashboard/core/models/api-schemas.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { errorDetails } from '@dashboard/core/plugins/error-handler.js';
@@ -23,12 +23,16 @@ export async function networksRoutes(fastify: FastifyInstance) {
     const { endpointId } = request.query as { endpointId?: number };
 
     let endpoints;
+    let referenceTimeMs = Date.now();
+    const endpointsCacheKey = getCacheKey('endpoints');
     try {
-      endpoints = await cachedFetchSWR(
-        getCacheKey('endpoints'),
+      const snapshot = await cachedFetchSWRSnapshot(
+        endpointsCacheKey,
         TTL.ENDPOINTS,
         () => portainer.getEndpoints(),
       );
+      endpoints = snapshot.data;
+      referenceTimeMs = snapshot.fetchedAt;
     } catch (err) {
       log.error({ err }, 'Failed to fetch endpoints from Portainer');
       return reply.code(502).send({
@@ -43,7 +47,9 @@ export async function networksRoutes(fastify: FastifyInstance) {
 
     const results = [];
     const errors: string[] = [];
-    const upEndpoints = targetEndpoints.filter((ep) => normalizeEndpoint(ep).status === 'up');
+    // Evaluate Edge heartbeat status against when this snapshot was actually
+    // fetched, not "now" (issue #1566).
+    const upEndpoints = targetEndpoints.filter((ep) => normalizeEndpointAsOf(ep, { referenceTimeMs }).status === 'up');
     const settled = await Promise.allSettled(
       upEndpoints.map((ep) =>
         cachedFetchSWR(

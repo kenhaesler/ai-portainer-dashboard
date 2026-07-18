@@ -61,8 +61,17 @@ export function createPortainerCacheMock(): Record<string, unknown> {
   return {
     cachedFetch: vi.fn((_key: string, _ttl: number, fn: () => Promise<unknown>) => fn()),
     cachedFetchSWR: vi.fn((_key: string, _ttl: number, fn: () => Promise<unknown>) => fn()),
+    cachedFetchSnapshot: vi.fn(async (_key: string, _ttl: number, fn: () => Promise<unknown>) => ({
+      data: await fn(),
+      fetchedAt: Date.now(),
+    })),
+    cachedFetchSWRSnapshot: vi.fn(async (_key: string, _ttl: number, fn: () => Promise<unknown>) => ({
+      data: await fn(),
+      fetchedAt: Date.now(),
+    })),
     cachedFetchMany: vi.fn(async (_keys: string[], _ttl: number, fn: () => Promise<unknown>) => fn()),
     getCacheKey: vi.fn((...args: (string | number)[]) => args.join(':')),
+    getSnapshotTimestamp: vi.fn(),
     getInFlightCount: vi.fn().mockReturnValue(0),
     TTL: {
       ENDPOINTS: 900,

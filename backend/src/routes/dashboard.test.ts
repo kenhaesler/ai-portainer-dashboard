@@ -32,7 +32,7 @@ vi.mock('@dashboard/core/portainer/portainer-client.js', async (importOriginal) 
 import { fetchLiveDockerInfo, type LiveDockerInfo } from '@dashboard/core/portainer/edge-live-query.js';
 const mockLiveFetch = vi.mocked(fetchLiveDockerInfo);
 import * as portainerClient from '@dashboard/core/portainer/portainer-client.js';
-import { cache, waitForInFlight } from '@dashboard/core/portainer/portainer-cache.js';
+import { cache, getCacheKey, TTL, waitForInFlight } from '@dashboard/core/portainer/portainer-cache.js';
 import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
 
 let mockGetEndpoints: any;
@@ -40,6 +40,7 @@ let mockGetContainers: any;
 
 afterEach(async () => {
   await waitForInFlight();
+  vi.useRealTimers();
 });
 
 afterAll(async () => {
@@ -667,6 +668,41 @@ describe('Dashboard Routes', () => {
       expect(data.endpoints[0]).toHaveProperty('capabilities');
       expect(data.endpoints[0]).toHaveProperty('snapshotSource');
 
+      await app.close();
+    });
+
+    it('keeps a healthy Edge host up when the dashboard receives a stale SWR snapshot (#1566)', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      const fetchedAt = Date.now();
+      const edgeEndpoint = {
+        Id: 1,
+        Name: 'edge-1',
+        Type: 4,
+        URL: 'tcp://edge-1',
+        Status: 2,
+        EdgeID: 'edge-1',
+        LastCheckInDate: Math.floor(fetchedAt / 1000) - 30,
+        EdgeCheckinInterval: 5,
+      };
+      await cache.set(getCacheKey('endpoints'), [edgeEndpoint], TTL.ENDPOINTS);
+
+      // Cross the 80% SWR stale boundary while staying inside the 15-minute
+      // TTL. The immediately resolving refresh deliberately exercises the
+      // data/timestamp race: this request must keep the stale pair it selected.
+      vi.setSystemTime(fetchedAt + 13 * 60 * 1000);
+      mockGetEndpoints.mockResolvedValue([edgeEndpoint]);
+      mockGetContainers.mockResolvedValue([
+        makeContainer('c-1', 1000, 'running', { 'com.docker.compose.project': 'web' }),
+      ]);
+
+      const app = await buildApp();
+      const res = await app.inject({ method: 'GET', url: '/api/dashboard/full' });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json().endpoints[0].status).toBe('up');
+      expect(mockGetContainers).toHaveBeenCalledWith(1);
+
+      await waitForInFlight();
       await app.close();
     });
 

@@ -10,8 +10,8 @@ import { confirmAnomaly, routeSeverity } from './anomaly-gate.js';
 import { hasMetricInsight } from './insight-dedup.js';
 import { getEndpoints, getContainers, isEndpointDegraded, isCircuitOpen } from '@dashboard/core/portainer/portainer-client.js';
 import { CircuitBreakerOpenError } from '@dashboard/core/portainer/circuit-breaker.js';
-import { cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
-import { normalizeEndpoint, normalizeContainer } from '@dashboard/core/portainer/portainer-normalizers.js';
+import { cachedFetchSWR, cachedFetchSWRSnapshot, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
+import { normalizeEndpointAsOf, normalizeContainer } from '@dashboard/core/portainer/portainer-normalizers.js';
 import { isDockerEndpoint } from '@dashboard/core/models/portainer.js';
 import { detectAnomaliesBatch } from './adaptive-anomaly-detector.js';
 import type { BatchDetectionItem } from './adaptive-anomaly-detector.js';
@@ -141,12 +141,20 @@ export function createMonitoringService(deps: MonitoringDeps) {
 
     try {
       // 1. Collect snapshot of all endpoints and containers (cached to avoid duplicating scheduler fetches)
-      const rawEndpoints = await cachedFetchSWR(
-        getCacheKey('endpoints'),
+      const endpointsCacheKey = getCacheKey('endpoints');
+      const endpointSnapshot = await cachedFetchSWRSnapshot(
+        endpointsCacheKey,
         TTL.ENDPOINTS,
         () => getEndpoints(),
       );
-      const endpoints = rawEndpoints.map(normalizeEndpoint);
+      const rawEndpoints = endpointSnapshot.data;
+      // Evaluate Edge heartbeat status against the moment this snapshot was
+      // actually fetched from Portainer, not "now" — the endpoints list can
+      // be served stale-while-revalidate out of a 15-minute cache, and
+      // judging a cached-but-healthy endpoint against the current wall clock
+      // flips it to "down" as the cache ages (issue #1566).
+      const endpoints = rawEndpoints.map((ep) =>
+        normalizeEndpointAsOf(ep, { referenceTimeMs: endpointSnapshot.fetchedAt }));
 
       const allContainers: Array<{
         raw: Awaited<ReturnType<typeof getContainers>>[number];

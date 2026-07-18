@@ -7,7 +7,7 @@ vi.mock('@dashboard/core/portainer/portainer-client.js', async (importOriginal) 
 import * as portainerClient from '@dashboard/core/portainer/portainer-client.js';
 import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
 import { checkPortainerAvailable } from '../test-utils/integration-setup.js';
-import { cache, waitForInFlight } from '@dashboard/core/portainer/portainer-cache.js';
+import { cache, getCacheKey, TTL, waitForInFlight } from '@dashboard/core/portainer/portainer-cache.js';
 
 let portainerUp: boolean;
 
@@ -17,6 +17,7 @@ beforeAll(async () => {
 
 afterEach(async () => {
   await waitForInFlight();
+  vi.useRealTimers();
 });
 
 afterAll(async () => {
@@ -206,6 +207,42 @@ describe('containers routes', () => {
     const body = JSON.parse(res.body);
     expect(body).toHaveLength(0);
     expect(getContainersSpy).not.toHaveBeenCalled();
+  });
+
+  it('keeps containers from a healthy Edge host when its endpoint snapshot is stale (#1566)', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const fetchedAt = Date.now();
+    const edgeEndpoint = {
+      Id: 1,
+      Name: 'edge-prod',
+      Type: 4,
+      URL: 'tcp://edge-prod',
+      Status: 2,
+      EdgeID: 'edge-prod',
+      LastCheckInDate: Math.floor(fetchedAt / 1000) - 30,
+      EdgeCheckinInterval: 5,
+      Snapshots: [],
+    };
+    await cache.set(getCacheKey('endpoints'), [edgeEndpoint], TTL.ENDPOINTS);
+
+    vi.setSystemTime(fetchedAt + 13 * 60 * 1000);
+    vi.spyOn(portainerClient, 'getEndpoints').mockResolvedValue([edgeEndpoint] as any);
+    const containersSpy = vi.spyOn(portainerClient, 'getContainers').mockResolvedValue([
+      fakeContainer('abc123', 'web'),
+    ] as any);
+
+    const app = buildApp();
+    const res = await app.inject({ method: 'GET', url: '/api/containers' });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    const containers = Array.isArray(body) ? body : body.data;
+    expect(containers).toHaveLength(1);
+    expect(containers[0].name).toBe('web');
+    expect(containersSpy).toHaveBeenCalledWith(1);
+
+    await waitForInFlight();
+    await app.close();
   });
 
   it('should return 502 when getContainer fails for detail endpoint', async () => {

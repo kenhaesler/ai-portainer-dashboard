@@ -102,8 +102,18 @@ function buildCapabilities(edgeMode: 'standard' | 'async' | null): EdgeCapabilit
  * (one L1 cache cycle) to tolerate minor clock skew and poll latency.
  * The previous 900-second (full Redis cache TTL) buffer masked real outages
  * for up to 16 minutes and has been removed (issue #1006).
+ *
+ * `referenceTimeMs` is the wall-clock instant elapsed time is measured
+ * against. It defaults to `Date.now()` for direct/live callers, but callers
+ * reading an endpoint list served from the SWR/TTL cache (`cachedFetch` /
+ * `cachedFetchSWR` in `portainer-cache.ts`, `TTL.ENDPOINTS` = 15 minutes)
+ * MUST pass the timestamp of when that snapshot was actually fetched from
+ * Portainer — otherwise a perfectly healthy endpoint whose `LastCheckInDate`
+ * was fresh *at fetch time* gets judged against the current (much later)
+ * wall clock on every cache read and incorrectly flips to `down` (issue
+ * #1566, "All Hosts Down" flapping).
  */
-function determineEdgeStatus(ep: Endpoint): 'up' | 'down' {
+function determineEdgeStatus(ep: Endpoint, referenceTimeMs: number = Date.now()): 'up' | 'down' {
   // If Portainer explicitly says up, trust it
   if (ep.Status === 1) return 'up';
 
@@ -117,17 +127,32 @@ function determineEdgeStatus(ep: Endpoint): 'up' | 'down' {
   const JITTER_SECONDS = 30;
   const generousThreshold = heartbeatThreshold + JITTER_SECONDS;
 
-  const elapsed = Math.floor(Date.now() / 1000) - lastCheckIn;
+  const elapsed = Math.floor(referenceTimeMs / 1000) - lastCheckIn;
   return elapsed <= generousThreshold ? 'up' : 'down';
 }
 
-export function normalizeEndpoint(ep: Endpoint): NormalizedEndpoint {
+export interface NormalizeEndpointOptions {
+  /**
+   * Wall-clock instant to evaluate Edge heartbeat freshness against.
+   * Defaults to `Date.now()`. Callers that read `ep` from the SWR/TTL
+   * endpoints cache should pass the timestamp of when the underlying
+   * snapshot was fetched (see `cachedFetchSnapshot` and
+   * `cachedFetchSWRSnapshot` in `portainer-cache.ts`)
+   * so a cached-but-healthy endpoint isn't judged against a much-later wall
+   * clock (issue #1566). A missing/undefined value degrades safely to
+   * `Date.now()`.
+   */
+  referenceTimeMs?: number;
+}
+
+/** Shared implementation behind `normalizeEndpoint` / `normalizeEndpointAsOf`. */
+function buildNormalizedEndpoint(ep: Endpoint, referenceTimeMs: number): NormalizedEndpoint {
   const isEdge = !!ep.EdgeID;
   // Non-Edge: trust Portainer's Status field directly.
   // Edge: Status=2 means "tunnel closed" (normal for Edge Standard),
   // so we use a cache-aware heartbeat check instead (see issue #489).
   const status: 'up' | 'down' = isEdge
-    ? determineEdgeStatus(ep)
+    ? determineEdgeStatus(ep, referenceTimeMs)
     : (ep.Status === 1 ? 'up' : 'down');
 
   if (isEdge) {
@@ -171,6 +196,49 @@ export function normalizeEndpoint(ep: Endpoint): NormalizedEndpoint {
     // markLiveUnavailable keeps this 'unavailable' to signal the UI distinctly.
     snapshotSource: 'unavailable',
   };
+}
+
+/**
+ * Normalize a raw Portainer endpoint using the current wall clock to evaluate
+ * Edge heartbeat freshness. This is what every existing caller uses, notably
+ * via the very common `endpoints.map(normalizeEndpoint)` pattern.
+ *
+ * If `ep` was read straight from a live Portainer API response, `Date.now()`
+ * is correct. If `ep` instead came from the SWR/TTL endpoints cache
+ * (`cachedFetch/cachedFetchSWR` + `TTL.ENDPOINTS` = 15 minutes in
+ * `portainer-cache.ts`), use `normalizeEndpointAsOf` instead — otherwise a
+ * healthy endpoint whose `LastCheckInDate` was fresh *when the snapshot was
+ * fetched* gets judged against the current, much-later wall clock on every
+ * cache read and incorrectly flips to `down` (issue #1566, "All Hosts Down"
+ * flapping).
+ */
+export function normalizeEndpoint(ep: Endpoint): NormalizedEndpoint {
+  return buildNormalizedEndpoint(ep, Date.now());
+}
+
+/**
+ * Like `normalizeEndpoint`, but lets the caller pin the wall-clock instant
+ * Edge heartbeat freshness is evaluated against (see
+ * `NormalizeEndpointOptions.referenceTimeMs`) — for callers reading `ep` out
+ * of the SWR/TTL endpoints cache (issue #1566).
+ *
+ * Deliberately a distinct function (rather than an optional second parameter
+ * on `normalizeEndpoint` itself): `endpoints.map(normalizeEndpoint)` is a very
+ * common call pattern in this codebase, and `Array.prototype.map` invokes its
+ * callback as `(element, index, array)`. A bare second parameter on
+ * `normalizeEndpoint` would silently receive the array *index* for every such
+ * caller, corrupting the heartbeat calculation for elements beyond index 0
+ * (the classic `["1","2"].map(parseInt)` footgun) — and TypeScript actually
+ * rejects passing `normalizeEndpoint` bare to `.map()` once its signature
+ * grows a second parameter, which would force touching every existing call
+ * site just to keep the build green. Keeping `normalizeEndpoint`'s signature
+ * untouched and adding this sibling function means every existing caller
+ * keeps compiling and behaving exactly as before, with zero risk of the
+ * index/timestamp mixup, and only call sites that explicitly opt in need to
+ * change at all.
+ */
+export function normalizeEndpointAsOf(ep: Endpoint, options?: NormalizeEndpointOptions): NormalizedEndpoint {
+  return buildNormalizedEndpoint(ep, options?.referenceTimeMs ?? Date.now());
 }
 
 /**

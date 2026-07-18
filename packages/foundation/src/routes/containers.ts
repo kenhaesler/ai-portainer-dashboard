@@ -1,8 +1,8 @@
 import { z } from 'zod/v4';
 import { FastifyInstance } from 'fastify';
 import * as portainer from '@dashboard/core/portainer/portainer-client.js';
-import { cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
-import { normalizeContainer, normalizeEndpoint } from '@dashboard/core/portainer/portainer-normalizers.js';
+import { cachedFetchSWR, cachedFetchSWRSnapshot, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
+import { normalizeContainer, normalizeEndpointAsOf } from '@dashboard/core/portainer/portainer-normalizers.js';
 import { ContainerParamsSchema, ErrorWithDetailsSchema } from '@dashboard/core/models/api-schemas.js';
 import { isDockerEndpoint } from '@dashboard/core/models/portainer.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
@@ -55,11 +55,12 @@ const ContainerListItemsSchema = z.array(NormalizedContainerSchema);
 
 /** Fetch all normalized containers across endpoints */
 async function fetchAllContainers(endpointIdFilter?: number) {
-  const endpoints = await cachedFetchSWR(
+  const endpointSnapshot = await cachedFetchSWRSnapshot(
     getCacheKey('endpoints'),
     TTL.ENDPOINTS,
     () => portainer.getEndpoints(),
   );
+  const endpoints = endpointSnapshot.data;
 
   // Only target Docker endpoints — K8s endpoints use separate /api/kubernetes/ routes
   const dockerEndpoints = endpoints.filter((e) => isDockerEndpoint(e.Type));
@@ -70,7 +71,8 @@ async function fetchAllContainers(endpointIdFilter?: number) {
   const results: ReturnType<typeof normalizeContainer>[] = [];
   const errors: string[] = [];
   const failedEndpoints: number[] = [];
-  const upEndpoints = targetEndpoints.filter((ep) => normalizeEndpoint(ep).status === 'up');
+  const upEndpoints = targetEndpoints.filter((ep) =>
+    normalizeEndpointAsOf(ep, { referenceTimeMs: endpointSnapshot.fetchedAt }).status === 'up');
   const settled = await Promise.allSettled(
     upEndpoints.map((ep) =>
       cachedFetchSWR(

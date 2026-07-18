@@ -7,9 +7,9 @@ import { randomUUID } from 'crypto';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { getConfig } from '@dashboard/core/config/index.js';
 import * as portainer from '@dashboard/core/portainer/portainer-client.js';
-import { normalizeEndpoint, normalizeContainer } from '@dashboard/core/portainer/portainer-normalizers.js';
+import { normalizeEndpointAsOf, normalizeContainer } from '@dashboard/core/portainer/portainer-normalizers.js';
 import { isDockerEndpoint } from '@dashboard/core/models/portainer.js';
-import { cachedFetch, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
+import { cachedFetch, cachedFetchSnapshot, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
 import { getEffectivePrompt, getEffectiveLlmConfig, estimateTokens, PROMPT_FEATURES, type PromptFeature } from '../services/prompt-store.js';
 import { insertLlmTrace } from '../services/llm-trace-store.js';
 import { LlmQueryBodySchema, LlmTestConnectionBodySchema, LlmModelsQuerySchema, LlmTestPromptBodySchema } from '@dashboard/core/models/api-schemas.js';
@@ -38,12 +38,16 @@ function sameLlmOrigin(a: string | undefined, b: string | undefined): boolean {
 
 async function getInfrastructureSummary(): Promise<string> {
   try {
-    const endpoints = await cachedFetch(
-      getCacheKey('endpoints'),
+    const endpointsCacheKey = getCacheKey('endpoints');
+    const endpointSnapshot = await cachedFetchSnapshot(
+      endpointsCacheKey,
       TTL.ENDPOINTS,
       () => portainer.getEndpoints(),
     );
-    const normalized = endpoints.map(normalizeEndpoint);
+    // Evaluate Edge heartbeat status against when this snapshot was actually
+    // fetched, not "now" (issue #1566).
+    const normalized = endpointSnapshot.data.map((ep) =>
+      normalizeEndpointAsOf(ep, { referenceTimeMs: endpointSnapshot.fetchedAt }));
 
     const allContainers = [];
     for (const ep of normalized.filter(e => e.status === 'up' && isDockerEndpoint(e.type)).slice(0, 10)) {
