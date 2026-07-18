@@ -254,4 +254,54 @@ describe('Vulnerable Dependency Floors', () => {
       expect(atLeast(entry.version!, NODEMAILER_MIN), `${key}@${entry.version}`).toBe(true);
     }
   });
+
+  // GHSA-96hv-2xvq-fx4p (High, CVSS 7.5): memory-exhaustion DoS — a peer can crash a
+  // ws server or client with a high volume of tiny fragments and data chunks using only
+  // modest network traffic. Affected `>= 8.0.0, < 8.21.0`; 8.21.0 adds the maxFragments /
+  // maxBufferedChunks caps that fix it.
+  //
+  // `ws` is transitive (no manifest of ours declares it), so the lockfile is the only
+  // place this can be asserted. It is reachable production code: ws is the engine under
+  // Socket.IO, which is the app's live transport. It reached 8.20.1 because engine.io,
+  // engine.io-client and socket.io-adapter all pinned `ws: ~8.20.1` — so a downgrade of
+  // any one of those three silently drags ws back into the advisory range.
+  // @see https://github.com/kenhaesler/ai-portainer-dashboard/issues/1577
+  const WS_MIN = [8, 21, 0] as const;
+
+  it('should resolve ws above the GHSA-96hv-2xvq-fx4p patch floor in the lockfile', () => {
+    const file = path.resolve(process.cwd(), '..', 'package-lock.json');
+    const lock = JSON.parse(readFileSync(file, 'utf8')) as {
+      packages: Record<string, { version?: string }>;
+    };
+
+    const resolved = Object.entries(lock.packages).filter(([key]) =>
+      key.endsWith('node_modules/ws'),
+    );
+    expect(resolved.length).toBeGreaterThan(0);
+
+    for (const [key, entry] of resolved) {
+      expect(entry.version, `${key} is inside the advisory range`).toBeDefined();
+      expect(atLeast(entry.version!, WS_MIN), `${key}@${entry.version}`).toBe(true);
+    }
+  });
+
+  it('should keep the socket.io transitives on ws ranges that cannot resolve below the floor', () => {
+    const file = path.resolve(process.cwd(), '..', 'package-lock.json');
+    const lock = JSON.parse(readFileSync(file, 'utf8')) as {
+      packages: Record<string, { dependencies?: Record<string, string> }>;
+    };
+
+    // These three are what actually pin ws. Guarding only the resolved ws version would
+    // let a transitive downgrade re-pin it to ~8.20.1 on the next lockfile regeneration.
+    for (const pkg of ['engine.io', 'engine.io-client', 'socket.io-adapter']) {
+      const entry = lock.packages[`node_modules/${pkg}`];
+      expect(entry, `${pkg} missing from lockfile`).toBeDefined();
+
+      const range = entry!.dependencies?.ws;
+      expect(range, `${pkg} no longer declares a ws dependency`).toBeDefined();
+
+      const floor = range!.replace(/^[\^~>=v\s]+/, '');
+      expect(atLeast(floor, WS_MIN), `${pkg} pins ws ${range}`).toBe(true);
+    }
+  });
 });
