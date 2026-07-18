@@ -145,12 +145,28 @@ describe('collectFleetOverview', () => {
       const fetchedAt = Date.now();
       const lastCheckIn = Math.floor(fetchedAt / 1000) - 30; // healthy 30s before fetch
 
-      vi.spyOn(portainerClient, 'getEndpoints').mockResolvedValue([
-        {
-          Id: 1, Name: 'edge-1', Type: 4, URL: 'tcp://x', Status: 2,
-          EdgeID: 'edge-1', LastCheckInDate: lastCheckIn, EdgeCheckinInterval: 5,
-        },
-      ] as never);
+      const rawEndpoint = {
+        Id: 1, Name: 'edge-1', Type: 4, URL: 'tcp://x', Status: 2,
+        EdgeID: 'edge-1', LastCheckInDate: lastCheckIn, EdgeCheckinInterval: 5,
+      };
+      // The first call must resolve so the cache gets populated. Calls after
+      // that (the background SWR revalidation triggered by the second,
+      // stale, collectFleetOverview() below) intentionally hang forever: this
+      // test only exercises the *immediate* stale-serve path, not
+      // revalidation completion, and a real Portainer round-trip always
+      // takes far longer than the synchronous continuation that reads
+      // getSnapshotTimestamp() right after cachedFetchSWR resolves. An
+      // auto-resolving mock on the second call would race that continuation
+      // in a way that never happens with real network I/O (fetchedAt and the
+      // cached data update together, atomically, the instant the fetcher
+      // resolves — see portainer-cache.test.ts's equivalent test/comment).
+      let getEndpointsCalls = 0;
+      vi.spyOn(portainerClient, 'getEndpoints').mockImplementation(() => {
+        getEndpointsCalls++;
+        return getEndpointsCalls === 1
+          ? Promise.resolve([rawEndpoint] as never)
+          : new Promise<never>(() => {}); // never resolves
+      });
       vi.spyOn(portainerClient, 'getStacks').mockResolvedValue([] as never);
       vi.spyOn(portainerClient, 'getContainers').mockResolvedValue([] as never);
       vi.spyOn(edgeLive, 'fetchLiveDockerInfo').mockResolvedValue(null);
@@ -162,7 +178,8 @@ describe('collectFleetOverview', () => {
 
       // Jump 13 minutes forward — past the 80% staleAt threshold (720s) but
       // before the 900s expiry — so the SAME cached (now-stale) endpoint
-      // payload is served immediately while a background refetch kicks off.
+      // payload is served immediately while a background refetch kicks off
+      // (and hangs, per the mock above — this test doesn't need it to land).
       vi.setSystemTime(fetchedAt + 13 * 60 * 1000);
 
       const second = await collectFleetOverview(cfg);

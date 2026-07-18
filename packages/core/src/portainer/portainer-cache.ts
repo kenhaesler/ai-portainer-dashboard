@@ -23,6 +23,15 @@ interface CacheEntry<T> {
   data: T;
   staleAt: number;
   expiresAt: number;
+  /**
+   * Epoch ms when this entry's data was fetched fresh from its origin, as
+   * opposed to whenever it happens to be read back out of cache. Lives on the
+   * entry itself (rather than a parallel side-map keyed the same way) so it
+   * is evicted atomically with the data it describes — expiry, LRU trim, and
+   * `invalidate()`/`clear()` all delete this in one shot via `store.delete()`
+   * below, with no separate structure to leak (issue #1566).
+   */
+  fetchedAt: number;
 }
 
 class TtlCache {
@@ -50,7 +59,7 @@ class TtlCache {
     return entry.data as T;
   }
 
-  getWithStaleInfo<T>(key: string): { data: T; isStale: boolean } | undefined {
+  getWithStaleInfo<T>(key: string): { data: T; isStale: boolean; fetchedAt: number } | undefined {
     const entry = this.store.get(key);
     if (!entry) return undefined;
     const now = Date.now();
@@ -58,7 +67,7 @@ class TtlCache {
       this.store.delete(key);
       return undefined;
     }
-    return { data: entry.data as T, isStale: now > entry.staleAt };
+    return { data: entry.data as T, isStale: now > entry.staleAt, fetchedAt: entry.fetchedAt };
   }
 
   set<T>(key: string, data: T, ttlSeconds: number, staleFraction = STALE_FRACTION): void {
@@ -70,12 +79,17 @@ class TtlCache {
    * Used when the freshness window is dictated by the L2 envelope rather
    * than the L1 TTL — staleAt may exceed expiresAt, in which case the entry
    * simply expires before it ever reports stale (#1499).
+   *
+   * `fetchedAtMs` defaults to "now" (a genuine fresh write) but callers that
+   * are repopulating L1 from an L2 hit pass through the *original* envelope
+   * fetchedAt instead, so the recorded origin time survives the copy (#1566).
    */
-  setWithStaleAt<T>(key: string, data: T, ttlSeconds: number, staleAtMs: number): void {
+  setWithStaleAt<T>(key: string, data: T, ttlSeconds: number, staleAtMs: number, fetchedAtMs: number = Date.now()): void {
     this.store.set(key, {
       data,
       staleAt: staleAtMs,
       expiresAt: Date.now() + ttlSeconds * 1000,
+      fetchedAt: fetchedAtMs,
     });
     // LRU eviction: remove oldest entries (by staleAt) when over maxSize
     if (this.store.size > this.maxSize) {
@@ -156,10 +170,17 @@ class TtlCache {
  * this envelope every L2 hit looked stale and forced a background origin
  * fetch (#1499). Values written by set() are wrapped; legacy bare-JSON
  * entries (pre-envelope deploys, setMany) unwrap as immediately stale.
+ *
+ * `fetchedAt` (#1566) carries the origin-fetch timestamp through Redis so it
+ * survives the JSON round-trip and repopulates L1 correctly on an L2 hit —
+ * checked defensively at read time (`typeof === 'number'`) rather than
+ * trusted from the type alone, since an envelope written by a pre-#1566
+ * deploy predates this field.
  */
 interface CacheEnvelope<T> {
   __swrEnvelope: 1;
   staleAt: number;
+  fetchedAt: number;
   data: T;
 }
 
@@ -173,12 +194,16 @@ function isCacheEnvelope<T>(value: unknown): value is CacheEnvelope<T> {
   );
 }
 
-function unwrapEnvelope<T>(parsed: unknown): { data: T; staleAt: number } {
+function unwrapEnvelope<T>(parsed: unknown): { data: T; staleAt: number; fetchedAt: number } {
   if (isCacheEnvelope<T>(parsed)) {
-    return { data: parsed.data, staleAt: parsed.staleAt };
+    // Defensive: envelopes written before #1566 have no fetchedAt field.
+    const fetchedAt = typeof parsed.fetchedAt === 'number' ? parsed.fetchedAt : Date.now();
+    return { data: parsed.data, staleAt: parsed.staleAt, fetchedAt };
   }
-  // Legacy bare-JSON entry — treat as immediately stale so SWR revalidates it.
-  return { data: parsed as T, staleAt: 0 };
+  // Legacy bare-JSON entry — treat as immediately stale so SWR revalidates
+  // it; origin fetch time is unknown, so "now" is the safest stand-in (no
+  // worse than the pre-#1566 behavior for this one-time transitional case).
+  return { data: parsed as T, staleAt: 0, fetchedAt: Date.now() };
 }
 
 class HybridCache {
@@ -199,7 +224,7 @@ class HybridCache {
    * Check L1 (in-memory) cache with stale info — synchronous, no Redis round-trip.
    * Used by stale-while-revalidate to return stale data immediately.
    */
-  getMemoryWithStaleInfo<T>(key: string): { data: T; isStale: boolean } | undefined {
+  getMemoryWithStaleInfo<T>(key: string): { data: T; isStale: boolean; fetchedAt: number } | undefined {
     return this.memory.getWithStaleInfo<T>(key);
   }
 
@@ -318,7 +343,7 @@ class HybridCache {
    * follows the caller's TTL rather than the L1 window (#1499). Legacy
    * bare-JSON entries are treated as immediately stale.
    */
-  private async readL2<T>(key: string): Promise<{ data: T; staleAt: number } | undefined> {
+  private async readL2<T>(key: string): Promise<{ data: T; staleAt: number; fetchedAt: number } | undefined> {
     const client = await this.ensureRedisClient();
     if (!client) return undefined;
     try {
@@ -335,9 +360,11 @@ class HybridCache {
       this.resetRedisBackoff();
       if (raw == null) return undefined;
 
-      const { data, staleAt } = unwrapEnvelope<T>(JSON.parse(raw));
-      this.memory.setWithStaleAt(key, data, this.l1TtlSeconds, staleAt);
-      return { data, staleAt };
+      const { data, staleAt, fetchedAt } = unwrapEnvelope<T>(JSON.parse(raw));
+      // Repopulate L1 carrying the *original* fetchedAt through, not "now" —
+      // otherwise every L2 hit would look freshly fetched (#1566).
+      this.memory.setWithStaleAt(key, data, this.l1TtlSeconds, staleAt, fetchedAt);
+      return { data, staleAt, fetchedAt };
     } catch (err) {
       this.disableRedisTemporarily('redis-get-failed', err);
       return undefined;
@@ -369,7 +396,7 @@ class HybridCache {
    * unwrapped data plus whether the entry has passed its staleAt (#1499).
    * Legacy bare-JSON entries always report stale.
    */
-  async getL2WithStaleInfo<T>(key: string): Promise<{ data: T; isStale: boolean } | undefined> {
+  async getL2WithStaleInfo<T>(key: string): Promise<{ data: T; isStale: boolean; fetchedAt: number } | undefined> {
     return withSpan('cache.get', 'redis-cache', 'internal', async () => {
       const result = await this.readL2<T>(key);
       if (result === undefined) {
@@ -377,21 +404,24 @@ class HybridCache {
         return undefined;
       }
       this.hits++;
-      return { data: result.data, isStale: Date.now() > result.staleAt };
+      return { data: result.data, isStale: Date.now() > result.staleAt, fetchedAt: result.fetchedAt };
     });
   }
 
   async set<T>(key: string, data: T, ttlSeconds: number): Promise<void> {
-    const staleAt = Date.now() + ttlSeconds * 1000 * STALE_FRACTION;
+    // Captured once and reused for both layers so L1 and L2 agree on exactly
+    // when this write happened (#1566) — same reasoning as `staleAt` below.
+    const fetchedAt = Date.now();
+    const staleAt = fetchedAt + ttlSeconds * 1000 * STALE_FRACTION;
     if (!this.isRedisConfigured() || Date.now() < this.redisDisabledUntil) {
       // Memory-only mode (no Redis, or Redis in failure backoff): L1 is the
       // only copy, so honor the caller's full TTL — the 30s cap is only
       // meaningful as an L1-freshness bound when L2 exists (#1499).
-      this.memory.set(key, data, ttlSeconds);
+      this.memory.setWithStaleAt(key, data, ttlSeconds, staleAt, fetchedAt);
     } else {
       // L1 stays a short hot layer (uncompressed, instant reads), but carries
       // the full-TTL staleAt so SWR revalidation follows the preset (#1499).
-      this.memory.setWithStaleAt(key, data, Math.min(ttlSeconds, this.l1TtlSeconds), staleAt);
+      this.memory.setWithStaleAt(key, data, Math.min(ttlSeconds, this.l1TtlSeconds), staleAt, fetchedAt);
     }
 
     // Write to L2 (Redis) with full TTL — wrapped in a staleness envelope,
@@ -400,7 +430,7 @@ class HybridCache {
       const client = await this.ensureRedisClient();
       if (client) {
         try {
-          const envelope: CacheEnvelope<T> = { __swrEnvelope: 1, staleAt, data };
+          const envelope: CacheEnvelope<T> = { __swrEnvelope: 1, staleAt, fetchedAt, data };
           const json = JSON.stringify(envelope);
           const jsonBytes = Buffer.byteLength(json, 'utf8');
 
@@ -766,47 +796,40 @@ export function getCacheKey(resource: string, ...args: (string | number)[]): str
 const inFlight = new Map<string, Promise<unknown>>();
 
 /**
- * Tracks, per cache key, the wall-clock instant the underlying value was last
- * fetched fresh from its origin — as opposed to the (possibly much later)
- * instant it is read back out of cache. This is a side-channel independent of
- * the TtlCache/Redis staleness bookkeeping above; it exists purely so
- * time-sensitive consumers can evaluate a cached-but-still-valid payload
- * against the moment it was actually captured rather than the moment it
- * happens to be read.
+ * Look up when the value currently cached under `key` was actually fetched
+ * from its origin, as opposed to when it is being read right now.
  *
- * Concretely: `normalizeEndpoint`'s Edge heartbeat check computes
- * `elapsed = now - lastCheckIn`. The Portainer endpoints list is served from
- * this module's SWR/TTL cache (`TTL.ENDPOINTS` = 15 minutes), so a healthy
- * endpoint whose `LastCheckInDate` was fresh *when the snapshot was fetched*
- * gets judged against the current wall clock on every cache read and
+ * Concretely: `normalizeEndpointAsOf`'s Edge heartbeat check computes
+ * `elapsed = referenceTimeMs - lastCheckIn`. The Portainer endpoints list is
+ * served from this module's SWR/TTL cache (`TTL.ENDPOINTS` = 15 minutes), so
+ * a healthy endpoint whose `LastCheckInDate` was fresh *when the snapshot was
+ * fetched* gets judged against the current wall clock on every cache read and
  * incorrectly flips to `down` as the cached snapshot ages — the "All Hosts
  * Down" flapping in issue #1566. Callers that read endpoints through
  * `cachedFetch`/`cachedFetchSWR` should look up `getSnapshotTimestamp(key)`
- * and pass it as `normalizeEndpoint`'s `referenceTimeMs`.
- */
-const originFetchTimestamps = new Map<string, number>();
-
-/**
- * Record that `key` was just fetched fresh from its origin at `fetchedAt`.
- * A no-op for an undefined/failed fetch result — mirrors the "undefined
- * never populates the cache" guard (#1270) so a failed fetch can't poison
- * the timestamp for the next caller.
- */
-function recordOriginFetchTimestamp(key: string, data: unknown, fetchedAt: number): void {
-  if (data === undefined) return;
-  originFetchTimestamps.set(key, fetchedAt);
-}
-
-/**
- * Look up when the value currently cached under `key` was actually fetched
- * from its origin, as opposed to when it is being read right now. Returns
- * `undefined` when untracked (caching disabled, the key was never populated
- * via `cachedFetch`/`cachedFetchSWR`, or nothing has been fetched yet) —
- * callers must treat `undefined` as "fetched now" and fall back to
- * `Date.now()`.
+ * and pass it as `normalizeEndpointAsOf`'s `referenceTimeMs`.
+ *
+ * This reads the `fetchedAt` field carried on the L1 cache entry itself
+ * (`CacheEntry.fetchedAt`, set by `cache.set()`/`readL2()` above) rather than
+ * a parallel side-map keyed the same way as the cache. A side-map keyed by
+ * cache key would need its own eviction logic mirroring every place the
+ * cache deletes an entry (TTL expiry, LRU trim, `invalidate()`, `clear()`) —
+ * miss even one and it silently outlives the data it describes, growing
+ * unboundedly for high-cardinality keys (e.g. per-container-ID cache keys in
+ * a long-running fleet that redeploys regularly) and occasionally handing
+ * back a timestamp for data that's no longer cached. Reading `fetchedAt`
+ * straight off the live cache entry means it is deleted in the exact same
+ * `store.delete()` call as the data — there is no second structure that can
+ * drift out of sync, and no failure mode where the timestamp survives its
+ * entry (issue #1566 follow-up).
+ *
+ * Returns `undefined` when the key isn't currently live in L1 — caching
+ * disabled, never populated via `cachedFetch`/`cachedFetchSWR`, or evicted/
+ * expired/invalidated — callers must treat `undefined` as "fetched now" and
+ * fall back to `Date.now()`.
  */
 export function getSnapshotTimestamp(key: string): number | undefined {
-  return originFetchTimestamps.get(key);
+  return cache.getMemoryWithStaleInfo(key)?.fetchedAt;
 }
 
 export function cachedFetch<T>(
@@ -857,7 +880,6 @@ export function cachedFetch<T>(
       if (data !== undefined) {
         await cache.set(key, data, ttlSeconds);
       }
-      recordOriginFetchTimestamp(key, data, Date.now());
       resolve(data);
     } catch (err) {
       // Invalidate stale cache entry on fetch failure so the next call
@@ -899,7 +921,6 @@ function startBackgroundRevalidation<T>(
       const data = await fetcher();
       if (data !== undefined) {
         await cache.set(key, data, ttlSeconds);
-        recordOriginFetchTimestamp(key, data, Date.now());
         return data;
       }
       // Fetcher resolved undefined — keep the stale value for any awaiting

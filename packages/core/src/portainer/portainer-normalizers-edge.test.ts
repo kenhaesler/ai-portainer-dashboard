@@ -385,10 +385,14 @@ describe('normalizeEndpoint — Edge Agent fields', () => {
       expect(viaNormalizeEndpoint[0].status).toBe('up');
       expect(viaNormalizeEndpoint[1].status).toBe('down');
 
-      // Defense in depth: even if a future caller mistakenly wrote
-      // `.map(normalizeEndpointAsOf)` bare (instead of wrapping it), the
-      // options-object second parameter keeps it safe.
-      const viaNormalizeEndpointAsOf = healthyEndpoints.map(normalizeEndpointAsOf);
+      // Defense in depth: TypeScript itself already refuses to compile
+      // `.map(normalizeEndpointAsOf)` bare (a `number` index isn't assignable
+      // to the options-object parameter) — but that's a compile-time
+      // safety net, not a runtime one. Simulate a caller that bypasses it
+      // (an `any`-typed array, a JS consumer, a bad cast) via an explicit
+      // type-erasing cast, so the *runtime* behavior is proven safe too.
+      const bareNormalizeEndpointAsOf = normalizeEndpointAsOf as unknown as (ep: Endpoint) => ReturnType<typeof normalizeEndpointAsOf>;
+      const viaNormalizeEndpointAsOf = healthyEndpoints.map(bareNormalizeEndpointAsOf);
       expect(viaNormalizeEndpointAsOf[0].status).toBe('up');
       expect(viaNormalizeEndpointAsOf[1].status).toBe('down');
     });
