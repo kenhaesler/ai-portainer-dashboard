@@ -304,4 +304,32 @@ describe('Vulnerable Dependency Floors', () => {
       expect(atLeast(floor, WS_MIN), `${pkg} pins ws ${range}`).toBe(true);
     }
   });
+
+  // GHSA-88fw-hqm2-52qc (High, CVSS 7.1): the CORS middleware reflects any Origin with
+  // credentials enabled. Affected `< 4.12.25`.
+  //
+  // hono is transitive — pulled in by @hono/node-server (`^4`) and
+  // @modelcontextprotocol/sdk (`^4.11.4`), both of which already admit the patched line,
+  // so it is a lockfile refresh rather than a manifest change. Note that npm reported
+  // `fixAvailable: false` for it, which is wrong; do not trust that field to decide
+  // whether an advisory is actionable.
+  // @see https://github.com/kenhaesler/ai-portainer-dashboard/issues/1578
+  const HONO_MIN = [4, 12, 25] as const;
+
+  it('should resolve hono above the GHSA-88fw-hqm2-52qc patch floor in the lockfile', () => {
+    const file = path.resolve(process.cwd(), '..', 'package-lock.json');
+    const lock = JSON.parse(readFileSync(file, 'utf8')) as {
+      packages: Record<string, { version?: string }>;
+    };
+
+    const resolved = Object.entries(lock.packages).filter(([key]) =>
+      key.endsWith('node_modules/hono'),
+    );
+    expect(resolved.length).toBeGreaterThan(0);
+
+    for (const [key, entry] of resolved) {
+      expect(entry.version, `${key} is inside the advisory range`).toBeDefined();
+      expect(atLeast(entry.version!, HONO_MIN), `${key}@${entry.version}`).toBe(true);
+    }
+  });
 });
