@@ -136,7 +136,8 @@ export interface NormalizeEndpointOptions {
    * Wall-clock instant to evaluate Edge heartbeat freshness against.
    * Defaults to `Date.now()`. Callers that read `ep` from the SWR/TTL
    * endpoints cache should pass the timestamp of when the underlying
-   * snapshot was fetched (see `getSnapshotTimestamp` in `portainer-cache.ts`)
+   * snapshot was fetched (see `cachedFetchSnapshot` and
+   * `cachedFetchSWRSnapshot` in `portainer-cache.ts`)
    * so a cached-but-healthy endpoint isn't judged against a much-later wall
    * clock (issue #1566). A missing/undefined value degrades safely to
    * `Date.now()`.

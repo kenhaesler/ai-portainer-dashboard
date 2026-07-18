@@ -217,6 +217,7 @@ let mockGetContainers: any;
 let mockIsEndpointDegraded: any;
 let mockIsCircuitOpen: any;
 let mockCachedFetchSWR: any;
+let mockCachedFetchSWRSnapshot: any;
 let mockIsLlmAvailable: any;
 let mockChatStream: any;
 let runMonitoringCycle: () => Promise<void>;
@@ -312,6 +313,12 @@ describe('monitoring-service', () => {
     // Create portainer spies
     mockCachedFetchSWR = vi.spyOn(portainerCache, 'cachedFetchSWR').mockImplementation(
       async (_key: string, _ttl: number, fn: () => Promise<unknown>) => fn(),
+    );
+    mockCachedFetchSWRSnapshot = vi.spyOn(portainerCache, 'cachedFetchSWRSnapshot').mockImplementation(
+      async (_key: string, _ttl: number, fn: () => Promise<unknown>) => ({
+        data: await fn(),
+        fetchedAt: Date.now(),
+      }),
     );
     vi.spyOn(portainerCache, 'cachedFetch').mockImplementation(
       async (_key: string, _ttl: number, fn: () => Promise<unknown>) => fn(),
@@ -691,7 +698,7 @@ describe('monitoring-service', () => {
   });
 
   describe('caching', () => {
-    it('uses cachedFetchSWR for endpoints and containers', async () => {
+    it('uses an atomic SWR snapshot for endpoints and cachedFetchSWR for containers', async () => {
       mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'prod', Status: 1, Type: 1, URL: 'tcp://localhost' }]);
       mockGetContainers.mockResolvedValue([
         { Id: 'c1', Names: ['/app'], State: 'running', Image: 'node:18' },
@@ -699,8 +706,7 @@ describe('monitoring-service', () => {
 
       await runMonitoringCycle();
 
-      // Should use cachedFetchSWR for endpoints
-      expect(mockCachedFetchSWR).toHaveBeenCalledWith('endpoints', 900, expect.any(Function));
+      expect(mockCachedFetchSWRSnapshot).toHaveBeenCalledWith('endpoints', 900, expect.any(Function));
       // Should use cachedFetchSWR for containers
       expect(mockCachedFetchSWR).toHaveBeenCalledWith('containers:1', 300, expect.any(Function));
     });
@@ -714,8 +720,10 @@ describe('monitoring-service', () => {
 
       await runMonitoringCycle();
 
-      // 1 endpoints call + 2 containers calls (one per endpoint)
-      expect(mockCachedFetchSWR).toHaveBeenCalledTimes(3);
+      expect(mockCachedFetchSWRSnapshot).toHaveBeenCalledTimes(1);
+      // Two container calls (one per endpoint); the endpoints call uses the
+      // atomic snapshot API above.
+      expect(mockCachedFetchSWR).toHaveBeenCalledTimes(2);
       expect(mockCachedFetchSWR).toHaveBeenCalledWith('containers:1', 300, expect.any(Function));
       expect(mockCachedFetchSWR).toHaveBeenCalledWith('containers:2', 300, expect.any(Function));
     });

@@ -28,7 +28,13 @@ export { queueSpanForExport, initOtelExporter, shutdownOtelExporter } from './tr
 
 // Portainer
 export { getEndpoints, getContainers, getContainer, getContainerLogs, getContainerStats } from './portainer/portainer-client.js';
-export { cachedFetch, cachedFetchSWR } from './portainer/portainer-cache.js';
+export {
+  cachedFetch,
+  cachedFetchSWR,
+  cachedFetchSnapshot,
+  cachedFetchSWRSnapshot,
+  type CachedSnapshot,
+} from './portainer/portainer-cache.js';
 export { normalizeEndpoint, normalizeContainer, normalizeStack, normalizeNetwork } from './portainer/portainer-normalizers.js';
 export { CircuitBreaker } from './portainer/circuit-breaker.js';
 

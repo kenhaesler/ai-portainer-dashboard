@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import * as portainer from '@dashboard/core/portainer/portainer-client.js';
-import { cachedFetchSWR, getCacheKey, getSnapshotTimestamp, TTL } from '@dashboard/core/portainer/portainer-cache.js';
+import { cachedFetchSWR, cachedFetchSWRSnapshot, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
 import { normalizeNetwork, normalizeEndpointAsOf } from '@dashboard/core/portainer/portainer-normalizers.js';
 import { EndpointIdQuerySchema, NetworksListResponseSchema, ErrorWithDetailsSchema } from '@dashboard/core/models/api-schemas.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
@@ -23,13 +23,16 @@ export async function networksRoutes(fastify: FastifyInstance) {
     const { endpointId } = request.query as { endpointId?: number };
 
     let endpoints;
+    let referenceTimeMs = Date.now();
     const endpointsCacheKey = getCacheKey('endpoints');
     try {
-      endpoints = await cachedFetchSWR(
+      const snapshot = await cachedFetchSWRSnapshot(
         endpointsCacheKey,
         TTL.ENDPOINTS,
         () => portainer.getEndpoints(),
       );
+      endpoints = snapshot.data;
+      referenceTimeMs = snapshot.fetchedAt;
     } catch (err) {
       log.error({ err }, 'Failed to fetch endpoints from Portainer');
       return reply.code(502).send({
@@ -46,7 +49,6 @@ export async function networksRoutes(fastify: FastifyInstance) {
     const errors: string[] = [];
     // Evaluate Edge heartbeat status against when this snapshot was actually
     // fetched, not "now" (issue #1566).
-    const referenceTimeMs = getSnapshotTimestamp(endpointsCacheKey) ?? Date.now();
     const upEndpoints = targetEndpoints.filter((ep) => normalizeEndpointAsOf(ep, { referenceTimeMs }).status === 'up');
     const settled = await Promise.allSettled(
       upEndpoints.map((ep) =>

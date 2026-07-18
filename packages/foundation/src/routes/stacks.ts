@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import * as portainer from '@dashboard/core/portainer/portainer-client.js';
-import { cachedFetchSWR, getCacheKey, getSnapshotTimestamp, TTL } from '@dashboard/core/portainer/portainer-cache.js';
+import { cachedFetchSWR, cachedFetchSWRSnapshot, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
 import {
   normalizeStack,
   normalizeEndpointAsOf,
@@ -26,13 +26,16 @@ export async function stacksRoutes(fastify: FastifyInstance) {
     preHandler: [fastify.authenticate],
   }, async (_request, reply) => {
     let endpoints;
+    let referenceTimeMs = Date.now();
     const endpointsCacheKey = getCacheKey('endpoints');
     try {
-      endpoints = await cachedFetchSWR(
+      const snapshot = await cachedFetchSWRSnapshot(
         endpointsCacheKey,
         TTL.ENDPOINTS,
         () => portainer.getEndpoints(),
       );
+      endpoints = snapshot.data;
+      referenceTimeMs = snapshot.fetchedAt;
     } catch (err) {
       log.error({ err }, 'Failed to fetch endpoints from Portainer');
       return reply.code(502).send({ error: 'Unable to connect to Portainer', details: errorDetails(err) });
@@ -40,7 +43,6 @@ export async function stacksRoutes(fastify: FastifyInstance) {
 
     // Evaluate Edge heartbeat status against when this snapshot was actually
     // fetched, not "now" (issue #1566).
-    const referenceTimeMs = getSnapshotTimestamp(endpointsCacheKey) ?? Date.now();
     // Only Docker endpoints have stacks/compose — K8s uses Helm charts (not yet supported)
     const upEndpoints = endpoints.filter((ep) => isDockerEndpoint(ep.Type) && normalizeEndpointAsOf(ep, { referenceTimeMs }).status === 'up');
     const seen = new Set<number>();

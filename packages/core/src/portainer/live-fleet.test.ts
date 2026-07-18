@@ -5,6 +5,7 @@ import * as portainerClient from './portainer-client.js';
 import * as settingsStore from '../services/settings-store.js';
 import { resetConfig, setConfigForTest } from '../config/index.js';
 import type { NormalizedEndpoint, NormalizedContainer } from './portainer-normalizers.js';
+import { cache, waitForInFlight } from './portainer-cache.js';
 
 function ep(partial: Partial<NormalizedEndpoint>): NormalizedEndpoint {
   return {
@@ -79,7 +80,12 @@ describe('collectFleetOverview', () => {
     setConfigForTest({ CACHE_ENABLED: false, PORTAINER_API_URL: 'http://test.local' });
   });
 
-  afterEach(() => resetConfig());
+  afterEach(async () => {
+    await waitForInFlight();
+    await cache.clear();
+    resetConfig();
+    vi.useRealTimers();
+  });
 
   it('runs live enrichment concurrently with the stacks fetch and container fan-out (#1500)', async () => {
     vi.spyOn(portainerClient, 'getEndpoints').mockResolvedValue([
@@ -149,23 +155,16 @@ describe('collectFleetOverview', () => {
         Id: 1, Name: 'edge-1', Type: 4, URL: 'tcp://x', Status: 2,
         EdgeID: 'edge-1', LastCheckInDate: lastCheckIn, EdgeCheckinInterval: 5,
       };
-      // The first call must resolve so the cache gets populated. Calls after
-      // that (the background SWR revalidation triggered by the second,
-      // stale, collectFleetOverview() below) intentionally hang forever: this
-      // test only exercises the *immediate* stale-serve path, not
-      // revalidation completion, and a real Portainer round-trip always
-      // takes far longer than the synchronous continuation that reads
-      // getSnapshotTimestamp() right after cachedFetchSWR resolves. An
-      // auto-resolving mock on the second call would race that continuation
-      // in a way that never happens with real network I/O (fetchedAt and the
-      // cached data update together, atomically, the instant the fetcher
-      // resolves — see portainer-cache.test.ts's equivalent test/comment).
+      // The first call resolves so the cache is populated. Keep the second
+      // fetch controlled until after the stale response is asserted, then
+      // resolve it so the test cannot leak an in-flight revalidation.
       let getEndpointsCalls = 0;
+      let resolveRevalidation!: (value: typeof rawEndpoint[]) => void;
       vi.spyOn(portainerClient, 'getEndpoints').mockImplementation(() => {
         getEndpointsCalls++;
         return getEndpointsCalls === 1
           ? Promise.resolve([rawEndpoint] as never)
-          : new Promise<never>(() => {}); // never resolves
+          : new Promise<typeof rawEndpoint[]>((resolve) => { resolveRevalidation = resolve; }) as never;
       });
       vi.spyOn(portainerClient, 'getStacks').mockResolvedValue([] as never);
       vi.spyOn(portainerClient, 'getContainers').mockResolvedValue([] as never);
@@ -188,6 +187,9 @@ describe('collectFleetOverview', () => {
       // Pre-fix, normalizeEndpoint measured elapsed time against the current
       // wall clock, so this would incorrectly flip to "down".
       expect(second.endpoints[0].status).toBe('up');
+
+      resolveRevalidation([rawEndpoint]);
+      await waitForInFlight();
     });
   });
 });

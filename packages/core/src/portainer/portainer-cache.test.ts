@@ -679,17 +679,10 @@ describe('stale-while-revalidate (cachedFetchSWR)', () => {
   });
 });
 
-// Issue #1566 — "All Hosts Down" flapping. `getSnapshotTimestamp` lets a
-// caller (normalizeEndpointAsOf) recover *when* the data currently sitting in
-// cache was actually fetched from its origin, instead of evaluating it
-// against whatever "now" happens to be when it's read back out of a
-// 15-minute SWR cache. It reads the `fetchedAt` field carried on the cache
-// entry itself (not a parallel side-map keyed the same way) specifically so
-// it can never outlive the entry it describes — see the "does not outlive
-// its cache entry" tests below, which guard against exactly that class of
-// bug (a companion structure kept in sync by hand, forgotten on one of the
-// cache's eviction paths, and left to grow unboundedly for high-cardinality
-// keys such as per-container-ID cache entries in a long-running server).
+// Issue #1566 — `getSnapshotTimestamp` remains useful for diagnostics and
+// proves fetchedAt shares the cache entry's lifecycle. Status-dependent code
+// uses the atomic snapshot APIs tested below instead of reading this accessor
+// after the payload, because SWR can replace an entry between two operations.
 describe('getSnapshotTimestamp — origin fetch tracking (issue #1566)', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -736,7 +729,7 @@ describe('getSnapshotTimestamp — origin fetch tracking (issue #1566)', () => {
     expect(fetcher).toHaveBeenCalledTimes(1); // still cached, no re-fetch
   });
 
-  it('keeps the original fetch timestamp while a background revalidation is still pending, then updates atomically with the data once it resolves', async () => {
+  it('keeps the cache entry timestamp unchanged while revalidation is pending, then updates the entry when it resolves', async () => {
     vi.doMock('../config/index.js', () => ({
       getConfig: () => ({ ...baseConfig }),
     }));
@@ -756,11 +749,7 @@ describe('getSnapshotTimestamp — origin fetch tracking (issue #1566)', () => {
     const servedAt = firstFetchedAt + 49_000;
     vi.setSystemTime(servedAt);
 
-    // Deliberately controlled (not auto-resolving) so the background
-    // revalidation's completion is under our control rather than racing
-    // internal microtask timing — the entry's data + fetchedAt are written
-    // together in one synchronous step inside cache.set(), so as soon as the
-    // fetcher resolves, both update in the very same tick.
+    // Control completion so both cache-entry states can be inspected.
     let resolveSecond!: (v: string) => void;
     const secondFetcher = vi.fn(() => new Promise<string>((r) => { resolveSecond = r; }));
     const served = await cachedFetchSWR('endpoints', 60, secondFetcher);
@@ -771,11 +760,8 @@ describe('getSnapshotTimestamp — origin fetch tracking (issue #1566)', () => {
     expect(served).toBe('v1');
     expect(getSnapshotTimestamp('endpoints')).toBe(firstFetchedAt);
 
-    // Resolve the pending fetch: the revalidation completes, and data +
-    // fetchedAt advance together to reflect the new origin fetch — there is
-    // no window where one updates without the other (#1566: fetchedAt lives
-    // on the same cache entry as the data, not a separately-maintained
-    // structure that could drift out of sync with it).
+    // Resolve the pending fetch: the replacement entry carries the new data
+    // and timestamp together.
     resolveSecond('v2');
     await waitForInFlight();
     expect(getSnapshotTimestamp('endpoints')).toBe(servedAt);
@@ -859,6 +845,98 @@ describe('getSnapshotTimestamp — origin fetch tracking (issue #1566)', () => {
 
     await cache.invalidate('invalidated-key');
     expect(getSnapshotTimestamp('invalidated-key')).toBeUndefined();
+  });
+});
+
+describe('atomic cached snapshots (issue #1566 review follow-up)', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('pairs a stale SWR payload with its original fetchedAt even when revalidation lands before the caller resumes', async () => {
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({ ...baseConfig }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(),
+    }));
+
+    const { cachedFetchSWRSnapshot, getSnapshotTimestamp, waitForInFlight } =
+      await import('./portainer-cache.js');
+
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const firstFetchedAt = Date.now();
+    const first = await cachedFetchSWRSnapshot(
+      'endpoints:atomic',
+      60,
+      vi.fn().mockResolvedValue('v1'),
+    );
+    expect(first).toEqual({ data: 'v1', fetchedAt: firstFetchedAt });
+
+    const revalidatedAt = firstFetchedAt + 49_000;
+    vi.setSystemTime(revalidatedAt);
+
+    // A resolved promise lets the background refresh replace the live cache
+    // entry before this await continuation runs — the exact race that made a
+    // separate getSnapshotTimestamp() read unsafe.
+    const stale = await cachedFetchSWRSnapshot(
+      'endpoints:atomic',
+      60,
+      vi.fn().mockResolvedValue('v2'),
+    );
+    expect(stale).toEqual({ data: 'v1', fetchedAt: firstFetchedAt });
+
+    await waitForInFlight();
+    expect(getSnapshotTimestamp('endpoints:atomic')).toBe(revalidatedAt);
+    await expect(cachedFetchSWRSnapshot(
+      'endpoints:atomic',
+      60,
+      vi.fn().mockResolvedValue('unused'),
+    )).resolves.toEqual({ data: 'v2', fetchedAt: revalidatedAt });
+  });
+
+  it('preserves the origin fetchedAt when a snapshot moves from L2 back into L1', async () => {
+    const redisClient = createMockRedisClient();
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({ ...baseConfig, REDIS_URL: 'redis://redis:6379' }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(() => redisClient),
+    }));
+
+    const { cachedFetchSnapshot } = await import('./portainer-cache.js');
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const fetchedAt = Date.now();
+    const fetcher = vi.fn().mockResolvedValue('v1');
+
+    await expect(cachedFetchSnapshot('endpoints:l2-snapshot', 300, fetcher))
+      .resolves.toEqual({ data: 'v1', fetchedAt });
+
+    // L1 expires at 30s in multi-layer mode; L2 still carries the original
+    // payload/timestamp pair for the full 300s TTL.
+    vi.setSystemTime(fetchedAt + 31_000);
+    await expect(cachedFetchSnapshot('endpoints:l2-snapshot', 300, fetcher))
+      .resolves.toEqual({ data: 'v1', fetchedAt });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it('timestamps uncached snapshot results at origin completion', async () => {
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({ ...baseConfig, CACHE_ENABLED: false }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(),
+    }));
+
+    const { cachedFetchSnapshot } = await import('./portainer-cache.js');
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const fetchedAt = Date.now();
+    await expect(cachedFetchSnapshot('uncached:snapshot', 60, () => Promise.resolve('fresh')))
+      .resolves.toEqual({ data: 'fresh', fetchedAt });
   });
 });
 

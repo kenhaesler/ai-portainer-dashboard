@@ -8,7 +8,7 @@
  */
 import pLimit from 'p-limit';
 import { getEndpoints, getContainers, getStacks } from './portainer-client.js';
-import { cachedFetchSWR, getCacheKey, getSnapshotTimestamp, TTL } from './portainer-cache.js';
+import { cachedFetchSWR, cachedFetchSWRSnapshot, getCacheKey, TTL } from './portainer-cache.js';
 import {
   normalizeEndpointAsOf, normalizeContainer, applyLiveDockerInfo, markLiveUnavailable,
   endpointSupportsLiveDockerInfo, type NormalizedEndpoint, type NormalizedContainer,
@@ -94,14 +94,14 @@ export interface FleetOverview {
  */
 export async function collectFleetOverview(cfg?: EdgeLiveQueryConfig): Promise<FleetOverview> {
   const endpointsCacheKey = getCacheKey('endpoints');
-  const raw = (await cachedFetchSWR(endpointsCacheKey, TTL.ENDPOINTS, () => getEndpoints())) ?? [];
+  const endpointSnapshot = await cachedFetchSWRSnapshot(endpointsCacheKey, TTL.ENDPOINTS, () => getEndpoints());
+  const raw = endpointSnapshot.data ?? [];
   // Evaluate Edge heartbeat status against when this snapshot was actually
   // fetched from Portainer, not against "now" — `raw` can be served stale-
   // while-revalidate out of a 15-minute cache, and judging a cached-but-
   // healthy endpoint against the current wall clock flips it to "down" as the
   // cache ages (issue #1566, "All Hosts Down" flapping).
-  const referenceTimeMs = getSnapshotTimestamp(endpointsCacheKey) ?? Date.now();
-  const endpoints = raw.map((ep) => normalizeEndpointAsOf(ep, { referenceTimeMs }));
+  const endpoints = raw.map((ep) => normalizeEndpointAsOf(ep, { referenceTimeMs: endpointSnapshot.fetchedAt }));
 
   // Live enrichment mutates only counts/totalCpu/totalMemory/snapshotSource —
   // never the status/type fields the up/Docker filter reads — so it runs

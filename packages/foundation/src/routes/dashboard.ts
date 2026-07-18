@@ -9,8 +9,8 @@ import '@fastify/swagger';
 import { z } from 'zod/v4';
 import pLimit from 'p-limit';
 import * as portainer from '@dashboard/core/portainer/portainer-client.js';
-import { cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
-import { normalizeEndpoint, normalizeContainer, type NormalizedEndpoint, type NormalizedContainer } from '@dashboard/core/portainer/portainer-normalizers.js';
+import { cachedFetchSWR, cachedFetchSWRSnapshot, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
+import { normalizeEndpointAsOf, normalizeContainer, type NormalizedEndpoint, type NormalizedContainer } from '@dashboard/core/portainer/portainer-normalizers.js';
 import { enrichEndpointsWithLiveDockerInfo, attachStackCounts, computeFleetTotals } from '@dashboard/core/portainer/live-fleet.js';
 import { isDockerEndpoint } from '@dashboard/core/models/portainer.js';
 import {
@@ -231,12 +231,15 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
     });
 
     let endpoints;
+    let endpointsFetchedAt = Date.now();
     try {
-      endpoints = await cachedFetchSWR(
+      const snapshot = await cachedFetchSWRSnapshot(
         getCacheKey('endpoints'),
         TTL.ENDPOINTS,
         () => portainer.getEndpoints(),
       );
+      endpoints = snapshot.data;
+      endpointsFetchedAt = snapshot.fetchedAt;
     } catch (err) {
       log.error({ err }, 'Failed to fetch endpoints from Portainer');
       return reply.code(502).send({
@@ -245,7 +248,8 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
       });
     }
 
-    const normalized = endpoints.map(normalizeEndpoint);
+    const normalized = endpoints.map((endpoint) =>
+      normalizeEndpointAsOf(endpoint, { referenceTimeMs: endpointsFetchedAt }));
     // Live `/docker/info` is the primary source for per-endpoint counts —
     // Portainer's Snapshots[] is no longer read (issue #1249+). Enrichment
     // mutates only counts/totalCpu/totalMemory/snapshotSource — never the
@@ -321,12 +325,15 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
 
     // Get all endpoints
     let endpoints;
+    let endpointsFetchedAt = Date.now();
     try {
-      endpoints = await cachedFetchSWR(
+      const snapshot = await cachedFetchSWRSnapshot(
         getCacheKey('endpoints'),
         TTL.ENDPOINTS,
         () => portainer.getEndpoints(),
       );
+      endpoints = snapshot.data;
+      endpointsFetchedAt = snapshot.fetchedAt;
     } catch (err) {
       log.error({ err }, 'Failed to fetch endpoints from Portainer');
       return reply.code(502).send({
@@ -335,7 +342,8 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
       });
     }
 
-    const normalized = endpoints.map(normalizeEndpoint);
+    const normalized = endpoints.map((endpoint) =>
+      normalizeEndpointAsOf(endpoint, { referenceTimeMs: endpointsFetchedAt }));
     // /resources returns per-stack resource aggregates (from container labels), not endpoint stackCount — no attachStackCounts needed.
     // Only fetch Docker containers — K8s pods are served by /api/kubernetes/ routes.
     const upDockerEndpoints = normalized.filter((e) => e.status === 'up' && isDockerEndpoint(e.type));
@@ -393,27 +401,28 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
         )
       : null;
 
-    let rawEndpoints;
     const endpointTiming = await timed('endpoints', async () => {
       try {
-        return await cachedFetchSWR(
+        return await cachedFetchSWRSnapshot(
           getCacheKey('endpoints'),
           TTL.ENDPOINTS,
           () => portainer.getEndpoints(),
         );
       } catch (err) {
         log.error({ err }, 'Failed to fetch endpoints from Portainer');
-        return reply.code(502).send({
+        reply.code(502).send({
           error: 'Unable to connect to Portainer',
           details: errorDetails(err),
         });
+        return null;
       }
     });
-    // If reply was already sent (502), endpointTiming.result is the reply
-    if (reply.sent) return;
-    rawEndpoints = endpointTiming.result;
+    // The timed fetch returns null after sending the 502 response.
+    if (reply.sent || !endpointTiming.result) return;
+    const { data: rawEndpoints, fetchedAt: endpointsFetchedAt } = endpointTiming.result;
 
-    const normalized = rawEndpoints.map(normalizeEndpoint);
+    const normalized = rawEndpoints.map((endpoint) =>
+      normalizeEndpointAsOf(endpoint, { referenceTimeMs: endpointsFetchedAt }));
     // Live `/docker/info` is the primary source for per-endpoint counts (#1249+).
     // Enrichment mutates only counts/totalCpu/totalMemory/snapshotSource — never
     // the status/type fields the up/Docker filter reads — so it runs concurrently

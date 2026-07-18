@@ -12,6 +12,8 @@ vi.mock('@dashboard/core/portainer/portainer-cache.js', async (importOriginal) =
     ...real,
     cachedFetch: <T>(_key: string, _ttl: number, fn: () => Promise<T>) => fn(),
     cachedFetchSWR: <T>(_key: string, _ttl: number, fn: () => Promise<T>) => fn(),
+    cachedFetchSnapshot: async <T>(_key: string, _ttl: number, fn: () => Promise<T>) => ({ data: await fn(), fetchedAt: Date.now() }),
+    cachedFetchSWRSnapshot: async <T>(_key: string, _ttl: number, fn: () => Promise<T>) => ({ data: await fn(), fetchedAt: Date.now() }),
   };
 });
 
