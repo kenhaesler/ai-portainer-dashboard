@@ -676,17 +676,20 @@ describe('getContainer — Docker inspect normalization (#1387)', () => {
 // =====================================================================
 //  Lifecycle endpoints must POST with a short, definite-length body
 //
-//  Portainer (≤ 2.39.x) proxies a bodyless POST to the Docker socket
-//  without a definite length, so Docker sees ContentLength == -1
-//  (chunked) on /containers/{id}/start and rejects it with HTTP 400:
+//  A bodyless POST proxied through Portainer to the Docker socket comes
+//  back HTTP 400 on /containers/{id}/start:
 //
 //    "starting container with non-empty request body was deprecated since
 //     API v1.22 and removed in v1.24"
 //
 //  Docker's guard is `r.ContentLength > 7 || r.ContentLength == -1`
-//  (unchanged since at least moby v24 — not new in 28). We trip the `== -1`
-//  arm; a 2-byte `{}` clears both, which is why the body must stay <= 7
-//  bytes. See LIFECYCLE_NOOP_BODY in portainer-client.ts.
+//  (unchanged since at least moby v24 — not new in 28), so the request must
+//  arrive with a definite length of 0..7. A 2-byte `{}` clears both arms,
+//  which is why the body must stay <= 7 bytes.
+//
+//  Which layer produces the -1 is NOT established — see the comment on
+//  LIFECYCLE_NOOP_BODY in portainer-client.ts before diagnosing a related
+//  failure; the obvious "Go reverse proxy re-chunks it" answer is wrong.
 //
 //  Only /start reads ContentLength. /stop and /restart carry the same body
 //  for symmetry only — asserted here so the three cannot drift apart.
