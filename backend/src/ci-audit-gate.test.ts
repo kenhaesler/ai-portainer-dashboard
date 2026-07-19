@@ -8,6 +8,7 @@ const ROOT = resolve(__dirname, '../..');
 interface Step {
   name?: string;
   run?: string;
+  'working-directory'?: string;
   'continue-on-error'?: boolean | string;
 }
 
@@ -35,8 +36,8 @@ function readWorkflow(relativePath: string): Workflow {
  *
  * Deliberately NOT covered here, so this file is not mistaken for full
  * coverage:
- *   • devDependency Highs (`audit:all` gates at critical only)
- *   • moderate production advisories
+ *   • devDependency Highs in the root tree (`audit:all` gates at critical only)
+ *   • moderate advisories (root or loadtests)
  *   • Docker base images, GitHub Action pins, non-npm toolchains
  *   • whether "Security Audit" is a *required* status check — that is a repo
  *     settings concern outside this repo's files. Without it a red job does
@@ -91,6 +92,19 @@ describe('CI production audit gate (#1578)', () => {
         /--offline|--prefer-offline/,
       );
     }
+  });
+
+  it('audits the loadtests lockfile, which no root audit can reach', () => {
+    // `loadtests/` is not an npm workspace and has its own lockfile, so the
+    // two root steps above do not traverse it. That blind spot let a High
+    // (ws GHSA-96hv-2xvq-fx4p) sit in `dev` with this job green — it was
+    // visible only as a Dependabot alert. The escape-hatch assertions above
+    // iterate every `npm audit` step, so this one inherits them; what needs
+    // pinning is that the step exists at all and still gates at high.
+    const loadtestsAudit = auditRunSteps.find((s) => s['working-directory'] === 'loadtests');
+
+    expect(loadtestsAudit, 'no loadtests audit step found').toBeDefined();
+    expect(loadtestsAudit!.run).toContain('--audit-level=high');
   });
 
   it('keeps the audit job outside the test-gate fan-in so it cannot be skipped', () => {

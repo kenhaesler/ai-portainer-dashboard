@@ -36,6 +36,7 @@
     "test:integration": "npm run test -w backend && npm run test -w frontend && npm run test:e2e",
     "audit:prod": "npm audit --omit=dev --audit-level=high",
     "audit:all": "npm audit --audit-level=critical",
+    "audit:loadtests": "cd loadtests && npm audit --audit-level=high",
     "prepare": "husky || true"
   },
   "devDependencies": {

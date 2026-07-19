@@ -57,6 +57,20 @@ jobs:
       - name: Audit all dependencies (critical gate)
         run: npm audit --audit-level=critical
 
+      # `loadtests/` is NOT an npm workspace and carries its own lockfile, so
+      # neither audit above can see it — a root `npm audit` simply does not
+      # traverse it. Advisories there surfaced only as Dependabot alerts, which
+      # is how a High (ws GHSA-96hv-2xvq-fx4p, memory-exhaustion DoS) sat in
+      # `dev` while this job stayed green.
+      #
+      # No `npm ci` needed: `npm audit` resolves from package.json +
+      # package-lock.json alone, so this costs a registry round-trip, not an
+      # install. Verified non-vacuous — run against the pre-fix lockfile this
+      # step exits 1 and reports the High.
+      - name: Audit loadtests dependencies (high+)
+        working-directory: loadtests
+        run: npm audit --audit-level=high
+
   typecheck:
     name: Type Check
     runs-on: ubuntu-latest
