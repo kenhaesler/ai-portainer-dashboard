@@ -674,29 +674,29 @@ describe('getContainer — Docker inspect normalization (#1387)', () => {
 });
 
 // =====================================================================
-//  Lifecycle endpoints must POST with a non-empty body
+//  Lifecycle endpoints must POST with a short, definite-length body
 //
 //  Portainer (≤ 2.39.x) proxies a bodyless POST to the Docker socket
-//  without an explicit Content-Length, so Docker Engine 28+ sees
-//  ContentLength == -1 (chunked) and rejects /containers/{id}/start
-//  (and /stop, /restart) with HTTP 400:
+//  without a definite length, so Docker sees ContentLength == -1
+//  (chunked) on /containers/{id}/start and rejects it with HTTP 400:
 //
 //    "starting container with non-empty request body was deprecated since
 //     API v1.22 and removed in v1.24"
 //
+//  Docker's guard is `r.ContentLength > 7 || r.ContentLength == -1`
+//  (unchanged since at least moby v24 — not new in 28). We trip the `== -1`
+//  arm; a 2-byte `{}` clears both, which is why the body must stay <= 7
+//  bytes. See LIFECYCLE_NOOP_BODY in portainer-client.ts.
+//
+//  Only /start reads ContentLength. /stop and /restart carry the same body
+//  for symmetry only — asserted here so the three cannot drift apart.
+//
 //  Symptom: Packet Capture (createContainer + startContainer for the
 //  sidecar) failed at the start step, sidecars were left orphaned, and
-//  the capture landed in status 'failed'. stopContainer / restartContainer
-//  share the same code path and were silently broken too — pcap-service
-//  swallowed the stop failure as 'succeeded with partial data'.
-//
-//  Workaround: send `{}` as the body so the proxied request reaches Docker
-//  with a definite Content-Length: 2. Docker still ignores the body
-//  (HostConfig on /start has been deprecated since API v1.22), but the
-//  ContentLength check now passes.
+//  the capture landed in status 'failed'.
 // =====================================================================
 
-describe('container lifecycle POSTs send `{}` body (Portainer/Docker 28+ workaround)', () => {
+describe('container lifecycle POSTs send a `{}` body (Portainer proxy workaround)', () => {
   beforeEach(() => {
     _resetClientState();
     mockFetch.mockReset();
@@ -726,18 +726,31 @@ describe('container lifecycle POSTs send `{}` body (Portainer/Docker 28+ workaro
     expect(lastRequestUrl()).toMatch(/\/containers\/abc123\/start$/);
   });
 
-  it('stopContainer sends `{}`', async () => {
+  // /stop and /restart do not read the body — these pin the symmetry so the
+  // three lifecycle calls cannot drift apart.
+  it('stopContainer sends `{}` (symmetry with start)', async () => {
     mockFetch.mockResolvedValueOnce(buildEmptyBodyResponse(204, 'No Content'));
     await stopContainer(1, 'abc123');
     expect(lastRequestBody()).toBe('{}');
     expect(lastRequestUrl()).toMatch(/\/containers\/abc123\/stop$/);
   });
 
-  it('restartContainer sends `{}`', async () => {
+  it('restartContainer sends `{}` (symmetry with start)', async () => {
     mockFetch.mockResolvedValueOnce(buildEmptyBodyResponse(204, 'No Content'));
     await restartContainer(1, 'abc123');
     expect(lastRequestBody()).toBe('{}');
     expect(lastRequestUrl()).toMatch(/\/containers\/abc123\/restart$/);
+  });
+
+  // Encodes the constraint the type system cannot: Docker rejects
+  // /start when ContentLength > 7, so a "more descriptive" noop body
+  // such as {"noop":true} (13 bytes) would silently reintroduce the 400.
+  it('noop body stays within Docker\'s 7-byte tolerance for /start', async () => {
+    mockFetch.mockResolvedValueOnce(buildEmptyBodyResponse(204, 'No Content'));
+    await startContainer(1, 'abc123');
+    const body = lastRequestBody();
+    expect(typeof body).toBe('string');
+    expect(Buffer.byteLength(body as string, 'utf8')).toBeLessThanOrEqual(7);
   });
 
   it('createContainer keeps the real payload as its body (regression guard)', async () => {

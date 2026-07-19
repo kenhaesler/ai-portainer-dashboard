@@ -566,26 +566,40 @@ function isAlreadyInTargetStateError(err: unknown): boolean {
 }
 
 /**
- * Workaround for Portainer ≤ 2.39.x proxying to Docker Engine 28+:
+ * Workaround for Portainer (≤ 2.39.x) proxying container lifecycle POSTs to
+ * the Docker socket.
  *
- * Docker 28+ tightened its check on /containers/{id}/start (and /stop, /restart)
- * to reject any request with `r.ContentLength != 0` — including chunked /
- * unknown-length bodies. Portainer's reverse proxy forwards a bodyless POST
- * to the Docker socket without an explicit Content-Length: 0, so Docker sees
- * ContentLength == -1 (chunked) and rejects with HTTP 400:
+ * Portainer's proxy forwards our bodyless POST without a definite length, so
+ * Docker sees ContentLength == -1 (chunked) on /containers/{id}/start and
+ * rejects it with HTTP 400:
  *
  *   "starting container with non-empty request body was deprecated since
  *    API v1.22 and removed in v1.24"
  *
- * Empirically reproducible with `curl -X POST` against Portainer's proxy
- * (no -d → 400, `-d '{}'` → 204). Sending an explicit JSON body of `{}`
- * gives the proxied request a Content-Length of 2; Docker still ignores
- * the contents (HostConfig in /start has been deprecated since v1.22) but
- * accepts the request because ContentLength is now a definite > 0.
+ * Docker's actual guard is:
  *
- * This is a Portainer-side bug; the workaround here is the path of least
- * resistance because we have no control over how Portainer rewrites the
- * request line.
+ *   if r.ContentLength > 7 || r.ContentLength == -1 { ...reject... }
+ *
+ * (moby, api/server/router/container/container_routes.go — unchanged since at
+ * least v24; the 7 is upstream's "a non-nil json object is at least 7
+ * characters".) It is the `== -1` arm we trip, not a size limit, and the guard
+ * is NOT new in Docker 28 — if this starts failing on a previously working
+ * setup, suspect a change in how Portainer re-encodes the proxied body, not a
+ * Docker upgrade.
+ *
+ * A definite-length body of 2 bytes clears both arms, so `{}` gets through and
+ * Docker ignores the contents (HostConfig on /start has been deprecated since
+ * API v1.22). Reproducible against Portainer's proxy with curl: no -d → 400,
+ * -d '{}' → 204.
+ *
+ * IMPORTANT: this body must stay <= 7 bytes. Replacing it with a more
+ * self-documenting payload such as {"noop":true} (13 bytes) trips the `> 7`
+ * arm and reintroduces the exact 400 this works around. Guarded by a byte-length
+ * assertion in portainer-client.test.ts.
+ *
+ * Only /start inspects ContentLength — /stop and /restart never read the body.
+ * They carry the same constant purely for symmetry, so the three cannot drift;
+ * their behaviour does not depend on it.
  */
 const LIFECYCLE_NOOP_BODY = {};
 
