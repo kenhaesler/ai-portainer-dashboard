@@ -36,6 +36,22 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # `npm ci` exits 0 on a lockfile that cannot actually install. A dep a
+      # package declares but the lockfile has no entry for is silently skipped
+      # — that is how `@reduxjs/toolkit`'s `@standard-schema/utils` went missing
+      # with every job green. `npm audit` does not see it either.
+      #
+      # `--all` is load-bearing, not cosmetic. Bare `npm ls` only validates to
+      # depth 0 and exits 0 on exactly this tree, which is indistinguishable
+      # from a clean one — the same failure shape as `npm audit --offline`.
+      # Verified both directions against the pre-fix lockfile: with `--all` it
+      # exits 1 and names the missing package, without it exits 0.
+      #
+      # Cannot cover `loadtests/`: `npm ls` needs an installed tree and this
+      # job deliberately does not install there. See ci-audit-gate.test.ts.
+      - name: Verify lockfile integrity (npm ls --all)
+        run: npm ls --all
+
       # Enforcing (#1578). This step used to carry `continue-on-error: true`,
       # which made it advisory-only — three separate High advisories reached
       # `dev` with CI green (undici x3, nodemailer, ws) before being found by
