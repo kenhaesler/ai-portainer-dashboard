@@ -84,7 +84,10 @@ For detailed specs (animation durations, easing curves, glass override patterns,
 - **Dependabot** creates weekly PRs for npm, monthly for Docker and GitHub Actions. Triage these PRs weekly.
 - **React is pinned to exact version** (no caret) since React 19 is a new major version. Update deliberately.
 - `pino-pretty` is a devDependency (not shipped to production Docker images).
-- Run `npm run audit:prod` to check production dependency vulnerabilities locally.
+- Run `npm run audit:prod` to check production dependency vulnerabilities locally. **CI enforces this** (#1578) — the `Security Audit` job fails on any high-severity *production* advisory. It previously carried `continue-on-error: true` and could not fail, which let three High advisories reach `dev` with CI green.
+- **Fixing a blocked audit:** prefer a lockfile refresh (`npm update <pkg>`) or a root `overrides` entry — both remove the vulnerable code rather than hiding it. Every production High this repo has hit was fixable that way, including one npm reported as `fixAvailable: false` (that field is not a reliable signal). There is deliberately no suppression allowlist; add one only when a genuinely unfixable advisory appears.
+- **Do not weaken the gate.** `continue-on-error`, `|| true`, `--offline`, and lowering `--audit-level` are all asserted against in `backend/src/ci-audit-gate.test.ts`. `npm audit --offline` is the dangerous one: it exits 0 with an empty report, indistinguishable from a clean audit.
+- Known gaps, so a green audit is not over-read: devDependency Highs are not gated (`audit:all` gates at critical only), moderate production advisories are not gated, and a red job only blocks a merge if `Security Audit` is a **required status check** in branch protection.
 - Run `npm outdated` monthly to review stale packages.
 
 ## Code Quality
