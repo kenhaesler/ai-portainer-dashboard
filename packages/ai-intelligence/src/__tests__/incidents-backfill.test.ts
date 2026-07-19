@@ -8,11 +8,11 @@ vi.mock('@dashboard/core/db/app-db-router.js', () => ({
   getDbForDomain: () => testDb,
 }));
 
-import { backfillSignatures } from '../../scripts/backfill-incident-signatures.js';
+import { backfillSignatures } from '../services/incident-signature-backfill.js';
 
 beforeEach(async () => {
   testDb = await getTestDb();
-  await truncateTestTables(['incidents', 'insights']);
+  await truncateTestTables('incidents', 'insights');
 });
 afterAll(async () => { await closeTestDb(); });
 

@@ -1,4 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+// Type-only: mockFetch is typed off undiciFetch's return, which is undici's own
+// Response (has `textStream`) — not the ambient global `Response` from
+// undici-types/@types/node, which lacks it. Casting through the wrong one is
+// what left this file invisible to `tsc --noEmit` before packages/ tests were
+// wired into `npm run typecheck` (#1586).
+import type { Response as UndiciResponse } from 'undici';
 
 // Kept: undici mock — external dependency. Lets us assert behavior of
 // startContainer / stopContainer against fabricated Docker responses.
@@ -274,7 +280,7 @@ function buildResponse({
     json: async () => body,
     text: async () => (typeof body === 'string' ? body : JSON.stringify(body)),
     headers: new Headers(),
-  } as unknown as Response;
+  } as unknown as UndiciResponse;
 }
 
 describe('startContainer / stopContainer — 304 idempotency (#1230)', () => {
@@ -352,7 +358,7 @@ function buildEmptyBodyResponse(status: number, statusText: string) {
     },
     text: async () => '',
     headers: new Headers(),
-  } as unknown as Response;
+  } as unknown as UndiciResponse;
 }
 
 function buildJsonResponse(status: number, statusText: string, body: unknown) {
@@ -364,7 +370,7 @@ function buildJsonResponse(status: number, statusText: string, body: unknown) {
     json: async () => JSON.parse(serialized),
     text: async () => serialized,
     headers: new Headers(),
-  } as unknown as Response;
+  } as unknown as UndiciResponse;
 }
 
 describe('portainerFetch parse guard (#1232)', () => {

@@ -20,10 +20,21 @@ import {
 } from '../services/ebpf-coverage.js';
 import { setConfigForTest, resetConfig } from '@dashboard/core/config/index.js';
 
+// Return type is widened to Record<string, ...> (not the narrower literal
+// TypeScript would infer from the `en0`-only fixture below) so
+// mockReturnValueOnce can supply other interface names (eth0, docker0, ...)
+// further down without a type error.
+type MockNetworkInterfaces = Record<
+  string,
+  Array<{ address: string; family: string; internal: boolean }>
+>;
+
 const { mockedNetworkInterfaces } = vi.hoisted(() => ({
-  mockedNetworkInterfaces: vi.fn(() => ({
-    en0: [{ address: '192.168.178.20', family: 'IPv4', internal: false }],
-  })),
+  mockedNetworkInterfaces: vi.fn(
+    (): MockNetworkInterfaces => ({
+      en0: [{ address: '192.168.178.20', family: 'IPv4', internal: false }],
+    }),
+  ),
 }));
 
 // Kept: node:os mock — external dependency

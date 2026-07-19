@@ -56,6 +56,7 @@ function mockIncidentRow(overrides: Partial<Incident> = {}): Incident {
     correlation_confidence: 'high',
     insight_count: 4,
     summary: 'Test summary',
+    signature: 'temporal:docker-nginx,docker-redis',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     resolved_at: null,
