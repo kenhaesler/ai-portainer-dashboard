@@ -212,7 +212,11 @@ describe('POST /api/harbor/sync response schema', () => {
   it('returns { message, status } when a sync is started', async () => {
     vi.mocked(harborClient.isHarborConfiguredAsync).mockResolvedValue(true);
     vi.mocked(getIsSyncing).mockReturnValue(false);
-    vi.mocked(runFullSync).mockResolvedValue(undefined);
+    vi.mocked(runFullSync).mockResolvedValue({
+      vulnerabilitiesSynced: 0,
+      inUseMatched: 0,
+      durationMs: 0,
+    });
 
     const app = buildApp();
     await app.register(harborVulnerabilityRoutes);

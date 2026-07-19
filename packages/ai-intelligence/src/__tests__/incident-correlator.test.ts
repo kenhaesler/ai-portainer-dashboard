@@ -269,6 +269,7 @@ describe('incident-correlator', () => {
         correlation_confidence: 'medium',
         insight_count: 2,
         summary: null,
+        signature: 'cascade:web',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         resolved_at: null,

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import Fastify from 'fastify';
+import Fastify, { type FastifyRequest } from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
 import { llmObservabilityRoutes } from '../routes/llm-observability.js';
 import { testAdminOnly, type Role } from '@dashboard/core/test-utils/rbac-test-helper.js';
@@ -26,12 +26,12 @@ describe('LLM Observability Routes', () => {
     app.decorate('requireRole', (minRole: Role) => async (request: any, reply: any) => {
       const rank = { viewer: 0, operator: 1, admin: 2 };
       const userRole = request.user?.role ?? 'viewer';
-      if (rank[userRole] < rank[minRole]) {
+      if (rank[userRole as keyof typeof rank] < rank[minRole]) {
         reply.code(403).send({ error: 'Insufficient permissions' });
       }
     });
     app.decorateRequest('user', undefined);
-    app.addHook('preHandler', async (request) => {
+    app.addHook('preHandler', async (request: FastifyRequest) => {
       (request as any).user = { sub: 'u1', username: 'admin', sessionId: 's1', role: currentRole };
     });
     await app.register(llmObservabilityRoutes);

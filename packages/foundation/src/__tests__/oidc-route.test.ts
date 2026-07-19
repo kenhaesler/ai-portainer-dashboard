@@ -296,7 +296,7 @@ describe('OIDC Routes', () => {
       mockedInvalidateAll.mockClear();
       mockedWriteAuditLog.mockClear();
       mockedGetUserById.mockReset();
-      mockedGetUserById.mockResolvedValue(null);
+      mockedGetUserById.mockResolvedValue(undefined);
     });
 
     it('denies login with 403 and no session when restrictive and no group matches', async () => {

@@ -60,7 +60,7 @@ function makeInsight(overrides: Partial<Insight> & Pick<Insight, 'id' | 'contain
 
 beforeAll(async () => { testDb = await getTestDb(); });
 afterAll(async () => { await closeTestDb(); });
-beforeEach(async () => { await truncateTestTables(['incidents', 'insights']); });
+beforeEach(async () => { await truncateTestTables('incidents', 'insights'); });
 
 describe('correlateInsights — writes signature', () => {
   it('writes signature derived from structured fields (metric_type + detection_method)', async () => {

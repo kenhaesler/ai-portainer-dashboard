@@ -112,6 +112,17 @@ For detailed specs (animation durations, easing curves, glass override patterns,
   Cross-domain behaviour obtained via DI (`LLMInterface`, `MetricsInterface`, … from
   `@dashboard/contracts`, wired in `packages/server/src/wiring.ts`) is not an import and needs no
   exception.
+- **`npm run typecheck` covers packages/ test files too (#1586).** Every `packages/*/tsconfig.build.json`
+  excludes `**/*.test.ts` and `**/__tests__/**` — correctly, tests must not ship to `dist/` — but the
+  root `typecheck` script used to run only `tsc --build tsconfig.build.json`, so those excluded test
+  files were never typechecked by anything, hiding 49 errors across 5 packages from both local
+  `npm run typecheck` and CI's `Type Check` job. Each package already had its own non-build
+  `tsconfig.json` (no test exclusion) and its own `"typecheck": "tsc --noEmit"` script; the root
+  script now also chains `npm run typecheck -w <pkg>` for all 9 packages before typechecking
+  frontend. `backend/src/typecheck-gate.test.ts` guards both halves of the wiring — that the root
+  script still invokes every package's script, and that no package's plain `tsconfig.json` regains a
+  test-file exclusion — following the same "drive the actual shipped config, don't describe it"
+  pattern as `ci-audit-gate.test.ts` (#1578) and `packages-boundaries.test.ts` (#1585).
 
 ## Git Workflow
 

@@ -30,7 +30,7 @@ describe('Logs Routes', () => {
     app.decorate('requireRole', (minRole: 'viewer' | 'operator' | 'admin') => async (request: any, reply: any) => {
       const rank = { viewer: 0, operator: 1, admin: 2 };
       const userRole = request.user?.role ?? 'viewer';
-      if (rank[userRole] < rank[minRole]) {
+      if (rank[userRole as keyof typeof rank] < rank[minRole]) {
         reply.code(403).send({ error: 'Insufficient permissions' });
       }
     });
@@ -52,7 +52,12 @@ describe('Logs Routes', () => {
     mockGetElasticsearchConfig.mockResolvedValue(defaultEsConfig);
     // Mock global fetch used by the route for ES queries
     mockFetch = vi.fn();
-    global.fetch = mockFetch;
+    // mockFetch resolves with partial Response-like fixtures ({ ok, json })
+    // throughout this file, not a real global fetch Response, so it is kept
+    // loosely typed (ReturnType<typeof vi.fn>) rather than `Mock<typeof fetch>`
+    // — this cast is the one place that loose typing needs reconciling with
+    // the real `global.fetch` signature.
+    global.fetch = mockFetch as unknown as typeof fetch;
   });
 
   describe('GET /api/logs/search', () => {
