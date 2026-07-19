@@ -12,7 +12,7 @@ import { getIncidents } from '../services/incident-store.js';
 
 beforeEach(async () => {
   testDb = await getTestDb();
-  await truncateTestTables(['incidents']);
+  await truncateTestTables('incidents');
 });
 afterAll(async () => { await closeTestDb(); });
 

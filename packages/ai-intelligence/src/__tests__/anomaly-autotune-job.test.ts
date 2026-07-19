@@ -5,6 +5,7 @@ import {
   type AutoTuneJobPrimitives,
 } from '../services/anomaly-autotune-job.js';
 import type { FeedbackRow } from '../services/anomaly-labels.js';
+import type { FeedbackDb } from '../services/anomaly-feedback-source.js';
 
 const FP_HEAVY: FeedbackRow[] = Array.from({ length: 30 }, (_, i) => ({
   anomaly_id: `a${i}`,
@@ -19,7 +20,10 @@ function primitives(over: Partial<AutoTuneJobPrimitives> = {}): AutoTuneJobPrimi
     targetFpRate: 0.05,
     minSamples: 20,
     lookbackDays: 30,
-    db: { query: vi.fn(async () => FP_HEAVY as unknown[]) },
+    // FeedbackDb.query is generic (<T>(sql, params?) => Promise<T[]>); a plain
+    // vi.fn() can't express that generic signature, so the mock is cast to it
+    // rather than widening the interface for one test fixture.
+    db: { query: vi.fn(async () => FP_HEAVY) as unknown as FeedbackDb['query'] },
     getSetting: vi.fn(async () => ({ value: '3.5' })),
     setSetting: vi.fn(async () => {}),
     writeAuditLog: vi.fn(async () => {}),

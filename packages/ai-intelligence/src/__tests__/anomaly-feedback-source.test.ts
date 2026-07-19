@@ -7,7 +7,10 @@ import type { FeedbackRow } from '../services/anomaly-labels.js';
 
 /** Minimal AppDb-shaped stub — only `query` is exercised. */
 function fakeDb(rows: FeedbackRow[]) {
-  const query = vi.fn(async () => rows as unknown[]);
+  // Declares the (sql, params?) signature explicitly — without it vi.fn infers
+  // a zero-arg function, so `query.mock.calls[0]` types as the empty tuple `[]`
+  // and destructuring `[sql, params]` below fails to typecheck.
+  const query = vi.fn(async (_sql: string, _params?: unknown[]) => rows as unknown[]);
   return { db: { query, queryOne: vi.fn(), execute: vi.fn() }, query };
 }
 

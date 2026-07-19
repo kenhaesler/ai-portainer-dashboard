@@ -113,7 +113,7 @@ describe('Harbor Vulnerability Routes', () => {
     app.decorate('requireRole', (minRole: 'viewer' | 'operator' | 'admin') => async (request: any, reply: any) => {
       const rank = { viewer: 0, operator: 1, admin: 2 };
       const userRole = request.user?.role ?? 'viewer';
-      if (rank[userRole] < rank[minRole]) {
+      if (rank[userRole as keyof typeof rank] < rank[minRole]) {
         reply.code(403).send({ error: 'Insufficient permissions' });
       }
     });

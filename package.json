@@ -24,7 +24,7 @@
     "lint": "npm run lint:bash && npm run lint -w backend && npm run lint -w frontend && npm run lint:packages",
     "lint:bash": "bash scripts/lint-bash.sh",
     "lint:packages": "eslint --config eslint.packages.config.mjs --max-warnings=0 'packages/*/src/**/*.ts' 'packages/*/scripts/**/*.ts'",
-    "typecheck": "tsc --build tsconfig.build.json && npm run typecheck -w frontend",
+    "typecheck": "tsc --build tsconfig.build.json && npm run typecheck -w @dashboard/contracts && npm run typecheck -w @dashboard/core && npm run typecheck -w @dashboard/infrastructure && npm run typecheck -w @dashboard/security && npm run typecheck -w @dashboard/observability && npm run typecheck -w @dashboard/operations && npm run typecheck -w @dashboard/ai && npm run typecheck -w @dashboard/foundation && npm run typecheck -w @dashboard/server && npm run typecheck -w frontend",
     "test": "npm run test -w @dashboard/contracts && npm run test -w @dashboard/core && npm run test -w @dashboard/infrastructure && npm run test -w @dashboard/security && npm run test -w @dashboard/observability && npm run test -w @dashboard/operations && npm run test -w @dashboard/ai && npm run test -w @dashboard/foundation && npm run test -w backend && npm run test -w @dashboard/server && npm run test -w frontend",
     "loadtest:build": "docker compose -f docker/docker-compose.loadtest.yml build",
     "loadtest:rest": "docker compose -f docker/docker-compose.loadtest.yml run --rm rest",

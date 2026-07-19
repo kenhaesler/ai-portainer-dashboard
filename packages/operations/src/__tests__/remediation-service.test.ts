@@ -54,6 +54,13 @@ const mockMetrics = {
   getLatestMetrics: vi.fn().mockResolvedValue({ cpu_percent: 95, mem_percent: 80 }),
   getMetrics: vi.fn().mockResolvedValue([]),
   detectAnomalies: vi.fn().mockResolvedValue([]),
+  // Unused by remediation-service, but required by MetricsInterface — kept
+  // as inert defaults so the mock satisfies the real (widened) interface.
+  getLatestMetricsBatch: vi.fn().mockResolvedValue(new Map()),
+  getMovingAverage: vi.fn().mockResolvedValue(null),
+  getCapacityForecasts: vi.fn().mockResolvedValue([]),
+  generateForecast: vi.fn().mockResolvedValue(null),
+  findSimilarInsights: vi.fn().mockReturnValue([]),
 };
 
 let mockGetContainerLogs: any;
