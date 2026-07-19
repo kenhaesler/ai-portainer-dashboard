@@ -27,6 +27,7 @@ import {
   startContainer,
   stopContainer,
   restartContainer,
+  createContainer,
   getEndpoints,
   isEdgeTunnelNotActive,
   EDGE_TUNNEL_NOT_ACTIVE_TOKEN,
@@ -669,5 +670,97 @@ describe('getContainer — Docker inspect normalization (#1387)', () => {
     // Either no Mounts at all, or every Source redacted — never the raw path.
     expect(sources).not.toContain('/home/simon/secret-host-path');
     expect(JSON.stringify(c)).not.toContain('/home/simon/secret-host-path');
+  });
+});
+
+// =====================================================================
+//  Lifecycle endpoints must POST with a short, definite-length body
+//
+//  A bodyless POST proxied through Portainer to the Docker socket comes
+//  back HTTP 400 on /containers/{id}/start:
+//
+//    "starting container with non-empty request body was deprecated since
+//     API v1.22 and removed in v1.24"
+//
+//  Docker's guard is `r.ContentLength > 7 || r.ContentLength == -1`
+//  (unchanged since at least moby v24 — not new in 28), so the request must
+//  arrive with a definite length of 0..7. A 2-byte `{}` clears both arms,
+//  which is why the body must stay <= 7 bytes.
+//
+//  Which layer produces the -1 is NOT established — see the comment on
+//  LIFECYCLE_NOOP_BODY in portainer-client.ts before diagnosing a related
+//  failure; the obvious "Go reverse proxy re-chunks it" answer is wrong.
+//
+//  Only /start reads ContentLength. /stop and /restart carry the same body
+//  for symmetry only — asserted here so the three cannot drift apart.
+//
+//  Symptom: Packet Capture (createContainer + startContainer for the
+//  sidecar) failed at the start step, sidecars were left orphaned, and
+//  the capture landed in status 'failed'.
+// =====================================================================
+
+describe('container lifecycle POSTs send a `{}` body (Portainer proxy workaround)', () => {
+  beforeEach(() => {
+    _resetClientState();
+    mockFetch.mockReset();
+  });
+
+  afterEach(() => {
+    _resetClientState();
+  });
+
+  function lastRequestBody(): unknown {
+    const call = mockFetch.mock.calls.at(-1);
+    if (!call) throw new Error('expected at least one fetch call');
+    const init = call[1] as { body?: unknown } | undefined;
+    return init?.body;
+  }
+
+  function lastRequestUrl(): string {
+    const call = mockFetch.mock.calls.at(-1);
+    if (!call) throw new Error('expected at least one fetch call');
+    return String(call[0]);
+  }
+
+  it('startContainer sends `{}` so Portainer forwards a Content-Length: 2 to Docker', async () => {
+    mockFetch.mockResolvedValueOnce(buildEmptyBodyResponse(204, 'No Content'));
+    await startContainer(1, 'abc123');
+    expect(lastRequestBody()).toBe('{}');
+    expect(lastRequestUrl()).toMatch(/\/containers\/abc123\/start$/);
+  });
+
+  // /stop and /restart do not read the body — these pin the symmetry so the
+  // three lifecycle calls cannot drift apart.
+  it('stopContainer sends `{}` (symmetry with start)', async () => {
+    mockFetch.mockResolvedValueOnce(buildEmptyBodyResponse(204, 'No Content'));
+    await stopContainer(1, 'abc123');
+    expect(lastRequestBody()).toBe('{}');
+    expect(lastRequestUrl()).toMatch(/\/containers\/abc123\/stop$/);
+  });
+
+  it('restartContainer sends `{}` (symmetry with start)', async () => {
+    mockFetch.mockResolvedValueOnce(buildEmptyBodyResponse(204, 'No Content'));
+    await restartContainer(1, 'abc123');
+    expect(lastRequestBody()).toBe('{}');
+    expect(lastRequestUrl()).toMatch(/\/containers\/abc123\/restart$/);
+  });
+
+  // Encodes the constraint the type system cannot: Docker rejects
+  // /start when ContentLength > 7, so a "more descriptive" noop body
+  // such as {"noop":true} (13 bytes) would silently reintroduce the 400.
+  it('noop body stays within Docker\'s 7-byte tolerance for /start', async () => {
+    mockFetch.mockResolvedValueOnce(buildEmptyBodyResponse(204, 'No Content'));
+    await startContainer(1, 'abc123');
+    const body = lastRequestBody();
+    expect(typeof body).toBe('string');
+    expect(Buffer.byteLength(body as string, 'utf8')).toBeLessThanOrEqual(7);
+  });
+
+  it('createContainer keeps the real payload as its body (regression guard)', async () => {
+    mockFetch.mockResolvedValueOnce(
+      buildJsonResponse(201, 'Created', { Id: 'sidecar-1' }),
+    );
+    await createContainer(1, { Image: 'alpine:3.21' }, 'pcap-sidecar');
+    expect(lastRequestBody()).toBe(JSON.stringify({ Image: 'alpine:3.21' }));
   });
 });

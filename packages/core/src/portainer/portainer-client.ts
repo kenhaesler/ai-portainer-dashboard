@@ -565,10 +565,61 @@ function isAlreadyInTargetStateError(err: unknown): boolean {
   return err instanceof PortainerError && err.status === 304;
 }
 
+/**
+ * Workaround for container lifecycle POSTs proxied through Portainer to the
+ * Docker socket.
+ *
+ * Symptom: a bodyless POST to /containers/{id}/start comes back HTTP 400:
+ *
+ *   "starting container with non-empty request body was deprecated since
+ *    API v1.22 and removed in v1.24"
+ *
+ * Docker's guard (moby, api/server/router/container/container_routes.go —
+ * verbatim, unchanged since at least v24, and the only ContentLength check in
+ * that file):
+ *
+ *   if r.ContentLength > 7 || r.ContentLength == -1 { ...reject... }
+ *
+ * The 7 is upstream's "a non-nil json object is at least 7 characters". The
+ * request therefore has to reach Docker with a definite length of 0..7. A
+ * 2-byte `{}` clears both arms and Docker ignores the contents (HostConfig on
+ * /start has been deprecated since API v1.22).
+ *
+ * MECHANISM UNCONFIRMED — deliberately not guessed at here. The 400 reproduces
+ * (no -d → 400, -d '{}' → 204), so something in the chain presents the request
+ * as ContentLength == -1, but we have not located what. The obvious explanation
+ * is ruled out: Go's httputil.ReverseProxy, which Portainer builds its Docker
+ * proxy on, nils the body of a zero-length request *before* any Director or
+ * Rewrite hook runs —
+ *
+ *   if req.ContentLength == 0 { outreq.Body = nil }  // reverseproxy.go, #16036
+ *
+ * — so a plain proxy hop does not turn 0 into chunked. Verified against go1.23
+ * source. The unaudited suspect is the Agent / Edge Agent second hop, which
+ * re-proxies through a separate service and tunnel. Start there rather than
+ * re-deriving the stdlib behaviour.
+ *
+ * IMPORTANT: this body must stay <= 7 bytes. Replacing it with a more
+ * self-documenting payload such as {"noop":true} (13 bytes) trips the `> 7`
+ * arm and reintroduces the exact 400 this works around. Guarded by a byte-length
+ * assertion in portainer-client.test.ts.
+ *
+ * Only /start inspects ContentLength — /stop and /restart never read the body.
+ * They carry the same constant purely for symmetry, so the three cannot drift;
+ * their behaviour does not depend on it.
+ *
+ * Typed as Record<string, never> rather than `{}`: the bare `{}` type accepts
+ * any non-null value, so a later `= ''` or `= 0` would typecheck, be falsy at
+ * the `body ? JSON.stringify(body) : undefined` call site, and silently drop
+ * the body again. Frozen because the same reference is shared by all three.
+ */
+const LIFECYCLE_NOOP_BODY: Readonly<Record<string, never>> = Object.freeze({});
+
 export async function startContainer(endpointId: number, containerId: string): Promise<void> {
   try {
     await portainerFetch(`/api/endpoints/${endpointId}/docker/containers/${containerId}/start`, {
       method: 'POST',
+      body: LIFECYCLE_NOOP_BODY,
     });
   } catch (err) {
     if (isAlreadyInTargetStateError(err)) return; // already running
@@ -580,6 +631,7 @@ export async function stopContainer(endpointId: number, containerId: string): Pr
   try {
     await portainerFetch(`/api/endpoints/${endpointId}/docker/containers/${containerId}/stop`, {
       method: 'POST',
+      body: LIFECYCLE_NOOP_BODY,
     });
   } catch (err) {
     if (isAlreadyInTargetStateError(err)) return; // already stopped
@@ -590,6 +642,7 @@ export async function stopContainer(endpointId: number, containerId: string): Pr
 export async function restartContainer(endpointId: number, containerId: string): Promise<void> {
   await portainerFetch(`/api/endpoints/${endpointId}/docker/containers/${containerId}/restart`, {
     method: 'POST',
+    body: LIFECYCLE_NOOP_BODY,
   });
 }
 
