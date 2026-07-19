@@ -112,6 +112,23 @@ For detailed specs (animation durations, easing curves, glass override patterns,
   Cross-domain behaviour obtained via DI (`LLMInterface`, `MetricsInterface`, … from
   `@dashboard/contracts`, wired in `packages/server/src/wiring.ts`) is not an import and needs no
   exception.
+- **`frontend/` -> `@dashboard/*` imports are machine-enforced too (#1587).** A sibling
+  `eslint-plugin-boundaries` block in `frontend/eslint.config.js` allows only
+  `frontend -> @dashboard/contracts`; any other `@dashboard/*` import (`core`, a domain package,
+  `server`, …) **fails lint**, since only `frontend` and `contracts` are declared elements and an
+  import of an undeclared package is caught by the `boundaries/no-unknown-dependencies` backstop.
+  Today's only real usage is 6 `import type { ... } from '@dashboard/contracts'` sites; this keeps
+  that a checked invariant instead of a convention. The root `npm run lint` reaches it via
+  `npm run lint -w frontend`, and `-w <workspace>` sets that child process's cwd to `frontend/` —
+  **different** from `lint:packages`, which is invoked directly from the repo root — so both
+  cwd-sensitive settings (`boundaries/root-path`, the resolver's `project` path) are pinned to
+  absolute paths computed from the config file's own location rather than written relative to
+  either cwd; the `files:` glob that gates the whole block, however, is unavoidably cwd-relative
+  (an ESLint flat-config constraint, not fixable with an absolute pattern — verified), so this
+  config still has a real "must be invoked with cwd = frontend/" precondition, exactly like
+  `lint:packages` has one for the repo root. Tests in `frontend/src/eslint-boundaries.test.ts`
+  drive the actual shipped config through ESLint's Node API with `cwd` forced to match the real
+  `npm run lint -w frontend` invocation.
 
 ## Git Workflow
 
