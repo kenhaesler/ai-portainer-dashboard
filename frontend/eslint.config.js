@@ -185,8 +185,14 @@ export default tseslint.config(
           ],
         },
       ],
-      // Backstops -- see the "OTHER NOTES" section above for why
-      // no-unknown-dependencies is load-bearing, not decorative, here.
+      // no-unknown-dependencies is load-bearing today -- see the "OTHER
+      // NOTES" section above for why. no-unknown-files is NOT currently
+      // load-bearing (the `frontend` element pattern above already covers
+      // every path under `files:`, so every linted file matches it), but
+      // costs nothing and is kept as defense in depth against a future edit
+      // that narrows `frontend`'s pattern or widens `files:` -- mirroring
+      // eslint.packages.config.mjs, which keeps the equivalent pair for the
+      // same reason.
       'boundaries/no-unknown-dependencies': 'error',
       'boundaries/no-unknown-files': 'error',
     },
