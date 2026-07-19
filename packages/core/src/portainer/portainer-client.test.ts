@@ -27,6 +27,7 @@ import {
   startContainer,
   stopContainer,
   restartContainer,
+  createContainer,
   getEndpoints,
   isEdgeTunnelNotActive,
   EDGE_TUNNEL_NOT_ACTIVE_TOKEN,
@@ -669,5 +670,81 @@ describe('getContainer — Docker inspect normalization (#1387)', () => {
     // Either no Mounts at all, or every Source redacted — never the raw path.
     expect(sources).not.toContain('/home/simon/secret-host-path');
     expect(JSON.stringify(c)).not.toContain('/home/simon/secret-host-path');
+  });
+});
+
+// =====================================================================
+//  Lifecycle endpoints must POST with a non-empty body
+//
+//  Portainer (≤ 2.39.x) proxies a bodyless POST to the Docker socket
+//  without an explicit Content-Length, so Docker Engine 28+ sees
+//  ContentLength == -1 (chunked) and rejects /containers/{id}/start
+//  (and /stop, /restart) with HTTP 400:
+//
+//    "starting container with non-empty request body was deprecated since
+//     API v1.22 and removed in v1.24"
+//
+//  Symptom: Packet Capture (createContainer + startContainer for the
+//  sidecar) failed at the start step, sidecars were left orphaned, and
+//  the capture landed in status 'failed'. stopContainer / restartContainer
+//  share the same code path and were silently broken too — pcap-service
+//  swallowed the stop failure as 'succeeded with partial data'.
+//
+//  Workaround: send `{}` as the body so the proxied request reaches Docker
+//  with a definite Content-Length: 2. Docker still ignores the body
+//  (HostConfig on /start has been deprecated since API v1.22), but the
+//  ContentLength check now passes.
+// =====================================================================
+
+describe('container lifecycle POSTs send `{}` body (Portainer/Docker 28+ workaround)', () => {
+  beforeEach(() => {
+    _resetClientState();
+    mockFetch.mockReset();
+  });
+
+  afterEach(() => {
+    _resetClientState();
+  });
+
+  function lastRequestBody(): unknown {
+    const call = mockFetch.mock.calls.at(-1);
+    if (!call) throw new Error('expected at least one fetch call');
+    const init = call[1] as { body?: unknown } | undefined;
+    return init?.body;
+  }
+
+  function lastRequestUrl(): string {
+    const call = mockFetch.mock.calls.at(-1);
+    if (!call) throw new Error('expected at least one fetch call');
+    return String(call[0]);
+  }
+
+  it('startContainer sends `{}` so Portainer forwards a Content-Length: 2 to Docker', async () => {
+    mockFetch.mockResolvedValueOnce(buildEmptyBodyResponse(204, 'No Content'));
+    await startContainer(1, 'abc123');
+    expect(lastRequestBody()).toBe('{}');
+    expect(lastRequestUrl()).toMatch(/\/containers\/abc123\/start$/);
+  });
+
+  it('stopContainer sends `{}`', async () => {
+    mockFetch.mockResolvedValueOnce(buildEmptyBodyResponse(204, 'No Content'));
+    await stopContainer(1, 'abc123');
+    expect(lastRequestBody()).toBe('{}');
+    expect(lastRequestUrl()).toMatch(/\/containers\/abc123\/stop$/);
+  });
+
+  it('restartContainer sends `{}`', async () => {
+    mockFetch.mockResolvedValueOnce(buildEmptyBodyResponse(204, 'No Content'));
+    await restartContainer(1, 'abc123');
+    expect(lastRequestBody()).toBe('{}');
+    expect(lastRequestUrl()).toMatch(/\/containers\/abc123\/restart$/);
+  });
+
+  it('createContainer keeps the real payload as its body (regression guard)', async () => {
+    mockFetch.mockResolvedValueOnce(
+      buildJsonResponse(201, 'Created', { Id: 'sidecar-1' }),
+    );
+    await createContainer(1, { Image: 'alpine:3.21' }, 'pcap-sidecar');
+    expect(lastRequestBody()).toBe(JSON.stringify({ Image: 'alpine:3.21' }));
   });
 });

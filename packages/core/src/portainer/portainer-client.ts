@@ -565,10 +565,35 @@ function isAlreadyInTargetStateError(err: unknown): boolean {
   return err instanceof PortainerError && err.status === 304;
 }
 
+/**
+ * Workaround for Portainer ≤ 2.39.x proxying to Docker Engine 28+:
+ *
+ * Docker 28+ tightened its check on /containers/{id}/start (and /stop, /restart)
+ * to reject any request with `r.ContentLength != 0` — including chunked /
+ * unknown-length bodies. Portainer's reverse proxy forwards a bodyless POST
+ * to the Docker socket without an explicit Content-Length: 0, so Docker sees
+ * ContentLength == -1 (chunked) and rejects with HTTP 400:
+ *
+ *   "starting container with non-empty request body was deprecated since
+ *    API v1.22 and removed in v1.24"
+ *
+ * Empirically reproducible with `curl -X POST` against Portainer's proxy
+ * (no -d → 400, `-d '{}'` → 204). Sending an explicit JSON body of `{}`
+ * gives the proxied request a Content-Length of 2; Docker still ignores
+ * the contents (HostConfig in /start has been deprecated since v1.22) but
+ * accepts the request because ContentLength is now a definite > 0.
+ *
+ * This is a Portainer-side bug; the workaround here is the path of least
+ * resistance because we have no control over how Portainer rewrites the
+ * request line.
+ */
+const LIFECYCLE_NOOP_BODY = {};
+
 export async function startContainer(endpointId: number, containerId: string): Promise<void> {
   try {
     await portainerFetch(`/api/endpoints/${endpointId}/docker/containers/${containerId}/start`, {
       method: 'POST',
+      body: LIFECYCLE_NOOP_BODY,
     });
   } catch (err) {
     if (isAlreadyInTargetStateError(err)) return; // already running
@@ -580,6 +605,7 @@ export async function stopContainer(endpointId: number, containerId: string): Pr
   try {
     await portainerFetch(`/api/endpoints/${endpointId}/docker/containers/${containerId}/stop`, {
       method: 'POST',
+      body: LIFECYCLE_NOOP_BODY,
     });
   } catch (err) {
     if (isAlreadyInTargetStateError(err)) return; // already stopped
@@ -590,6 +616,7 @@ export async function stopContainer(endpointId: number, containerId: string): Pr
 export async function restartContainer(endpointId: number, containerId: string): Promise<void> {
   await portainerFetch(`/api/endpoints/${endpointId}/docker/containers/${containerId}/restart`, {
     method: 'POST',
+    body: LIFECYCLE_NOOP_BODY,
   });
 }
 
