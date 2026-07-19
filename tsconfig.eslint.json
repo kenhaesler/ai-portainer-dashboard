@@ -35,9 +35,20 @@
   //   1. the two "paths" entries here,
   //   2. a boundaries/elements descriptor in eslint.packages.config.mjs,
   //   3. a policy row in boundaries/dependencies.
-  //   Forgetting (2) is caught by `boundaries/no-unknown-dependencies`.
-  //   Forgetting (1) is NOT caught by anything -- the import silently degrades
-  //   to "external" and stops being policed. Treat this list as load-bearing.
+  //
+  //   None of the three can be forgotten silently, but only because
+  //   backend/src/packages-boundaries.test.ts compares both lists against a
+  //   live readdir of packages/:
+  //     (1) omitted -> "covers every directory under packages/ in the path map"
+  //     (2) omitted -> "covers every directory under packages/ with an element
+  //         descriptor", and at lint time boundaries/no-unknown-files
+  //     (3) omitted -> `default: 'disallow'` denies the new package's imports,
+  //         so `npm run lint:packages` fails
+  //
+  //   Those two readdir assertions are the ONLY thing standing between (1) and
+  //   a silent failure: an unmapped specifier still resolves at runtime through
+  //   dist/, so nothing outside the test suite would notice that it had stopped
+  //   being policed. Do not weaken them to a hardcoded package list.
   // ---------------------------------------------------------------------------
   "compilerOptions": {
     "baseUrl": ".",
