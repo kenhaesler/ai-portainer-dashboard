@@ -585,19 +585,27 @@ function isAlreadyInTargetStateError(err: unknown): boolean {
  * 2-byte `{}` clears both arms and Docker ignores the contents (HostConfig on
  * /start has been deprecated since API v1.22).
  *
- * MECHANISM UNCONFIRMED — deliberately not guessed at here. The 400 reproduces
- * (no -d → 400, -d '{}' → 204), so something in the chain presents the request
- * as ContentLength == -1, but we have not located what. The obvious explanation
- * is ruled out: Go's httputil.ReverseProxy, which Portainer builds its Docker
- * proxy on, nils the body of a zero-length request *before* any Director or
- * Rewrite hook runs —
+ * MECHANISM UNCONFIRMED — deliberately not guessed at here.
+ *
+ * Sole recorded observation: a Type 4 (Edge Agent Standard) endpoint, where
+ * no -d → 400 and -d '{}' → 204. That environment no longer exists, so it
+ * cannot be re-verified — treat this as one data point, not a general law. It
+ * was never observed on a Type 1 (direct socket) or Type 2 (Agent) endpoint;
+ * the body goes out on every endpoint type regardless, because it is harmless
+ * where it is unnecessary.
+ *
+ * Something in that chain presents the request as ContentLength == -1, but we
+ * have not located what. The first hop is ruled out: Portainer proxies with a
+ * stock httputil.ReverseProxy, and Go nils the body of a zero-length request
+ * *before* any Director or Rewrite hook runs —
  *
  *   if req.ContentLength == 0 { outreq.Body = nil }  // reverseproxy.go, #16036
  *
- * — so a plain proxy hop does not turn 0 into chunked. Verified against go1.23
- * source. The unaudited suspect is the Agent / Edge Agent second hop, which
- * re-proxies through a separate service and tunnel. Start there rather than
- * re-deriving the stdlib behaviour.
+ * — while Portainer's own createRewriteFn rewrites only URL, Host, User-Agent
+ * and a header allowlist, never Body or ContentLength. (Checked against go1.23
+ * and Portainer 2.21/2.39.) On a Type 4 endpoint the request then crosses the
+ * Edge Agent's reverse tunnel and is re-proxied to the Docker socket by a
+ * separate service. That hop is unaudited and is where to start.
  *
  * IMPORTANT: this body must stay <= 7 bytes. Replacing it with a more
  * self-documenting payload such as {"noop":true} (13 bytes) trips the `> 7`
