@@ -69,6 +69,16 @@ Cross-domain communication is resolved via dependency injection in `packages/ser
 import fails lint. Adding a package requires both an element descriptor and a policy entry in that
 config, or its imports are denied by default.
 
+**`frontend/` -> `@dashboard/*` is machine-enforced too (#1587).** A sibling boundaries block in
+`frontend/eslint.config.js` (run via `npm run lint -w frontend`) allows only
+`frontend -> @dashboard/contracts`; any other `@dashboard/*` import fails lint via the
+`boundaries/no-unknown-dependencies` backstop, since only `frontend` and `contracts` are declared
+elements there. This keeps backend-only code (DB drivers, Fastify, node built-ins) out of the
+browser bundle without relying on convention. `frontend/eslint.config.js` is invoked with a
+different cwd than `eslint.packages.config.mjs` (`-w frontend` sets the child process's cwd to
+`frontend/`, not the repo root), so its `boundaries/root-path` and resolver `project` settings are
+pinned to absolute paths rather than written relative to either cwd.
+
 ## Backend Packages (`packages/`)
 
 ### @dashboard/contracts — Shared Types
