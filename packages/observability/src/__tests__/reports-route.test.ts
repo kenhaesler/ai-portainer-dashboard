@@ -62,6 +62,12 @@ vi.mock('../services/container-lifecycle-store.js', () => ({
   getRunningContainerIds: (...a: unknown[]) => mockGetRunningIds(...a),
 }));
 
+/** Highest $N referenced anywhere in a SQL string (0 when there are none). */
+function maxPlaceholder(sql: string): number {
+  const indexes = [...sql.matchAll(/\$(\d+)/g)].map((m) => Number(m[1]));
+  return indexes.length ? Math.max(...indexes) : 0;
+}
+
 describe('Reports routes', () => {
   const app = Fastify({ logger: false });
 
@@ -432,6 +438,23 @@ describe('Reports routes', () => {
       expect(trendCall).toBeDefined();
       expect(trendCall![0]).toMatch(/container_lifecycle/);
     });
+
+    it('numbers every placeholder in the endpoint-scoped filter chain (#1585)', async () => {
+      mockClientQuery.mockResolvedValue({ rows: [] });
+      await app.inject({ method: 'GET', url: '/api/reports/trends?timeRange=24h&endpointId=1' });
+      const trendCall = mockClientQuery.mock.calls.find(
+        (c) => typeof c[0] === 'string' && /GROUP BY hour/.test(c[0] as string),
+      );
+      expect(trendCall).toBeDefined();
+
+      // endpoint_id + infrastructure patterns + lifecycle all push params through a
+      // shared paramIdx counter. Every $N the SQL references must be backed by a
+      // param, and the lifecycle clause must reuse the last index (not invent one).
+      const [sql, params] = trendCall! as [string, unknown[]];
+      expect(maxPlaceholder(sql)).toBe(params.length);
+      expect(sql).toMatch(new RegExp(`container_lifecycle WHERE endpoint_id = \\$${params.length}\\b`));
+      expect(params[params.length - 1]).toBe(1);
+    });
   });
 
   describe('GET /api/reports/management', () => {
@@ -596,6 +619,25 @@ describe('Reports routes', () => {
       );
       expect(dailyCall).toBeDefined();
       expect(dailyCall![0]).toMatch(/container_lifecycle/);
+    });
+
+    it('numbers every placeholder in the endpoint-scoped filter chain (#1585)', async () => {
+      mockClientQuery.mockResolvedValue({ rows: [] });
+      await app.inject({ method: 'GET', url: '/api/reports/management?timeRange=7d&endpointId=1' });
+
+      // Both management queries share one baseParams array built by the same
+      // paramIdx chain, so the invariant has to hold for each of them.
+      const scopedCalls = mockClientQuery.mock.calls.filter(
+        (c) => typeof c[0] === 'string' && /GROUP BY (day|container_id)/.test(c[0] as string),
+      );
+      expect(scopedCalls).toHaveLength(2);
+
+      for (const call of scopedCalls) {
+        const [sql, params] = call as [string, unknown[]];
+        expect(maxPlaceholder(sql)).toBe(params.length);
+        expect(sql).toMatch(new RegExp(`container_lifecycle WHERE endpoint_id = \\$${params.length}\\b`));
+        expect(params[params.length - 1]).toBe(1);
+      }
     });
   });
 

@@ -21,8 +21,9 @@
     "build": "npm run build -w @dashboard/contracts && npm run build -w @dashboard/core && npm run build -w @dashboard/infrastructure && npm run build -w @dashboard/security && npm run build -w @dashboard/observability && npm run build -w @dashboard/operations && npm run build -w @dashboard/ai && npm run build -w @dashboard/foundation && npm run build -w @dashboard/server && npm run build -w frontend",
     "build:tsc": "tsc --build tsconfig.build.json",
     "build:watch": "tsc --build tsconfig.build.json --watch",
-    "lint": "npm run lint:bash && npm run lint -w backend && npm run lint -w frontend",
+    "lint": "npm run lint:bash && npm run lint -w backend && npm run lint -w frontend && npm run lint:packages",
     "lint:bash": "bash scripts/lint-bash.sh",
+    "lint:packages": "eslint --config eslint.packages.config.mjs --max-warnings=0 'packages/*/src/**/*.ts' 'packages/*/scripts/**/*.ts'",
     "typecheck": "tsc --build tsconfig.build.json && npm run typecheck -w frontend",
     "test": "npm run test -w @dashboard/contracts && npm run test -w @dashboard/core && npm run test -w @dashboard/infrastructure && npm run test -w @dashboard/security && npm run test -w @dashboard/observability && npm run test -w @dashboard/operations && npm run test -w @dashboard/ai && npm run test -w @dashboard/foundation && npm run test -w backend && npm run test -w @dashboard/server && npm run test -w frontend",
     "loadtest:build": "docker compose -f docker/docker-compose.loadtest.yml build",
@@ -38,13 +39,17 @@
     "prepare": "husky || true"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.61.1",
     "@testing-library/user-event": "^14.6.1",
     "@vitest/coverage-v8": "^4.1.10",
     "concurrently": "^10.0.3",
     "eslint": "^10.7.0",
+    "eslint-import-resolver-typescript": "^4.4.5",
+    "eslint-plugin-boundaries": "^7.0.2",
     "husky": "^9.1.7",
     "jsdom": "^29.1.1",
+    "typescript-eslint": "^8.64.0",
     "vitest": "^4.1.0"
   },
   "dependencies": {

@@ -37,22 +37,37 @@ frontend/src/
 
 ## Dependency Graph
 
+Arrows point **upward from a package to what it depends on**.
+
 ```
-@dashboard/contracts  (foundation — zero deps except zod)
+@dashboard/contracts  (leaf — zero deps except zod)
        ↑
 @dashboard/core       (kernel — depends only on contracts + npm)
        ↑
-@dashboard/infrastructure, @dashboard/observability,
-@dashboard/security, @dashboard/operations
+@dashboard/infrastructure  (sanctioned sub-tier — core + contracts only)
        ↑
-@dashboard/ai         (imports ONLY core + contracts — never other domains)
+@dashboard/security, @dashboard/operations   (core, contracts, infrastructure)
+
+@dashboard/ai, @dashboard/observability      (core + contracts ONLY — never another
+                                              domain, not even infrastructure)
        ↑
-@dashboard/foundation (foundational routes — imports core, contracts, ai, infrastructure, observability, security)
+@dashboard/foundation (imports core, contracts, ai, infrastructure, observability, security
+                       — deliberately NEVER operations)
        ↑
 @dashboard/server     (composition root — wires all packages via DI)
 ```
 
-Cross-domain communication is resolved via dependency injection in `packages/server/src/wiring.ts` — the **only file** that imports from all domain packages.
+`@dashboard/ai` (directory: `packages/ai-intelligence/`) and `@dashboard/observability` sit
+alongside `security`/`operations`, not above them — nothing in the tree depends on `ai`, and `ai`
+depends on nothing but core + contracts. The authoritative allowed-import table lives in
+`packages/core/src/CLAUDE.md`.
+
+Cross-domain communication is resolved via dependency injection in `packages/server/src/wiring.ts` — the **only file** that imports from all domain packages. Injected interfaces (`LLMInterface`, `MetricsInterface`, …) are declared in `@dashboard/contracts`, so consuming another domain's behaviour through DI creates **no import edge** and is not a boundary exception.
+
+**These directions are machine-enforced (#1585)** by `eslint-plugin-boundaries` in
+`eslint.packages.config.mjs`, run from the root `npm run lint` via `lint:packages`. A forbidden
+import fails lint. Adding a package requires both an element descriptor and a policy entry in that
+config, or its imports are denied by default.
 
 ## Backend Packages (`packages/`)
 

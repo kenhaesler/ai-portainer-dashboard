@@ -467,7 +467,7 @@ export async function reportsRoutes(fastify: FastifyInstance) {
         paramIdx++;
       }
       paramIdx = addInfrastructureSqlFilter(conditions, params, paramIdx, excludeInfrastructure, infrastructurePatterns);
-      paramIdx = addLifecycleRunningFilter(conditions, params, paramIdx, endpointId);
+      addLifecycleRunningFilter(conditions, params, paramIdx, endpointId);
 
       const where = conditions.join(' AND ');
 
@@ -592,7 +592,7 @@ export async function reportsRoutes(fastify: FastifyInstance) {
         paramIdx++;
       }
       paramIdx = addInfrastructureSqlFilter(baseConditions, baseParams, paramIdx, excludeInfrastructure, infrastructurePatterns);
-      paramIdx = addLifecycleRunningFilter(baseConditions, baseParams, paramIdx, endpointId);
+      addLifecycleRunningFilter(baseConditions, baseParams, paramIdx, endpointId);
       const where = baseConditions.join(' AND ');
 
       // Top-services query: use rollup avg_value/max_value when available.

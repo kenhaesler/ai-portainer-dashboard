@@ -238,7 +238,6 @@ describe('negative caching of failed live probes (#1500)', () => {
 });
 
 // Ensure the type alias is exported (compile-time check via usage)
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const _typeCheck: LiveDockerInfo = {} as LiveDockerInfo;
 
 describe('edgeLiveQueryCacheKey', () => {

@@ -121,7 +121,7 @@ export function getPortainerBackupPath(filename: string): string {
     resolved = safePath(backupsDir, filename);
   } catch (err) {
     if (err instanceof PathTraversalError) {
-      throw new Error('Invalid backup filename: path traversal detected');
+      throw new Error('Invalid backup filename: path traversal detected', { cause: err });
     }
     throw err;
   }

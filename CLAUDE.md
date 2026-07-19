@@ -95,6 +95,19 @@ For detailed specs (animation durations, easing curves, glass override patterns,
 - Readability first. Explicit over clever.
 - Every PR must include doc updates: `docs/architecture.md`, `docker/.env.example`, and this file.
 - ESLint in each workspace. TypeScript strict mode. No over-engineering.
+- **Package boundaries are machine-enforced (#1585).** `packages/` dependency directions are
+  checked by `eslint-plugin-boundaries` in `eslint.packages.config.mjs`; the root `npm run lint`
+  covers it via the `lint:packages` script (CI runs a bare `npm run lint`). A cross-package import
+  in a forbidden direction, or a package barrel re-exporting from `routes/`, **fails lint**. The
+  authoritative allowed-import table is in `packages/core/src/CLAUDE.md`. Adding a package requires
+  both an element descriptor and a policy entry in `eslint.packages.config.mjs` — without both its
+  imports are denied by default. `tsconfig.eslint.json` exists solely to pin lint resolution of
+  `@dashboard/*` to `packages/<dir>/src`: `dist/` is gitignored, so a dist-resolved config would
+  pass vacuously on a fresh clone or pre-build CI run. Do not weaken either file — no blanket
+  `boundaries/ignore` for tests (an over-broad ignore is what made the old `backend` rules a no-op).
+  Cross-domain behaviour obtained via DI (`LLMInterface`, `MetricsInterface`, … from
+  `@dashboard/contracts`, wired in `packages/server/src/wiring.ts`) is not an import and needs no
+  exception.
 
 ## Git Workflow
 
