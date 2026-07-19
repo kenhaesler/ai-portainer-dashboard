@@ -16,8 +16,15 @@ import { cleanupOldCaptures, cleanupOrphanedSidecars } from '../../security/inde
 
 ## Cross-domain Imports (Phase 3 Exceptions)
 
-- `infrastructure/index.js` → `assertCapability` (edge capability checking)
-- `ai-intelligence/index.js` → `isLlmAvailable`, `chatStream`, `getEffectivePrompt`
+- `@dashboard/infrastructure` → `assertCapability` (edge capability checking, `routes/pcap.ts`)
+
+`@dashboard/infrastructure` is a sanctioned sub-tier, not a domain peer — see the allowed-import
+table in `packages/core/src/CLAUDE.md`. This is the only cross-domain import edge in this package.
+
+**LLM access is NOT an import.** `pcap-analysis-service.ts` receives an `LLMInterface`
+(`@dashboard/contracts`) injected from `@dashboard/server/src/wiring.ts` and calls
+`llm.chatStream(...)` / `llm.getEffectivePrompt(...)` through it. `@dashboard/ai` is not a
+dependency of this package and importing it would fail lint (#1585).
 
 ## Key Rules
 

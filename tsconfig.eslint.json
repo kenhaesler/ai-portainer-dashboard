@@ -1,0 +1,92 @@
+{
+  // ---------------------------------------------------------------------------
+  // LINT-ONLY TypeScript project. Consumed exclusively by
+  // eslint-import-resolver-typescript (see eslint.packages.config.mjs). It is NOT
+  // part of any build: `tsconfig.build.json` does not reference it and `tsc`
+  // never reads it.
+  //
+  // WHY THIS FILE EXISTS AT ALL (do not delete it, do not rename it to
+  // `tsconfig.json`):
+  //
+  //   Every packages/*/package.json "exports" map points at ./dist. So a bare
+  //   `import { x } from '@dashboard/core'` normally resolves to
+  //   packages/core/dist/index.d.ts. dist/ is gitignored. On a fresh clone, or
+  //   in CI where lint runs before build, dist/ does not exist -- and
+  //   eslint-plugin-boundaries classifies an unresolvable non-relative specifier
+  //   as `external` (flagAsExternal.unresolvableAlias, default true) and never
+  //   policy-checks it. The result is a boundary gate that exits 0 while
+  //   enforcing absolutely nothing: real violations vanish silently.
+  //
+  //   The "paths" map below redirects every @dashboard/* specifier to the
+  //   package SOURCE (packages/<dir>/src). That makes resolution deterministic
+  //   and build-independent, and it is what lets the boundaries plugin see a
+  //   cross-package import as an edge between two known elements instead of as
+  //   an opaque external module. It overrides the "exports" map even when dist/
+  //   happens to be present, so lint results are identical before and after a
+  //   build.
+  //
+  // WHY NOT `tsconfig.json`:
+  //   The repo deliberately has no root tsconfig.json. Adding one would change
+  //   project discovery for tsc, editors and language servers across the whole
+  //   monorepo. The `.eslint` infix keeps this file inert to everything except
+  //   the lint resolver.
+  //
+  // MAINTENANCE: adding a new packages/<dir> requires THREE edits --
+  //   1. the two "paths" entries here,
+  //   2. a boundaries/elements descriptor in eslint.packages.config.mjs,
+  //   3. a policy row in boundaries/dependencies.
+  //
+  //   None of the three can be forgotten silently, but only because
+  //   backend/src/packages-boundaries.test.ts compares both lists against a
+  //   live readdir of packages/:
+  //     (1) omitted -> "covers every directory under packages/ in the path map"
+  //     (2) omitted -> "covers every directory under packages/ with an element
+  //         descriptor", and at lint time boundaries/no-unknown-files
+  //     (3) omitted -> `default: 'disallow'` denies the new package's imports,
+  //         so `npm run lint:packages` fails
+  //
+  //   Those two readdir assertions are the ONLY thing standing between (1) and
+  //   a silent failure: an unmapped specifier still resolves at runtime through
+  //   dist/, so nothing outside the test suite would notice that it had stopped
+  //   being policed. Do not weaken them to a hardcoded package list.
+  // ---------------------------------------------------------------------------
+  "compilerOptions": {
+    "baseUrl": ".",
+    // "bundler" lets the resolver map the ESM-style `.js` specifiers this repo
+    // uses (e.g. '@dashboard/core/plugins/auth.js') onto the corresponding
+    // `.ts` source file.
+    "moduleResolution": "bundler",
+    "module": "esnext",
+    "target": "esnext",
+    "noEmit": true,
+    "allowJs": true,
+    // NOTE: the package name does not always match the directory name --
+    // @dashboard/ai lives in packages/ai-intelligence.
+    "paths": {
+      "@dashboard/contracts": ["packages/contracts/src/index.ts"],
+      "@dashboard/contracts/*": ["packages/contracts/src/*"],
+      "@dashboard/core": ["packages/core/src/index.ts"],
+      "@dashboard/core/*": ["packages/core/src/*"],
+      "@dashboard/infrastructure": ["packages/infrastructure/src/index.ts"],
+      "@dashboard/infrastructure/*": ["packages/infrastructure/src/*"],
+      "@dashboard/observability": ["packages/observability/src/index.ts"],
+      "@dashboard/observability/*": ["packages/observability/src/*"],
+      "@dashboard/ai": ["packages/ai-intelligence/src/index.ts"],
+      "@dashboard/ai/*": ["packages/ai-intelligence/src/*"],
+      "@dashboard/security": ["packages/security/src/index.ts"],
+      "@dashboard/security/*": ["packages/security/src/*"],
+      "@dashboard/operations": ["packages/operations/src/index.ts"],
+      "@dashboard/operations/*": ["packages/operations/src/*"],
+      "@dashboard/foundation": ["packages/foundation/src/index.ts"],
+      "@dashboard/foundation/*": ["packages/foundation/src/*"],
+      "@dashboard/server": ["packages/server/src/index.ts"],
+      "@dashboard/server/*": ["packages/server/src/*"]
+    }
+  },
+  // Must cover exactly the same file set as `files:` in eslint.packages.config.mjs.
+  // packages/*/scripts is included because at least one test imports a script
+  // directly (packages/ai-intelligence/src/__tests__/incidents-backfill.test.ts
+  // -> ../../scripts/backfill-incident-signatures.js).
+  "include": ["packages/*/src/**/*.ts", "packages/*/scripts/**/*.ts"],
+  "exclude": ["**/dist/**", "**/node_modules/**"]
+}

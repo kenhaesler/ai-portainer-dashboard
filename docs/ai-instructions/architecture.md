@@ -37,22 +37,37 @@ frontend/src/
 
 ## Dependency Graph
 
+Tiers, highest first. A package may import only from tiers below it, narrowed by the
+per-package column. The four domain packages all sit on **one** tier — none of them may import
+another, whatever their order on the page.
+
 ```
-@dashboard/contracts  (foundation — zero deps except zod)
-       ↑
-@dashboard/core       (kernel — depends only on contracts + npm)
-       ↑
-@dashboard/infrastructure, @dashboard/observability,
-@dashboard/security, @dashboard/operations
-       ↑
-@dashboard/ai         (imports ONLY core + contracts — never other domains)
-       ↑
-@dashboard/foundation (foundational routes — imports core, contracts, ai, infrastructure, observability, security)
-       ↑
-@dashboard/server     (composition root — wires all packages via DI)
+composition root   @dashboard/server          may import anything
+BFF / aggregation  @dashboard/foundation      ai, observability, security, infrastructure,
+                                              core, contracts — NEVER operations
+domains            @dashboard/ai              core + contracts only (hard isolation)
+                   @dashboard/observability   core + contracts only
+                   @dashboard/security        + infrastructure
+                   @dashboard/operations      + infrastructure
+sub-tier           @dashboard/infrastructure  core + contracts
+kernel             @dashboard/core            contracts
+leaf               @dashboard/contracts       npm only (zod)
 ```
 
-Cross-domain communication is resolved via dependency injection in `packages/server/src/wiring.ts` — the **only file** that imports from all domain packages.
+This diagram shows tiers, not edges. The authoritative allowed-import table — the one the lint
+gate encodes — lives in `packages/core/src/CLAUDE.md`; where the two appear to differ, that table
+wins. Note that `@dashboard/ai` lives in `packages/ai-intelligence/`.
+
+`ai`'s hard isolation is **one-directional**: `ai` may import nothing but core + contracts, but
+`foundation` and `server` both import `ai`. The rule constrains what LLM code can reach, not who
+may reach it.
+
+Cross-domain communication is resolved via dependency injection in `packages/server/src/wiring.ts` — the **only file** that imports from all domain packages. Injected interfaces (`LLMInterface`, `MetricsInterface`, …) are declared in `@dashboard/contracts`, so consuming another domain's behaviour through DI creates **no import edge** and is not a boundary exception.
+
+**These directions are machine-enforced (#1585)** by `eslint-plugin-boundaries` in
+`eslint.packages.config.mjs`, run from the root `npm run lint` via `lint:packages`. A forbidden
+import fails lint. Adding a package requires both an element descriptor and a policy entry in that
+config, or its imports are denied by default.
 
 ## Backend Packages (`packages/`)
 

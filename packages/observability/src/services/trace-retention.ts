@@ -17,7 +17,6 @@ export async function cleanOldSpans(days: number): Promise<{ deleted: number }> 
   }
   const db = getDbForDomain('traces');
   let total = 0;
-  // eslint-disable-next-line no-constant-condition
   while (true) {
     // CAST via `make_interval` is cleaner than string concat — keeps the
     // parameter typed as int.

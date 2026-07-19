@@ -818,7 +818,6 @@ export function parseToolCalls(responseText: string): ToolCallRequest[] | null {
   return null;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function tryParseToolCallJson(raw: string): any | null {
   try {
     return JSON.parse(raw);
@@ -903,7 +902,6 @@ function validateToolCalls(calls: unknown[]): ToolCallRequest[] | null {
     }
 
     let toolName: string | undefined;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let rawArgs: any = {};
 
     if (candidate.tool) {

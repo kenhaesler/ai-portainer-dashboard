@@ -17,8 +17,15 @@ longer re-exports routes (core/src/CLAUDE.md rule, #1533).
 
 ## Cross-domain Imports (Phase 3 Exceptions)
 
-Routes use LLM services for AI-generated summaries/narratives:
-- `ai-intelligence/index.js` → `chatStream`, `getEffectivePrompt`, `getPromptGuardNearMissTotal`
+**None.** This package imports only `@dashboard/core` and `@dashboard/contracts` — see the
+allowed-import table in `packages/core/src/CLAUDE.md`.
+
+Routes that produce AI-generated summaries/narratives do **not** import `@dashboard/ai`. They
+receive an `LLMInterface` (`@dashboard/contracts`) as a route option, injected from
+`@dashboard/server/src/wiring.ts`, and call `opts.llm.chatStream(...)` /
+`opts.llm.getEffectivePrompt(...)` through it (`routes/metrics.ts`, `routes/forecasts.ts`;
+`getPromptGuardNearMissTotal` is likewise passed in via `routes/index.ts` options). Importing
+`@dashboard/ai` here would fail lint (#1585).
 
 ## Key Rules
 

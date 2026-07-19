@@ -171,27 +171,31 @@ function addInfrastructureSqlFilter(
  * If container_lifecycle has no rows for the scope (fresh deploy / not yet
  * populated) the clause matches every row, preserving prior behavior. Reuses
  * the same param placeholder twice (valid in PostgreSQL).
+ *
+ * Returns nothing, deliberately: this consumes the LAST placeholder index, so
+ * it must be the final filter appended to `conditions`/`params`. Handing back a
+ * next-index would imply another filter may follow it, and that filter would
+ * reuse the placeholder this one already spent. Append new filters ABOVE the
+ * call site, not below it.
  */
 function addLifecycleRunningFilter(
   conditions: string[],
   params: unknown[],
-  startParamIdx: number,
+  paramIdx: number,
   endpointId?: number,
-): number {
+): void {
   if (endpointId) {
-    const idx = startParamIdx;
     params.push(endpointId);
     conditions.push(
-      `(NOT EXISTS (SELECT 1 FROM container_lifecycle WHERE endpoint_id = $${idx})
-        OR container_id IN (SELECT container_id FROM container_lifecycle WHERE running = TRUE AND endpoint_id = $${idx}))`,
+      `(NOT EXISTS (SELECT 1 FROM container_lifecycle WHERE endpoint_id = $${paramIdx})
+        OR container_id IN (SELECT container_id FROM container_lifecycle WHERE running = TRUE AND endpoint_id = $${paramIdx}))`,
     );
-    return idx + 1;
+    return;
   }
   conditions.push(
     `(NOT EXISTS (SELECT 1 FROM container_lifecycle)
       OR container_id IN (SELECT container_id FROM container_lifecycle WHERE running = TRUE))`,
   );
-  return startParamIdx;
 }
 
 export async function reportsRoutes(fastify: FastifyInstance) {
@@ -467,7 +471,7 @@ export async function reportsRoutes(fastify: FastifyInstance) {
         paramIdx++;
       }
       paramIdx = addInfrastructureSqlFilter(conditions, params, paramIdx, excludeInfrastructure, infrastructurePatterns);
-      paramIdx = addLifecycleRunningFilter(conditions, params, paramIdx, endpointId);
+      addLifecycleRunningFilter(conditions, params, paramIdx, endpointId);
 
       const where = conditions.join(' AND ');
 
@@ -592,7 +596,7 @@ export async function reportsRoutes(fastify: FastifyInstance) {
         paramIdx++;
       }
       paramIdx = addInfrastructureSqlFilter(baseConditions, baseParams, paramIdx, excludeInfrastructure, infrastructurePatterns);
-      paramIdx = addLifecycleRunningFilter(baseConditions, baseParams, paramIdx, endpointId);
+      addLifecycleRunningFilter(baseConditions, baseParams, paramIdx, endpointId);
       const where = baseConditions.join(' AND ');
 
       // Top-services query: use rollup avg_value/max_value when available.

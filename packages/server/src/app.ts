@@ -133,13 +133,13 @@ export function resolveTrustProxy(value: string | undefined): boolean | string[]
     if (cidrPattern.test(entry)) {
       valid.push(entry);
     } else {
-      // eslint-disable-next-line no-console -- emitted before logger is configured
+      // console.warn (not the logger): emitted before the logger is configured
       console.warn(`[trust-proxy] Ignoring invalid TRUSTED_PROXY_IPS entry: ${JSON.stringify(entry)}`);
     }
   }
 
   if (valid.length === 0) {
-    // eslint-disable-next-line no-console -- emitted before logger is configured
+    // console.warn (not the logger): emitted before the logger is configured
     console.warn('[trust-proxy] TRUSTED_PROXY_IPS contained no valid entries; falling back to trustProxy=true');
     return true;
   }
