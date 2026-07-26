@@ -127,6 +127,17 @@ function isStatementTimeoutError(err: unknown): boolean {
 const REPORT_CACHE_TTL_MS = 5 * 60 * 1_000;
 export const REPORT_CACHE_MAX_ENTRIES = 500;
 
+/**
+ * How many container names a single right-sizing rule spells out.
+ *
+ * Mirrors `ALL_NAMES_CAP` in `incident-store.ts`. Four rules, each previously
+ * able to carry every matching container name, in a payload then held for five
+ * minutes across up to `REPORT_CACHE_MAX_ENTRIES` cache entries. The UI only
+ * ever previews six names, so the cap costs nothing visible; `container_count`
+ * stays uncapped so no consumer has to infer the total from the array length.
+ */
+export const RULE_CONTAINER_NAMES_CAP = 500;
+
 interface CacheEntry { payload: unknown; expiresAt: number; timestamp: number }
 const reportCache = new Map<string, CacheEntry>();
 
@@ -512,8 +523,12 @@ export async function reportsRoutes(fastify: FastifyInstance) {
             threshold: rule.threshold,
             unit: rule.unit,
             recommendation: rule.recommendation,
+            // Uncapped: the true number of containers this rule fired on, and
+            // the field the UI must count with. `container_names` is a capped
+            // sample, so counting its length would under-report a large fleet.
             container_count: matched.length,
-            container_names: matched.map(r => r.container_name),
+            container_names: matched.slice(0, RULE_CONTAINER_NAMES_CAP).map(r => r.container_name),
+            names_truncated: matched.length > RULE_CONTAINER_NAMES_CAP,
           };
         })
         .filter(entry => entry.container_count > 0);

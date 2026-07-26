@@ -3,6 +3,7 @@ import { promisify } from 'util';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { getConfig } from '@dashboard/core/config/index.js';
 import { extractLlmJson } from '@dashboard/core/utils/llm-json.js';
+import { clampConfidenceScore } from '@dashboard/core/utils/model-confidence.js';
 import type { LLMInterface } from '@dashboard/contracts';
 import { getCapture, updateCaptureAnalysis } from './pcap-store.js';
 import { getCaptureFilePath } from './pcap-service.js';
@@ -227,12 +228,13 @@ export function parseAnalysisResponse(raw: string): PcapAnalysisResult {
     return validateAnalysisResult(parsed);
   }
 
-  // Fallback
+  // Fallback: unstructured model output. The prose is kept, but the model
+  // stated no confidence, so none is reported rather than inventing 0.3.
   return {
     health_status: 'degraded',
     summary: raw.trim().slice(0, 500),
     findings: [],
-    confidence_score: 0.3,
+    confidence_score: null,
   };
 }
 
@@ -264,9 +266,9 @@ function validateAnalysisResult(parsed: Record<string, unknown>): PcapAnalysisRe
         .filter((f): f is NonNullable<typeof f> => f !== null)
     : [];
 
-  const confidenceScore = typeof parsed.confidence_score === 'number'
-    ? Math.max(0, Math.min(1, parsed.confidence_score))
-    : 0.5;
+  // Null when the model supplied nothing usable — see clampConfidenceScore.
+  // The old `: 0.5` branch also admitted NaN as a confidence.
+  const confidenceScore = clampConfidenceScore(parsed.confidence_score);
 
   return { health_status: healthStatus, summary, findings, confidence_score: confidenceScore };
 }

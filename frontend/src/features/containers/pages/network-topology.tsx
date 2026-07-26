@@ -16,6 +16,7 @@ import { StatusBadge } from '@/shared/components/feedback/status-badge';
 import { PageHeader } from '@/shared/components/layout/page-header';
 import { findDestination } from '@/features/core/lib/navigation-manifest';
 import { formatDate } from '@/shared/lib/utils';
+import { formatPortMapping, isPubliclyBound } from '@/features/containers/lib/port-bindings';
 import { useUiStore } from '@/stores/ui-store';
 
 const PAGE_TITLE = findDestination('/topology')?.label ?? 'Topology';
@@ -330,9 +331,20 @@ function ContainerDetails({ container }: { container: Container }) {
         <div>
           <label className="text-xs font-medium text-muted-foreground">Ports</label>
           <div className="mt-1 space-y-1">
+            {/*
+              The bind address is part of the mapping, not decoration. Without
+              it the IPv4 and IPv6 bindings Docker publishes for one port render
+              as two identical lines, and a loopback-only publish is
+              indistinguishable from a world-facing one.
+            */}
             {container.ports.map((port, i) => (
               <div key={i} className="text-sm font-mono">
-                {port.public ? `${port.public} → ` : ''}{port.private}/{port.type}
+                {formatPortMapping(port)}
+                {isPubliclyBound(port.ip) && (
+                  <span className="ml-2 font-sans text-xs text-amber-600 dark:text-amber-400">
+                    all interfaces
+                  </span>
+                )}
               </div>
             ))}
           </div>

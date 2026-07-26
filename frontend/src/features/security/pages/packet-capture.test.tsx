@@ -276,6 +276,66 @@ describe('PacketCapture', () => {
     // Download is a read and stays available.
     expect(within(table).getByTitle('Download PCAP')).toBeEnabled();
   });
+
+  // The analysis panel: a confidence badge must reflect what the model said,
+  // and say nothing when the model said nothing.
+  describe('analysis confidence badge', () => {
+    // `analysis_result` is a JSONB column and the pg driver parses it, so the
+    // API sends an OBJECT. Using a JSON string here would test a shape the
+    // server never returns — which is how a `JSON.parse` on the parsed object
+    // went unnoticed while hiding this entire panel.
+    function analysisPayload(confidence: number | null) {
+      return {
+        health_status: 'degraded',
+        summary: 'Retransmissions above baseline',
+        findings: [],
+        confidence_score: confidence,
+      };
+    }
+
+    function renderWithAnalysis(confidence: number | null, asJsonString = false) {
+      const payload = analysisPayload(confidence);
+      mockUseCaptures.mockReturnValue({
+        data: {
+          captures: [
+            makeCapture({
+              id: 'cap-analysis',
+              analysis_result: asJsonString ? JSON.stringify(payload) : payload,
+            }),
+          ],
+        },
+        refetch: vi.fn(),
+      } as unknown as ReturnType<typeof useCaptures>);
+
+      render(<PacketCapture />);
+      fireEvent.click(screen.getByTitle('Toggle analysis'));
+    }
+
+    it('renders the panel from the parsed-JSONB object the API actually sends', () => {
+      renderWithAnalysis(0.82);
+      expect(screen.getByText('Retransmissions above baseline')).toBeInTheDocument();
+    });
+
+    it('still accepts a JSON string, for tolerance', () => {
+      renderWithAnalysis(0.82, true);
+      expect(screen.getByText('Retransmissions above baseline')).toBeInTheDocument();
+    });
+
+    it('shows the score the model supplied', () => {
+      renderWithAnalysis(0.82);
+      expect(screen.getByText('Confidence: 82%')).toBeInTheDocument();
+    });
+
+    it('omits the badge entirely when the model supplied no score', () => {
+      // Not "Confidence: 0%" — `null * 100` is 0, so an unguarded render turns
+      // "we do not know" into a confident zero, which is worse than the 50%
+      // default this replaced.
+      renderWithAnalysis(null);
+      expect(screen.getByText('Retransmissions above baseline')).toBeInTheDocument();
+      expect(screen.queryByText(/^Confidence:/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Confidence: 0%/)).not.toBeInTheDocument();
+    });
+  });
 });
 
 describe('captureStatusGroup', () => {

@@ -250,6 +250,14 @@ interface ResponseBlocks {
   paragraphs: string[];
   /** One entry per non-empty line, markers stripped. */
   lineBlocks: string[];
+  /**
+   * Blocks the model marked as list items with a `-`/`*`/`•` bullet.
+   *
+   * Tracked separately because these are the only unnumbered blocks whose
+   * ORDER the model asserted. Ordinary prose lines carry no such claim, so
+   * their position is not evidence of anything (see the positional pass).
+   */
+  bulletBlocks: string[];
 }
 
 // `**1.** text`, `1) text`, `2 - text`, `Pair 3: text`, `#4 text`
@@ -268,6 +276,7 @@ function splitResponseBlocks(lines: string[]): ResponseBlocks {
   const indexed = new Map<number, string>();
   const paragraphs: string[] = [];
   const lineBlocks: string[] = [];
+  const bulletBlocks: string[] = [];
 
   let current: { index: number | null; parts: string[] } | null = null;
   const flush = () => {
@@ -296,6 +305,7 @@ function splitResponseBlocks(lines: string[]): ResponseBlocks {
       flush();
       current = { index: null, parts: [asBullet[1]] };
       lineBlocks.push(asBullet[1].trim());
+      bulletBlocks.push(asBullet[1].trim());
       continue;
     }
 
@@ -305,7 +315,7 @@ function splitResponseBlocks(lines: string[]): ResponseBlocks {
   }
   flush();
 
-  return { indexed, paragraphs, lineBlocks };
+  return { indexed, paragraphs, lineBlocks, bulletBlocks };
 }
 
 /** True when a block names both containers of a pair — strong enough to attribute by content. */
@@ -338,13 +348,18 @@ ${pairDescriptions}`;
  *
  *  1. explicit list indices (robust to reordering and to a missing entry),
  *  2. container names appearing in a block (attribution by content),
- *  3. positional blocks, but ONLY when the block count matches the pair count —
- *     otherwise a single unstructured answer would be pinned to pair 1 and
- *     silently presented as its explanation.
+ *  3. position, but ONLY within an explicitly bulleted list of exactly one item
+ *     per pair. Bare prose is never read positionally: an unstructured answer
+ *     would otherwise be pinned to pair 1 and presented as its explanation.
+ *
+ * A block is used at most once, and blocks that overlap one already used are
+ * treated as used, so no two pairs can end up asserting the same sentence.
  *
  * Anything it cannot attribute stays null and is reported through
  * `narrativeStatus` / `narrativeUnavailableReason` so the caller can say why
- * once instead of rendering a failure per row.
+ * once instead of rendering a failure per row. Under-attributing is the
+ * intended direction of failure: a null narrative costs the operator a
+ * sentence, a misattributed one tells them something untrue about a container.
  */
 export function parseInsightsResponse(
   response: string,
@@ -359,7 +374,7 @@ export function parseInsightsResponse(
     : null;
   const narrativeLines = summaryIdx >= 0 ? lines.slice(0, summaryIdx) : lines;
 
-  const { indexed, paragraphs, lineBlocks } = splitResponseBlocks(narrativeLines);
+  const { indexed, paragraphs, lineBlocks, bulletBlocks } = splitResponseBlocks(narrativeLines);
 
   const narratives: Array<string | null> = pairs.map((_, idx) => {
     const block = indexed.get(idx + 1);
@@ -369,27 +384,51 @@ export function parseInsightsResponse(
   // Content-based attribution for anything the index pass missed: a block that
   // names both containers of a pair is evidence, not a guess. Each block is
   // claimed at most once.
-  const claimed = new Set<string>();
-  for (const narrative of narratives) if (narrative) claimed.add(narrative);
+  //
+  // `claimed` is keyed on the CLEANED text, which is also what the index pass
+  // stored. Comparing a raw block against a cleaned narrative never matches, so
+  // a block the index pass had already used (`**1.** …` — raw in `lineBlocks`,
+  // cleaned in `narratives`) could be handed to a second pair as well, putting
+  // the same sentence on two cards and still reporting `ok`. That duplication is
+  // precisely what this module was rewritten to stop.
+  // A block counts as claimed if it overlaps one already used, not merely if it
+  // is byte-identical. `paragraphs` entries are space-joins of the very lines
+  // held individually in `lineBlocks`, so an exact-match test lets a pair be
+  // handed a paragraph that CONTAINS another pair's sentence — two cards then
+  // assert overlapping text about different containers.
+  const claimed: string[] = [];
+  const isClaimed = (cleaned: string) =>
+    claimed.some((c) => c === cleaned || c.includes(cleaned) || cleaned.includes(c));
+  for (const narrative of narratives) if (narrative) claimed.push(narrative);
   pairs.forEach((pair, idx) => {
     if (narratives[idx]) return;
     for (const candidates of [lineBlocks, paragraphs]) {
-      const match = candidates.find((block) => !claimed.has(block) && mentionsBothContainers(block, pair));
-      if (match) {
-        narratives[idx] = cleanNarrative(match);
-        claimed.add(match);
+      for (const block of candidates) {
+        const cleaned = cleanNarrative(block);
+        if (!cleaned || isClaimed(cleaned)) continue;
+        if (!mentionsBothContainers(block, pair)) continue;
+        narratives[idx] = cleaned;
+        claimed.push(cleaned);
         return;
       }
     }
   });
 
-  // Positional fallback — only when a segmentation's block count matches the
-  // pair count exactly, so an unstructured answer is never pinned to pair 1 and
-  // presented as its explanation.
+  // Positional fallback — accepted ONLY for an explicitly marked list.
+  //
+  // Position is evidence only where the model asserted an order. A bulleted
+  // list of exactly one item per pair does assert one; a run of bare prose
+  // does not, and reading it positionally is a guess dressed as an answer. An
+  // earlier attempt kept prose and tried to screen out headings by punctuation,
+  // which was worse than useless: it deleted a blockquote or bolded narrative
+  // from the middle of the list and silently shifted every later sentence onto
+  // the wrong pair, reporting `ok` where the unfiltered code had correctly
+  // returned nothing. Prose that genuinely explains a pair almost always names
+  // its containers, and the content pass above already attributes that on real
+  // evidence.
   const attributedAny = narratives.some((n) => n !== null);
-  if (pairs.length > 0 && !attributedAny) {
-    const positional = [paragraphs, lineBlocks].find((blocks) => blocks.length === pairs.length);
-    positional?.forEach((block, idx) => { narratives[idx] = cleanNarrative(block); });
+  if (pairs.length > 0 && !attributedAny && bulletBlocks.length === pairs.length) {
+    bulletBlocks.forEach((block, idx) => { narratives[idx] = cleanNarrative(block); });
   }
 
   const insights: CorrelationInsight[] = pairs.map((pair, idx) => ({

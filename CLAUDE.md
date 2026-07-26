@@ -45,7 +45,7 @@ Backend uses npm workspaces under `packages/` with a `core/` kernel (`@dashboard
 **Unknown metric samples are excluded, never zero-filled (#1567):** `collectMetrics()` (`packages/observability/src/services/metrics-collector.ts`) returns `cpu`/`memory` as `number | null` — `null` when `system_cpu_usage` (CPU), `memory_stats.usage`, or `memory_stats.limit` (memory) is missing/non-positive in the Docker stats payload, i.e. the percentage genuinely cannot be computed this cycle. The scheduler (`packages/server/src/scheduler.ts`) skips writing that `metric_type` row entirely rather than persisting a fabricated `0` (the `metrics.value` column stays `NOT NULL` — no migration; "unknown" is the row's absence, not a null cell). Latest reads return only rows sharing each container's newest collection timestamp, so an omitted metric is not silently carried forward from an older cycle. `buildFleetResources()` (`packages/foundation/src/routes/dashboard.ts`) tracks independent CPU/memory sample counts so a container with a known memory reading but unknown CPU doesn't dilute the fleet CPU average (and vice versa), while independently known `memory_bytes` still contributes to per-stack totals. No total-node-memory fallback is used for a missing memory limit: Docker already reports host-total memory as `limit` when a container has no explicit cap, so a still-missing limit signals a malformed payload, not an unlimited container.
 
 **Design-critique remediation (2026-07-26):** a whole-app review produced 173 findings; see
-`@docs/architecture.md` ("Design-critique remediation") for the full rationale. Four invariants
+`@docs/architecture.md` ("Design-critique remediation") for the full rationale. Six invariants
 worth knowing before touching UI:
 
 1. **Navigation comes from one manifest.** `frontend/src/features/core/lib/navigation-manifest.ts`
@@ -60,15 +60,34 @@ worth knowing before touching UI:
    at the call site. Six pages previously showed a pulsing "live" dot over a dropdown that
    scheduled nothing. Pass a page-specific `storageKey` unless the page should share the global
    cadence. Prefer `setRefreshInterval` over the deprecated `setInterval` alias — destructuring the
-   latter shadows `window.setInterval` in the consuming module.
+   latter shadows `window.setInterval` in the consuming module. The hook **does not persist on
+   mount**: only a cadence the user actually picked is written, because a page that merely stored
+   its own default to the *shared* key changed every other page's cadence (opening Image Footprint,
+   which asks for 60s, slowed every dashboard query). The mount-skip compares the state object by
+   identity — a boolean first-run flag is spent by StrictMode's mount/cleanup/mount and writes anyway.
 3. **Never render a default as if it were a measurement.** `clampConfidenceScore` and
-   `parseSeverity` return `null` when the model supplied nothing; omit the badge rather than
-   showing a fallback number. Likewise, label rule-derived text as such (`rationaleSource`) — a
-   threshold rule presented under a Brain icon as "ML-Detected" is the failure this review named
-   most often. The maths is sound; it is the framing that must not overclaim.
+   `parseSeverity` live in `packages/core/src/utils/model-confidence.ts` and return `null` when the
+   model supplied nothing; omit the badge rather than showing a fallback number. They are in `core`
+   because all three analysers need them — remediation (`@dashboard/operations`), investigation
+   (`@dashboard/ai`) and PCAP (`@dashboard/security`) — and those packages may not import one
+   another, so the previous single-package fix left the other two still defaulting to `0.5`. Use the
+   shared helpers; do not re-add a local copy. A view that renders confidence must guard on null
+   (`null * 100` is `0`, which prints a confident "Confidence: 0%" — worse than the default it
+   replaced). Likewise, label rule-derived text as such (`rationaleSource`) — a threshold rule
+   presented under a Brain icon as "ML-Detected" is the failure this review named most often. The
+   maths is sound; it is the framing that must not overclaim.
 4. **Use `PageHeader` and `PRODUCT_NAME`.** One `<h1>` per page from
    `shared/components/layout/page-header.tsx` (no gradient/icon/size-override prop, deliberately);
    the product's name comes from `shared/lib/product.ts` and is **Container Insights**.
+5. **A navigating table row is an anchor, not a `role="link"` row.** `DataTable`'s `rowHref` wraps
+   the first data cell in a real `<a>`; the `<tr>` deliberately keeps its implicit `row` role. An
+   explicit role on the `<tr>` replaces `row` — which each `<td>`'s `cell` role requires as an
+   ancestor, and the virtual scroll container declares `role="grid"` — collapsing table navigation
+   for assistive tech, and nesting a link inside a link announces the destination twice.
+6. **A capped list travels with its real count.** When a payload caps an array (`ALL_NAMES_CAP` in
+   `incident-store.ts`, `RULE_CONTAINER_NAMES_CAP` in `reports.ts`), send the uncapped total
+   alongside it and have the UI count with that. Counting the truncated array under-reports exactly
+   the large fleet the cap exists for.
 
 ## Security (Mandatory)
 

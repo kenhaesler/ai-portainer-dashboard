@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 
 const mockSetSearchParams = vi.fn();
 const mockNavigate = vi.fn();
@@ -124,7 +124,20 @@ describe('ContainerDetailPage header controls', () => {
   it('keeps its own refresh cadence rather than sharing the fleet-wide key', () => {
     render(<ContainerDetailPage />);
 
-    expect(localStorage.getItem('ai-portainer-auto-refresh:container-detail')).not.toBeNull();
+    // Merely opening the page records nothing: a default the user never chose
+    // is not a preference, and writing one here to the shared key is how
+    // visiting one page used to change every other page's cadence.
+    expect(localStorage.getItem('ai-portainer-auto-refresh:container-detail')).toBeNull();
+    expect(localStorage.getItem('ai-portainer-auto-refresh')).toBeNull();
+
+    // Choosing a cadence does record it — against this page's own key only.
+    fireEvent.change(screen.getByLabelText('Auto-refresh interval'), {
+      target: { value: '60' },
+    });
+
+    const stored = localStorage.getItem('ai-portainer-auto-refresh:container-detail');
+    expect(stored).not.toBeNull();
+    expect(JSON.parse(stored!).interval).toBe(60);
     expect(localStorage.getItem('ai-portainer-auto-refresh')).toBeNull();
   });
 });

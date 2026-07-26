@@ -74,15 +74,26 @@ interface RightSizingRuleSummary {
   threshold: number;
   unit: string;
   recommendation: string;
+  /** Every container the rule fired on. Uncapped — count with this. */
   container_count: number;
+  /** A sample of the names, capped server-side; may be shorter than the count. */
   container_names: string[];
+  names_truncated?: boolean;
 }
 
-/** One rendered line: the rule, and every container it matched. */
+/** One rendered line: the rule, and the containers it matched. */
 interface RightSizingGroup {
   id: string;
   statement: string;
   containerNames: string[];
+  /**
+   * The real total. Kept separate from `containerNames.length` because the
+   * backend caps the name list — counting the array would quietly under-report
+   * exactly the large fleet the cap exists for.
+   */
+  containerCount: number;
+  /** True when `containerNames` is a sample rather than the whole list. */
+  truncated: boolean;
 }
 const PDF_BRANDING_STORAGE_KEY = 'reports-management-pdf-branding-v1';
 const PDF_BRAND_PROFILES = [
@@ -532,6 +543,8 @@ export default function ReportsPage() {
         id: rule.id,
         statement: `${rule.metric.toUpperCase()} ${rule.statistic} ${rule.comparison} ${rule.threshold}${rule.unit === 'percent' ? '%' : ''} — ${rule.recommendation}`,
         containerNames: rule.container_names,
+        containerCount: rule.container_count,
+        truncated: !!rule.names_truncated,
       }));
     }
 
@@ -547,6 +560,10 @@ export default function ReportsPage() {
       id: issue,
       statement: issue,
       containerNames,
+      // The legacy path derives the list itself, so it is complete by
+      // construction and its length is the count.
+      containerCount: containerNames.length,
+      truncated: false,
     }));
   }, [report]);
 
@@ -1221,8 +1238,8 @@ export default function ReportsPage() {
                   <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0 text-amber-500" />
                   <p>
                     <span className="font-medium">
-                      {group.containerNames.length} container
-                      {group.containerNames.length !== 1 ? 's' : ''}
+                      {group.containerCount} container
+                      {group.containerCount !== 1 ? 's' : ''}
                     </span>
                     {': '}
                     {group.statement}
@@ -1230,11 +1247,15 @@ export default function ReportsPage() {
                 </div>
                 <p
                   className="mt-1 pl-5 text-xs text-muted-foreground break-words"
-                  title={group.containerNames.join(', ')}
+                  title={
+                    group.truncated
+                      ? `${group.containerNames.join(', ')} (first ${group.containerNames.length} of ${group.containerCount})`
+                      : group.containerNames.join(', ')
+                  }
                 >
                   {group.containerNames.slice(0, RULE_CONTAINER_PREVIEW).join(', ')}
-                  {group.containerNames.length > RULE_CONTAINER_PREVIEW
-                    && ` and ${group.containerNames.length - RULE_CONTAINER_PREVIEW} more`}
+                  {group.containerCount > RULE_CONTAINER_PREVIEW
+                    && ` and ${group.containerCount - RULE_CONTAINER_PREVIEW} more`}
                 </p>
               </div>
             ))}

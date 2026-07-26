@@ -417,6 +417,33 @@ describe('ReportsPage', () => {
     expect(screen.getByText('web-1, web-2')).toBeInTheDocument();
   });
 
+  it('counts with container_count, not the capped name sample', () => {
+    // The backend caps `container_names` at 500 but leaves `container_count`
+    // the real total. Counting the array would report "500 containers" for a
+    // fleet of 525 — an under-count presented as fact, on exactly the large
+    // fleet the cap exists for.
+    reportState.byRange['24h'].recommendationSummary = [
+      {
+        id: 'cpu-underutilized',
+        metric: 'cpu',
+        statistic: 'p95',
+        comparison: 'below',
+        threshold: 10,
+        unit: 'percent',
+        recommendation: 'consider reducing CPU limits',
+        container_count: 525,
+        container_names: Array.from({ length: 500 }, (_, i) => `svc-${i}`),
+        names_truncated: true,
+      },
+    ];
+    renderWithProviders(<ReportsPage />);
+
+    expect(screen.getByText('525 containers')).toBeInTheDocument();
+    expect(screen.queryByText('500 containers')).not.toBeInTheDocument();
+    // "and N more" is relative to the true total too.
+    expect(screen.getByText(/and 519 more/)).toBeInTheDocument();
+  });
+
   it('falls back to grouping the legacy per-container issue strings', () => {
     // Backend that predates the rollup: no `recommendationSummary`.
     reportState.byRange['24h'].recommendationSummary = undefined;

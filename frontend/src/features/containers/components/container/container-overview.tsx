@@ -15,22 +15,15 @@ import { type Container } from '@/features/containers/hooks/use-containers';
 import { StatusBadge } from '@/shared/components/feedback/status-badge';
 import { DataTable } from '@/shared/components/tables/data-table';
 import { formatDate } from '@/shared/lib/utils';
+import {
+  UNSPECIFIED_BIND_ADDRESSES,
+  isLoopbackBind,
+  type PortMapping,
+} from '@/features/containers/lib/port-bindings';
 
 /**
- * A published port mapping as the API actually sends it.
- *
- * `Container['ports']` in `use-containers.ts` does not declare `ip` yet, but the
- * response contract (`ContainerPortSchema` in `@dashboard/contracts`) does and
- * the normalizer emits it, so the field is present at runtime. Widening here
- * keeps the real value renderable without editing the shared hook; drop the
- * intersection once `Container['ports']` carries `ip` itself.
+ * The token the backend substitutes for a label value that looked like a host path.
  */
-type PortMapping = Container['ports'][number] & { ip?: string };
-
-/** Host bind addresses that mean "every interface on this host". */
-const UNSPECIFIED_BIND_ADDRESSES = new Set(['0.0.0.0', '::', '[::]']);
-
-/** The token the backend substitutes for a label value that looked like a host path. */
 const REDACTED_TOKEN = '[REDACTED]';
 
 const COMPOSE_PROJECT_LABEL = 'com.docker.compose.project';
@@ -38,10 +31,6 @@ const COMPOSE_SERVICE_LABEL = 'com.docker.compose.service';
 
 /** Labels shown before "Show all N" is pressed. */
 const COLLAPSED_LABEL_COUNT = 8;
-
-function isLoopbackBind(ip: string): boolean {
-  return ip === '::1' || ip === '[::1]' || ip.startsWith('127.');
-}
 
 function formatUptime(createdTimestamp: number): string {
   const now = Date.now();

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import NetworkTopologyPage, { resolveNetworkMembers } from './network-topology';
@@ -42,17 +42,25 @@ vi.mock('@/features/containers/components/network/topology-graph', () => ({
     networks,
     showObservedTraffic,
     observedEdges,
+    onNodeClick,
   }: {
     containers: Array<{ id: string; name: string }>;
     networks: Array<{ id: string; name: string }>;
     showObservedTraffic?: boolean;
     observedEdges?: Array<{ source: string; target: string; callCount: number }>;
+    onNodeClick?: (nodeId: string) => void;
   }) => (
     <div data-testid="topology-graph">
       <span data-testid="topology-container-count">{containers.length}</span>
       <span data-testid="topology-network-count">{networks.length}</span>
       <span data-testid="topology-show-observed">{String(Boolean(showObservedTraffic))}</span>
       <span data-testid="topology-observed-count">{observedEdges?.length ?? 0}</span>
+      {/* Stand-in for clicking a node, so the detail side panel is reachable. */}
+      {containers.map((c) => (
+        <button key={c.id} onClick={() => onNodeClick?.(`container-${c.id}`)}>
+          select {c.name}
+        </button>
+      ))}
     </div>
   ),
 }));
@@ -341,6 +349,46 @@ describe('NetworkTopologyPage', () => {
 
       renderPage();
       expect(screen.getByTestId('topology-observed-count')).toHaveTextContent('2');
+    });
+  });
+
+  describe('container detail panel — ports', () => {
+    function selectContainerWithPorts(ports: unknown[]) {
+      // Both hooks must be stubbed here. `clearMocks` resets call history but
+      // NOT return values, so stubbing only `useContainers` left this test
+      // passing on whatever `useNetworks` value a previously-run test happened
+      // to leave behind — and failing when run alone.
+      setHooks({ containers: [makeContainer({ ports })], networks: [makeNetwork()] });
+      renderPage();
+      fireEvent.click(screen.getByRole('button', { name: 'select web' }));
+    }
+
+    it('shows the host bind address, so a loopback publish is not read as world-facing', () => {
+      selectContainerWithPorts([
+        { private: 5432, public: 5432, type: 'tcp', ip: '127.0.0.1' },
+      ]);
+
+      expect(screen.getByText('127.0.0.1:5432 → 5432/tcp')).toBeInTheDocument();
+    });
+
+    it('keeps the IPv4 and IPv6 bindings of one publish distinguishable', () => {
+      // Docker emits these as two entries. Without the bind address the panel
+      // printed the same line twice, which reads as a rendering fault.
+      selectContainerWithPorts([
+        { private: 80, public: 8080, type: 'tcp', ip: '0.0.0.0' },
+        { private: 80, public: 8080, type: 'tcp', ip: '::' },
+      ]);
+
+      expect(screen.getByText('0.0.0.0:8080 → 80/tcp')).toBeInTheDocument();
+      expect(screen.getByText('[::]:8080 → 80/tcp')).toBeInTheDocument();
+      expect(screen.getAllByText('all interfaces')).toHaveLength(2);
+    });
+
+    it('marks an exposed but unpublished port without inventing a bind address', () => {
+      selectContainerWithPorts([{ private: 9000, type: 'tcp' }]);
+
+      expect(screen.getByText('9000/tcp')).toBeInTheDocument();
+      expect(screen.queryByText('all interfaces')).not.toBeInTheDocument();
     });
   });
 });

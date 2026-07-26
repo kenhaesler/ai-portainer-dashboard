@@ -66,6 +66,19 @@ const samplePairs: CorrelationPair[] = [
   },
 ];
 
+/** A minimal pair, for attribution tests that only care about the names. */
+function makePair(a: string, b: string, metricType: string): CorrelationPair {
+  return {
+    containerA: { id: `${a}-id`, name: a },
+    containerB: { id: `${b}-id`, name: b },
+    metricType,
+    correlation: 0.9,
+    strength: 'very_strong',
+    direction: 'positive',
+    sampleCount: 100,
+  };
+}
+
 describe('Correlation Routes', () => {
   let app: ReturnType<typeof Fastify>;
 
@@ -526,13 +539,17 @@ SUMMARY: The stack has two notable correlations worth monitoring.`;
     expect(narrativeStatus).toBe('ok');
   });
 
-  it('parses plain paragraphs positionally when the counts line up', () => {
+  it('does NOT read bare prose positionally, even when the counts line up', () => {
+    // Position is evidence only where the model asserted an order. Two prose
+    // lines are equally consistent with [preamble, explanation] as with
+    // [explanation, explanation], and guessing produces a confident sentence
+    // about the wrong containers.
     const { insights, narrativeStatus } = parseInsightsResponse(
       'Proxy fans out to the API.\nCache pressure moves inversely.',
       samplePairs,
     );
-    expect(insights[0].narrative).toBe('Proxy fans out to the API.');
-    expect(narrativeStatus).toBe('ok');
+    expect(insights.every((i) => i.narrative === null)).toBe(true);
+    expect(narrativeStatus).toBe('unparsed');
   });
 
   it('attributes by container name when the model ignored the numbering', () => {
@@ -583,6 +600,129 @@ SUMMARY: The stack has two notable correlations worth monitoring.`;
   it('reports ok for an empty pair list', () => {
     const { insights, narrativeStatus } = parseInsightsResponse('anything', []);
     expect(insights).toEqual([]);
+    expect(narrativeStatus).toBe('ok');
+  });
+
+  // ── no block may be attributed to two pairs ──────────────────────────────
+
+  it('never hands one block to two pairs, even when it names all four containers', () => {
+    // The index pass stores CLEANED text; `lineBlocks` stores it raw. When the
+    // claimed-set was seeded with one form and probed with the other, this
+    // response put a byte-identical sentence on both cards and still reported
+    // `ok` — the exact duplicate-explanation defect this parser replaced.
+    const { insights, narrativeStatus } = parseInsightsResponse(
+      '**1.** nginx-proxy and api-server and postgres and redis-cache all interact through the request path.',
+      samplePairs,
+    );
+
+    expect(insights[0].narrative).toBe(
+      'nginx-proxy and api-server and postgres and redis-cache all interact through the request path.',
+    );
+    expect(insights[1].narrative).toBeNull();
+    expect(insights[0].narrative).not.toBe(insights[1].narrative);
+    expect(narrativeStatus).toBe('partial');
+  });
+
+  it('does not re-use a bullet already claimed by another pair', () => {
+    const { insights } = parseInsightsResponse(
+      '- nginx-proxy, api-server, postgres and redis-cache share one request path.',
+      samplePairs,
+    );
+    const narratives = insights.map((i) => i.narrative).filter(Boolean);
+    expect(new Set(narratives).size).toBe(narratives.length);
+  });
+
+  // ── a preamble is not an explanation ─────────────────────────────────────
+
+  it('refuses to pin a lead-in to pair 1 when the block count coincidentally matches', () => {
+    // Two blocks, two pairs — but the first is a heading, so attributing
+    // positionally would show "Here are the correlations…" as pair 1's
+    // explanation and move the real sentence onto the wrong pair.
+    const { insights, narrativeStatus, narrativeUnavailableReason } = parseInsightsResponse(
+      'Here are the correlations you asked about:\nThe two services scale together under load.',
+      samplePairs,
+    );
+
+    expect(insights[0].narrative).toBeNull();
+    expect(insights[1].narrative).toBeNull();
+    expect(narrativeStatus).toBe('unparsed');
+    expect(narrativeUnavailableReason).toContain('could not be matched');
+  });
+
+  it('withdraws rather than misalign when a stray sentence appears', () => {
+    const { insights, narrativeStatus } = parseInsightsResponse(
+      'Proxy fans out to the API.\nCache pressure moves inversely.\nBoth are worth watching.',
+      samplePairs,
+    );
+
+    expect(insights.every((i) => i.narrative === null)).toBe(true);
+    expect(narrativeStatus).toBe('unparsed');
+  });
+
+  // ── regressions from screening prose by punctuation ──────────────────────
+  // An earlier attempt kept positional attribution for prose and tried to drop
+  // headings by testing for a trailing full stop. Each case below was silently
+  // MISattributed under that rule, and reported `ok`.
+
+  it('does not shift narratives onto the wrong pair when one line lacks a full stop', () => {
+    const three = [
+      makePair('web', 'api', 'cpu'),
+      makePair('db', 'cache', 'memory'),
+      makePair('r1', 'r2', 'cpu'),
+    ];
+    const { insights, narrativeStatus } = parseInsightsResponse(
+      'Proxy fans out to the API.\n'
+      + 'Cache pressure moves inversely\n' // no full stop — was dropped, shifting the rest
+      + 'Both DBs replicate together.\n'
+      + 'Overall the fleet looks healthy.',
+      three,
+    );
+
+    // Pair 2 must not be handed pair 3's sentence, nor pair 3 a closing remark.
+    expect(insights[1].narrative).not.toBe('Both DBs replicate together.');
+    expect(insights[2].narrative).not.toBe('Overall the fleet looks healthy.');
+    expect(narrativeStatus).not.toBe('ok');
+  });
+
+  it('does not drop a narrative merely because markdown wraps it', () => {
+    const { insights, narrativeStatus } = parseInsightsResponse(
+      '**Correlation analysis**\n'
+      + '**Proxy fans out to the API.**\n' // ends in `*` — was judged "not a sentence"
+      + 'Cache pressure moves inversely.\n'
+      + 'Both are worth watching.',
+      samplePairs,
+    );
+
+    expect(insights[0].narrative).not.toBe('Cache pressure moves inversely.');
+    expect(insights[1].narrative).not.toBe('Both are worth watching.');
+    expect(narrativeStatus).not.toBe('ok');
+  });
+
+  it('never gives one pair a block that contains another pair sentence', () => {
+    // `paragraphs` entries are space-joins of the lines in `lineBlocks`, so an
+    // exact-match claimed test let pair 2 take a paragraph containing pair 1's
+    // sentence — two cards asserting overlapping text about different containers.
+    const pairs = [makePair('nginx', 'apisrv', 'cpu'), makePair('postgres', 'redis', 'memory')];
+    const { insights } = parseInsightsResponse(
+      'nginx and apisrv rise together with postgres.\nredis is mostly idle.',
+      pairs,
+    );
+
+    const [a, b] = insights.map((i) => i.narrative);
+    if (a && b) {
+      expect(a.includes(b)).toBe(false);
+      expect(b.includes(a)).toBe(false);
+    }
+  });
+
+  it('still reads an explicitly bulleted list positionally', () => {
+    // A bullet list is the one unnumbered shape where the model asserted order.
+    const { insights, narrativeStatus } = parseInsightsResponse(
+      '- Proxy fans out to the API.\n- Cache pressure moves inversely.',
+      samplePairs,
+    );
+    expect(insights[0].narrative).toBe('Proxy fans out to the API.');
+    expect(insights[1].narrative).toBe('Cache pressure moves inversely.');
     expect(narrativeStatus).toBe('ok');
   });
 });

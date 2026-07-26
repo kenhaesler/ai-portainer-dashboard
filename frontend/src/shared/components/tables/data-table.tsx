@@ -118,9 +118,10 @@ interface DataTableProps<T> {
   rowHref?: (row: T) => string;
   /**
    * Accessible name for a navigating row, e.g. ``(r) => `Open container ${r.name}` ``.
-   * Applied to both the row and its anchor. Only used when `rowHref` is
-   * supplied. Omit it and the names are computed from cell text — usually
-   * adequate, but the row's name then reads out every column.
+   * Applied to the row's anchor — and only there, so the destination is
+   * announced once and the `<tr>` keeps its `row` role. Only used when
+   * `rowHref` is supplied. Omit it and the link is named from the first cell's
+   * text, which is usually adequate.
    */
   rowLabel?: (row: T) => string;
 }
@@ -466,6 +467,15 @@ export function DataTable<T>({
     // is chrome, and wrapping it in a link would swallow the checkbox.
     const linkCellIndex = href ? cells.findIndex((c) => c.column.id !== '_selection') : -1;
 
+    // The <tr> below deliberately carries no `role`. An explicit role replaces
+    // the implicit `row` that each <td>'s `cell` role requires as its ancestor
+    // — and the virtual scroll container declares `role="grid"`. Overriding it
+    // collapses the table's structure for assistive tech, disabling the very
+    // row/column navigation an operator uses to read a fleet table. It would
+    // also nest a link (the row) inside a link (the anchor) with the same
+    // accessible name, announcing the destination twice. The anchor is what
+    // makes the row a link; `rowLabel` names it there.
+
     return (
       <tr
         key={row.id}
@@ -487,9 +497,6 @@ export function DataTable<T>({
               }
             : () => onRowClick?.(row.original)
         }
-        {...(href && onRowClick
-          ? { role: 'link', 'aria-label': rowLabel?.(row.original) }
-          : {})}
         {...(onRowClick
           ? {
               tabIndex: 0,

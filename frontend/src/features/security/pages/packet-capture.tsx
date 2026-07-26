@@ -624,9 +624,17 @@ function ActiveCaptureCard({
 }
 
 function parseAnalysis(capture: Capture): PcapAnalysisResult | null {
-  if (!capture.analysis_result) return null;
+  const raw: unknown = capture.analysis_result;
+  if (!raw) return null;
+  // `pcap_captures.analysis_result` is JSONB, and the pg driver already parses
+  // that column into an object — so the value arriving here is normally NOT a
+  // string, and calling JSON.parse on it threw for every stored analysis,
+  // silently hiding the whole panel. Accept both shapes: the object the API
+  // actually sends, and a string in case a caller stringifies it.
+  if (typeof raw === 'object') return raw as PcapAnalysisResult;
+  if (typeof raw !== 'string') return null;
   try {
-    return JSON.parse(capture.analysis_result) as PcapAnalysisResult;
+    return JSON.parse(raw) as PcapAnalysisResult;
   } catch {
     return null;
   }
@@ -700,9 +708,17 @@ function AnalysisPanel({ analysis, onReanalyze, isAnalyzing }: { analysis: PcapA
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <HealthBadge status={analysis.health_status} />
-          <span className="text-xs text-muted-foreground">
-            Confidence: {Math.round(analysis.confidence_score * 100)}%
-          </span>
+          {/*
+            Omitted entirely when the model supplied no score, matching the
+            remediation panel. Rendering it unguarded is worse than the default
+            it replaced: `null * 100` is 0, so the badge would read a confident
+            "Confidence: 0%" precisely where nothing was measured.
+          */}
+          {analysis.confidence_score !== null && (
+            <span className="text-xs text-muted-foreground">
+              Confidence: {Math.round(analysis.confidence_score * 100)}%
+            </span>
+          )}
         </div>
         <button
           onClick={onReanalyze}

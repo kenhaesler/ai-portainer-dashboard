@@ -52,7 +52,12 @@ export const PcapAnalysisResultSchema = z.object({
   health_status: z.enum(['healthy', 'degraded', 'critical']),
   summary: z.string(),
   findings: z.array(PcapFindingSchema),
-  confidence_score: z.number().min(0).max(1),
+  /**
+   * 0–1 when the model supplied a score, null when it did not. The two must
+   * stay distinguishable: a constant rendered as "Confidence: 50%" is a default
+   * wearing the clothes of a measurement. The UI omits the badge on null.
+   */
+  confidence_score: z.number().min(0).max(1).nullable(),
 });
 
 export type PcapAnalysisResult = z.infer<typeof PcapAnalysisResultSchema>;

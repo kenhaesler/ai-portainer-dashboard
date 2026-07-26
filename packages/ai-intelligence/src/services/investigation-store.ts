@@ -39,7 +39,14 @@ export async function updateInvestigationStatus(
     contributing_factors?: string;
     severity_assessment?: string;
     recommended_actions?: string;
-    confidence_score?: number;
+    /**
+     * Null means "the model supplied no confidence" and is written through as
+     * SQL NULL — the column is nullable and the loop below tests `!== undefined`,
+     * not truthiness. Do not "simplify" that guard to `if (value)`: a null (or a
+     * legitimate `0`) would then be dropped from the SET list, silently leaving
+     * the previous value in place.
+     */
+    confidence_score?: number | null;
     analysis_duration_ms?: number;
     llm_model?: string;
     ai_summary?: string;

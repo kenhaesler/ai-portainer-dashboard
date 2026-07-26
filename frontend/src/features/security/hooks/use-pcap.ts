@@ -15,7 +15,13 @@ export interface PcapAnalysisResult {
   health_status: 'healthy' | 'degraded' | 'critical';
   summary: string;
   findings: PcapFinding[];
-  confidence_score: number;
+  /**
+   * Null when the model supplied no score. Kept nullable deliberately: this
+   * interface hand-mirrors `PcapAnalysisResultSchema` in @dashboard/security and
+   * nothing machine-checks the two, so narrowing it here would let the view
+   * multiply null by 100 and print an authoritative "Confidence: 0%".
+   */
+  confidence_score: number | null;
 }
 
 export interface Capture {
@@ -36,7 +42,13 @@ export interface Capture {
   started_at: string | null;
   completed_at: string | null;
   created_at: string;
-  analysis_result: string | null;
+  /**
+   * The stored analysis. Declared as the JSONB column's real wire shape — an
+   * object — with `string` kept for tolerance: the pg driver parses JSONB, so
+   * this is not the JSON text the name suggests, and treating it as such is
+   * what made the analysis panel unreachable.
+   */
+  analysis_result: PcapAnalysisResult | string | null;
 }
 
 interface CapturesResponse {

@@ -113,15 +113,71 @@ an interval another page had stored. The returned setter is `setRefreshInterval`
 kept as a deprecated alias because destructuring it shadows `window.setInterval` in the consuming
 module, which is exactly what made hand-wiring the timer error-prone.
 
+The hook also does **not** write to localStorage on mount. Persisting on mount recorded a default the
+user never chose, and on the shared key that was not merely cosmetic: Image Footprint asks for 60s
+while the dashboards ask for 30s, so opening that one page wrote 60 to the fleet-wide key and quietly
+slowed every dashboard query elsewhere in the app. The mount-skip compares the state object by
+*identity* against the value the hook mounted with, not by value — `setRefreshInterval` and `toggle`
+always build a fresh object, so re-selecting the cadence already displayed still persists, and a ref
+survives StrictMode's mount/cleanup/mount whereas a boolean first-run flag is spent on the first
+invocation and lets the second write the default anyway.
+
 A shared `DataFreshness` ("Updated Ns ago") component now sits beside the refresh control on the
 polling pages, so a stalled poll is visible rather than inferred.
 
+**Attributing LLM narratives to the thing they describe.** `parseInsightsResponse`
+(`packages/ai-intelligence/src/routes/correlations.ts`) matches model narratives to container pairs
+by list index, then by container names appearing in a block, then — weakest — positionally.
+
+A block is used at most once, and a block that *overlaps* one already used counts as used. Exact
+string matching is not enough: `paragraphs` entries are space-joins of the same lines held
+individually in `lineBlocks`, so an equality test let one pair be handed a paragraph containing
+another pair's sentence, putting overlapping claims about different containers on two cards while
+reporting `ok`.
+
+Positional attribution is accepted **only within an explicitly bulleted list** of exactly one item
+per pair. Position is evidence only where the model asserted an order; a run of bare prose asserts
+none, and reading it positionally is a guess dressed as an answer. An intermediate version did keep
+prose and tried to screen out headings by testing for a trailing full stop — that was worse than the
+problem it addressed, because it also deleted a bolded or unpunctuated narrative from the *middle* of
+the list and silently shifted every later sentence onto the wrong pair, reporting `ok` where the
+unfiltered code had correctly returned nothing. Prose that genuinely explains a pair almost always
+names its containers, which the content pass already attributes on real evidence.
+
+Under-attributing is the intended direction of failure: a null narrative costs the operator a
+sentence, a misattributed one tells them something untrue about a container. `narrativeStatus`
+reports which happened, once, rather than per row.
+
+**Capped lists carry their real count.** `recommendationSummary` in `packages/observability/src/routes/reports.ts`
+caps `container_names` at `RULE_CONTAINER_NAMES_CAP` (mirroring `ALL_NAMES_CAP` in
+`incident-store.ts`) and sets `names_truncated`, but `container_count` stays uncapped and is what the
+UI counts with. Counting the truncated array would report "500 containers" for a fleet of 525 — an
+under-count presented as fact, on precisely the large fleet the cap exists for.
+
 **Real anchors.** `DataTable` takes optional `rowHref` / `rowLabel`; when supplied, the first
-non-selection cell renders inside a react-router `<Link>` and the row carries `role="link"`. Sidebar
+non-selection cell renders inside a react-router `<Link>`, and `rowLabel` names that anchor. Sidebar
 destinations are `<Link>` too. Nothing in the product was previously an anchor, so cmd-click,
 middle-click, copy-link and open-in-background did not exist anywhere, and assistive tech announced
 a focusable row rather than a link to a container. Note an `<a>` may not contain a `<button>`, which
 is why the Workload Explorer's favourite star moved to its own column.
+
+The `<tr>` itself carries **no** `role`. It briefly carried `role="link"`, which was a regression in
+the behaviour this change set out to improve: an explicit role replaces the row's implicit `row`
+role, which each `<td>`'s `cell` role requires as its ancestor and which the virtual scroll
+container's `role="grid"` assumes — so screen-reader table navigation broke on exactly the fleet
+tables that most need it. It also nested a link inside a link with the same accessible name, an axe
+`nested-interactive` violation that announced the destination twice, while the row-level role
+carried no `href` and so could not be middle-clicked anyway. The anchor is what makes a row a link.
+
+**Port bind addresses.** Docker's host-side bind address is the most security-relevant fact about a
+published port, and the only thing distinguishing the IPv4 and IPv6 bindings it emits for the same
+mapping. `frontend/src/features/containers/lib/port-bindings.ts` holds the shared reading of it —
+`UNSPECIFIED_BIND_ADDRESSES`, `isLoopbackBind`, `isPubliclyBound`, `formatPortMapping` — used by both
+surfaces that render ports: the container detail table (which had hardcoded `0.0.0.0` for every row)
+and the network-topology side panel (which omitted the address entirely, so a dual-stack publish
+printed the same line twice and a loopback-only publish looked world-facing). `Container['ports']`
+in `use-containers.ts` now declares `ip` itself, retiring the local intersection type that
+`container-overview.tsx` had been carrying.
 
 **`PageHeader`.** `frontend/src/shared/components/layout/page-header.tsx` renders the single `<h1>`,
 an optional subtitle and an actions slot. It is deliberately without a gradient, icon-tile or
@@ -135,7 +191,19 @@ inference. `identifyPattern` (`packages/observability`) now returns a structured
 (`PATTERN_Z_SCORE_THRESHOLD`) — instead of one of three fixed English sentences, so the UI can print
 the rule that fired. `clampConfidenceScore` and `parseSeverity` return `null` rather than the
 constants `0.5` / `'warning'`, so "the model did not supply this" is representable and the badge can
-be omitted instead of showing a default dressed as a measurement. Remediation payloads carry
+be omitted instead of showing a default dressed as a measurement.
+
+Those two helpers live in `packages/core/src/utils/model-confidence.ts`. They started out beside the
+remediation analyser, which meant the fix reached one of the three services that had the defect: the
+investigation analyser (`packages/ai-intelligence`) still substituted `0.5` for a missing score,
+`0.3` for unstructured output and `0.1` on the "insufficient evidence" abort — a confidence for an
+analysis that never ran — and the PCAP analyser (`packages/security`) substituted `0.5` and `0.3`.
+Those packages may not import one another, so a shared home in `core` is what makes the rule one rule
+rather than three copies, two of which had already drifted. Renderers must guard on null: `null * 100`
+is `0`, so an unguarded badge reads "Confidence: 0%" — a more confident claim than the default it
+replaced. `investigation-detail.tsx` shows `N/A`, `insight-card.tsx` and the PCAP analysis panel omit
+the badge entirely. `severity_assessment` deliberately keeps its `'unknown'` string: unlike a number,
+it is honest about itself. Remediation payloads carry
 `rationaleSource` ('pattern-match' | 'llm-analysis') so rule-derived seed text is distinguishable
 from real LLM output, which previously shared identical chrome. **The underlying maths was always
 sound and is unchanged** — z-scores, the RMS composite and the seasonal baselines are legitimate;

@@ -186,4 +186,40 @@ describe('useAutoRefresh', () => {
       expect(JSON.parse(window.localStorage.getItem(SHARED_KEY)!).interval).toBe(30);
     });
   });
+
+  describe('persistence records choices, not defaults', () => {
+    it('writes nothing on mount', () => {
+      renderHook(() => useAutoRefresh(30));
+      expect(window.localStorage.getItem(SHARED_KEY)).toBeNull();
+
+      renderHook(() => useAutoRefresh(60, { storageKey: 'images' }));
+      expect(window.localStorage.getItem(`${SHARED_KEY}:images`)).toBeNull();
+    });
+
+    it('does not let one page seed the shared cadence for every other page', () => {
+      // Image Footprint asks for 60s on the SHARED key while the dashboards ask
+      // for 30s. Mounting it used to write 60, silently slowing every dashboard
+      // query elsewhere in the app.
+      renderHook(() => useAutoRefresh(60));
+
+      const dashboard = renderHook(() => useAutoRefresh(30));
+      expect(dashboard.result.current.interval).toBe(30);
+    });
+
+    it('persists a re-selection of the value already shown', () => {
+      // Guards against "fix" by value-comparison: picking 30 when 30 is already
+      // displayed is still the user making a choice, and it must be recorded.
+      const { result } = renderHook(() => useAutoRefresh(30));
+      act(() => result.current.setRefreshInterval(30));
+      expect(JSON.parse(window.localStorage.getItem(SHARED_KEY)!).interval).toBe(30);
+    });
+
+    it('rehydrates a stored cadence without rewriting it', () => {
+      window.localStorage.setItem(SHARED_KEY, JSON.stringify({ interval: 120, enabled: true }));
+      const { result } = renderHook(() => useAutoRefresh(30));
+
+      expect(result.current.interval).toBe(120);
+      expect(JSON.parse(window.localStorage.getItem(SHARED_KEY)!).interval).toBe(120);
+    });
+  });
 });

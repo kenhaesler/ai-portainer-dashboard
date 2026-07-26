@@ -165,9 +165,33 @@ describe('parseAnalysisResponse', () => {
     const raw = 'The traffic looks concerning because of high retransmissions.';
     const result = parseAnalysisResponse(raw);
     expect(result.health_status).toBe('degraded');
-    expect(result.confidence_score).toBe(0.3);
+    // Was 0.3 — a number nothing measured, rendered as a measurement.
+    expect(result.confidence_score).toBeNull();
     expect(result.summary).toContain('retransmissions');
     expect(result.findings).toHaveLength(0);
+  });
+
+  it('reports an absent confidence_score as null rather than 0.5', () => {
+    const raw = JSON.stringify({ health_status: 'healthy', summary: 'test', findings: [] });
+    expect(parseAnalysisResponse(raw).confidence_score).toBeNull();
+  });
+
+  it('keeps a model-supplied 0.5 distinguishable from an absent score', () => {
+    const supplied = parseAnalysisResponse(
+      JSON.stringify({ health_status: 'healthy', summary: 't', findings: [], confidence_score: 0.5 }),
+    );
+    const absent = parseAnalysisResponse(
+      JSON.stringify({ health_status: 'healthy', summary: 't', findings: [] }),
+    );
+    expect(supplied.confidence_score).toBe(0.5);
+    expect(absent.confidence_score).toBeNull();
+  });
+
+  it('reports a non-numeric confidence_score as null', () => {
+    const raw = JSON.stringify({
+      health_status: 'healthy', summary: 'test', findings: [], confidence_score: 'high',
+    });
+    expect(parseAnalysisResponse(raw).confidence_score).toBeNull();
   });
 
   it('validates health_status enum values', () => {

@@ -69,7 +69,23 @@ export function useAutoRefresh(
     loadState(defaultInterval, storageKey)
   );
 
+  // The state this hook mounted with, held by identity so the effect below can
+  // tell "the default we started with" from "a value the user picked".
+  const initialStateRef = useRef(state);
   useEffect(() => {
+    // Do not persist on mount. Merely visiting a page must not record its
+    // default as a choice, or "never touched the control" becomes
+    // indistinguishable from "explicitly chose this cadence" — and on the
+    // shared key it was worse than cosmetic: opening Image Footprint, which
+    // asks for 60s, wrote 60 to the fleet-wide key and quietly slowed every
+    // dashboard query on every other page.
+    //
+    // Compared by identity, not by value: `setRefreshInterval` and `toggle`
+    // both build a fresh object, so re-selecting the value already shown still
+    // persists. Identity also survives StrictMode's mount/cleanup/mount, which
+    // a boolean first-run flag would not — the flag would be spent on the
+    // first invocation and the second would write the default anyway.
+    if (state === initialStateRef.current) return;
     saveState(state, storageKey);
   }, [state, storageKey]);
 

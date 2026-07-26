@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vites
 import Fastify from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { reportsRoutes, clearReportCache, getReportCacheSize, setCachedReport, REPORT_CACHE_MAX_ENTRIES, evaluateRightSizingRules } from '../routes/reports.js';
+import { reportsRoutes, clearReportCache, getReportCacheSize, setCachedReport, REPORT_CACHE_MAX_ENTRIES, evaluateRightSizingRules, RULE_CONTAINER_NAMES_CAP } from '../routes/reports.js';
 
 // The implementation acquires a pool client per request via pool.connect(),
 // sets statement_timeout, then queries via client.query(). We mirror that here.
@@ -239,6 +239,47 @@ describe('Reports routes', () => {
       expect(cpuRule.container_names.sort()).toEqual(['api', 'web']);
       expect(cpuRule.threshold).toBe(10);
       expect(body.recommendationSummary.every((r: { container_count: number }) => r.container_count > 0)).toBe(true);
+      // A fleet under the cap is not truncated.
+      expect(cpuRule.names_truncated).toBe(false);
+    });
+
+    it('caps the name list on a large fleet while still reporting the true count', async () => {
+      // Four rules each carrying every matching name, in a payload cached for
+      // five minutes across up to REPORT_CACHE_MAX_ENTRIES entries. The cap
+      // bounds the sample; container_count must stay the real total, or the UI
+      // silently under-reports exactly the fleet the cap exists for.
+      const total = RULE_CONTAINER_NAMES_CAP + 25;
+      const aggRows = Array.from({ length: total }, (_, i) => [
+        { container_id: `c${i}`, container_name: `svc-${i}`, endpoint_id: 1,
+          metric_type: 'cpu', avg_value: 2, min_value: 2, max_value: 2, sample_count: 10 },
+        { container_id: `c${i}`, container_name: `svc-${i}`, endpoint_id: 1,
+          metric_type: 'memory', avg_value: 5, min_value: 5, max_value: 5, sample_count: 10 },
+      ]).flat();
+
+      // Chained mockResolvedValueOnce cannot express 1000+ percentile calls;
+      // dispatch on the SQL text instead.
+      let seenAgg = false;
+      mockClientQuery.mockImplementation(async (sql: string) => {
+        if (typeof sql === 'string' && sql.includes('percentile_cont')) {
+          return { rows: [{ p50: 2, p95: 4, p99: 5 }] };
+        }
+        if (!seenAgg && typeof sql === 'string' && sql.includes('avg_value')) {
+          seenAgg = true;
+          return { rows: aggRows };
+        }
+        return { rows: [] };
+      });
+
+      const res = await app.inject({ method: 'GET', url: '/api/reports/utilization?timeRange=24h' });
+      expect(res.statusCode).toBe(200);
+      const cpuRule = JSON.parse(res.payload).recommendationSummary
+        .find((r: { id: string }) => r.id === 'cpu-underutilized');
+
+      expect(cpuRule.container_count).toBe(total);
+      expect(cpuRule.container_names).toHaveLength(RULE_CONTAINER_NAMES_CAP);
+      expect(cpuRule.names_truncated).toBe(true);
+      // The count is the truth, not the array length.
+      expect(cpuRule.container_count).toBeGreaterThan(cpuRule.container_names.length);
     });
 
     it('accepts optional endpointId filter', async () => {

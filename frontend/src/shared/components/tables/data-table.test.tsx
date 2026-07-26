@@ -980,7 +980,7 @@ describe('DataTable', () => {
       expect(anchors[0]).toHaveAttribute('href', '/containers/1/2');
     });
 
-    it('announces the row as a link with an accessible name', () => {
+    it('names the anchor, and leaves the row a row', () => {
       renderWithRouter(
         <DataTable
           columns={testColumns}
@@ -992,8 +992,53 @@ describe('DataTable', () => {
       );
 
       const row = screen.getByTestId('table-row-0');
-      expect(row).toHaveAttribute('role', 'link');
-      expect(row).toHaveAttribute('aria-label', 'Open container container-1');
+      // The accessible name belongs to the anchor — that is the thing that
+      // navigates.
+      expect(row.querySelector('a')).toHaveAttribute('aria-label', 'Open container container-1');
+      expect(
+        screen.getByRole('link', { name: 'Open container container-1' })
+      ).toBeInTheDocument();
+    });
+
+    it('does not override the row role, which would break table semantics', () => {
+      // An explicit role on <tr> replaces the implicit `row` that each <td>'s
+      // `cell` role requires as an ancestor — and the virtual container is a
+      // `role="grid"`. Overriding it disables screen-reader table navigation
+      // on precisely the tables this prop was added to improve.
+      renderWithRouter(
+        <DataTable
+          columns={testColumns}
+          data={makeRows(2)}
+          onRowClick={vi.fn()}
+          rowHref={href}
+          rowLabel={(row) => `Open container ${row.name}`}
+        />
+      );
+
+      const row = screen.getByTestId('table-row-0');
+      expect(row).not.toHaveAttribute('role');
+      expect(row).not.toHaveAttribute('aria-label');
+      expect(row.tagName).toBe('TR');
+    });
+
+    it('exposes exactly one link per row, so the destination is announced once', () => {
+      // The row used to carry role="link" while containing a real anchor with
+      // the same name: a link nested in a link (axe `nested-interactive`),
+      // read out twice.
+      renderWithRouter(
+        <DataTable
+          columns={testColumns}
+          data={makeRows(3)}
+          onRowClick={vi.fn()}
+          rowHref={href}
+          rowLabel={(row) => `Open container ${row.name}`}
+        />
+      );
+
+      expect(screen.getAllByRole('link')).toHaveLength(3);
+      expect(
+        screen.getAllByRole('link', { name: 'Open container container-1' })
+      ).toHaveLength(1);
     });
 
     it('omits aria-label rather than inventing one when rowLabel is not supplied', () => {
@@ -1001,8 +1046,9 @@ describe('DataTable', () => {
         <DataTable columns={testColumns} data={makeRows(2)} onRowClick={vi.fn()} rowHref={href} />
       );
       const row = screen.getByTestId('table-row-0');
-      expect(row).toHaveAttribute('role', 'link');
+      expect(row).not.toHaveAttribute('role');
       expect(row).not.toHaveAttribute('aria-label');
+      expect(row.querySelector('a')).not.toHaveAttribute('aria-label');
     });
 
     it('keeps whole-row click working as a convenience', () => {

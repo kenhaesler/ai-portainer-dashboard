@@ -31,6 +31,7 @@ export function initRemediationDeps(llm: LLMInterface, metrics: MetricsInterface
 }
 import { broadcastActionUpdate, broadcastNewAction } from '../sockets/remediation.js';
 import { getConfig } from '@dashboard/core/config/index.js';
+import { clampConfidenceScore, parseSeverity } from '@dashboard/core/utils/model-confidence.js';
 
 const log = createChildLogger('remediation-service');
 
@@ -154,22 +155,12 @@ function pickActionPattern(text: string): ActionPattern | null {
   return null;
 }
 
-/**
- * 0–1 when the model supplied a usable number, null when it did not.
- *
- * This used to return the constant 0.5, which the UI rendered as an
- * authoritative "Confidence: 50%" badge — a default presented as a measurement.
- * Null is the honest answer and lets the caller omit the badge entirely.
- */
-export function clampConfidenceScore(value: unknown): number | null {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
-  return Math.max(0, Math.min(1, value));
-}
-
-/** The model's severity, or null when it did not supply a valid one (was: 'warning'). */
-export function parseSeverity(value: unknown): 'critical' | 'warning' | 'info' | null {
-  return value === 'critical' || value === 'warning' || value === 'info' ? value : null;
-}
+// `clampConfidenceScore` / `parseSeverity` moved to @dashboard/core so the
+// investigation and PCAP analysers can share one rule instead of keeping their
+// own copies — they had each kept a `0.5` default, and this file's fix did not
+// reach them. Re-exported because this module's path is the one callers and
+// tests already use.
+export { clampConfidenceScore, parseSeverity };
 
 function parseRecommendedActions(value: unknown): RemediationAnalysisResult['recommended_actions'] {
   if (!Array.isArray(value)) return [];

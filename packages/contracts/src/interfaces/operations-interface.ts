@@ -8,10 +8,16 @@ export interface SuggestActionResult {
   /**
    * Where the rationale stored on the action came from. Always `pattern-match`
    * at suggestion time — the LLM analysis, if any, replaces it asynchronously.
+   *
+   * Required, not optional: `suggestAction` cannot produce a result without
+   * having matched a pattern, so an optional field would only oblige callers to
+   * null-check something that is never absent — and leave room for a future
+   * implementation to omit the provenance of a rationale, which is the one
+   * thing this field exists to carry.
    */
-  rationaleSource?: RationaleSource;
+  rationaleSource: RationaleSource;
   /** Stable id of the keyword rule that matched (see ACTION_PATTERNS). */
-  patternId?: string;
+  patternId: string;
 }
 
 /**
