@@ -11,23 +11,42 @@ import { useImageStaleness } from '@/features/containers/hooks/use-image-stalene
 import { ImageTreemap } from '@/shared/components/charts/image-treemap';
 import { ImageSunburst } from '@/shared/components/charts/image-sunburst';
 import { RefreshControls } from '@/shared/components/ui/refresh-controls';
+import { DataFreshness } from '@/shared/components/feedback/data-freshness';
 import { useForceRefresh } from '@/shared/hooks/use-force-refresh';
 import { SkeletonChart } from '@/shared/components/feedback/skeleton';
 import { DataTable } from '@/shared/components/tables/data-table';
 import { KpiCard } from '@/shared/components/data-display/kpi-card';
+import { PageHeader } from '@/shared/components/layout/page-header';
 import { MotionPage, MotionReveal, MotionStagger } from '@/shared/components/layout/motion-page';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 import { TiltCard } from '@/shared/components/data-display/tilt-card';
 import { spring } from '@/shared/lib/motion-tokens';
 import { formatBytes, truncate } from '@/shared/lib/utils';
 
+/**
+ * Which slice of the image list the table is showing. The staleness tiles are
+ * the only way to reach the stale rows, so they double as the filter — a
+ * "Stale 4" an operator cannot resolve to four image names is worse than no
+ * tile at all.
+ */
+type ImageStatusFilter = 'all' | 'checked' | 'upToDate' | 'stale';
+
+const STATUS_FILTER_LABELS: Record<Exclude<ImageStatusFilter, 'all'>, string> = {
+  checked: 'Checked',
+  upToDate: 'Up to date',
+  stale: 'Update available',
+};
+
 export default function ImageFootprintPage() {
   const [selectedEndpoint, setSelectedEndpoint] = useState<number | undefined>(undefined);
   const [selectedImage, setSelectedImage] = useState<DockerImage | null>(null);
+  const [statusFilter, setStatusFilter] = useState<ImageStatusFilter>('all');
 
   const { data: endpoints } = useEndpoints();
-  const { interval, setInterval, enabled } = useAutoRefresh(60);
-  const { data: images, isLoading, isPending, isError, error, refetch, isFetching } = useImages(
+  const { interval, setRefreshInterval, enabled } = useAutoRefresh(60);
+  // Auto-refresh is armed through react-query's own `refetchInterval` rather
+  // than the hook's `onTick`, so the dropdown really does schedule a fetch.
+  const { data: images, isLoading, isPending, isError, error, refetch, isFetching, dataUpdatedAt } = useImages(
     selectedEndpoint,
     { refetchInterval: enabled && interval > 0 ? interval * 1000 : false },
   );
@@ -85,10 +104,53 @@ export default function ImageFootprintPage() {
       }));
   }, [images]);
 
+  /**
+   * Staleness counts for *the images on this page*, not for every row the
+   * staleness table has ever recorded.
+   *
+   * The tiles used to read `stalenessData.summary` while the header and the
+   * table read the per-endpoint image list, so the page could claim
+   * "Checked 57" above a 14-row table in which every row said "Up to Date",
+   * and the 4 stale images appeared nowhere. Scoping the counts to `images`
+   * makes the three numbers reconcile with the table by construction.
+   */
+  const staleness = useMemo(() => {
+    if (!images) return null;
+    let stale = 0;
+    let upToDate = 0;
+    for (const img of images) {
+      const rec = stalenessMap.get(img.name);
+      if (!rec) continue;
+      if (rec.isStale) stale += 1;
+      else upToDate += 1;
+    }
+    return {
+      total: images.length,
+      checked: stale + upToDate,
+      stale,
+      upToDate,
+      unchecked: images.length - stale - upToDate,
+    };
+  }, [images, stalenessMap]);
+
   const sortedImages = useMemo(() => {
     if (!images) return [];
     return [...images].sort((a, b) => b.size - a.size);
   }, [images]);
+
+  const visibleImages = useMemo(() => {
+    if (statusFilter === 'all') return sortedImages;
+    return sortedImages.filter((img) => {
+      const rec = stalenessMap.get(img.name);
+      if (!rec) return false;
+      if (statusFilter === 'checked') return true;
+      return statusFilter === 'stale' ? rec.isStale : !rec.isStale;
+    });
+  }, [sortedImages, stalenessMap, statusFilter]);
+
+  const toggleStatusFilter = useCallback((next: Exclude<ImageStatusFilter, 'all'>) => {
+    setStatusFilter((prev) => (prev === next ? 'all' : next));
+  }, []);
 
   const imageColumns: ColumnDef<DockerImage, any>[] = useMemo(() => [
     {
@@ -182,12 +244,7 @@ export default function ImageFootprintPage() {
   if (isError) {
     return (
       <MotionPage>
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Image Footprint</h1>
-          <p className="text-muted-foreground">
-            Analyze Docker image sizes and layer composition
-          </p>
-        </div>
+        <PageHeader title="Images" />
         <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-8 text-center">
           <AlertTriangle className="mx-auto h-10 w-10 text-destructive" />
           <p className="mt-4 font-medium text-destructive">Failed to load images</p>
@@ -207,18 +264,17 @@ export default function ImageFootprintPage() {
 
   return (
     <MotionPage>
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Image Footprint</h1>
-          <p className="text-muted-foreground">
-            Analyze Docker image sizes and layer composition
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <RefreshControls interval={interval} onIntervalChange={setInterval} onRefresh={() => refetch()} onForceRefresh={forceRefresh} isLoading={isFetching || isForceRefreshing} />
-        </div>
-      </div>
+      {/* Header — the old subtitle promised "layer composition", which this
+          page never shows; the live totals sit in the stat row below. */}
+      <PageHeader
+        title="Images"
+        actions={
+          <>
+            <DataFreshness lastUpdated={dataUpdatedAt || null} onRefresh={() => refetch()} />
+            <RefreshControls interval={interval} onIntervalChange={setRefreshInterval} onRefresh={() => refetch()} onForceRefresh={forceRefresh} isLoading={isFetching || isForceRefreshing} />
+          </>
+        }
+      />
 
       {/* Filters and Summary */}
       <div className="flex flex-wrap items-center gap-4">
@@ -258,46 +314,42 @@ export default function ImageFootprintPage() {
         )}
       </div>
 
-      {/* Staleness Summary */}
-      {stalenessData && stalenessData.summary.total > 0 && (
+      {/* Staleness Summary — every tile filters the table below it. */}
+      {staleness && staleness.checked > 0 && (
         <MotionStagger
           className="staleness-summary-grid grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3"
           stagger={0.05}
         >
-          <MotionReveal className="h-full">
-            <TiltCard intensity="subtle">
-              <KpiCard
-                label="Checked"
-                value={stalenessData.summary.total}
-                icon={<Layers className="h-5 w-5" />}
-                disableHoverLift
-              />
-            </TiltCard>
-          </MotionReveal>
-          <MotionReveal className="h-full">
-            <TiltCard intensity="subtle">
-              <KpiCard
-                label="Up to Date"
-                value={stalenessData.summary.upToDate}
-                icon={<CheckCircle2 className="h-5 w-5" />}
-                trend="up"
-                trendValue={`of ${stalenessData.summary.total} checked`}
-                disableHoverLift
-              />
-            </TiltCard>
-          </MotionReveal>
-          <MotionReveal className="h-full">
-            <TiltCard intensity="subtle">
-              <KpiCard
-                label="Stale"
-                value={stalenessData.summary.stale}
-                icon={<AlertTriangle className="h-5 w-5" />}
-                trend={stalenessData.summary.stale > 0 ? 'down' : 'neutral'}
-                trendValue={stalenessData.summary.stale > 0 ? `${stalenessData.summary.stale} outdated` : 'none'}
-                disableHoverLift
-              />
-            </TiltCard>
-          </MotionReveal>
+          <StalenessTile
+            filter="checked"
+            active={statusFilter === 'checked'}
+            onToggle={toggleStatusFilter}
+            label="Checked"
+            value={staleness.checked}
+            icon={<Layers className="h-5 w-5" />}
+            trend="neutral"
+            trendValue={`of ${staleness.total} image${staleness.total !== 1 ? 's' : ''}`}
+          />
+          <StalenessTile
+            filter="upToDate"
+            active={statusFilter === 'upToDate'}
+            onToggle={toggleStatusFilter}
+            label="Up to Date"
+            value={staleness.upToDate}
+            icon={<CheckCircle2 className="h-5 w-5" />}
+            trend="up"
+            trendValue={`of ${staleness.checked} checked`}
+          />
+          <StalenessTile
+            filter="stale"
+            active={statusFilter === 'stale'}
+            onToggle={toggleStatusFilter}
+            label="Stale"
+            value={staleness.stale}
+            icon={<AlertTriangle className="h-5 w-5" />}
+            trend={staleness.stale > 0 ? 'down' : 'neutral'}
+            trendValue={staleness.stale > 0 ? 'update available' : 'none'}
+          />
         </MotionStagger>
       )}
 
@@ -312,13 +364,12 @@ export default function ImageFootprintPage() {
           {/* Treemap */}
           <MotionReveal>
             <SpotlightCard>
-              <div className="rounded-lg border bg-card p-6 shadow-sm">
+              {/* The only non-obvious fact — that a box opens the image — is a
+                  hover affordance, not a paragraph restating the title. */}
+              <div className="rounded-lg border bg-card p-6 shadow-sm" title="Select an image for its tags, digest and registry">
                 <h3 className="mb-4 text-sm font-medium text-muted-foreground">
                   Image Size Distribution
                 </h3>
-                <p className="mb-4 text-xs text-muted-foreground">
-                  Visualizes relative image sizes. Larger boxes indicate larger images. Click an image to view details.
-                </p>
                 <ImageTreemap
                   data={treemapData}
                   onCellClick={(name) => {
@@ -339,9 +390,6 @@ export default function ImageFootprintPage() {
                 <h3 className="mb-4 text-sm font-medium text-muted-foreground">
                   Registry Distribution
                 </h3>
-                <p className="mb-4 text-xs text-muted-foreground">
-                  Shows total image size grouped by container registry.
-                </p>
                 <ImageSunburst data={sunburstData} />
               </div>
             </SpotlightCard>
@@ -366,9 +414,27 @@ export default function ImageFootprintPage() {
         <MotionReveal>
           <SpotlightCard>
             <div className="rounded-lg border bg-card p-6 shadow-sm">
+              {statusFilter !== 'all' && (
+                <div
+                  className="mb-3 flex flex-wrap items-center gap-2 text-sm text-muted-foreground"
+                  data-testid="image-status-filter"
+                >
+                  <span>
+                    {visibleImages.length} of {images.length} image
+                    {images.length !== 1 ? 's' : ''} · {STATUS_FILTER_LABELS[statusFilter]}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter('all')}
+                    className="underline-offset-4 hover:text-foreground hover:underline"
+                  >
+                    Show all images
+                  </button>
+                </div>
+              )}
               <DataTable
                 columns={imageColumns}
-                data={sortedImages}
+                data={visibleImages}
                 searchKey="name"
                 searchPlaceholder="Search images by name..."
                 pageSize={15}
@@ -389,6 +455,76 @@ export default function ImageFootprintPage() {
         )}
       </AnimatePresence>
     </MotionPage>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Staleness tile                                                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A staleness KPI that is also the filter for the rows behind it.
+ *
+ * `role="button"` on a wrapper rather than a real `<button>`: `KpiCard` renders
+ * block-level content, and a `<div>` inside a `<button>` is invalid HTML — the
+ * same trap `EndpointCard` documents (#1547). This mirrors the pattern already
+ * used by `endpoint-health-octagons` and the treemap cells.
+ */
+function StalenessTile({
+  filter,
+  active,
+  onToggle,
+  label,
+  value,
+  icon,
+  trend,
+  trendValue,
+}: {
+  filter: Exclude<ImageStatusFilter, 'all'>;
+  active: boolean;
+  onToggle: (filter: Exclude<ImageStatusFilter, 'all'>) => void;
+  label: string;
+  value: number;
+  icon: React.ReactNode;
+  trend: 'up' | 'down' | 'neutral';
+  trendValue: string;
+}) {
+  const activate = () => onToggle(filter);
+
+  return (
+    <MotionReveal className="h-full">
+      <div
+        role="button"
+        tabIndex={0}
+        aria-pressed={active}
+        aria-label={
+          active
+            ? `${label}: ${value}. Showing only these images — activate to show all`
+            : `${label}: ${value}. Activate to show only these images`
+        }
+        data-testid={`staleness-tile-${filter}`}
+        onClick={activate}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            activate();
+          }
+        }}
+        className="h-full cursor-pointer rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <TiltCard intensity="subtle">
+          <KpiCard
+            label={label}
+            value={value}
+            icon={icon}
+            trend={trend}
+            trendValue={trendValue}
+            className={active ? 'border-primary/50 ring-1 ring-primary/30' : undefined}
+            disableHoverLift
+          />
+        </TiltCard>
+      </div>
+    </MotionReveal>
   );
 }
 

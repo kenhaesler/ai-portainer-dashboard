@@ -15,6 +15,8 @@ import { DataTable } from '@/shared/components/tables/data-table';
 import { StatusBadge } from '@/shared/components/feedback/status-badge';
 import { RefreshControls } from '@/shared/components/ui/refresh-controls';
 import { RefreshButton } from '@/shared/components/ui/refresh-button';
+import { DataFreshness } from '@/shared/components/feedback/data-freshness';
+import { PageHeader } from '@/shared/components/layout/page-header';
 import { EmptyState } from '@/shared/components/feedback/empty-state';
 import { SkeletonText, SkeletonChart } from '@/shared/components/feedback/skeleton';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
@@ -91,17 +93,73 @@ function formatDate(timestamp?: number): string {
   return new Date(timestamp * 1000).toLocaleDateString();
 }
 
+/**
+ * Reading a `com.docker.compose.project` label off a container is not
+ * inference, so this badge is deliberately neutral: purple is reserved for AI
+ * insight (DESIGN.md, CLAUDE.md). It is also only rendered when the list
+ * contains at least one *non*-discovered stack — a badge on every row
+ * distinguishes nothing.
+ */
 function DiscoveredBadge() {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
+    <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
       <Search className="h-3 w-3" />
       Discovered
     </span>
   );
 }
 
-function EndpointCard({ endpoint, onClick, onViewStacks }: { endpoint: Endpoint; onClick: () => void; onViewStacks?: () => void }) {
+/**
+ * The two stack populations this page has to keep straight.
+ *
+ * `managed` is Portainer's own count (`endpoint.stackCount`); `discovered` are
+ * compose projects inferred from container labels. Both used to be printed as
+ * "stacks", so the Fleet tab could say `0 stacks` for an endpoint whose Stack
+ * Overview tab listed five, and the "View N stacks" link was gated on the
+ * managed count alone — unreachable exactly when the discovered ones existed.
+ */
+interface EndpointStackSummary {
+  managed: number;
+  discovered: number;
+  /** How many rows the Stack Overview tab will actually show for this endpoint. */
+  listed: number;
+}
+
+/**
+ * First alphanumeric segment of a name — `docker-dev-1` → `docker`. Used to
+ * seed a search chip that demonstrates substring matching against real data
+ * rather than pinning the whole name (which only ever matches one row).
+ */
+function firstNameSegment(name: string | undefined): string | null {
+  if (!name) return null;
+  const segment = name.split(/[^A-Za-z0-9]+/).find(Boolean);
+  return segment ?? null;
+}
+
+/** Hostname of an endpoint URL, for a `url:` chip that resolves to real rows. */
+function firstUrlHost(url: string | undefined): string | null {
+  if (!url) return null;
+  const withoutScheme = url.replace(/^[a-z0-9+.-]+:\/\//i, '');
+  const host = withoutScheme.split(/[/:]/).find(Boolean);
+  return host ?? null;
+}
+
+function formatContainerCount(count: number): string {
+  return `${count} container${count !== 1 ? 's' : ''}`;
+}
+
+function formatStackSummary(summary: EndpointStackSummary): string {
+  if (summary.discovered > 0) {
+    return `${summary.managed} managed · ${summary.discovered} discovered`;
+  }
+  return `${summary.managed} stack${summary.managed !== 1 ? 's' : ''}`;
+}
+
+function EndpointCard({ endpoint, stacks, onClick, onViewStacks }: { endpoint: Endpoint; stacks: EndpointStackSummary; onClick: () => void; onViewStacks?: () => void }) {
   const memoryGB = (endpoint.totalMemory / (1024 * 1024 * 1024)).toFixed(1);
+  // Promise the number the Stack Overview tab will show; fall back to the
+  // managed count while the stacks query has not resolved for this endpoint.
+  const linkCount = stacks.listed > 0 ? stacks.listed : stacks.managed;
 
   // Non-interactive container: nesting the "View stacks" button inside a
   // card-level <button> is invalid HTML (#1547). The endpoint name is the
@@ -151,9 +209,9 @@ function EndpointCard({ endpoint, onClick, onViewStacks }: { endpoint: Endpoint;
           {endpoint.totalContainers}
           <span className="ml-1">({endpoint.containersRunning} running)</span>
         </span>
-        <span>{endpoint.stackCount} stacks</span>
-        <span>{endpoint.totalCpu} CPU</span>
-        <span>{memoryGB} GB</span>
+        <span>{formatStackSummary(stacks)}</span>
+        <span>{endpoint.totalCpu} CPU cores</span>
+        <span>{memoryGB} GB memory</span>
       </div>
 
       {/* Edge metadata (compact) — matches table Check-in + Snapshot columns */}
@@ -168,15 +226,16 @@ function EndpointCard({ endpoint, onClick, onViewStacks }: { endpoint: Endpoint;
         </div>
       )}
 
-      {/* View stacks link — positioned above the stretched name-button overlay */}
-      {onViewStacks && endpoint.stackCount > 0 && (
+      {/* View stacks link — positioned above the stretched name-button overlay.
+          Gated on the union of both populations, not on the managed count. */}
+      {onViewStacks && linkCount > 0 && (
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); onViewStacks(); }}
           className="relative mt-2 inline-flex items-center gap-1 text-xs text-primary hover:underline"
           data-testid="view-stacks-link"
         >
-          View {endpoint.stackCount} stack{endpoint.stackCount !== 1 ? 's' : ''}
+          View {linkCount} stack{linkCount !== 1 ? 's' : ''}
           <ArrowRight className="h-3 w-3" />
         </button>
       )}
@@ -184,7 +243,7 @@ function EndpointCard({ endpoint, onClick, onViewStacks }: { endpoint: Endpoint;
   );
 }
 
-function StackCard({ stack, onClick }: { stack: StackWithEndpoint; onClick: () => void }) {
+function StackCard({ stack, showDiscoveredBadge, onClick }: { stack: StackWithEndpoint; showDiscoveredBadge: boolean; onClick: () => void }) {
   const isInferred = stack.source === 'compose-label';
 
   return (
@@ -195,7 +254,9 @@ function StackCard({ stack, onClick }: { stack: StackWithEndpoint; onClick: () =
       {/* Row 1: Name + ID/Discovered — matches table Name column */}
       <div className="flex items-center justify-between gap-2">
         <h3 className="truncate font-medium">{stack.name}</h3>
-        {isInferred ? <DiscoveredBadge /> : <span className="shrink-0 text-xs text-muted-foreground">(ID: {stack.id})</span>}
+        {isInferred
+          ? (showDiscoveredBadge ? <DiscoveredBadge /> : null)
+          : <span className="shrink-0 text-xs text-muted-foreground">(ID: {stack.id})</span>}
       </div>
 
       {/* Row 2: Stack type + Status badge — matches table Type + Status columns */}
@@ -212,7 +273,7 @@ function StackCard({ stack, onClick }: { stack: StackWithEndpoint; onClick: () =
           {stack.endpointName}
           <span className="ml-1">(ID: {stack.endpointId})</span>
         </span>
-        <span>{isInferred ? `${stack.containerCount ?? 0} containers` : `${stack.envCount} env vars`}</span>
+        <span>{isInferred ? formatContainerCount(stack.containerCount ?? 0) : `${stack.envCount} env vars`}</span>
       </div>
     </button>
   );
@@ -333,6 +394,7 @@ export default function InfrastructurePage() {
     error: endpointErrorObj,
     refetch: refetchEndpoints,
     isFetching: endpointsFetching,
+    dataUpdatedAt: endpointsUpdatedAt,
   } = useEndpoints();
 
   const {
@@ -383,9 +445,6 @@ export default function InfrastructurePage() {
   const isLoading = endpointsLoading || stacksLoading;
   const isFetching = endpointsFetching || stacksFetching;
 
-  // Shared auto-refresh preference
-  const { interval, setInterval } = useAutoRefresh(30);
-
   // Cross-section filter: "View stacks" link sets stackEndpoint filter AND switches to stacks tab
   const handleViewStacks = useCallback((endpointId: number) => {
     const params: Record<string, string> = { tab: 'stacks', stackEndpoint: String(endpointId) };
@@ -422,6 +481,11 @@ export default function InfrastructurePage() {
     void refetchEndpoints();
     void refetchStacks();
   }, [refetchEndpoints, refetchStacks]);
+
+  // Shared auto-refresh preference. `onTick` is the point of the control: the
+  // dropdown used to write a localStorage preference, render a pulsing live
+  // dot, and schedule nothing at all.
+  const { interval, setRefreshInterval } = useAutoRefresh(30, { onTick: handleRefresh });
 
   // Auto-switch fleet to table view when > 100 endpoints (only if user hasn't chosen)
   useEffect(() => {
@@ -474,6 +538,71 @@ export default function InfrastructurePage() {
       endpointName: endpoints.find(ep => ep.id === stack.endpointId)?.name || `Endpoint ${stack.endpointId}`,
     }));
   }, [stacks, endpoints]);
+
+  // Per-endpoint stack populations, keyed by endpoint id. `managed` comes from
+  // Portainer (endpoint.stackCount); everything here is derived from the stacks
+  // the Stack Overview tab will actually list.
+  const stackCountsByEndpoint = useMemo(() => {
+    const map = new Map<number, { discovered: number; listed: number }>();
+    for (const stack of stacksWithEndpoints) {
+      const entry = map.get(stack.endpointId) ?? { discovered: 0, listed: 0 };
+      entry.listed += 1;
+      if (stack.source === 'compose-label') entry.discovered += 1;
+      map.set(stack.endpointId, entry);
+    }
+    return map;
+  }, [stacksWithEndpoints]);
+
+  const getStackSummary = useCallback((endpoint: Endpoint): EndpointStackSummary => {
+    const entry = stackCountsByEndpoint.get(endpoint.id);
+    return {
+      managed: endpoint.stackCount,
+      discovered: entry?.discovered ?? 0,
+      listed: entry?.listed ?? 0,
+    };
+  }, [stackCountsByEndpoint]);
+
+  // The "Discovered" badge only earns its space when it separates one row from
+  // another. If every listed stack was inferred it labels a constant.
+  const showDiscoveredBadge = useMemo(
+    () =>
+      stacksWithEndpoints.some((s) => s.source === 'compose-label') &&
+      stacksWithEndpoints.some((s) => s.source !== 'compose-label'),
+    [stacksWithEndpoints],
+  );
+
+  // Search example chips, derived from what is actually loaded. They used to be
+  // the hardcoded `name:prod`, `status:up`, `type:edge` / `name:traefik`,
+  // `status:active`, `endpoint:prod` — none of which match anything in a fleet
+  // that has no `prod`, no `traefik` and no Edge endpoint, so clicking one
+  // emptied the list.
+  const endpointSearchExamples = useMemo(() => {
+    const list = endpoints ?? [];
+    if (list.length === 0) return [];
+    const chips: string[] = [];
+    const nameSeed = firstNameSegment(list[0].name);
+    if (nameSeed) chips.push(`name:${nameSeed}`);
+    if (list.some((ep) => ep.status === 'down')) chips.push('status:down');
+    else if (list.some((ep) => ep.status === 'up')) chips.push('status:up');
+    const host = firstUrlHost(list[0].url);
+    if (host) chips.push(`url:${host}`);
+    return chips;
+  }, [endpoints]);
+
+  const stackSearchExamples = useMemo(() => {
+    if (stacksWithEndpoints.length === 0) return [];
+    const chips: string[] = [];
+    const nameSeed = firstNameSegment(stacksWithEndpoints[0].name);
+    if (nameSeed) chips.push(`name:${nameSeed}`);
+    if (stacksWithEndpoints.some((s) => s.status === 'inactive')) chips.push('status:inactive');
+    else if (stacksWithEndpoints.some((s) => s.status === 'active')) chips.push('status:active');
+    const endpointIds = new Set(stacksWithEndpoints.map((s) => s.endpointId));
+    if (endpointIds.size > 1) {
+      const endpointSeed = firstNameSegment(stacksWithEndpoints[0].endpointName);
+      if (endpointSeed) chips.push(`endpoint:${endpointSeed}`);
+    }
+    return chips;
+  }, [stacksWithEndpoints]);
 
   // Slim status-KPI pills for the search rows (counts from the unfiltered lists,
   // matching the old summary-bar semantics). Clicking a pill toggles the same
@@ -697,6 +826,7 @@ export default function InfrastructurePage() {
     {
       accessorKey: 'stackCount',
       header: 'Stacks',
+      cell: ({ row }) => formatStackSummary(getStackSummary(row.original)),
     },
     {
       accessorKey: 'totalCpu',
@@ -750,7 +880,7 @@ export default function InfrastructurePage() {
         <span className="text-xs text-muted-foreground">{getValue<string>()}</span>
       ),
     },
-  ], []);
+  ], [getStackSummary]);
 
   const stackColumns: ColumnDef<StackWithEndpoint, unknown>[] = useMemo(() => [
     {
@@ -760,7 +890,7 @@ export default function InfrastructurePage() {
         <div className="flex items-center gap-2">
           <span className="font-medium">{row.original.name}</span>
           {row.original.source === 'compose-label'
-            ? <DiscoveredBadge />
+            ? (showDiscoveredBadge ? <DiscoveredBadge /> : null)
             : <span className="text-xs text-muted-foreground">(ID: {row.original.id})</span>
           }
         </div>
@@ -790,7 +920,7 @@ export default function InfrastructurePage() {
       id: 'envOrContainers',
       header: 'Details',
       cell: ({ row }) => row.original.source === 'compose-label'
-        ? `${row.original.containerCount ?? 0} containers`
+        ? formatContainerCount(row.original.containerCount ?? 0)
         : `${row.original.envCount} env vars`,
     },
     {
@@ -803,7 +933,7 @@ export default function InfrastructurePage() {
       header: 'Updated',
       cell: ({ getValue }) => formatDate(getValue<number>()),
     },
-  ], []);
+  ], [showDiscoveredBadge]);
 
   // ── Kubernetes column definitions ───────────────────────────────────────────
   const k8sPodColumns: ColumnDef<K8sPod, unknown>[] = useMemo(() => [
@@ -925,23 +1055,22 @@ export default function InfrastructurePage() {
   return (
     <div className="space-y-6">
       {/* Page header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Infrastructure</h1>
-          <p className="text-muted-foreground">
-            Endpoints and compose stacks across your fleet
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <RefreshControls
-            interval={interval}
-            onIntervalChange={setInterval}
-            onRefresh={handleRefresh}
-            onForceRefresh={forceRefresh}
-            isLoading={isFetching || isForceRefreshing}
-          />
-        </div>
-      </div>
+      <PageHeader
+        title="Infrastructure"
+        subtitle="Endpoints and compose stacks across your fleet"
+        actions={
+          <>
+            <DataFreshness lastUpdated={endpointsUpdatedAt || null} onRefresh={handleRefresh} />
+            <RefreshControls
+              interval={interval}
+              onIntervalChange={setRefreshInterval}
+              onRefresh={handleRefresh}
+              onForceRefresh={forceRefresh}
+              isLoading={isFetching || isForceRefreshing}
+            />
+          </>
+        }
+      />
 
       {/* Error state */}
       {hasError && (
@@ -997,9 +1126,9 @@ export default function InfrastructurePage() {
                       onSearch={handleEndpointSearch}
                       totalCount={endpoints.length}
                       filteredCount={filteredEndpoints.length}
-                      placeholder="Search endpoints... (name:prod status:up type:edge)"
+                      placeholder="Search endpoints by name, status, type, or URL"
                       label="Search endpoints"
-                      examples={['name:prod', 'status:up', 'type:edge']}
+                      examples={endpointSearchExamples}
                       // Focus the search when the Fleet tab first mounts; gate with ref
                       // so re-mounting (tab switch) does not re-steal focus.
                       autoFocus={!fleetSearchAutoFocusedRef.current}
@@ -1011,13 +1140,18 @@ export default function InfrastructurePage() {
                   <StatusKpi pills={endpointStatusKpiPills} ariaLabel="Endpoint status" />
                 </>
               )}
+              {/* Layout preference, not signal: a neutral segmented control.
+                  Filled with the primary accent it was the loudest element on
+                  the page, louder than the Up/Down status pills. */}
               <div className="flex items-center rounded-lg border p-1">
                 <button
                   onClick={() => setFleetViewMode('grid')}
+                  aria-pressed={fleetViewMode === 'grid'}
+                  data-testid="fleet-view-grid"
                   className={cn(
                     'inline-flex items-center justify-center rounded-md p-2 transition-colors',
                     fleetViewMode === 'grid'
-                      ? 'bg-accent text-accent-foreground'
+                      ? 'bg-muted text-foreground'
                       : 'text-muted-foreground hover:text-foreground'
                   )}
                   title="Grid view"
@@ -1026,10 +1160,12 @@ export default function InfrastructurePage() {
                 </button>
                 <button
                   onClick={() => setFleetViewMode('table')}
+                  aria-pressed={fleetViewMode === 'table'}
+                  data-testid="fleet-view-table"
                   className={cn(
                     'inline-flex items-center justify-center rounded-md p-2 transition-colors',
                     fleetViewMode === 'table'
-                      ? 'bg-accent text-accent-foreground'
+                      ? 'bg-muted text-foreground'
                       : 'text-muted-foreground hover:text-foreground'
                   )}
                   title="Table view"
@@ -1108,6 +1244,7 @@ export default function InfrastructurePage() {
                   <EndpointCard
                     key={endpoint.id}
                     endpoint={endpoint}
+                    stacks={getStackSummary(endpoint)}
                     onClick={() => handleEndpointClick(endpoint.id)}
                     onViewStacks={() => handleViewStacks(endpoint.id)}
                   />
@@ -1151,6 +1288,8 @@ export default function InfrastructurePage() {
               hideSearch
               autoFit
               onRowClick={(row) => handleEndpointClick(row.id)}
+              rowHref={(row) => `/workloads?endpoint=${row.id}`}
+              rowLabel={(row) => `Containers on ${row.name}`}
             />
           </div>
           </SpotlightCard>
@@ -1186,9 +1325,9 @@ export default function InfrastructurePage() {
                     onSearch={handleStackSearch}
                     totalCount={dropdownFilteredStacks.length}
                     filteredCount={filteredStacks.length}
-                    placeholder="Search stacks... (name:traefik status:active endpoint:prod)"
+                    placeholder="Search stacks by name, status, or endpoint"
                     label="Search stacks"
-                    examples={['name:traefik', 'status:active', 'endpoint:prod']}
+                    examples={stackSearchExamples}
                     initialValue={stackSearchQuery}
                     showCount={false}
                   />
@@ -1202,10 +1341,12 @@ export default function InfrastructurePage() {
               <div className="flex items-center rounded-lg border p-1">
                 <button
                   onClick={() => setStacksViewMode('grid')}
+                  aria-pressed={stacksViewMode === 'grid'}
+                  data-testid="stacks-view-grid"
                   className={cn(
                     'inline-flex items-center justify-center rounded-md p-2 transition-colors',
                     stacksViewMode === 'grid'
-                      ? 'bg-accent text-accent-foreground'
+                      ? 'bg-muted text-foreground'
                       : 'text-muted-foreground hover:text-foreground'
                   )}
                   title="Grid view"
@@ -1214,10 +1355,12 @@ export default function InfrastructurePage() {
                 </button>
                 <button
                   onClick={() => setStacksViewMode('table')}
+                  aria-pressed={stacksViewMode === 'table'}
+                  data-testid="stacks-view-table"
                   className={cn(
                     'inline-flex items-center justify-center rounded-md p-2 transition-colors',
                     stacksViewMode === 'table'
-                      ? 'bg-accent text-accent-foreground'
+                      ? 'bg-muted text-foreground'
                       : 'text-muted-foreground hover:text-foreground'
                   )}
                   title="Table view"
@@ -1315,6 +1458,7 @@ export default function InfrastructurePage() {
               <StackCard
                 key={stack.id}
                 stack={stack}
+                showDiscoveredBadge={showDiscoveredBadge}
                 onClick={() => handleStackClick(stack)}
               />
             ))}
@@ -1328,6 +1472,8 @@ export default function InfrastructurePage() {
               hideSearch
               autoFit
               onRowClick={handleStackClick}
+              rowHref={(stack) => `/workloads?endpoint=${stack.endpointId}&stack=${encodeURIComponent(stack.name)}`}
+              rowLabel={(stack) => `Containers in ${stack.name}`}
             />
           </div>
           </SpotlightCard>

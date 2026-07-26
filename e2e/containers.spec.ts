@@ -62,11 +62,13 @@ test.describe('Container List (Workload Explorer)', () => {
     await expect(firstRow).toBeVisible();
 
     // The table has row selection enabled, so the first td is the selection
-    // checkbox cell (an <input>/<label>, no buttons). The name cell is the
-    // SECOND td: it holds a FavoriteButton (star) and then the container-name
-    // button that navigates to the detail page. Click the name button (the
-    // last button in that cell), not the star.
-    const containerLink = firstRow.locator('td').nth(1).getByRole('button').last();
+    // checkbox cell. The name cell is the SECOND td and now holds a real
+    // <a href> to the container detail page — an anchor may not contain a
+    // button, so the favourite star moved out to its own column. Asserting on
+    // the link role is the point of the change: it is what restores cmd-click,
+    // middle-click and copy-link on a triage list.
+    const containerLink = firstRow.locator('td').nth(1).getByRole('link');
+    await expect(containerLink).toHaveAttribute('href', /\/containers\/\d+\//);
     await containerLink.click();
 
     // Should navigate to a container detail page

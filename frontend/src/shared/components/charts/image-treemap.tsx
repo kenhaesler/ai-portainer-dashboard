@@ -1,4 +1,4 @@
-import { type KeyboardEvent as ReactKeyboardEvent, useCallback, useState } from 'react';
+import { type KeyboardEvent as ReactKeyboardEvent, useCallback, useMemo, useState } from 'react';
 import { Treemap, ResponsiveContainer, Tooltip } from 'recharts';
 import { formatBytes } from '@/shared/lib/utils';
 
@@ -15,52 +15,38 @@ interface ImageTreemapProps {
   onCellClick?: (name: string) => void;
 }
 
-// Soft pastel palette
-const COLORS = [
-  '#93c5fd', '#a5b4fc', '#c4b5fd', '#f9a8d4', '#fda4af',
-  '#fcd34d', '#86efac', '#6ee7b7', '#67e8f9', '#7dd3fc',
-  '#d8b4fe', '#fbcfe8', '#fde68a', '#a7f3d0', '#bae6fd',
-];
+/**
+ * One hue, luminance-ramped by size.
+ *
+ * The cells used to cycle an eight-colour pastel rainbow keyed on nothing but
+ * the cell's index — the largest saturated area in the product encoding zero
+ * information, in a design system where green means healthy and red means
+ * error. Area already encodes size; the ramp reinforces that instead of
+ * inventing a second, false variable.
+ */
+const CELL_HUE = 'var(--color-chart-1)';
+const MIN_FILL_OPACITY = 0.2;
+const MAX_FILL_OPACITY = 0.85;
 
-interface LabelStyle {
-  fill: string;
-  stroke: string;
-}
-
-function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
-  const normalized = hex.replace('#', '').trim();
-  if (!/^[0-9A-Fa-f]{6}$/.test(normalized)) return null;
-  return {
-    r: parseInt(normalized.slice(0, 2), 16),
-    g: parseInt(normalized.slice(2, 4), 16),
-    b: parseInt(normalized.slice(4, 6), 16),
-  };
-}
-
-export function getLabelStyleForFill(fill: string): LabelStyle {
-  const rgb = hexToRgb(fill);
-  if (!rgb) {
-    return { fill: '#ffffff', stroke: 'rgba(15, 23, 42, 0.85)' };
-  }
-
-  // WCAG relative luminance approximation for contrast-aware text color.
-  const luminance = (0.2126 * rgb.r + 0.7152 * rgb.g + 0.0722 * rgb.b) / 255;
-  if (luminance > 0.62) {
-    return { fill: '#0f172a', stroke: 'rgba(255, 255, 255, 0.8)' };
-  }
-
-  return { fill: '#ffffff', stroke: 'rgba(15, 23, 42, 0.85)' };
+/**
+ * @internal Exported for testing. Maps a cell's size, relative to the largest
+ * cell in the same treemap, onto the fill-opacity ramp. `sqrt` keeps the middle
+ * of the range separable — image sizes are heavily skewed, so a linear ramp
+ * collapses everything but the largest one or two cells onto the floor.
+ */
+export function getCellFillOpacity(size: number, maxSize: number): number {
+  if (!(size > 0) || !(maxSize > 0)) return MIN_FILL_OPACITY;
+  const ratio = Math.min(size / maxSize, 1);
+  return MIN_FILL_OPACITY + (MAX_FILL_OPACITY - MIN_FILL_OPACITY) * Math.sqrt(ratio);
 }
 
 /** @internal Exported for testing only */
 export function CustomContent(props: any) {
-  const { x, y, width, height, index, name, size, onCellClick } = props;
+  const { x, y, width, height, name, size, maxSize, onCellClick } = props;
   const [focused, setFocused] = useState(false);
 
-  // Always render the colored rect — no invisible blank cells
-  const fill = COLORS[index % COLORS.length];
-  const opacity = 0.6 + Math.min((size || 0) / 1e9, 1) * 0.4;
-  const labelStyle = getLabelStyleForFill(fill);
+  // Always render the coloured rect — no invisible blank cells
+  const opacity = getCellFillOpacity(size, maxSize);
 
   const handleKeyDown = (e: ReactKeyboardEvent<SVGGElement>) => {
     if (e.key === 'Enter' || e.key === ' ') {
@@ -100,9 +86,9 @@ export function CustomContent(props: any) {
         y={y}
         width={width}
         height={height}
-        fill={fill}
+        fill={CELL_HUE}
         fillOpacity={opacity}
-        stroke="rgba(255,255,255,0.3)"
+        stroke="var(--color-card)"
         strokeWidth={1}
       />
       {/* Visible focus ring for keyboard navigation */}
@@ -114,23 +100,25 @@ export function CustomContent(props: any) {
           width={Math.max(0, width - inset * 2)}
           height={Math.max(0, height - inset * 2)}
           fill="none"
-          stroke="#ffffff"
+          stroke="var(--color-foreground)"
           strokeWidth={2}
           rx={2}
           ry={2}
           pointerEvents="none"
         />
       )}
-      {/* Show name label when cell is large enough */}
+      {/* Show name label when cell is large enough. Foreground text with a
+          card-coloured halo reads on every theme; the old fixed white-on-dark
+          pair assumed the cell fill was known at build time. */}
       {width > 50 && height > 24 && (
         <text
           x={x + width / 2}
           y={y + height / 2 - (height > 36 ? 6 : 0)}
           textAnchor="middle"
           dominantBaseline="central"
-          fill={labelStyle.fill}
-          stroke={labelStyle.stroke}
-          strokeWidth={0.8}
+          fill="var(--color-foreground)"
+          stroke="var(--color-card)"
+          strokeWidth={2}
           paintOrder="stroke"
           fontSize={Math.min(11, width / 8)}
         >
@@ -145,12 +133,11 @@ export function CustomContent(props: any) {
           x={x + width / 2}
           y={y + height / 2 + 10}
           textAnchor="middle"
-          fill={labelStyle.fill}
-          stroke={labelStyle.stroke}
-          strokeWidth={0.7}
+          fill="var(--color-muted-foreground)"
+          stroke="var(--color-card)"
+          strokeWidth={2}
           paintOrder="stroke"
           fontSize={10}
-          opacity={0.8}
         >
           {formatBytes(size || 0)}
         </text>
@@ -178,6 +165,11 @@ export function ImageTreemap({ data, onCellClick }: ImageTreemapProps) {
     [onCellClick],
   );
 
+  const maxSize = useMemo(
+    () => data.reduce((max, d) => (d.size > max ? d.size : max), 0),
+    [data],
+  );
+
   if (!data.length) {
     return (
       <div className="flex h-[400px] items-center justify-center text-muted-foreground">
@@ -193,8 +185,8 @@ export function ImageTreemap({ data, onCellClick }: ImageTreemapProps) {
           data={data}
           dataKey="size"
           aspectRatio={4 / 3}
-          stroke="#fff"
-          content={<CustomContent onCellClick={handleCellClick} />}
+          stroke="var(--color-card)"
+          content={<CustomContent onCellClick={handleCellClick} maxSize={maxSize} />}
         >
           <Tooltip content={<CustomTooltip />} />
         </Treemap>

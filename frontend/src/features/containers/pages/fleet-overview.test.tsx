@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import InfrastructurePage from './fleet-overview';
@@ -25,8 +25,15 @@ vi.mock('@/features/kubernetes/hooks/use-kubernetes', () => ({
   useK8sNamespaces: vi.fn(() => ({ data: [] })),
 }));
 
+const mockUseAutoRefresh = vi.fn(() => ({
+  interval: 30,
+  setRefreshInterval: vi.fn(),
+  setInterval: vi.fn(),
+  enabled: true,
+}));
+
 vi.mock('@/shared/hooks/use-auto-refresh', () => ({
-  useAutoRefresh: () => ({ interval: 30, setInterval: vi.fn() }),
+  useAutoRefresh: (...args: unknown[]) => mockUseAutoRefresh(...(args as [])),
 }));
 
 vi.mock('@/shared/lib/api', () => ({
@@ -141,6 +148,107 @@ describe('InfrastructurePage — page structure', () => {
     renderPage();
     expect(screen.getByTestId('tab-fleet')).toBeInTheDocument();
     expect(screen.getByTestId('tab-stacks')).toBeInTheDocument();
+  });
+
+  it('renders the heading through the shared PageHeader', () => {
+    renderPage();
+    const header = screen.getByTestId('page-header');
+    expect(header).toBeInTheDocument();
+    expect(within(header).getByRole('heading', { level: 1, name: 'Infrastructure' })).toBeInTheDocument();
+  });
+});
+
+describe('InfrastructurePage — auto-refresh actually refreshes', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useUiStore.setState({ pageViewModes: {} });
+  });
+
+  it('passes onTick to useAutoRefresh and refetches both queries when it fires', () => {
+    const refetchEndpoints = vi.fn();
+    const refetchStacks = vi.fn();
+    mockEndpoints([makeEndpoint()], { refetch: refetchEndpoints });
+    mockStacks([makeStack()], { refetch: refetchStacks });
+
+    renderPage();
+
+    // The dropdown used to write a localStorage preference and schedule
+    // nothing, while RefreshControls rendered a pulsing live dot.
+    const options = mockUseAutoRefresh.mock.calls.at(-1)?.[1] as
+      | { onTick?: () => void }
+      | undefined;
+    expect(typeof options?.onTick).toBe('function');
+
+    options!.onTick!();
+
+    expect(refetchEndpoints).toHaveBeenCalled();
+    expect(refetchStacks).toHaveBeenCalled();
+  });
+
+  it('stamps the header with how old the endpoint data is', () => {
+    mockEndpoints([makeEndpoint()], { dataUpdatedAt: Date.now() - 12_000 });
+    mockStacks([makeStack()]);
+
+    renderPage();
+
+    expect(screen.getByText(/^Updated /)).toBeInTheDocument();
+  });
+});
+
+describe('InfrastructurePage — table rows are real links', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useUiStore.setState({ pageViewModes: {} });
+  });
+
+  function anchorNamed(name: string): HTMLElement | undefined {
+    return screen.getAllByRole('link', { name }).find((el) => el.tagName === 'A');
+  }
+
+  it('renders endpoint rows with an anchor to the endpoint workloads', () => {
+    useUiStore.setState({ pageViewModes: { fleet: 'table' } });
+    mockEndpoints([makeEndpoint({ id: 7, name: 'click-env' })]);
+    mockStacks([]);
+
+    renderPage();
+
+    const anchor = anchorNamed('Containers on click-env');
+    expect(anchor).toBeDefined();
+    expect(anchor).toHaveAttribute('href', '/workloads?endpoint=7');
+  });
+
+  it('renders stack rows with an anchor to the stack workloads', () => {
+    useUiStore.setState({ pageViewModes: { stacks: 'table' } });
+    mockEndpoints([makeEndpoint({ id: 1, name: 'local' })]);
+    mockStacks([makeStack({ id: 4, name: 'my stack', endpointId: 1 })]);
+
+    renderPageWithInitialParams('/infrastructure?tab=stacks');
+
+    const anchor = anchorNamed('Containers in my stack');
+    expect(anchor).toBeDefined();
+    expect(anchor).toHaveAttribute('href', '/workloads?endpoint=1&stack=my%20stack');
+  });
+});
+
+describe('InfrastructurePage — view-mode toggle is chrome, not signal', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useUiStore.setState({ pageViewModes: {} });
+    mockEndpoints([makeEndpoint()]);
+    mockStacks([makeStack()]);
+  });
+
+  it('marks the selected segment with a neutral surface, not the primary accent', () => {
+    renderPage();
+
+    const grid = screen.getByTestId('fleet-view-grid');
+    const table = screen.getByTestId('fleet-view-table');
+
+    expect(grid).toHaveAttribute('aria-pressed', 'true');
+    expect(table).toHaveAttribute('aria-pressed', 'false');
+    // A layout preference must not out-shout the Up/Down status pills.
+    expect(grid.className).toContain('bg-muted');
+    expect(grid.className).not.toMatch(/bg-(primary|accent)\b/);
   });
 });
 
@@ -500,15 +608,55 @@ describe('InfrastructurePage — stack section', () => {
     mockEndpoints([makeEndpoint({ id: 1, name: 'local' })]);
   });
 
-  it('renders stack cards with Discovered badge for compose-label stacks', () => {
+  it('renders the Discovered badge only on the inferred rows of a mixed list', () => {
     mockStacks([
       makeStack({ id: -12345, name: 'my-compose-app', source: 'compose-label', containerCount: 3, envCount: 0 }),
+      makeStack({ id: 7, name: 'portainer-stack', source: 'portainer', envCount: 2 }),
     ]);
 
     renderPageWithInitialParams('/infrastructure?tab=stacks');
 
     expect(screen.getByText('my-compose-app')).toBeInTheDocument();
-    expect(screen.getByText('Discovered')).toBeInTheDocument();
+    expect(screen.getAllByText('Discovered')).toHaveLength(1);
+  });
+
+  it('omits the Discovered badge when every stack was discovered', () => {
+    // A badge on every row distinguishes nothing — the endpoint card carries
+    // the "N discovered" fact instead.
+    mockStacks([
+      makeStack({ id: -1, name: 'compose-a', source: 'compose-label', containerCount: 3, envCount: 0 }),
+      makeStack({ id: -2, name: 'compose-b', source: 'compose-label', containerCount: 1, envCount: 0 }),
+    ]);
+
+    renderPageWithInitialParams('/infrastructure?tab=stacks');
+
+    expect(screen.getByText('compose-a')).toBeInTheDocument();
+    expect(screen.queryByText('Discovered')).not.toBeInTheDocument();
+  });
+
+  it('renders the Discovered badge in a neutral, non-AI colour', () => {
+    mockStacks([
+      makeStack({ id: -1, name: 'compose-a', source: 'compose-label', containerCount: 3, envCount: 0 }),
+      makeStack({ id: 7, name: 'portainer-stack', source: 'portainer', envCount: 2 }),
+    ]);
+
+    renderPageWithInitialParams('/infrastructure?tab=stacks');
+
+    // Purple is reserved for AI insight; reading a compose label is not one.
+    const badge = screen.getByText('Discovered').closest('span');
+    expect(badge?.className).not.toMatch(/purple/);
+    expect(badge?.className).toContain('bg-muted');
+  });
+
+  it('uses singular "container" for a one-container discovered stack', () => {
+    mockStacks([
+      makeStack({ id: -1, name: 'solo', source: 'compose-label', containerCount: 1, envCount: 0 }),
+    ]);
+
+    renderPageWithInitialParams('/infrastructure?tab=stacks');
+
+    expect(screen.getByText('1 container')).toBeInTheDocument();
+    expect(screen.queryByText('1 containers')).not.toBeInTheDocument();
   });
 
   it('renders Portainer stacks with standard ID label', () => {
@@ -1175,12 +1323,58 @@ describe('Infrastructure smart search — Fleet tab', () => {
     mockStacks([]);
   });
 
-  it('renders endpoint example chips inside the search bar', () => {
-    mockEndpoints([makeEndpoint({ id: 1, name: 'prod-1' }), makeEndpoint({ id: 2, name: 'prod-2', status: 'down' })]);
+  it('derives the endpoint example chips from the loaded endpoints', () => {
+    mockEndpoints([
+      makeEndpoint({ id: 1, name: 'docker-dev-1', url: 'tcp://10.0.0.1:9001' }),
+      makeEndpoint({ id: 2, name: 'docker-dev-2', url: 'tcp://10.0.0.2:9001' }),
+    ]);
     renderPage();
-    expect(screen.getByRole('button', { name: 'name:prod' })).toBeInTheDocument();
+
+    // Seeded from the first endpoint's name and URL, not a hardcoded "prod".
+    expect(screen.getByRole('button', { name: 'name:docker' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'status:up' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'type:edge' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'url:10.0.0.1' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'name:prod' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'type:edge' })).not.toBeInTheDocument();
+  });
+
+  it('every endpoint chip matches at least one row when clicked', async () => {
+    mockEndpoints([
+      makeEndpoint({ id: 1, name: 'docker-dev-1', url: 'tcp://10.0.0.1:9001' }),
+      makeEndpoint({ id: 2, name: 'other-host', url: 'tcp://10.0.0.2:9001', status: 'down' }),
+    ]);
+    renderPage();
+
+    // The whole point of deriving chips: `name:prod` and `type:edge` returned
+    // zero rows in a fleet that has neither.
+    const chipLabels = screen
+      .getAllByRole('button')
+      .map((b) => b.textContent ?? '')
+      .filter((t) => /^(name|status|url):/.test(t));
+    expect(chipLabels.length).toBeGreaterThan(0);
+
+    for (const label of chipLabels) {
+      // Re-query each round: clicking a chip unmounts the whole chip group.
+      fireEvent.click(screen.getByRole('button', { name: label }));
+      await waitFor(() => {
+        expect(screen.getByTestId('fleet-filtered-count')).not.toHaveTextContent(/^0 of/);
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Clear search' }));
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
+      });
+    }
+  });
+
+  it('prefers a status chip that is actually present in the fleet', () => {
+    mockEndpoints([
+      makeEndpoint({ id: 1, name: 'a-host', status: 'down' }),
+      makeEndpoint({ id: 2, name: 'b-host', status: 'down' }),
+    ]);
+    renderPage();
+
+    expect(screen.getByRole('button', { name: 'status:down' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'status:up' })).not.toBeInTheDocument();
   });
 
   it('seeds the endpoint search from the URL (endpointSearch param)', () => {
@@ -1199,11 +1393,31 @@ describe('Infrastructure smart search — Stacks tab', () => {
     mockStacks([makeStack({ id: 1, name: 'traefik' }), makeStack({ id: 2, name: 'grafana' })]);
   });
 
-  it('renders stack example chips inside the search bar', () => {
+  it('derives the stack example chips from the loaded stacks', () => {
     renderPageWithInitialParams('/infrastructure?tab=stacks');
+
+    // First stack in this fixture is literally named "traefik", so the chip is
+    // real here — what matters is that it came from the data.
     expect(screen.getByRole('button', { name: 'name:traefik' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'status:active' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'endpoint:prod' })).toBeInTheDocument();
+    // Only one endpoint owns stacks, so an `endpoint:` chip would teach nothing.
+    expect(screen.queryByRole('button', { name: 'endpoint:prod' })).not.toBeInTheDocument();
+  });
+
+  it('offers an endpoint chip only when more than one endpoint owns stacks', () => {
+    mockEndpoints([
+      makeEndpoint({ id: 1, name: 'docker-dev-1' }),
+      makeEndpoint({ id: 2, name: 'docker-dev-2' }),
+    ]);
+    mockStacks([
+      makeStack({ id: 1, name: 'web-app', endpointId: 1 }),
+      makeStack({ id: 2, name: 'db', endpointId: 2 }),
+    ]);
+
+    renderPageWithInitialParams('/infrastructure?tab=stacks');
+
+    expect(screen.getByRole('button', { name: 'name:web' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'endpoint:docker' })).toBeInTheDocument();
   });
 
   it('shows the smart search bar and no DataTable search in Stacks table view', () => {

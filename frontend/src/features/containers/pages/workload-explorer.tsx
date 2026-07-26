@@ -1,8 +1,8 @@
 import { useMemo, useState, useEffect, useCallback } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { type ColumnDef, type RowSelectionState } from '@tanstack/react-table';
 import { AnimatePresence, m, useReducedMotion } from 'framer-motion';
-import { AlertTriangle, Box, Boxes, Cog, Download, GitCompareArrows, X } from 'lucide-react';
+import { AlertTriangle, Boxes, Download, GitCompareArrows, X } from 'lucide-react';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { useContainers, type Container } from '@/features/containers/hooks/use-containers';
 import { useEndpoints } from '@/features/containers/hooks/use-endpoints';
@@ -15,6 +15,8 @@ import { useForceRefresh } from '@/shared/hooks/use-force-refresh';
 import { FavoriteButton } from '@/shared/components/ui/favorite-button';
 import { EmptyState } from '@/shared/components/feedback/empty-state';
 import { SkeletonChart } from '@/shared/components/feedback/skeleton';
+import { DataFreshness } from '@/shared/components/feedback/data-freshness';
+import { PageHeader } from '@/shared/components/layout/page-header';
 import { resolveContainerStackName } from '@/features/containers/lib/container-stack-grouping';
 import { exportToCsv } from '@/shared/lib/csv-export';
 import { getContainerGroup, getContainerGroupLabel, type ContainerGroup } from '@/features/containers/lib/system-container-grouping';
@@ -26,6 +28,8 @@ import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 import { ContainerComparisonView } from '@/features/containers/components/container-comparison-view';
 
 const MAX_COMPARE = 4;
+/** Cards rendered per batch below `md`, where there is no table pagination. */
+const MOBILE_PAGE_SIZE = 25;
 
 export default function WorkloadExplorerPage() {
   const navigate = useNavigate();
@@ -110,10 +114,25 @@ export default function WorkloadExplorerPage() {
 
   const { data: endpoints } = useEndpoints();
   const { data: stacks } = useStacks();
-  const { data: containers, isLoading, isError, error, refetch, isFetching } = useContainers(selectedEndpoint !== undefined ? { endpointId: selectedEndpoint } : undefined);
+  const {
+    data: containers,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    isFetching,
+    dataUpdatedAt,
+  } = useContainers(selectedEndpoint !== undefined ? { endpointId: selectedEndpoint } : undefined);
 
   const { forceRefresh, isForceRefreshing } = useForceRefresh('containers', refetch);
-  const { interval, setInterval } = useAutoRefresh(30);
+  // The hook owns the timer: without `onTick` the dropdown wrote a preference,
+  // scheduled no fetch, and the refresh control still rendered a pulsing live
+  // dot. The `Updated Ns ago` stamp below is the second signal.
+  const { interval, setRefreshInterval } = useAutoRefresh(30, {
+    onTick: () => {
+      void refetch();
+    },
+  });
 
   const knownStackNames = useMemo(() => {
     if (!stacks) return [];
@@ -219,6 +238,22 @@ export default function WorkloadExplorerPage() {
     setSearchFilteredContainers(undefined);
   }, [selectedEndpoint, selectedStack, selectedGroup, selectedState, selectedImage]);
 
+  /** The rows actually on screen — table body, card list and subtitle share it. */
+  const visibleContainers = searchFilteredContainers ?? filteredContainers;
+
+  // Live state, not a capability claim. The page it replaced said "Browse and
+  // manage containers across all endpoints" on an observer-first product that
+  // manages nothing here.
+  const subtitle = useMemo(() => {
+    if (isLoading) return undefined;
+    const containerCount = visibleContainers.length;
+    const endpointCount = new Set(visibleContainers.map((c) => c.endpointId)).size;
+    return `${containerCount} container${containerCount === 1 ? '' : 's'} across ${endpointCount} endpoint${endpointCount === 1 ? '' : 's'}`;
+  }, [visibleContainers, isLoading]);
+
+  const [mobileLimit, setMobileLimit] = useState(MOBILE_PAGE_SIZE);
+  const mobileRows = visibleContainers.slice(0, mobileLimit);
+
   const exportRows = useMemo<Record<string, unknown>[]>(() => {
     if (!filteredContainers) return [];
     return filteredContainers.map((container) => ({
@@ -312,29 +347,43 @@ export default function WorkloadExplorerPage() {
   const columns: ColumnDef<Container, any>[] = useMemo(() => [
     {
       accessorKey: 'name',
+      // The whole cell is wrapped in the row's `<a href>` by DataTable
+      // (`rowHref` below), so nothing in here may be a button — an anchor
+      // cannot contain interactive content. The favourite star therefore moved
+      // to its own column.
       header: 'Name',
       size: 280,
       cell: ({ row, getValue }) => {
-        const container = row.original;
+        const isSystem = getContainerGroup(row.original) === 'system';
         return (
-          <div className="flex items-center gap-1">
-            <FavoriteButton size="sm" endpointId={container.endpointId} containerId={container.id} />
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                navigate(`/containers/${container.endpointId}/${container.id}`);
-              }}
-              className="inline-flex items-center whitespace-nowrap rounded-lg bg-primary/10 px-3 py-1 text-sm font-medium text-primary transition-all duration-200 hover:bg-primary/20 hover:shadow-sm hover:ring-1 hover:ring-primary/20"
-            >
+          <span className="flex items-center gap-2">
+            <span className="inline-flex items-center whitespace-nowrap rounded-lg bg-primary/10 px-3 py-1 text-sm font-medium text-primary transition-all duration-200 group-hover/row:bg-primary/20">
               {truncate(getValue<string>(), 45)}
-            </button>
-          </div>
+            </span>
+            {/* Replaces the Group column, which rendered an identical unlabelled
+                icon on every row. Only system containers carry a mark now, so
+                the column has variance instead of being decoration. */}
+            {isSystem && (
+              <span className="whitespace-nowrap rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                System
+              </span>
+            )}
+          </span>
         );
       },
     },
     {
+      id: 'favorite',
+      header: () => <span className="sr-only">Favourite</span>,
+      size: 44,
+      enableSorting: false,
+      cell: ({ row }) => (
+        <FavoriteButton size="sm" endpointId={row.original.endpointId} containerId={row.original.id} />
+      ),
+    },
+    {
       id: 'stack',
-      header: 'Stackname',
+      header: 'Stack',
       size: 160,
       cell: ({ row }) => {
         const stackName = resolveContainerStackName(row.original, knownStackNames);
@@ -347,7 +396,7 @@ export default function WorkloadExplorerPage() {
               e.stopPropagation();
               setSelectedStack(stackName);
             }}
-            className="inline-flex items-center whitespace-nowrap rounded-md bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-800 transition-colors hover:bg-purple-200 hover:ring-1 hover:ring-purple-300 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50"
+            className="inline-flex items-center whitespace-nowrap rounded-md bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground transition-colors hover:bg-accent hover:ring-1 hover:ring-border"
             title={`Filter by stack: ${stackName}`}
           >
             {truncate(stackName, 25)}
@@ -387,7 +436,10 @@ export default function WorkloadExplorerPage() {
               e.stopPropagation();
               setSelectedEndpoint(container.endpointId);
             }}
-            className="inline-flex items-center whitespace-nowrap rounded-md bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800 transition-colors hover:bg-blue-200 hover:ring-1 hover:ring-blue-300 dark:bg-blue-900/30 dark:text-blue-400 dark:hover:bg-blue-900/50"
+            // Plain text at rest. As a saturated pill this was the highest-chroma
+            // element on the page while repeating one value on every row — the
+            // most dominant column had zero variance.
+            className="inline-flex items-center whitespace-nowrap rounded-md px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground hover:ring-1 hover:ring-border"
             title={`Filter by endpoint: ${container.endpointName}`}
           >
             {container.endpointName}
@@ -397,7 +449,7 @@ export default function WorkloadExplorerPage() {
     },
     {
       accessorKey: 'image',
-      header: 'Imagename',
+      header: 'Image',
       cell: ({ getValue }) => {
         const full = getValue<string>();
         return (
@@ -415,46 +467,12 @@ export default function WorkloadExplorerPage() {
         );
       },
     },
-    {
-      id: 'group',
-      header: 'Group',
-      size: 72,
-      cell: ({ row }) => {
-        const container = row.original;
-        const label = getContainerGroupLabel(container);
-        const isSystem = label === 'System';
-        const Icon = isSystem ? Cog : Box;
-        return (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setSelectedGroup(getContainerGroup(container));
-            }}
-            title={`Filter by group: ${label}`}
-            aria-label={`Filter by ${label}`}
-            className={
-              isSystem
-                ? 'inline-flex items-center justify-center rounded-md bg-amber-100 p-1 text-amber-900 transition-colors hover:bg-amber-200 hover:ring-1 hover:ring-amber-300 dark:bg-amber-900/30 dark:text-amber-300 dark:hover:bg-amber-900/50'
-                : 'inline-flex items-center justify-center rounded-md bg-slate-100 p-1 text-slate-700 transition-colors hover:bg-slate-200 hover:ring-1 hover:ring-slate-300 dark:bg-slate-900/30 dark:text-slate-300 dark:hover:bg-slate-900/50'
-            }
-          >
-            <Icon className="h-3.5 w-3.5" aria-hidden="true" />
-          </button>
-        );
-      },
-    },
-  ], [navigate, knownStackNames, selectedEndpoint, selectedStack, selectedGroup, selectedState, selectedImage]);
+  ], [knownStackNames, selectedEndpoint, selectedStack, selectedGroup, selectedState, selectedImage]);
 
   if (isError) {
     return (
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Workload Explorer</h1>
-          <p className="text-muted-foreground">
-            Browse and manage containers across all endpoints
-          </p>
-        </div>
+        <PageHeader title="Workloads" />
         <EmptyState
           variant="error"
           icon={AlertTriangle}
@@ -473,64 +491,54 @@ export default function WorkloadExplorerPage() {
 
   return (
     <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          {compareMode ? (
-            <>
-              <div className="flex items-center gap-3">
+      {/* Header — the page's single h1, rendered in the loading branch too. */}
+      <PageHeader
+        title={
+          compareMode
+            ? `Comparing ${compareContainerIds.length} container${compareContainerIds.length === 1 ? '' : 's'}`
+            : 'Workloads'
+        }
+        subtitle={compareMode ? undefined : subtitle}
+        hideSubtitleOnMobile={false}
+        actions={
+          <>
+            {compareMode ? (
+              <button
+                type="button"
+                onClick={exitCompareMode}
+                className="inline-flex h-10 items-center gap-1 rounded-full border border-input bg-background px-4 text-sm font-medium hover:bg-accent"
+              >
+                ← Back to list
+              </button>
+            ) : (
+              <>
                 <button
                   type="button"
-                  onClick={exitCompareMode}
-                  className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium hover:bg-accent"
+                  onClick={handleCompare}
+                  disabled={selectedContainers.length < 2}
+                  title={selectedContainers.length < 2 ? 'Select 2 or more containers to compare' : `Compare ${selectedContainers.length} selected containers`}
+                  className="inline-flex h-10 items-center gap-2 rounded-full border border-input bg-background px-4 text-sm font-medium hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-background"
                 >
-                  ← Back to list
+                  <GitCompareArrows className="h-4 w-4" />
+                  {selectedContainers.length < 2 ? 'Compare' : `Compare ${selectedContainers.length}`}
                 </button>
-                <h1 className="text-3xl font-bold tracking-tight">
-                  Comparing {compareContainerIds.length} container{compareContainerIds.length === 1 ? '' : 's'}
-                </h1>
-              </div>
-              <p className="mt-1 text-muted-foreground">
-                Compare metrics, configuration, and status across selected containers
-              </p>
-            </>
-          ) : (
-            <>
-              <h1 className="text-3xl font-bold tracking-tight">Workload Explorer</h1>
-              <p className="text-muted-foreground">
-                Browse and manage containers across all endpoints
-              </p>
-            </>
-          )}
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {!compareMode && (
-            <>
-              <button
-                type="button"
-                onClick={handleCompare}
-                disabled={selectedContainers.length < 2}
-                title={selectedContainers.length < 2 ? 'Select 2 or more containers to compare' : `Compare ${selectedContainers.length} selected containers`}
-                className="inline-flex h-10 items-center gap-2 rounded-full border border-input bg-background px-4 text-sm font-medium hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-background"
-              >
-                <GitCompareArrows className="h-4 w-4" />
-                {selectedContainers.length < 2 ? 'Compare' : `Compare ${selectedContainers.length}`}
-              </button>
-              <button
-                type="button"
-                onClick={handleExportCsv}
-                disabled={!exportRows.length}
-                title={!exportRows.length ? 'Nothing to export' : 'Export the current view as CSV'}
-                className="inline-flex h-10 items-center gap-2 rounded-full border border-input bg-background px-4 text-sm font-medium hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-background"
-              >
-                <Download className="h-4 w-4" />
-                Export CSV
-              </button>
-            </>
-          )}
-          <RefreshControls interval={interval} onIntervalChange={setInterval} onRefresh={() => refetch()} onForceRefresh={forceRefresh} isLoading={isFetching || isForceRefreshing} />
-        </div>
-      </div>
+                <button
+                  type="button"
+                  onClick={handleExportCsv}
+                  disabled={!exportRows.length}
+                  title={!exportRows.length ? 'Nothing to export' : 'Export the current view as CSV'}
+                  className="inline-flex h-10 items-center gap-2 rounded-full border border-input bg-background px-4 text-sm font-medium hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-background"
+                >
+                  <Download className="h-4 w-4" />
+                  Export CSV
+                </button>
+                <DataFreshness lastUpdated={dataUpdatedAt ?? null} onRefresh={() => refetch()} />
+              </>
+            )}
+            <RefreshControls interval={interval} onIntervalChange={setRefreshInterval} onRefresh={() => refetch()} onForceRefresh={forceRefresh} isLoading={isFetching || isForceRefreshing} />
+          </>
+        }
+      />
 
       {compareMode ? (
         // ── Compare mode body ──
@@ -548,8 +556,8 @@ export default function WorkloadExplorerPage() {
                 ? 'No containers to compare'
                 : 'Compare needs at least 2 containers';
               const body = compared.length === 0
-                ? 'Pick at least 2 containers from Workload Explorer to compare them.'
-                : 'Add another container from Workload Explorer to compare.';
+                ? 'Pick at least 2 containers from Workloads to compare them.'
+                : 'Add another container from Workloads to compare.';
               return (
                 <>
                   <EmptyState
@@ -714,19 +722,66 @@ export default function WorkloadExplorerPage() {
                 </div>
               )}
 
-              <DataTable
-                columns={columns}
-                data={searchFilteredContainers ?? filteredContainers}
-                hideSearch
-                autoFit
-                minTableWidth={770}
-                enableRowSelection
-                maxSelection={MAX_COMPARE}
-                onSelectionChange={handleSelectionChange}
-                getRowId={(row) => `${row.endpointId}:${row.id}`}
-                selectedRowIds={controlledRowIds}
-                onRowClick={(row) => navigate(`/containers/${row.endpointId}/${row.id}`)}
-              />
+              {/* Below md the table pushed State, Endpoint, Image and Stack
+                  off-canvas with no scroll affordance, leaving a phone able to
+                  read only the container name. Two-line cards instead. */}
+              <div className="md:hidden">
+                <ul data-testid="workload-card-list" className="space-y-2">
+                  {mobileRows.length === 0 ? (
+                    <li className="rounded-lg border border-dashed px-3 py-6 text-center text-sm text-muted-foreground">
+                      No containers match these filters.
+                    </li>
+                  ) : (
+                    mobileRows.map((container) => {
+                      const stackName = resolveContainerStackName(container, knownStackNames);
+                      return (
+                        <li key={`${container.endpointId}:${container.id}`}>
+                          <Link
+                            to={`/containers/${container.endpointId}/${container.id}`}
+                            className="flex items-center justify-between gap-3 rounded-lg border bg-card/60 p-3 transition-colors hover:bg-muted/40"
+                          >
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-sm font-medium">{container.name}</span>
+                              <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                                {stackName ?? 'No stack'} · {getImageShortName(container.image)}
+                              </span>
+                            </span>
+                            <StatusBadge status={container.state} />
+                          </Link>
+                        </li>
+                      );
+                    })
+                  )}
+                </ul>
+                {visibleContainers.length > mobileRows.length && (
+                  <button
+                    type="button"
+                    onClick={() => setMobileLimit((limit) => limit + MOBILE_PAGE_SIZE)}
+                    className="mt-2 w-full rounded-lg border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent"
+                  >
+                    Show {Math.min(MOBILE_PAGE_SIZE, visibleContainers.length - mobileRows.length)} more
+                    {' '}({visibleContainers.length - mobileRows.length} remaining)
+                  </button>
+                )}
+              </div>
+
+              <div className="hidden md:block">
+                <DataTable
+                  columns={columns}
+                  data={visibleContainers}
+                  hideSearch
+                  autoFit
+                  minTableWidth={770}
+                  enableRowSelection
+                  maxSelection={MAX_COMPARE}
+                  onSelectionChange={handleSelectionChange}
+                  getRowId={(row) => `${row.endpointId}:${row.id}`}
+                  selectedRowIds={controlledRowIds}
+                  onRowClick={(row) => navigate(`/containers/${row.endpointId}/${row.id}`)}
+                  rowHref={(row) => `/containers/${row.endpointId}/${row.id}`}
+                  rowLabel={(row) => `Open container ${row.name}`}
+                />
+              </div>
             </div>
             </SpotlightCard>
           ) : null}

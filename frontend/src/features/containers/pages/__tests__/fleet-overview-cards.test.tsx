@@ -19,7 +19,12 @@ vi.mock('@/features/containers/hooks/use-stacks', () => ({
 }));
 
 vi.mock('@/shared/hooks/use-auto-refresh', () => ({
-  useAutoRefresh: () => ({ interval: 30, setInterval: vi.fn() }),
+  useAutoRefresh: () => ({
+    interval: 30,
+    setRefreshInterval: vi.fn(),
+    setInterval: vi.fn(),
+    enabled: true,
+  }),
 }));
 
 vi.mock('@/shared/lib/api', () => ({
@@ -158,12 +163,45 @@ describe('EndpointCard — compact 3-row layout', () => {
     // Stats row: total containers and running count
     expect(screen.getByText('5')).toBeInTheDocument();
     expect(screen.getByText(/3 running/)).toBeInTheDocument();
-    // Stacks count
+    // Stacks count — no discovered compose projects on this endpoint
     expect(screen.getByText('2 stacks')).toBeInTheDocument();
-    // CPU
-    expect(screen.getByText(/4 CPU/)).toBeInTheDocument();
-    // Memory
-    expect(screen.getByText('8.0 GB')).toBeInTheDocument();
+    // Capacity carries its unit; "10 CPU / 7.8 GB" named no quantity.
+    expect(screen.getByText('4 CPU cores')).toBeInTheDocument();
+    expect(screen.getByText('8.0 GB memory')).toBeInTheDocument();
+  });
+
+  it('separates Portainer-managed stacks from discovered compose projects', () => {
+    // The reported contradiction: the card said "0 stacks" for an endpoint
+    // whose Stack Overview tab listed five.
+    mockEndpoints([makeEndpoint({ id: 3, name: 'docker-dev-1', stackCount: 0 })]);
+    mockStacks([
+      makeStack({ id: -1, name: 'a', source: 'compose-label', endpointId: 3 }),
+      makeStack({ id: -2, name: 'b', source: 'compose-label', endpointId: 3 }),
+      makeStack({ id: -3, name: 'c', source: 'compose-label', endpointId: 3 }),
+    ]);
+
+    renderPage();
+
+    expect(screen.getByText('0 managed · 3 discovered')).toBeInTheDocument();
+    expect(screen.queryByText('0 stacks')).not.toBeInTheDocument();
+  });
+
+  it('offers the "View stacks" link for discovered-only endpoints', () => {
+    // Gated on stackCount alone, this link vanished exactly when the endpoint
+    // had compose projects but no Portainer-managed stack.
+    mockEndpoints([makeEndpoint({ id: 3, name: 'docker-dev-1', stackCount: 0 })]);
+    mockStacks([
+      makeStack({ id: -1, name: 'a', source: 'compose-label', endpointId: 3 }),
+      makeStack({ id: -2, name: 'b', source: 'compose-label', endpointId: 3 }),
+    ]);
+
+    renderPage();
+
+    const link = screen.getByTestId('view-stacks-link');
+    expect(link).toHaveTextContent('View 2 stacks');
+
+    fireEvent.click(link);
+    expect(screen.getByTestId('clear-stack-filter')).toBeInTheDocument();
   });
 
   it('renders Edge Agent badge on row 2 for edge endpoint', () => {
@@ -328,7 +366,7 @@ describe('StackCard — compact 3-row layout', () => {
     expect(screen.getByText('3 env vars')).toBeInTheDocument();
   });
 
-  it('shows Discovered badge instead of ID for inferred stacks', () => {
+  it('shows Discovered badge instead of ID for inferred stacks in a mixed list', () => {
     mockEndpoints([makeEndpoint({ id: 1, name: 'local-env' })]);
     mockStacks([
       makeStack({
@@ -339,14 +377,29 @@ describe('StackCard — compact 3-row layout', () => {
         envCount: 0,
         endpointId: 1,
       }),
+      makeStack({ id: 9, name: 'managed-app', source: 'portainer', envCount: 1, endpointId: 1 }),
     ]);
 
     renderPage({ initialRoute: '/infrastructure?tab=stacks' });
 
     expect(screen.getByText('compose-app')).toBeInTheDocument();
-    expect(screen.getByText('Discovered')).toBeInTheDocument();
+    expect(screen.getAllByText('Discovered')).toHaveLength(1);
     // Should show containers instead of env vars for inferred stacks
     expect(screen.getByText('3 containers')).toBeInTheDocument();
+  });
+
+  it('drops the Discovered badge when the whole list is inferred', () => {
+    mockEndpoints([makeEndpoint({ id: 1, name: 'local-env' })]);
+    mockStacks([
+      makeStack({ id: -1, name: 'compose-app', source: 'compose-label', containerCount: 3, envCount: 0, endpointId: 1 }),
+      makeStack({ id: -2, name: 'compose-two', source: 'compose-label', containerCount: 1, envCount: 0, endpointId: 1 }),
+    ]);
+
+    renderPage({ initialRoute: '/infrastructure?tab=stacks' });
+
+    expect(screen.queryByText('Discovered')).not.toBeInTheDocument();
+    // Singular form for a one-container project (#'1 containers' regression).
+    expect(screen.getByText('1 container')).toBeInTheDocument();
   });
 
   it('does not show Discovered badge for portainer stacks', () => {

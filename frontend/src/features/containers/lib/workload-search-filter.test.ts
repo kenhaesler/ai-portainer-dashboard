@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { parseSearchQuery, filterContainers } from './workload-search-filter';
+import {
+  parseSearchQuery,
+  filterContainers,
+  deriveSearchChips,
+  SEARCH_FIELDS,
+} from './workload-search-filter';
 import type { Container } from '@/features/containers/hooks/use-containers';
 
 function makeContainer(overrides: Partial<Container> = {}): Container {
@@ -162,5 +167,74 @@ describe('filterContainers', () => {
   it('partial match on free text', () => {
     const result = filterContainers(containers, 'post', knownStackNames);
     expect(result.map((c) => c.id)).toEqual(['c2']);
+  });
+});
+
+describe('SEARCH_FIELDS', () => {
+  it('every advertised field prefix is parsed as a field, not free text', () => {
+    for (const field of SEARCH_FIELDS) {
+      expect(parseSearchQuery(`${field}:value`)).toEqual([{ field, value: 'value' }]);
+    }
+  });
+});
+
+describe('deriveSearchChips', () => {
+  const knownStackNames = ['proxy', 'db', 'traefik'];
+  const fleet = [
+    makeContainer({ id: 'c1', name: 'nginx-proxy-1', image: 'nginx:1.25', state: 'running', endpointName: 'prod', labels: { 'com.docker.compose.project': 'proxy' } }),
+    makeContainer({ id: 'c2', name: 'postgres-db-1', image: 'postgres:15', state: 'running', endpointName: 'prod', labels: { 'com.docker.compose.project': 'db' } }),
+    makeContainer({ id: 'c3', name: 'redis-cache-1', image: 'redis:alpine', state: 'exited', endpointName: 'staging', labels: {} }),
+    makeContainer({ id: 'c4', name: 'traefik-proxy-1', image: 'traefik:v3', state: 'running', endpointName: 'staging', labels: { 'com.docker.compose.project': 'traefik' } }),
+  ];
+
+  it('returns no chips for an empty fleet', () => {
+    expect(deriveSearchChips([], knownStackNames)).toEqual([]);
+  });
+
+  it('every derived chip matches at least one container and narrows the list', () => {
+    const chips = deriveSearchChips(fleet, knownStackNames);
+    expect(chips.length).toBeGreaterThan(0);
+    for (const chip of chips) {
+      const matched = filterContainers(fleet, chip, knownStackNames);
+      expect(matched.length).toBeGreaterThan(0);
+      expect(matched.length).toBeLessThan(fleet.length);
+    }
+  });
+
+  it('suggests the rarest state, not the majority one', () => {
+    // 3 running / 1 exited — "state:running" would return almost everything.
+    expect(deriveSearchChips(fleet, knownStackNames)).toContain('state:exited');
+  });
+
+  it('omits the state chip when every container shares one state', () => {
+    const allRunning = fleet.map((c) => ({ ...c, state: 'running' }));
+    const chips = deriveSearchChips(allRunning, knownStackNames);
+    expect(chips.some((c) => c.startsWith('state:'))).toBe(false);
+  });
+
+  it('omits the endpoint chip when every container is on the same endpoint', () => {
+    const oneEndpoint = fleet.map((c) => ({ ...c, endpointName: 'docker-dev-1' }));
+    const chips = deriveSearchChips(oneEndpoint, knownStackNames);
+    expect(chips.some((c) => c.startsWith('endpoint:'))).toBe(false);
+  });
+
+  it('suggests an image by its base name, so the registry path and tag do not break the match', () => {
+    const containers = [
+      makeContainer({ id: 'a', name: 'lcm-web', image: 'registry.example.com/lcm/lcm-web:dev-local', labels: {} }),
+      makeContainer({ id: 'b', name: 'lcm-api', image: 'postgres:16', labels: {} }),
+    ];
+    const chips = deriveSearchChips(containers, []);
+    const imageChip = chips.find((c) => c.startsWith('image:'));
+    expect(imageChip).toBeDefined();
+    expect(filterContainers(containers, imageChip!, []).length).toBe(1);
+  });
+
+  it('never suggests a value containing whitespace (it would parse as two tokens)', () => {
+    const containers = [
+      makeContainer({ id: 'a', endpointName: 'prod cluster', labels: {} }),
+      makeContainer({ id: 'b', endpointName: 'staging', labels: {} }),
+    ];
+    const chips = deriveSearchChips(containers, []);
+    expect(chips.some((c) => c.includes('prod cluster'))).toBe(false);
   });
 });
