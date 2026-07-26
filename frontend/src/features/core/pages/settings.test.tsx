@@ -327,6 +327,72 @@ describe('SettingsPage — auto-save boundary', () => {
     );
   });
 
+  // A guarded edit is a promise: "nothing is applied until you save". Anything
+  // that quietly drops it breaks that promise on the tab holding
+  // oidc.client_secret and oidc.allow_insecure_transport.
+  //
+  // These use a NON-EMPTY /api/settings payload on purpose. With the suite's
+  // default `[]`, useUpdateSetting's optimistic `old.map(...)` is deep-equal to
+  // the previous data, TanStack's structural sharing hands back the same array
+  // reference, and the init effect never re-runs — so the interaction under
+  // test cannot happen and the test would pass vacuously.
+  const settingsRows = [
+    { key: 'monitoring.polling_interval', value: '30', category: 'monitoring',
+      label: 'Polling Interval', type: 'number', updatedAt: '2026-01-01T00:00:00.000Z' },
+    { key: 'monitoring.metric_retention_days', value: '7', category: 'monitoring',
+      label: 'Metric Retention', type: 'number', updatedAt: '2026-01-01T00:00:00.000Z' },
+  ];
+
+  function serveSettingsRows() {
+    mockGet.mockImplementation((url: string) => {
+      if (typeof url === 'string' && url.includes('/api/settings')) {
+        return Promise.resolve(settingsRows.map((r) => ({ ...r })));
+      }
+      return Promise.resolve({ entries: [], history: [], notifications: [] });
+    });
+  }
+
+  it('keeps a queued guarded edit when an ordinary knob auto-saves beside it', async () => {
+    serveSettingsRows();
+    await renderSettings();
+
+    const guarded = await screen.findByLabelText('Metric Retention');
+    fireEvent.change(guarded, { target: { value: '1' } });
+    expect(await screen.findByTestId('guarded-changes-bar')).toBeInTheDocument();
+
+    // Auto-saving this rewrites the ['settings'] cache, which re-runs the
+    // initialise-from-API effect.
+    fireEvent.change(await screen.findByLabelText('Polling Interval'), { target: { value: '45' } });
+    await waitFor(
+      () => expect(mockPut).toHaveBeenCalledWith(
+        '/api/settings/monitoring.polling_interval', expect.objectContaining({ value: '45' }),
+      ),
+      { timeout: 3000 },
+    );
+    // Let the invalidation-driven refetch land too.
+    await new Promise((resolve) => setTimeout(resolve, 400));
+
+    expect(screen.getByLabelText('Metric Retention')).toHaveValue(1);
+    expect(screen.getByTestId('guarded-changes-bar')).toBeInTheDocument();
+    // ...and it is still only queued, never written.
+    expect(mockPut).not.toHaveBeenCalledWith(
+      '/api/settings/monitoring.metric_retention_days', expect.anything(),
+    );
+  });
+
+  it('still takes the server value for a key the operator has not touched', async () => {
+    // The guard must not freeze the form: only pending edits are preserved.
+    serveSettingsRows();
+    await renderSettings();
+
+    await screen.findByLabelText('Polling Interval');
+    settingsRows[0] = { ...settingsRows[0], value: '90' };
+    fireEvent.change(await screen.findByLabelText('Metric Retention'), { target: { value: '1' } });
+
+    await waitFor(() => expect(screen.getByLabelText('Metric Retention')).toHaveValue(1));
+    settingsRows[0] = { ...settingsRows[0], value: '30' }; // restore for other tests
+  });
+
   it('never auto-saves a retention window, however long the operator pauses', async () => {
     await renderSettings();
 

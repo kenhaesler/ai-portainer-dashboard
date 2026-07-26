@@ -304,6 +304,12 @@ export default function SettingsPage() {
   // Local state for edited / original values
   const [editedValues, setEditedValues] = useState<Record<string, string>>({});
   const [originalValues, setOriginalValues] = useState<Record<string, string>>({});
+  /**
+   * The last server snapshot, readable inside the init effect without making it
+   * depend on `originalValues` (which it also sets — that would re-enter). Used
+   * to tell "the operator changed this" from "the server changed this".
+   */
+  const originalValuesRef = useRef<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -344,12 +350,30 @@ export default function SettingsPage() {
         }
       });
 
-      setEditedValues(values);
+      // Re-sync to the server, but never discard what the operator has typed.
+      //
+      // This effect runs on every change of the `['settings']` query data, and
+      // `useUpdateSetting` changes that data on every save — optimistically in
+      // `onMutate`, then again when `onSettled` invalidates. So it fires while
+      // the page is in use, not only on first load. Overwriting wholesale meant
+      // that auto-saving any ordinary knob silently threw away a *guarded* edit
+      // queued on the same tab — the Security tab, where the guarded keys are
+      // `oidc.client_secret` and `oidc.allow_insecure_transport`, and where the
+      // GuardedChangesBar has just promised nothing is applied until you save.
+      //
+      // A key the operator has changed but not yet saved belongs to them; every
+      // other key takes the server's value.
+      setEditedValues((pending) => {
+        const previousOriginal = originalValuesRef.current;
+        const next = { ...values };
+        for (const [key, value] of Object.entries(pending)) {
+          if (value !== previousOriginal[key]) next[key] = value;
+        }
+        return next;
+      });
+      originalValuesRef.current = values;
       setOriginalValues(values);
-      setSaveSuccess(false);
       setSaveError(null);
-      setRestartPending(false);
-      setSavedKeys(new Set<string>());
     }
   }, [settingsData]);
 
@@ -450,6 +474,10 @@ export default function SettingsPage() {
     }
 
     if (Object.keys(appliedValues).length > 0) {
+      // Keep the ref alongside the state: the init effect compares against it
+      // to decide what is a pending operator edit, and a just-saved key is no
+      // longer one.
+      originalValuesRef.current = { ...originalValuesRef.current, ...appliedValues };
       setOriginalValues((prev) => ({ ...prev, ...appliedValues }));
       setSaveSuccess(true);
       setSavedKeys(new Set(Object.keys(appliedValues)));
