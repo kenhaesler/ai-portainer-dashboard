@@ -2,20 +2,9 @@ import { useEffect, useCallback, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Command } from 'cmdk';
 import {
-  LayoutDashboard,
-  Boxes,
-  HeartPulse,
-  PackageOpen,
-  Network,
   Brain,
-  BarChart3,
   Shield,
-  GitBranch,
-  MessageSquare,
   Activity,
-  FileSearch,
-  Webhook,
-  Users,
   Settings,
   Settings2,
   Bot,
@@ -24,6 +13,7 @@ import {
   Palette,
   Server,
   Package,
+  Boxes,
   Layers,
   ScrollText,
   Clock,
@@ -40,32 +30,16 @@ import { useEndpoints } from '@/features/containers/hooks/use-endpoints';
 import { useStacks } from '@/features/containers/hooks/use-stacks';
 import { useSearch } from '@/providers/search-provider';
 import { useNlQuery, type NlQueryResult } from '@/features/ai-intelligence/hooks/use-nl-query';
+import { palettePages, type NavDestination } from '@/features/core/lib/navigation-manifest';
 import { Search } from 'lucide-react';
 
-interface PageEntry {
-  label: string;
-  to: string;
-  icon: React.ComponentType<{ className?: string }>;
-}
-
-export const pages: PageEntry[] = [
-  { label: 'Home', to: '/', icon: LayoutDashboard },
-  { label: 'Workload Explorer', to: '/workloads', icon: Boxes },
-  { label: 'Infrastructure', to: '/infrastructure', icon: Server },
-  { label: 'Health & Monitoring', to: '/health', icon: HeartPulse },
-  { label: 'Image Footprint', to: '/images', icon: PackageOpen },
-  { label: 'Network Topology', to: '/topology', icon: Network },
-  { label: 'Metrics Dashboard', to: '/metrics', icon: BarChart3 },
-  { label: 'LLM Assistant', to: '/assistant', icon: MessageSquare },
-  { label: 'LLM Observability', to: '/llm-observability', icon: Activity },
-  { label: 'Trace Explorer', to: '/traces', icon: GitBranch },
-  { label: 'Remediation', to: '/remediation', icon: Shield },
-  { label: 'Security Audit', to: '/security/audit', icon: Shield },
-  { label: 'Edge Agent Logs', to: '/edge-logs', icon: FileSearch },
-  { label: 'Settings', to: '/settings', icon: Settings },
-  { label: 'Webhooks', to: '/webhooks', icon: Webhook },
-  { label: 'Users', to: '/users', icon: Users },
-];
+/**
+ * The palette's page list is the route manifest — it used to be a
+ * hand-maintained 16-entry copy of a 21-route list and was missing the Log
+ * Viewer, Packet Capture, Reports, eBPF Coverage and Vulnerabilities, i.e.
+ * most of what an on-call engineer reaches for under time pressure.
+ */
+export const pages: readonly NavDestination[] = palettePages;
 
 interface SettingsEntry {
   label: string;
@@ -165,7 +139,7 @@ export function CommandPalette() {
       onError: () => {
         setAiResult({
           action: 'error',
-          text: 'Neural services are currently unreachable.',
+          text: 'The AI service is unreachable.',
         });
       },
     });
@@ -200,9 +174,9 @@ export function CommandPalette() {
   const filteredPages = activeCategory === 'all'
     ? pages
     : activeCategory === 'containers'
-      ? pages.filter((p) => p.to === '/workloads' || p.to === '/health' || p.to === '/infrastructure' || p.to === '/images')
+      ? pages.filter((p) => p.path === '/workloads' || p.path === '/health' || p.path === '/infrastructure' || p.path === '/images')
       : activeCategory === 'settings'
-        ? pages.filter((p) => p.to === '/settings' || p.to === '/users' || p.to === '/webhooks')
+        ? pages.filter((p) => p.path === '/settings' || p.path === '/users' || p.path === '/webhooks')
         : pages;
 
   const filteredSettings = activeCategory === 'all' || activeCategory === 'settings' ? settingsEntries : [];
@@ -259,14 +233,14 @@ export function CommandPalette() {
 
                 {/* Input */}
                 <Command.Input
-                  placeholder={hoveredCategory ? `Filter by ${hoveredCategory}...` : 'Search or Ask Neural AI...'}
+                  placeholder={hoveredCategory ? `Filter by ${hoveredCategory}...` : 'Search containers, images, logs and pages'}
                   className="!h-full !flex-1 !border-0 !bg-transparent !text-base !font-medium !tracking-tight !text-foreground !shadow-none !ring-0 !outline-none placeholder:!text-muted-foreground/50 focus:!ring-0 focus:!border-0 focus:!outline-none focus:!shadow-none"
                   value={query}
                   onValueChange={(v) => { setQuery(v); setAiResult(null); }}
                   autoFocus
                 />
 
-                {/* Neural Run Button */}
+                {/* Ask AI — hands the query to the LLM instead of matching it */}
                 {isNl && query.trim().length >= 5 && (
                   <button
                     onClick={handleAiQuery}
@@ -278,7 +252,7 @@ export function CommandPalette() {
                     ) : (
                       <Sparkles className="h-3.5 w-3.5" />
                     )}
-                    <span>Neural Run</span>
+                    <span>Ask AI</span>
                   </button>
                 )}
 
@@ -333,8 +307,7 @@ export function CommandPalette() {
                         <Sparkles className="absolute left-1/2 top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 text-primary" />
                       </div>
                       <div className="flex flex-col gap-1">
-                        <span className="text-lg font-bold tracking-tight text-primary">Neural processing...</span>
-                        <span className="text-xs font-medium text-primary/40 uppercase tracking-widest">Analyzing infrastructure graph</span>
+                        <span className="text-lg font-bold tracking-tight text-primary">Thinking…</span>
                       </div>
                     </div>
                   </div>
@@ -368,7 +341,7 @@ export function CommandPalette() {
                           <p className="text-[14px] font-medium text-primary/60">{aiResult.page}</p>
                         </div>
                         <div className="rounded-full bg-muted/50 px-5 py-2 text-[11px] font-black uppercase tracking-[0.2em] text-muted-foreground group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
-                          Execute
+                          Open
                         </div>
                       </button>
                     )}
@@ -386,7 +359,7 @@ export function CommandPalette() {
                     {/* 2. Containers - Essential infrastructure */}
                     {containers.length > 0 && (
                       <Command.Group
-                        heading="Infrastructure Units"
+                        heading="Containers"
                         className="px-2 pb-4 [&_[cmdk-group-heading]]:px-6 [&_[cmdk-group-heading]]:py-4 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-black [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.25em] [&_[cmdk-group-heading]]:text-muted-foreground/30"
                       >
                         {containers.map((container) => (
@@ -419,7 +392,7 @@ export function CommandPalette() {
                     {/* Nodes / Endpoints */}
                     {filteredEndpoints.length > 0 && (
                       <Command.Group
-                        heading="Nodes"
+                        heading="Endpoints"
                         className="px-2 pb-4 [&_[cmdk-group-heading]]:px-6 [&_[cmdk-group-heading]]:py-4 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-black [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.25em] [&_[cmdk-group-heading]]:text-muted-foreground/30"
                       >
                         {filteredEndpoints.map((ep) => (
@@ -449,15 +422,15 @@ export function CommandPalette() {
                     {/* 3. Navigation - Core pages (filtered by category) */}
                     {filteredPages.length > 0 && (
                       <Command.Group
-                        heading="Neural Navigation"
+                        heading="Pages"
                         className="px-2 pb-4 [&_[cmdk-group-heading]]:px-6 [&_[cmdk-group-heading]]:py-4 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-black [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.25em] [&_[cmdk-group-heading]]:text-muted-foreground/30"
                       >
                         <div className="grid grid-cols-2 gap-2">
                           {filteredPages.map((page) => (
                             <Command.Item
-                              key={page.to}
+                              key={page.path}
                               value={page.label}
-                              onSelect={() => navigateTo(page.to)}
+                              onSelect={() => navigateTo(page.path)}
                               className={cn(
                                 'flex cursor-pointer items-center gap-4 rounded-[16px] px-5 py-4 text-[15px] transition-all',
                                 'text-foreground/60 aria-selected:bg-muted/60 aria-selected:text-foreground'
@@ -536,7 +509,7 @@ export function CommandPalette() {
                     {/* 5. Images - Assets */}
                     {images.length > 0 && (
                       <Command.Group
-                        heading="Binary Blueprints"
+                        heading="Images"
                         className="px-2 pb-4 [&_[cmdk-group-heading]]:px-6 [&_[cmdk-group-heading]]:py-4 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-black [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.25em] [&_[cmdk-group-heading]]:text-muted-foreground/30"
                       >
                         {images.map((image) => (
@@ -571,7 +544,7 @@ export function CommandPalette() {
                 {/* 6. Recent History */}
                 {hasRecent && (
                   <Command.Group
-                    heading="Recent Neural Interactions"
+                    heading="Recent"
                     className="px-2 pb-4 [&_[cmdk-group-heading]]:px-6 [&_[cmdk-group-heading]]:py-4 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-black [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.25em] [&_[cmdk-group-heading]]:text-muted-foreground/30"
                   >
                     {recent.map((item) => (
@@ -599,7 +572,7 @@ export function CommandPalette() {
                     {/* 7. Logs - High volume data */}
                     {logs.length > 0 && (
                       <Command.Group
-                        heading="Neural Log Stream"
+                        heading="Logs"
                         className="px-2 pb-4 [&_[cmdk-group-heading]]:px-6 [&_[cmdk-group-heading]]:py-4 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-black [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.25em] [&_[cmdk-group-heading]]:text-muted-foreground/30"
                       >
                         {logs.map((logItem) => (
@@ -635,7 +608,7 @@ export function CommandPalette() {
                       <AlertCircle className="h-12 w-12 text-muted-foreground/20" />
                     </div>
                     <p className="text-xl font-bold text-foreground/60 tracking-tight">No results for "{query}"</p>
-                    <p className="mt-2 text-sm font-medium text-muted-foreground/40 uppercase tracking-[0.15em]">Refine search or try Neural Run</p>
+                    <p className="mt-2 text-sm font-medium text-muted-foreground/40">Try a shorter term, or press Enter to ask the AI.</p>
                   </Command.Empty>
                 )}
               </Command.List>
@@ -645,16 +618,12 @@ export function CommandPalette() {
                 <div className="flex items-center gap-5">
                   <span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.15em] text-muted-foreground/30">
                     <kbd className="rounded-[5px] bg-muted/30 px-1.5 py-0.5 font-mono text-muted-foreground/50 border border-border/20 shadow-inner">↑↓</kbd>
-                    <span>Traverse</span>
+                    <span>Navigate</span>
                   </span>
                   <span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.15em] text-muted-foreground/30">
                     <kbd className="rounded-[5px] bg-muted/30 px-1.5 py-0.5 font-mono text-muted-foreground/50 border border-border/20 shadow-inner">↵</kbd>
-                    <span>Execute</span>
+                    <span>Open</span>
                   </span>
-                </div>
-                <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.15em] text-muted-foreground/30">
-                  <span className="text-[9px] opacity-50">Powered by</span>
-                  <span className="text-primary/60 tracking-[0.3em]">AI Intelligence</span>
                 </div>
               </div>
             </Command>

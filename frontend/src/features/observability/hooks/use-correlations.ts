@@ -12,12 +12,29 @@ export interface CorrelationPair {
 }
 
 export interface CorrelationInsight {
+  /**
+   * Stable key for the (containerA, containerB, metric) triple this narrative
+   * belongs to. Join on this, never on array position: the server slices its
+   * own top-10 from the unfiltered pair list while this page slices a top-10
+   * from a list that may be filtered to one container, so the two lists are
+   * routinely different sets. Format: `containerA|containerB|metricType`.
+   */
+  pairKey: string;
   containerA: string;
   containerB: string;
   metricType: string;
   correlation: number;
   narrative: string | null;
 }
+
+/**
+ * Why narratives are missing, when they are.
+ * - `ok`          — every pair got one.
+ * - `partial`     — some did; the rest are null.
+ * - `unparsed`    — the model answered but nothing matched a pair.
+ * - `unavailable` — the model call failed.
+ */
+export type NarrativeStatus = 'ok' | 'partial' | 'unparsed' | 'unavailable';
 
 export interface CorrelationsResponse {
   pairs: CorrelationPair[];
@@ -26,6 +43,20 @@ export interface CorrelationsResponse {
 export interface CorrelationInsightsResponse {
   insights: CorrelationInsight[];
   summary: string | null;
+  narrativeStatus: NarrativeStatus;
+  /** One operator-facing sentence for a non-`ok` status. Render it once. */
+  narrativeUnavailableReason: string | null;
+  /** Total correlated pairs found, before the server's top-10 slice. */
+  pairsTotal: number;
+}
+
+/** Mirrors the server's join-key format. Container names cannot contain `|`. */
+export function correlationPairKey(
+  containerA: string,
+  containerB: string,
+  metricType: string,
+): string {
+  return `${containerA}|${containerB}|${metricType}`;
 }
 
 export function useCorrelations(hours: number = 24, enabled: boolean = true) {

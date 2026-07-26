@@ -1,7 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render } from '@testing-library/react';
 import { AUTH_TOKEN_KEY } from '@/shared/lib/auth-constants';
-import { AuthProvider, useAuth, isTokenValid } from './auth-provider';
+import { ApiError } from '@/shared/lib/api-error';
+import {
+  AuthProvider,
+  useAuth,
+  isTokenValid,
+  LOGIN_BAD_CREDENTIALS_MESSAGE,
+  LOGIN_RATE_LIMITED_MESSAGE,
+} from './auth-provider';
 
 const mockPost = vi.fn();
 const mockSetToken = vi.fn();
@@ -503,6 +510,106 @@ describe('AuthProvider — refresh timer (issue #1106)', () => {
     expect(getByTestId('authed').textContent).toBe('false');
     expect(window.localStorage.getItem(AUTH_TOKEN_KEY)).toBeNull();
     expect(mockSetToken).toHaveBeenCalledWith(null);
+  });
+});
+
+describe('AuthProvider — login failure messages', () => {
+  beforeEach(() => {
+    mockPost.mockReset();
+    mockSetToken.mockReset();
+    window.localStorage.clear();
+  });
+
+  afterEach(() => {
+    window.localStorage.clear();
+    vi.clearAllMocks();
+  });
+
+  function renderLogin() {
+    let loginFn: (u: string, p: string) => Promise<{ defaultLandingPage: string }> = async () => ({
+      defaultLandingPage: '/',
+    });
+    function Probe() {
+      loginFn = useAuth().login;
+      return null;
+    }
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    );
+    return (u = 'alice', p = 'wrong') => loginFn(u, p);
+  }
+
+  it('asks the API client to suppress session-expiry handling for the login call', async () => {
+    mockPost.mockResolvedValue({ token: makeJwt('viewer'), username: 'alice' });
+    const doLogin = renderLogin();
+
+    await act(async () => {
+      await doLogin('alice', 'pw');
+    });
+
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/auth/login',
+      { username: 'alice', password: 'pw' },
+      { suppressSessionExpiry: true },
+    );
+  });
+
+  it('reports a 401 as incorrect credentials, not "Session expired"', async () => {
+    mockPost.mockRejectedValue(new ApiError(401, 'Invalid credentials', 'req-1'));
+    const doLogin = renderLogin();
+
+    let caught: unknown;
+    await act(async () => {
+      caught = await doLogin().catch((e: unknown) => e);
+    });
+
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).status).toBe(401);
+    expect((caught as ApiError).message).toBe(LOGIN_BAD_CREDENTIALS_MESSAGE);
+    expect((caught as ApiError).message).not.toMatch(/session expired/i);
+    // requestId survives the rewrite so the failure is still traceable.
+    expect((caught as ApiError).requestId).toBe('req-1');
+  });
+
+  it('reports a 429 with the login rate-limit message', async () => {
+    mockPost.mockRejectedValue(new ApiError(429, 'HTTP 429'));
+    const doLogin = renderLogin();
+
+    let caught: unknown;
+    await act(async () => {
+      caught = await doLogin().catch((e: unknown) => e);
+    });
+
+    expect((caught as ApiError).status).toBe(429);
+    expect((caught as ApiError).message).toBe(LOGIN_RATE_LIMITED_MESSAGE);
+  });
+
+  it('leaves other failures untouched', async () => {
+    const original = new ApiError(503, 'Service temporarily unavailable');
+    mockPost.mockRejectedValue(original);
+    const doLogin = renderLogin();
+
+    let caught: unknown;
+    await act(async () => {
+      caught = await doLogin().catch((e: unknown) => e);
+    });
+
+    expect(caught).toBe(original);
+  });
+
+  it('passes a non-ApiError through unchanged (network failure)', async () => {
+    const original = new Error('Network error — check your connection');
+    mockPost.mockRejectedValue(original);
+    const doLogin = renderLogin();
+
+    let caught: unknown;
+    await act(async () => {
+      caught = await doLogin().catch((e: unknown) => e);
+    });
+
+    expect(caught).toBe(original);
   });
 });
 

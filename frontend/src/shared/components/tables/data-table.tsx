@@ -15,6 +15,7 @@ import {
   type Updater,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { Link } from 'react-router-dom';
 import { cn } from '@/shared/lib/utils';
 import { Checkbox } from '@/shared/components/ui/checkbox';
 import { ArrowUpDown, ChevronLeft, ChevronRight, ArrowUp, ArrowDown } from 'lucide-react';
@@ -102,6 +103,26 @@ interface DataTableProps<T> {
    * `<tr className=...>` previously provided.
    */
   rowClassName?: (row: T) => string;
+  /**
+   * Destination for a row that *navigates*. Supply it on tables whose
+   * `onRowClick` pushes a route; the first data cell then renders inside a real
+   * `<a href>` (react-router `<Link>`), so ⌘/middle-click, "Open in new tab",
+   * "Copy link address" and the hover status-bar preview all work, and a screen
+   * reader hears a link with a destination instead of a bare focusable row.
+   *
+   * Omit it for rows whose click is a local action (expand/collapse, select) —
+   * those are button-like, not links. When omitted the row renders exactly as
+   * it did before this prop existed. Returning `''` for an individual row skips
+   * the anchor for that row only.
+   */
+  rowHref?: (row: T) => string;
+  /**
+   * Accessible name for a navigating row, e.g. ``(r) => `Open container ${r.name}` ``.
+   * Applied to both the row and its anchor. Only used when `rowHref` is
+   * supplied. Omit it and the names are computed from cell text — usually
+   * adequate, but the row's name then reads out every column.
+   */
+  rowLabel?: (row: T) => string;
 }
 
 export function DataTable<T>({
@@ -124,6 +145,8 @@ export function DataTable<T>({
   autoFit,
   minTableWidth,
   rowClassName,
+  rowHref,
+  rowLabel,
 }: DataTableProps<T>) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -436,45 +459,78 @@ export function DataTable<T>({
     );
   };
 
-  const renderRow = (row: Row<T>) => (
-    <tr
-      key={row.id}
-      data-testid={`table-row-${row.id}`}
-      className={cn(
-        'group/row border-b transition-colors duration-200 hover:bg-muted/30',
-        onRowClick && 'cursor-pointer',
-        onRowClick && focusedRowId === row.id && 'keyboard-selected',
-        enableRowSelection && row.getIsSelected() && 'bg-primary/5',
-        rowClassName?.(row.original)
-      )}
-      onClick={() => onRowClick?.(row.original)}
-      {...(onRowClick
-        ? {
-            tabIndex: 0,
-            onKeyDown: (e: React.KeyboardEvent<HTMLTableRowElement>) =>
-              handleRowKeyDown(e, row.original),
-            onFocus: (e: React.FocusEvent<HTMLTableRowElement>) => {
-              if (e.target === e.currentTarget) setFocusedRowId(row.id);
-            },
-            onBlur: (e: React.FocusEvent<HTMLTableRowElement>) => {
-              if (e.target === e.currentTarget) {
-                setFocusedRowId((prev) => (prev === row.id ? null : prev));
+  const renderRow = (row: Row<T>) => {
+    const href = rowHref?.(row.original);
+    const cells = row.getVisibleCells();
+    // The anchor goes on the first *data* cell — the selection checkbox column
+    // is chrome, and wrapping it in a link would swallow the checkbox.
+    const linkCellIndex = href ? cells.findIndex((c) => c.column.id !== '_selection') : -1;
+
+    return (
+      <tr
+        key={row.id}
+        data-testid={`table-row-${row.id}`}
+        className={cn(
+          'group/row border-b transition-colors duration-200 hover:bg-muted/30',
+          onRowClick && 'cursor-pointer',
+          onRowClick && focusedRowId === row.id && 'keyboard-selected',
+          enableRowSelection && row.getIsSelected() && 'bg-primary/5',
+          rowClassName?.(row.original)
+        )}
+        onClick={
+          href
+            ? (e: React.MouseEvent<HTMLTableRowElement>) => {
+                // A click that landed on the anchor is already a navigation;
+                // letting onRowClick run too would push the same route twice.
+                if ((e.target as HTMLElement | null)?.closest?.('a')) return;
+                onRowClick?.(row.original);
               }
-            },
-          }
-        : {})}
-    >
-      {row.getVisibleCells().map((cell) => (
-        <td
-          key={cell.id}
-          style={{ width: cell.column.getSize() !== 150 ? cell.column.getSize() : undefined }}
-          className="px-4 py-3 align-middle"
-        >
-          {flexRender(cell.column.columnDef.cell, cell.getContext())}
-        </td>
-      ))}
-    </tr>
-  );
+            : () => onRowClick?.(row.original)
+        }
+        {...(href && onRowClick
+          ? { role: 'link', 'aria-label': rowLabel?.(row.original) }
+          : {})}
+        {...(onRowClick
+          ? {
+              tabIndex: 0,
+              onKeyDown: (e: React.KeyboardEvent<HTMLTableRowElement>) =>
+                handleRowKeyDown(e, row.original),
+              onFocus: (e: React.FocusEvent<HTMLTableRowElement>) => {
+                if (e.target === e.currentTarget) setFocusedRowId(row.id);
+              },
+              onBlur: (e: React.FocusEvent<HTMLTableRowElement>) => {
+                if (e.target === e.currentTarget) {
+                  setFocusedRowId((prev) => (prev === row.id ? null : prev));
+                }
+              },
+            }
+          : {})}
+      >
+        {cells.map((cell, index) => {
+          const content = flexRender(cell.column.columnDef.cell, cell.getContext());
+          return (
+            <td
+              key={cell.id}
+              style={{ width: cell.column.getSize() !== 150 ? cell.column.getSize() : undefined }}
+              className="px-4 py-3 align-middle"
+            >
+              {href && index === linkCellIndex ? (
+                <Link
+                  to={href}
+                  aria-label={rowLabel?.(row.original)}
+                  className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {content}
+                </Link>
+              ) : (
+                content
+              )}
+            </td>
+          );
+        })}
+      </tr>
+    );
+  };
 
   const renderHeader = () => (
     <thead className={cn('[&_tr]:border-b', useVirtual && 'sticky top-0 z-10 bg-card')}>

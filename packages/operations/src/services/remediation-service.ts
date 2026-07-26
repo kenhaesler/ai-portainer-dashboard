@@ -12,11 +12,11 @@ import {
 import type { Insight } from '@dashboard/core/models/monitoring.js';
 import { eventBus } from '@dashboard/core/services/typed-event-bus.js';
 import { getContainerLogs } from '@dashboard/core/portainer/portainer-client.js';
-import type { LLMInterface, MetricsInterface, RemediationAnalysisResult } from '@dashboard/contracts';
+import type { LLMInterface, MetricsInterface, RationaleSource, RemediationAnalysisResult } from '@dashboard/contracts';
 
 // Re-exported for the historical import path; the canonical shape lives in
 // @dashboard/contracts (#1509).
-export type { RemediationAnalysisResult };
+export type { RemediationAnalysisResult, RationaleSource };
 
 let _llm: LLMInterface | null = null;
 let _metrics: MetricsInterface | null = null;
@@ -35,9 +35,13 @@ import { getConfig } from '@dashboard/core/config/index.js';
 const log = createChildLogger('remediation-service');
 
 type ActionPattern = {
+  /** Stable id for the rule that matched, so the UI can group/label by rule. */
+  id: string;
   keywords: RegExp;
   actionType: string;
   rationale: string;
+  /** Always 'pattern-match' here — these strings are a lookup table, not analysis. */
+  source: RationaleSource;
 };
 
 /** Action types that directly modify container state. */
@@ -72,37 +76,65 @@ export function isProtectedContainer(containerName: string): boolean {
   return protectedNames.some((name) => normalized === name || normalized.startsWith(`${name}-`) || normalized.startsWith(`${name}_`));
 }
 
-const ACTION_PATTERNS: Array<{
-  keywords: RegExp;
-  actionType: string;
-  rationale: string;
-}> = [
+/**
+ * Fixed keyword→action lookup. Every rationale here is a constant this file
+ * ships, not model output — hence `source: 'pattern-match'` on each entry, which
+ * travels to the UI so the two can be told apart on screen.
+ */
+const ACTION_PATTERNS: ActionPattern[] = [
   {
+    id: 'unhealthy-status',
     keywords: /unhealthy|health\s*check\s*fail/i,
     actionType: 'RESTART_CONTAINER',
     rationale: 'Container is reporting unhealthy status. Restarting may resolve the issue.',
+    source: 'pattern-match',
   },
   {
+    id: 'memory-pressure',
     keywords: /oom|out\s*of\s*memory|memory\s*limit/i,
     actionType: 'INVESTIGATE',
     rationale: 'Container may be experiencing memory pressure. Check memory limits and usage patterns before taking action.',
+    source: 'pattern-match',
   },
   {
+    id: 'restart-loop',
     keywords: /restart\s*(loop|count|crash)/i,
     actionType: 'RESTART_CONTAINER',
     rationale: 'Container is in a restart loop. A clean restart may stabilize it.',
+    source: 'pattern-match',
   },
   {
+    id: 'high-cpu',
     keywords: /high\s*cpu|cpu\s*spike|runaway\s*process/i,
     actionType: 'INVESTIGATE',
     rationale: 'High CPU usage detected. Check for runaway processes and review resource allocation before taking action.',
+    source: 'pattern-match',
   },
   {
+    id: 'container-stopped',
     keywords: /stopped|exited|not\s*running/i,
     actionType: 'START_CONTAINER',
     rationale: 'Container appears stopped. Starting it may restore service availability.',
+    source: 'pattern-match',
   },
 ];
+
+/**
+ * Classify where an action's stored `rationale` came from.
+ *
+ * A rationale is either a constant from ACTION_PATTERNS (a plain sentence) or a
+ * serialized {@link RemediationAnalysisResult} written by
+ * `enrichActionWithLlmAnalysis`. Both are rendered under the same bot icon
+ * today; this is the server-side answer to "which one am I looking at".
+ */
+export function classifyRationaleSource(rationale: string | null | undefined): RationaleSource | null {
+  if (!rationale || !rationale.trim()) return null;
+  const parsed = tryParseAnalysisPayload(rationale);
+  if (parsed && typeof parsed.root_cause === 'string') {
+    return parsed.analysis_source === 'pattern-match' ? 'pattern-match' : 'llm-analysis';
+  }
+  return 'pattern-match';
+}
 
 interface RemediationEvidence {
   logs?: string;
@@ -122,13 +154,21 @@ function pickActionPattern(text: string): ActionPattern | null {
   return null;
 }
 
-function clampConfidenceScore(value: unknown): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return 0.5;
+/**
+ * 0–1 when the model supplied a usable number, null when it did not.
+ *
+ * This used to return the constant 0.5, which the UI rendered as an
+ * authoritative "Confidence: 50%" badge — a default presented as a measurement.
+ * Null is the honest answer and lets the caller omit the badge entirely.
+ */
+export function clampConfidenceScore(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
   return Math.max(0, Math.min(1, value));
 }
 
-function parseSeverity(value: unknown): 'critical' | 'warning' | 'info' {
-  return value === 'critical' || value === 'warning' || value === 'info' ? value : 'warning';
+/** The model's severity, or null when it did not supply a valid one (was: 'warning'). */
+export function parseSeverity(value: unknown): 'critical' | 'warning' | 'info' | null {
+  return value === 'critical' || value === 'warning' || value === 'info' ? value : null;
 }
 
 function parseRecommendedActions(value: unknown): RemediationAnalysisResult['recommended_actions'] {
@@ -162,6 +202,7 @@ function validateParsedAnalysis(parsed: Record<string, unknown>): RemediationAna
     recommended_actions: parseRecommendedActions(parsed.recommended_actions),
     log_analysis: logAnalysis,
     confidence_score: clampConfidenceScore(parsed.confidence_score),
+    analysis_source: 'llm-analysis',
   };
 }
 
@@ -171,13 +212,17 @@ export function parseRemediationAnalysis(raw: string): RemediationAnalysisResult
     return validateParsedAnalysis(parsedPayload);
   }
 
+  // Unstructured model output: we have prose and nothing else. Severity and
+  // confidence are null rather than 0.35/'warning' — the model stated neither,
+  // and inventing them puts a number on screen that nothing measured.
   const fallback = raw.trim();
   return {
     root_cause: fallback || 'Unable to determine root cause from current evidence.',
-    severity: 'warning',
+    severity: null,
     recommended_actions: [],
     log_analysis: '',
-    confidence_score: 0.35,
+    confidence_score: null,
+    analysis_source: 'llm-analysis',
   };
 }
 
@@ -272,7 +317,10 @@ async function gatherRemediationEvidence(insight: Insight): Promise<RemediationE
 }
 
 function toStoredAnalysis(analysis: RemediationAnalysisResult): string {
-  return JSON.stringify(analysis);
+  // `analysis_source` is written explicitly so the stored rationale describes
+  // its own provenance, rather than leaving the UI to infer it from the fact
+  // that the string happens to parse as JSON.
+  return JSON.stringify({ ...analysis, analysis_source: 'llm-analysis' satisfies RationaleSource });
 }
 
 /** Stricter retry prompt when the first LLM attempt returns unstructured output. */
@@ -339,7 +387,7 @@ async function enrichActionWithLlmAnalysis(
 
 export async function suggestAction(
   insight: Insight,
-): Promise<{ actionId: string; actionType: string } | null> {
+): Promise<{ actionId: string; actionType: string; rationaleSource: RationaleSource; patternId: string } | null> {
   const textToMatch = `${insight.title} ${insight.description} ${insight.suggested_action || ''}`;
   let pattern = pickActionPattern(textToMatch);
   if (!pattern) return null;
@@ -362,6 +410,7 @@ export async function suggestAction(
     // Downgrade to investigation instead of blocking entirely
     pattern = {
       ...pattern,
+      id: `${pattern.id}-downgraded`,
       actionType: 'INVESTIGATE',
       rationale: `Original suggestion (${pattern.actionType}) was blocked because "${containerName}" is a protected infrastructure container. Investigate the issue manually.`,
     };
@@ -406,7 +455,15 @@ export async function suggestAction(
     log.warn({ err, actionId }, 'Remediation LLM enrichment failed');
   });
 
-  return { actionId, actionType: pattern.actionType };
+  // The rationale stored above is a constant from ACTION_PATTERNS. Say so, so
+  // no caller mistakes it for the model's analysis (which may replace it
+  // asynchronously via enrichActionWithLlmAnalysis).
+  return {
+    actionId,
+    actionType: pattern.actionType,
+    rationaleSource: pattern.source,
+    patternId: pattern.id,
+  };
 }
 
 export async function approveAction(actionId: string, username: string): Promise<boolean> {

@@ -1,7 +1,11 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useMonitoring } from '@/features/ai-intelligence/hooks/use-monitoring';
 import { useInvestigations } from '@/features/ai-intelligence/hooks/use-investigations';
-import { useCorrelatedAnomalies, type CorrelatedAnomaly } from '@/features/observability/hooks/use-correlated-anomalies';
+import {
+  useCorrelatedAnomalies,
+  type CorrelatedAnomaly,
+  type MetricPatternMatch,
+} from '@/features/observability/hooks/use-correlated-anomalies';
 import {
   useMarkFalsePositive,
   useAnomalyFeedbackRates,
@@ -32,7 +36,6 @@ import {
   Clock,
   Brain,
   Layers,
-  Zap,
   ThumbsDown,
 } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -46,9 +49,12 @@ function CorrelatedAnomalyCard({
   onMarkFalsePositive: (anomaly: CorrelatedAnomaly) => void;
   isPending: boolean;
 }) {
-  const patternDescription = anomaly.pattern?.includes(':')
-    ? anomaly.pattern.split(':').slice(1).join(':').trim()
-    : null;
+  // `patternMatch.summary` restates the rule that fired and the z-scores it
+  // fired on. It replaced a hardcoded sentence per rule branch, which rendered
+  // byte-identically on every card hitting the same branch and read as a
+  // diagnosis nothing had made. `pattern` is kept as a fallback so a stale
+  // server build degrades to the old string rather than to a blank card.
+  const ruleSummary = anomaly.patternMatch?.summary ?? anomaly.pattern ?? null;
 
   return (
     <SpotlightCard className="h-full">
@@ -65,7 +71,7 @@ function CorrelatedAnomalyCard({
 
         <div className="flex items-center gap-2 flex-wrap mb-3">
           <CorrelationSeverityBadge severity={anomaly.severity} />
-          {anomaly.pattern && <PatternBadge pattern={anomaly.pattern} />}
+          {anomaly.patternMatch && <PatternBadge patternMatch={anomaly.patternMatch} />}
         </div>
 
         {/* Per-metric z-score bars */}
@@ -92,8 +98,10 @@ function CorrelatedAnomalyCard({
           })}
         </div>
 
-        {patternDescription && (
-          <p className="mt-2 text-xs text-muted-foreground">{patternDescription}</p>
+        {ruleSummary && (
+          <p className="mt-2 text-xs text-muted-foreground" data-testid="pattern-rule-summary">
+            {ruleSummary}
+          </p>
         )}
 
         {/* False-positive feedback affordance (#1298). Optimistic dismissal
@@ -259,21 +267,27 @@ function CorrelationSeverityBadge({ severity }: { severity: 'low' | 'medium' | '
   );
 }
 
-function PatternBadge({ pattern }: { pattern: string }) {
-  const shortLabel = pattern.includes(':') ? pattern.split(':')[0].trim() : pattern;
-
-  const colorMap: Record<string, string> = {
-    'Resource Exhaustion': 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-    'Memory Leak Suspected': 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
-    'CPU Spike': 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
-  };
-
-  const colorClass = colorMap[shortLabel] ?? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400';
-
+/**
+ * Which deviation rule fired, as a neutral classificatory chip.
+ *
+ * Deliberately uncoloured. The `CorrelationSeverityBadge` beside it already
+ * encodes urgency from the composite score; colouring this one too would put
+ * two competing severity signals on one row for the same anomaly. It is also
+ * deliberately not purple — DESIGN.md reserves purple for AI insight, and this
+ * chip reports a deterministic z-score threshold rule, not an inference. The
+ * previous version keyed its colours off English pattern names and fell back to
+ * purple whenever it did not recognise one, which is what made every unmatched
+ * rule look like an AI finding.
+ */
+function PatternBadge({ patternMatch }: { patternMatch: MetricPatternMatch }) {
   return (
-    <span className={cn('inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium', colorClass)}>
-      <Zap className="h-3 w-3" />
-      {shortLabel}
+    <span
+      className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground"
+      title={`Rule: metrics with z-score above ${patternMatch.zScoreThreshold}`}
+      data-testid="pattern-badge"
+      data-pattern-id={patternMatch.id}
+    >
+      {patternMatch.label}
     </span>
   );
 }

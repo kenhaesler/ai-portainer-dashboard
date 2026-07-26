@@ -15,6 +15,98 @@ import { createChildLogger } from '@dashboard/core/utils/logger.js';
 
 const log = createChildLogger('reports-routes');
 
+// ---------------------------------------------------------------------------
+// Right-sizing rules
+//
+// Four fixed thresholds. On a real fleet they produce one row per container of
+// which nearly all are byte-identical — 15 rows, 14 the same sentence. The rule
+// is worth keeping; repeating its text once per container is not. Each finding
+// therefore carries the rule `id`, the `threshold` it crossed and the `measured`
+// value, so a client can collapse identical recommendations into one statement
+// plus a count and surface only the containers that genuinely differ.
+// ---------------------------------------------------------------------------
+export type RightSizingRuleId =
+  | 'cpu-underutilized'
+  | 'cpu-overutilized'
+  | 'memory-underutilized'
+  | 'memory-overutilized';
+
+interface RightSizingRule {
+  id: RightSizingRuleId;
+  metric: 'cpu' | 'memory';
+  /** Which aggregate the threshold is applied to. */
+  statistic: 'p95' | 'avg';
+  comparison: 'below' | 'above';
+  threshold: number;
+  unit: 'percent';
+  /** Container-independent statement of the rule, safe to render once per group. */
+  recommendation: string;
+  /** The historical one-line rendering, unchanged so existing consumers keep working. */
+  issue: string;
+}
+
+const RIGHT_SIZING_RULES: RightSizingRule[] = [
+  {
+    id: 'cpu-underutilized',
+    metric: 'cpu',
+    statistic: 'p95',
+    comparison: 'below',
+    threshold: 10,
+    unit: 'percent',
+    recommendation: 'consider reducing CPU limits',
+    issue: 'CPU under-utilized (p95 < 10%) — consider reducing CPU limits',
+  },
+  {
+    id: 'cpu-overutilized',
+    metric: 'cpu',
+    statistic: 'avg',
+    comparison: 'above',
+    threshold: 80,
+    unit: 'percent',
+    recommendation: 'consider increasing CPU limits',
+    issue: 'CPU over-utilized (avg > 80%) — consider increasing CPU limits',
+  },
+  {
+    id: 'memory-underutilized',
+    metric: 'memory',
+    statistic: 'p95',
+    comparison: 'below',
+    threshold: 20,
+    unit: 'percent',
+    recommendation: 'consider reducing memory limits',
+    issue: 'Memory under-utilized (p95 < 20%) — consider reducing memory limits',
+  },
+  {
+    id: 'memory-overutilized',
+    metric: 'memory',
+    statistic: 'avg',
+    comparison: 'above',
+    threshold: 85,
+    unit: 'percent',
+    recommendation: 'consider increasing memory limits',
+    issue: 'Memory over-utilized (avg > 85%) — consider increasing memory limits',
+  },
+];
+
+export interface RightSizingFinding extends RightSizingRule {
+  /** The container's own value for `statistic`, in percent — the one number that differs per row. */
+  measured: number;
+}
+
+/** Evaluate the fixed rules against one container's aggregates. */
+export function evaluateRightSizingRules(
+  stats: { cpu: { avg: number; p95: number }; memory: { avg: number; p95: number } },
+): RightSizingFinding[] {
+  const findings: RightSizingFinding[] = [];
+  for (const rule of RIGHT_SIZING_RULES) {
+    const measured = stats[rule.metric][rule.statistic];
+    const crossed = rule.comparison === 'below' ? measured < rule.threshold : measured > rule.threshold;
+    if (!crossed) continue;
+    findings.push({ ...rule, measured });
+  }
+  return findings;
+}
+
 /** pg pool exhaustion: connection could not be acquired within connectionTimeoutMillis */
 function isPoolTimeoutError(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
@@ -386,20 +478,55 @@ export async function reportsRoutes(fastify: FastifyInstance) {
         maxMemory: memEntries.length > 0 ? Math.max(...memEntries.map(c => c.memory!.max)) : 0,
       };
 
+      // Per-container data is kept in full; `findings` carries the rule id,
+      // threshold and measured value alongside the legacy `issues` strings so
+      // the client can group identical recommendations instead of printing the
+      // same sentence fifteen times.
       const recommendations = containers
         .filter(c => c.cpu && c.memory)
         .map(c => {
-          const issues: string[] = [];
-          if (c.cpu!.p95 < 10) issues.push('CPU under-utilized (p95 < 10%) — consider reducing CPU limits');
-          if (c.cpu!.avg > 80) issues.push('CPU over-utilized (avg > 80%) — consider increasing CPU limits');
-          if (c.memory!.p95 < 20) issues.push('Memory under-utilized (p95 < 20%) — consider reducing memory limits');
-          if (c.memory!.avg > 85) issues.push('Memory over-utilized (avg > 85%) — consider increasing memory limits');
-          if (issues.length === 0) return null;
-          return { container_id: c.container_id, container_name: c.container_name, service_type: c.service_type, issues };
+          const findings = evaluateRightSizingRules({ cpu: c.cpu!, memory: c.memory! });
+          if (findings.length === 0) return null;
+          return {
+            container_id: c.container_id,
+            container_name: c.container_name,
+            service_type: c.service_type,
+            issues: findings.map(f => f.issue),
+            findings,
+          };
         })
         .filter(Boolean);
 
-      return { timeRange, includeInfrastructure: includeInfrastructureResolved, excludeInfrastructure, containers, fleetSummary, recommendations };
+      // Rollup of how many containers each rule fired on, so the UI can lead
+      // with "12 containers: CPU p95 below 10%" and list only the outliers.
+      const recommendationSummary = RIGHT_SIZING_RULES
+        .map(rule => {
+          const matched = recommendations.filter(
+            (r): r is NonNullable<typeof r> => !!r && r.findings.some(f => f.id === rule.id),
+          );
+          return {
+            id: rule.id,
+            metric: rule.metric,
+            statistic: rule.statistic,
+            comparison: rule.comparison,
+            threshold: rule.threshold,
+            unit: rule.unit,
+            recommendation: rule.recommendation,
+            container_count: matched.length,
+            container_names: matched.map(r => r.container_name),
+          };
+        })
+        .filter(entry => entry.container_count > 0);
+
+      return {
+        timeRange,
+        includeInfrastructure: includeInfrastructureResolved,
+        excludeInfrastructure,
+        containers,
+        fleetSummary,
+        recommendations,
+        recommendationSummary,
+      };
     });
 
     setCachedReport(cacheKey, result);

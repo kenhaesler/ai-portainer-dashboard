@@ -9,6 +9,7 @@ import {
   pearsonCorrelation,
   calculateCompositeScore,
   identifyPattern,
+  PATTERN_Z_SCORE_THRESHOLD,
   scoreSeverity,
   correlationStrength,
 } from '../services/metric-correlator.js';
@@ -57,36 +58,92 @@ describe('metric-correlator', () => {
   });
 
   describe('identifyPattern', () => {
-    it('identifies resource exhaustion', () => {
-      const pattern = identifyPattern([
+    it('classifies both metrics deviating, and reports the z-scores that triggered it', () => {
+      const match = identifyPattern([
         { type: 'cpu', zScore: 3 },
-        { type: 'memory', zScore: 3 },
+        { type: 'memory', zScore: 3.4 },
       ]);
-      expect(pattern).toContain('Resource Exhaustion');
+      expect(match).not.toBeNull();
+      expect(match!.id).toBe('cpu-and-memory-deviation');
+      expect(match!.zScoreThreshold).toBe(PATTERN_Z_SCORE_THRESHOLD);
+      expect(match!.triggeredBy).toEqual([
+        { type: 'cpu', zScore: 3 },
+        { type: 'memory', zScore: 3.4 },
+      ]);
+      expect(match!.withinThreshold).toEqual([]);
+      expect(match!.summary).toContain('cpu z=3.00');
+      expect(match!.summary).toContain('memory z=3.40');
     });
 
-    it('identifies memory leak', () => {
-      const pattern = identifyPattern([
-        { type: 'cpu', zScore: 0.5 },
-        { type: 'memory', zScore: 3 },
+    it('classifies memory-only deviation and names CPU as within threshold', () => {
+      const match = identifyPattern([
+        { type: 'cpu', zScore: 0.4 },
+        { type: 'memory', zScore: 3.7 },
       ]);
-      expect(pattern).toContain('Memory Leak');
+      expect(match!.id).toBe('memory-only-deviation');
+      expect(match!.triggeredBy).toEqual([{ type: 'memory', zScore: 3.7 }]);
+      expect(match!.withinThreshold).toEqual([{ type: 'cpu', zScore: 0.4 }]);
+      // The measured numbers must be in the summary — this is what makes two
+      // cards with the same classification distinguishable on screen.
+      expect(match!.summary).toContain('memory z=3.70');
+      expect(match!.summary).toContain('cpu z=0.40');
     });
 
-    it('identifies CPU spike', () => {
-      const pattern = identifyPattern([
+    it('classifies memory_bytes deviation the same way as memory', () => {
+      const match = identifyPattern([
+        { type: 'cpu', zScore: 0.1 },
+        { type: 'memory_bytes', zScore: 2.6 },
+      ]);
+      expect(match!.id).toBe('memory-only-deviation');
+      expect(match!.triggeredBy).toEqual([{ type: 'memory_bytes', zScore: 2.6 }]);
+    });
+
+    it('classifies CPU-only deviation and names memory as within threshold', () => {
+      const match = identifyPattern([
         { type: 'cpu', zScore: 4 },
         { type: 'memory', zScore: 0.5 },
       ]);
-      expect(pattern).toContain('CPU Spike');
+      expect(match!.id).toBe('cpu-only-deviation');
+      expect(match!.triggeredBy).toEqual([{ type: 'cpu', zScore: 4 }]);
+      expect(match!.withinThreshold).toEqual([{ type: 'memory', zScore: 0.5 }]);
+      expect(match!.summary).toContain('cpu z=4.00');
+      expect(match!.summary).toContain('memory z=0.50');
     });
 
-    it('returns null for no known pattern', () => {
-      const pattern = identifyPattern([
+    it('says so when the rule fired with no counterpart sample in the window', () => {
+      const match = identifyPattern([{ type: 'cpu', zScore: 4 }]);
+      expect(match!.id).toBe('cpu-only-deviation');
+      expect(match!.withinThreshold).toEqual([]);
+      expect(match!.summary).toContain('no memory sample this window');
+    });
+
+    it('returns null when no rule matches', () => {
+      const match = identifyPattern([
         { type: 'cpu', zScore: 0.5 },
         { type: 'memory', zScore: 0.5 },
       ]);
-      expect(pattern).toBeNull();
+      expect(match).toBeNull();
+    });
+
+    it('keeps the threshold at the documented value (the maths must not drift)', () => {
+      expect(PATTERN_Z_SCORE_THRESHOLD).toBe(2);
+      // Exactly at the threshold does not fire — the rule is strictly greater.
+      expect(identifyPattern([{ type: 'cpu', zScore: 2 }, { type: 'memory', zScore: 0 }])).toBeNull();
+      expect(identifyPattern([{ type: 'cpu', zScore: 2.01 }, { type: 'memory', zScore: 0 }])!.id)
+        .toBe('cpu-only-deviation');
+    });
+
+    it('carries no diagnostic prose — the classification must not read as inference', () => {
+      const summaries = [
+        identifyPattern([{ type: 'cpu', zScore: 3 }, { type: 'memory', zScore: 3 }])!,
+        identifyPattern([{ type: 'cpu', zScore: 0.5 }, { type: 'memory', zScore: 3 }])!,
+        identifyPattern([{ type: 'cpu', zScore: 4 }, { type: 'memory', zScore: 0.5 }])!,
+      ].flatMap((m) => [m.summary, m.label]);
+
+      for (const text of summaries) {
+        expect(text.toLowerCase()).not.toContain('suggesting');
+        expect(text.toLowerCase()).not.toContain('leak');
+      }
     });
   });
 

@@ -1,6 +1,11 @@
 import { memo, useMemo } from 'react';
-import { Link2, Bot, ArrowUpDown, TrendingUp, TrendingDown } from 'lucide-react';
-import { useCorrelations, useCorrelationInsights, type CorrelationPair } from '@/features/observability/hooks/use-correlations';
+import { Link2, Bot, ArrowUpDown, TrendingUp, TrendingDown, Info } from 'lucide-react';
+import {
+  useCorrelations,
+  useCorrelationInsights,
+  correlationPairKey,
+  type CorrelationPair,
+} from '@/features/observability/hooks/use-correlations';
 import { cn } from '@/shared/lib/utils';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 import { EmptyState } from '@/shared/components/feedback/empty-state';
@@ -136,12 +141,17 @@ export const CorrelationInsightsPanel = memo(function CorrelationInsightsPanel({
     );
   }, [allPairs, selectedContainerId]);
   const summary = insightsData?.summary ?? null;
+  const narrativeStatus = insightsData?.narrativeStatus ?? 'ok';
+  const narrativeUnavailableReason = insightsData?.narrativeUnavailableReason ?? null;
 
-  // Build a map from pair key to narrative
+  // Keyed by the server's `pairKey`, not by array position. Both sides slice
+  // their own top-10 — the server from the unfiltered list, this panel from a
+  // list that may be filtered to one container — so position is not a safe
+  // join key and silently mismatched narratives were possible.
   const narrativeMap = useMemo(() => {
     const map = new Map<string, string | null>();
     for (const insight of insights) {
-      map.set(`${insight.containerA}:${insight.containerB}:${insight.metricType}`, insight.narrative);
+      map.set(insight.pairKey, insight.narrative);
     }
     return map;
   }, [insights]);
@@ -193,11 +203,27 @@ export const CorrelationInsightsPanel = memo(function CorrelationInsightsPanel({
         />
       ) : (
         <div className="space-y-4">
+          {/* Why the narratives are missing — said once, above the list, rather
+              than as an italic failure repeated on every row. The correlation
+              values are computed from metrics and stand on their own, so the
+              panel stays useful when the model does not answer. */}
+          {llmAvailable && !insightsLoading && narrativeUnavailableReason && (
+            <div
+              role="status"
+              data-testid="narrative-unavailable-reason"
+              data-narrative-status={narrativeStatus}
+              className="flex items-start gap-2 rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground"
+            >
+              <Info className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" aria-hidden />
+              <span>{narrativeUnavailableReason}</span>
+            </div>
+          )}
+
           {/* Correlation pair cards */}
           <div className="space-y-3">
             {pairs.slice(0, 10).map((pair) => {
               const narrative = narrativeMap.get(
-                `${pair.containerA.name}:${pair.containerB.name}:${pair.metricType}`,
+                correlationPairKey(pair.containerA.name, pair.containerB.name, pair.metricType),
               );
               const DirectionIcon = pair.direction === 'positive' ? TrendingUp : TrendingDown;
 
@@ -226,20 +252,17 @@ export const CorrelationInsightsPanel = memo(function CorrelationInsightsPanel({
                     </span>
                   </div>
 
-                  {/* AI narrative */}
-                  {llmAvailable && (
+                  {/* AI narrative — omitted entirely when absent. A row with no
+                      narrative shows the correlation alone; the banner above
+                      already explains why, once. */}
+                  {llmAvailable && (insightsLoading || narrative) && (
                     <div className="mt-2">
                       {insightsLoading ? (
                         <div className="h-5 animate-pulse rounded bg-muted" />
-                      ) : narrative ? (
+                      ) : (
                         <p className="text-xs leading-relaxed text-foreground/80">
                           <Bot className="inline h-3 w-3 text-purple-500 mr-1" />
                           {narrative}
-                        </p>
-                      ) : (
-                        <p className="text-xs text-muted-foreground italic">
-                          <Bot className="inline h-3 w-3 text-purple-500/50 mr-1" />
-                          Insight unavailable
                         </p>
                       )}
                     </div>

@@ -9,18 +9,27 @@ export interface IncidentGroup {
   incident_count: number;
   container_count: number;
   alert_count: number;
-  earliest_at: string;
-  latest_update_at: string;
+  /**
+   * ISO-8601 UTC, or null when the column is null.
+   *
+   * These used to be typed non-null while the server sent Postgres' own text
+   * form (`2026-07-26 08:46:29.123456+00`) via a `::text` cast. That is not
+   * valid ISO-8601 once `formatDate` swaps the space for a `T`, so `new Date()`
+   * rejected it and every row rendered the literal string "Invalid date". The
+   * cast is gone; null is now the honest signal for "no timestamp".
+   */
+  earliest_at: string | null;
+  latest_update_at: string | null;
   top_containers: Array<{
     incident_id: string;
     container_name: string;
     endpoint_id: number | null;
     endpoint_name: string | null;
     severity: 'critical' | 'warning' | 'info';
-    created_at: string;
+    created_at: string | null;
     incident_ids: string[];
     incident_count: number;
-    latest_at: string;
+    latest_at: string | null;
     latest_summary: string | null;
     latest_description: string | null;
   }>;

@@ -108,11 +108,19 @@ export {
 } from './services/infrastructure-service-classifier.js';
 
 // Services — metric correlation
-export type { Queryable, CorrelatedAnomaly, CorrelationPair } from './services/metric-correlator.js';
+export type {
+  Queryable,
+  CorrelatedAnomaly,
+  CorrelationPair,
+  MetricPatternId,
+  MetricPatternMatch,
+  PatternMetricObservation,
+} from './services/metric-correlator.js';
 export {
   pearsonCorrelation,
   calculateCompositeScore,
   identifyPattern,
+  PATTERN_Z_SCORE_THRESHOLD,
   scoreSeverity,
   correlationStrength,
   findCorrelatedContainers,

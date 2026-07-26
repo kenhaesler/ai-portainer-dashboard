@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 
 const STORAGE_KEY = 'ai-portainer-auto-refresh';
 const VALID_INTERVALS = [0, 15, 30, 60, 120, 300] as const;
@@ -10,9 +10,33 @@ interface AutoRefreshState {
   enabled: boolean;
 }
 
-function loadState(defaultInterval: RefreshInterval): AutoRefreshState {
+export interface AutoRefreshOptions {
+  /**
+   * Called every `interval` seconds while auto-refresh is enabled.
+   *
+   * The hook owns the timer. Before this existed the hook owned only state and
+   * scheduled nothing, so every consumer had to remember to write its own
+   * `window.setInterval` effect — one page did (with a comment naming the trap)
+   * and two did not, leaving their refresh dropdowns purely decorative.
+   */
+  onTick?: () => void;
+  /**
+   * Suffix for the localStorage key, so a page can keep its own cadence.
+   *
+   * Omitted, every page shares one key — which is why a page asking for
+   * `useAutoRefresh(0)` could open showing "Every 30s" because a different page
+   * had stored 30. Pass a stable, page-specific string to opt out.
+   */
+  storageKey?: string;
+}
+
+function resolveStorageKey(storageKey?: string): string {
+  return storageKey ? `${STORAGE_KEY}:${storageKey}` : STORAGE_KEY;
+}
+
+function loadState(defaultInterval: RefreshInterval, storageKey?: string): AutoRefreshState {
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
+    const stored = localStorage.getItem(resolveStorageKey(storageKey));
     if (stored) {
       const parsed = JSON.parse(stored) as AutoRefreshState;
       if (VALID_INTERVALS.includes(parsed.interval as RefreshInterval)) {
@@ -28,24 +52,28 @@ function loadState(defaultInterval: RefreshInterval): AutoRefreshState {
   };
 }
 
-function saveState(state: AutoRefreshState): void {
+function saveState(state: AutoRefreshState, storageKey?: string): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    localStorage.setItem(resolveStorageKey(storageKey), JSON.stringify(state));
   } catch {
     // Ignore storage errors
   }
 }
 
-export function useAutoRefresh(defaultInterval: RefreshInterval = 30) {
+export function useAutoRefresh(
+  defaultInterval: RefreshInterval = 30,
+  opts: AutoRefreshOptions = {}
+) {
+  const { onTick, storageKey } = opts;
   const [state, setState] = useState<AutoRefreshState>(() =>
-    loadState(defaultInterval)
+    loadState(defaultInterval, storageKey)
   );
 
   useEffect(() => {
-    saveState(state);
-  }, [state]);
+    saveState(state, storageKey);
+  }, [state, storageKey]);
 
-  const setInterval = useCallback((interval: RefreshInterval) => {
+  const setRefreshInterval = useCallback((interval: RefreshInterval) => {
     setState({
       interval,
       enabled: interval > 0,
@@ -59,9 +87,36 @@ export function useAutoRefresh(defaultInterval: RefreshInterval = 30) {
     }));
   }, []);
 
+  // Held in a ref so a consumer passing an inline arrow (the normal case)
+  // doesn't tear down and re-arm the timer on every render — only a change of
+  // interval/enabled restarts it.
+  const onTickRef = useRef(onTick);
+  useEffect(() => {
+    onTickRef.current = onTick;
+  }, [onTick]);
+
+  const hasOnTick = !!onTick;
+  useEffect(() => {
+    if (!hasOnTick || !state.enabled || state.interval <= 0) return;
+    // `window.setInterval`, not the bare global: this module and most call
+    // sites bind a local named `setInterval` (the deprecated alias returned
+    // below), which shadows the global and is exactly why wiring the timer by
+    // hand at each call site was error-prone.
+    const id = window.setInterval(() => {
+      onTickRef.current?.();
+    }, state.interval * 1000);
+    return () => window.clearInterval(id);
+  }, [hasOnTick, state.enabled, state.interval]);
+
   return {
     interval: state.interval,
-    setInterval,
+    setRefreshInterval,
+    /**
+     * @deprecated Use `setRefreshInterval`. Destructuring this shadows
+     * `window.setInterval` in the consuming module. Kept so existing call sites
+     * keep compiling.
+     */
+    setInterval: setRefreshInterval,
     enabled: state.enabled,
     toggle,
     options: VALID_INTERVALS,

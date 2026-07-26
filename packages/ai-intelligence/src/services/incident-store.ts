@@ -185,6 +185,58 @@ export async function resolveIncident(id: string): Promise<void> {
 const TOP_CONTAINERS_PER_GROUP = 10;
 const ALL_NAMES_CAP = 500;
 
+/**
+ * Normalise a PostgreSQL timestamp value into an ISO-8601 UTC string.
+ *
+ * Why this exists: the group queries below used to render their timestamps with
+ * a `::text` cast. That cast changes the wire type from `timestamptz` (OID 1184)
+ * to `text` (OID 25), which bypasses the global
+ * `pg.types.setTypeParser(1184, …)` registered in `core/db/postgres.ts`. Instead
+ * of an ISO string the row then carried Postgres' own text rendering —
+ * `2026-07-26 08:46:29.123456+00`. The frontend's `formatDate()` swaps the first
+ * space for a `T` (a SQLite-era compatibility step), producing
+ * `2026-07-26T08:46:29.123456+00`, and a bare `+00` offset is not valid ISO-8601:
+ * `new Date()` rejects it, so every row of the incident rollup printed the
+ * literal string "Invalid date". `insights.created_at` on the same page rendered
+ * correctly precisely because it is read with `SELECT *` and keeps its
+ * timestamptz OID.
+ *
+ * The casts are gone. This function is the belt-and-braces guarantee that
+ * whatever the driver hands back — a `Date`, an ISO string, or Postgres text —
+ * leaves this module as ISO-8601 UTC, and that an unusable value is reported as
+ * `null` (which the UI can render as a dash) rather than as a broken string the
+ * UI has to fail on.
+ */
+export function toIsoTimestamp(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  }
+  if (typeof value === 'number') {
+    const fromEpoch = new Date(value);
+    return Number.isNaN(fromEpoch.getTime()) ? null : fromEpoch.toISOString();
+  }
+  if (typeof value !== 'string') return null;
+
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  // Postgres renders `timestamp without time zone` with no offset at all. The
+  // driver's own parser treats that as UTC (see setTypeParser(1114, …)), so we
+  // do the same instead of silently applying the Node process's local zone.
+  const hasZone = /(?:[zZ]|[+-]\d{2}(?::?\d{2})?)$/.test(trimmed);
+  const candidate = hasZone ? trimmed : `${trimmed}Z`;
+
+  const direct = new Date(candidate);
+  if (!Number.isNaN(direct.getTime())) return direct.toISOString();
+
+  // Last resort for `YYYY-MM-DD HH:MM:SS`-style input the engine refused: try
+  // the ISO date/time separator. Done second because a short `+00` offset
+  // parses fine with a space and not at all with a `T`.
+  const isoSeparated = new Date(candidate.replace(' ', 'T'));
+  return Number.isNaN(isoSeparated.getTime()) ? null : isoSeparated.toISOString();
+}
+
 export interface IncidentGroupsOptions {
   status?: 'active' | 'resolved';
   endpoint_id?: number;
@@ -199,8 +251,10 @@ export interface IncidentGroup {
   incident_count: number;
   container_count: number;
   alert_count: number;
-  earliest_at: string;
-  latest_update_at: string;
+  /** ISO-8601 UTC; null when the column is null or unparseable (see `toIsoTimestamp`). */
+  earliest_at: string | null;
+  /** ISO-8601 UTC; null when the column is null or unparseable (see `toIsoTimestamp`). */
+  latest_update_at: string | null;
   top_containers: Array<{
     /** Representative incident (highest-severity, then most-recent) for this container in this group. */
     incident_id: string;
@@ -209,14 +263,18 @@ export interface IncidentGroup {
     endpoint_name: string | null;
     /** Severity of the representative incident. */
     severity: 'critical' | 'warning' | 'info';
-    /** created_at of the representative incident. */
-    created_at: string;
+    /**
+     * created_at of the representative incident, as ISO-8601 UTC.
+     * Null when the column is null or unparseable — never a Postgres-formatted
+     * string, which `new Date()` rejects (see `toIsoTimestamp`).
+     */
+    created_at: string | null;
     /** All active incident ids for (signature, container_name). Length == incident_count. */
     incident_ids: string[];
     /** How many active incidents this container has under this signature. */
     incident_count: number;
-    /** updated_at of the most recently updated incident among incident_ids. */
-    latest_at: string;
+    /** updated_at of the most recently updated incident among incident_ids, as ISO-8601 UTC. */
+    latest_at: string | null;
     /** incidents.summary of the representative incident (LLM-derived, may be null). */
     latest_summary: string | null;
     /** insights.description of the representative incident's root-cause insight (contains metric values, may be null). */
@@ -252,13 +310,16 @@ export async function getIncidentGroups(options: IncidentGroupsOptions = {}): Pr
   // 1. Per-signature aggregate — counts, severity rollup, and name list (capped)
   // We keep the incident-level aggregates (incident_count, alert_count, severity, timestamps)
   // separate from the container expansion to avoid double-counting insight_count.
+  // Timestamps are selected WITHOUT a `::text` cast on purpose: the cast would
+  // drop the timestamptz OID and with it the driver's ISO type parser, handing
+  // the UI a string `new Date()` rejects. See `toIsoTimestamp` above.
   const rawGroups = await db.query<{
     signature: string;
     severity: 'critical' | 'warning' | 'info';
     incident_count: number;
     alert_count: number;
-    earliest_at: string;
-    latest_update_at: string;
+    earliest_at: unknown;
+    latest_update_at: unknown;
     container_count: number;
     all_names: string[];
   }>(`
@@ -272,8 +333,8 @@ export async function getIncidentGroups(options: IncidentGroupsOptions = {}): Pr
              BOOL_OR(severity = 'warning')  AS has_warning,
              COUNT(*)::int                  AS incident_count,
              COALESCE(SUM(insight_count), 0)::int AS alert_count,
-             MIN(created_at)::text          AS earliest_at,
-             MAX(updated_at)::text          AS latest_update_at
+             MIN(created_at)                AS earliest_at,
+             MAX(updated_at)                AS latest_update_at
       FROM base
       GROUP BY signature
     ),
@@ -321,10 +382,10 @@ export async function getIncidentGroups(options: IncidentGroupsOptions = {}): Pr
     endpoint_id: number | null;
     endpoint_name: string | null;
     severity: 'critical' | 'warning' | 'info';
-    created_at: string;
+    created_at: unknown;
     incident_ids: string[];
     incident_count: number;
-    latest_at: string;
+    latest_at: unknown;
     latest_summary: string | null;
     latest_description: string | null;
   }>(`
@@ -366,7 +427,7 @@ export async function getIncidentGroups(options: IncidentGroupsOptions = {}): Pr
       SELECT signature, container_name,
              ARRAY_AGG(incident_id ORDER BY created_at DESC) AS incident_ids,
              COUNT(*)::int AS incident_count,
-             MAX(updated_at)::text AS latest_at
+             MAX(updated_at) AS latest_at
       FROM expanded
       GROUP BY signature, container_name
     ),
@@ -375,7 +436,7 @@ export async function getIncidentGroups(options: IncidentGroupsOptions = {}): Pr
              r.rep_incident_id AS incident_id,
              r.rep_severity AS severity,
              r.endpoint_id, r.endpoint_name,
-             r.rep_created_at::text AS created_at,
+             r.rep_created_at AS created_at,
              g.incident_ids, g.incident_count, g.latest_at,
              r.rep_summary AS latest_summary,
              ins.description AS latest_description,
@@ -416,10 +477,10 @@ export async function getIncidentGroups(options: IncidentGroupsOptions = {}): Pr
       endpoint_id: r.endpoint_id,
       endpoint_name: r.endpoint_name,
       severity: r.severity,
-      created_at: r.created_at,
+      created_at: toIsoTimestamp(r.created_at),
       incident_ids: r.incident_ids,
       incident_count: r.incident_count,
-      latest_at: r.latest_at,
+      latest_at: toIsoTimestamp(r.latest_at),
       latest_summary: r.latest_summary,
       latest_description: r.latest_description,
     });
@@ -433,8 +494,8 @@ export async function getIncidentGroups(options: IncidentGroupsOptions = {}): Pr
     incident_count: g.incident_count,
     container_count: g.container_count,
     alert_count: g.alert_count,
-    earliest_at: g.earliest_at,
-    latest_update_at: g.latest_update_at,
+    earliest_at: toIsoTimestamp(g.earliest_at),
+    latest_update_at: toIsoTimestamp(g.latest_update_at),
     top_containers: topBySig.get(g.signature) ?? [],
     all_container_names: g.all_names ?? [],
     names_truncated: (g.all_names?.length ?? 0) >= ALL_NAMES_CAP && g.container_count > ALL_NAMES_CAP,

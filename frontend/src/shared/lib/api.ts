@@ -5,6 +5,7 @@ const API_BASE = import.meta.env.VITE_API_URL || '';
 
 function describeHttpError(status: number): string {
   switch (status) {
+    case 429: return 'Too many requests — rate limit reached';
     case 502: return 'Portainer connection failed';
     case 503: return 'Service temporarily unavailable';
     case 504: return 'Gateway timeout — Portainer did not respond';
@@ -15,6 +16,18 @@ function describeHttpError(status: number): string {
 interface RequestOptions extends RequestInit {
   params?: Record<string, string | number | boolean | undefined>;
   timeoutMs?: number;
+  /**
+   * Opt out of the blanket "a 401 means the session expired" handling.
+   *
+   * Every 401 used to be rewritten to `ApiError(401, 'Session expired')` and to
+   * fire `handleUnauthorized()`. That is correct for a request made *with* a
+   * session, but wrong for one that is trying to *establish* one: a mistyped
+   * password produced the message "Session expired" and tore down auth state
+   * that was never there. Credential endpoints pass this flag; the 401 then
+   * falls through to the normal error path (server message, else
+   * `describeHttpError`) and the caller decides the wording.
+   */
+  suppressSessionExpiry?: boolean;
 }
 
 class ApiClient {
@@ -56,7 +69,7 @@ class ApiClient {
     path: string,
     options: RequestOptions = {}
   ): Promise<T> {
-    const { params, timeoutMs = 30000, ...fetchOptions } = options;
+    const { params, timeoutMs = 30000, suppressSessionExpiry, ...fetchOptions } = options;
     const headers = new Headers(fetchOptions.headers);
     if (fetchOptions.body) {
       headers.set('Content-Type', 'application/json');
@@ -91,7 +104,7 @@ class ApiClient {
 
     const requestId = headers.get('X-Request-ID') ?? undefined;
 
-    if (response.status === 401) {
+    if (response.status === 401 && !suppressSessionExpiry) {
       this.handleUnauthorized();
       throw new ApiError(401, 'Session expired', requestId);
     }
@@ -113,11 +126,12 @@ class ApiClient {
     return this.request<T>(path, { method: 'GET', ...options });
   }
 
-  post<T>(path: string, body?: unknown, options?: { timeoutMs?: number }) {
+  post<T>(path: string, body?: unknown, options?: { timeoutMs?: number; suppressSessionExpiry?: boolean }) {
     return this.request<T>(path, {
       method: 'POST',
       body: body ? JSON.stringify(body) : undefined,
       timeoutMs: options?.timeoutMs,
+      suppressSessionExpiry: options?.suppressSessionExpiry,
     });
   }
 

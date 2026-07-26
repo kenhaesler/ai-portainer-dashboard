@@ -18,10 +18,28 @@ describe('NormalizedContainerSchema ⇄ normalizeContainer drift guard', () => {
     const parsed = NormalizedContainerSchema.parse(normalized);
     // If the schema omits a field the normalizer emits, parse() strips it and
     // the key sets diverge — catching the exact class of drift as networkIPs.
-    // Scope: top-level keys only. Drift nested inside `ports[]`/`ContainerPortSchema`
-    // is NOT covered here (those fields are all-optional today, so nothing to strip);
-    // extend this if the port shape ever gains required fields.
     expect(Object.keys(parsed).sort()).toEqual(Object.keys(normalized).sort());
     expect(parsed.networkIPs).toEqual({ bridge: '172.17.0.2' });
+  });
+
+  it('the schema keeps every key inside ports[] too', () => {
+    // This schema is used as a Fastify response serializer, so a field the
+    // schema does not declare is silently stripped from the payload. That is
+    // how the port bind IP went missing and the UI ended up hardcoding
+    // "0.0.0.0"; nested drift is now covered, not just top-level.
+    const normalized = normalizeContainer(
+      {
+        Id: 'abc123', Names: ['/web'], Image: 'nginx:latest', State: 'running',
+        Status: 'Up 2 hours', Created: 1700000000,
+        Ports: [{ IP: '127.0.0.1', PrivatePort: 80, PublicPort: 8080, Type: 'tcp' }],
+        Labels: {},
+      } as never,
+      1,
+      'local',
+    );
+    const parsed = NormalizedContainerSchema.parse(normalized);
+
+    expect(Object.keys(parsed.ports[0]).sort()).toEqual(Object.keys(normalized.ports[0]).sort());
+    expect(parsed.ports[0].ip).toBe('127.0.0.1');
   });
 });

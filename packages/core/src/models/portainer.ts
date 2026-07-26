@@ -166,16 +166,29 @@ export function containerFromInspect(raw: unknown): Container {
   const createdMs = i.Created ? Date.parse(i.Created) : NaN;
   const created = Number.isFinite(createdMs) ? Math.floor(createdMs / 1000) : 0;
 
+  // One entry per host binding, not per port key. Docker publishes a separate
+  // binding for IPv4 and IPv6, and `HostIp` is what tells them apart — and what
+  // tells a loopback-only publish from a world-facing one. Taking `bindings[0]`
+  // and discarding the IP collapsed both facts. A port with no bindings is
+  // exposed but unpublished and still gets a row.
   const ports = Object.entries(i.NetworkSettings?.Ports ?? {}).flatMap(([key, bindings]) => {
     const [portStr, type] = key.split('/');
     const privatePort = Number(portStr);
     if (!Number.isFinite(privatePort)) return [];
-    const hostPort = bindings?.[0]?.HostPort ? Number(bindings[0].HostPort) : undefined;
-    return [{
-      PrivatePort: privatePort,
-      PublicPort: hostPort !== undefined && Number.isFinite(hostPort) ? hostPort : undefined,
-      Type: type ?? 'tcp',
-    }];
+    const portType = type ?? 'tcp';
+    const list = bindings ?? [];
+    if (list.length === 0) {
+      return [{ PrivatePort: privatePort, PublicPort: undefined, Type: portType }];
+    }
+    return list.map((binding) => {
+      const hostPort = binding?.HostPort ? Number(binding.HostPort) : undefined;
+      return {
+        PrivatePort: privatePort,
+        PublicPort: hostPort !== undefined && Number.isFinite(hostPort) ? hostPort : undefined,
+        Type: portType,
+        ...(binding?.HostIp ? { IP: binding.HostIp } : {}),
+      };
+    });
   });
 
   // Re-parse through ContainerSchema so the returned object is guaranteed to

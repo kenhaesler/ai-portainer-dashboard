@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { api } from '@/shared/lib/api';
+import { ApiError } from '@/shared/lib/api-error';
 import { AUTH_TOKEN_KEY } from '@/shared/lib/auth-constants';
 const AUTH_USERNAME_KEY = 'auth_username';
 const AUTH_ROLE_KEY = 'auth_role';
@@ -82,6 +83,31 @@ function parseRoleFromToken(token: string): UserRole {
   return role === 'admin' || role === 'operator' || role === 'viewer' ? role : 'viewer';
 }
 
+/** Copy for the two sign-in failures the server distinguishes. Exported so the login page and its tests can assert on them without duplicating strings. */
+export const LOGIN_BAD_CREDENTIALS_MESSAGE = 'Incorrect username or password';
+export const LOGIN_RATE_LIMITED_MESSAGE =
+  'Too many sign-in attempts. Wait a minute before trying again.';
+
+/**
+ * Rewrite the two sign-in failures that carry a useful next action.
+ *
+ * `/api/auth/login` is called with `suppressSessionExpiry` so the client no
+ * longer turns its 401 into "Session expired" (there is no session yet — see
+ * `api.ts`). The server answers a bad password with `{ error: 'Invalid
+ * credentials' }` and a throttled attempt with a bare 429, neither of which
+ * tells the operator what to do next.
+ */
+function describeLoginFailure(err: unknown): unknown {
+  if (!(err instanceof ApiError)) return err;
+  if (err.status === 401) {
+    return new ApiError(401, LOGIN_BAD_CREDENTIALS_MESSAGE, err.requestId);
+  }
+  if (err.status === 429) {
+    return new ApiError(429, LOGIN_RATE_LIMITED_MESSAGE, err.requestId);
+  }
+  return err;
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [initialAuth] = useState(() => getStoredAuth());
   const [token, setToken] = useState<string | null>(initialAuth.token);
@@ -89,10 +115,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [role, setRole] = useState<UserRole>(initialAuth.role);
 
   const login = useCallback(async (user: string, password: string) => {
-    const data = await api.post<{ token: string; username: string; defaultLandingPage?: string }>(
-      '/api/auth/login',
-      { username: user, password }
-    );
+    let data: { token: string; username: string; defaultLandingPage?: string };
+    try {
+      data = await api.post<{ token: string; username: string; defaultLandingPage?: string }>(
+        '/api/auth/login',
+        { username: user, password },
+        { suppressSessionExpiry: true }
+      );
+    } catch (err) {
+      throw describeLoginFailure(err);
+    }
     const userRole = parseRoleFromToken(data.token);
     setToken(data.token);
     setUsername(data.username);

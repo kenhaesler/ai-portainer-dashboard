@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, render, screen, fireEvent } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { DataTable } from './data-table';
 import type { ColumnDef } from '@tanstack/react-table';
 
@@ -945,6 +946,147 @@ describe('DataTable', () => {
       act(() => container.focus());
       fireEvent.keyDown(container, { key: 'j' });
       expect(document.activeElement).toBe(screen.getByTestId('table-row-0'));
+    });
+  });
+
+  describe('rowHref — real anchors for navigating rows', () => {
+    const href = (row: TestRow) => `/containers/1/${row.id}`;
+
+    function renderWithRouter(ui: React.ReactElement) {
+      return render(<MemoryRouter>{ui}</MemoryRouter>);
+    }
+
+    it('renders no anchor and no role when rowHref is omitted (byte-identical to before)', () => {
+      render(<DataTable columns={testColumns} data={makeRows(3)} onRowClick={vi.fn()} />);
+      const row = screen.getByTestId('table-row-0');
+      expect(row.querySelector('a')).toBeNull();
+      expect(row).not.toHaveAttribute('role');
+      expect(row).not.toHaveAttribute('aria-label');
+      expect(row).toHaveAttribute('tabindex', '0');
+    });
+
+    it('wraps the first cell content in a real anchor carrying the destination', () => {
+      renderWithRouter(
+        <DataTable columns={testColumns} data={makeRows(3)} onRowClick={vi.fn()} rowHref={href} />
+      );
+
+      const row = screen.getByTestId('table-row-1');
+      const anchors = row.querySelectorAll('a');
+      // Exactly one anchor per row — a link per cell would be noise.
+      expect(anchors).toHaveLength(1);
+      // ...on the FIRST cell, and it is a real href so cmd/middle-click,
+      // "open in new tab" and "copy link address" all work.
+      expect(row.querySelector('td')!.contains(anchors[0])).toBe(true);
+      expect(anchors[0]).toHaveAttribute('href', '/containers/1/2');
+    });
+
+    it('announces the row as a link with an accessible name', () => {
+      renderWithRouter(
+        <DataTable
+          columns={testColumns}
+          data={makeRows(2)}
+          onRowClick={vi.fn()}
+          rowHref={href}
+          rowLabel={(row) => `Open container ${row.name}`}
+        />
+      );
+
+      const row = screen.getByTestId('table-row-0');
+      expect(row).toHaveAttribute('role', 'link');
+      expect(row).toHaveAttribute('aria-label', 'Open container container-1');
+    });
+
+    it('omits aria-label rather than inventing one when rowLabel is not supplied', () => {
+      renderWithRouter(
+        <DataTable columns={testColumns} data={makeRows(2)} onRowClick={vi.fn()} rowHref={href} />
+      );
+      const row = screen.getByTestId('table-row-0');
+      expect(row).toHaveAttribute('role', 'link');
+      expect(row).not.toHaveAttribute('aria-label');
+    });
+
+    it('keeps whole-row click working as a convenience', () => {
+      const onRowClick = vi.fn();
+      const data = makeRows(3);
+      renderWithRouter(
+        <DataTable columns={testColumns} data={data} onRowClick={onRowClick} rowHref={href} />
+      );
+
+      // Click a cell that is NOT the anchor.
+      const nameCell = screen.getByTestId('table-row-0').querySelectorAll('td')[1];
+      expect(nameCell.querySelector('a')).toBeNull();
+      fireEvent.click(nameCell);
+      expect(onRowClick).toHaveBeenCalledWith(data[0]);
+    });
+
+    it('does not double-navigate when the anchor itself is clicked', () => {
+      const onRowClick = vi.fn();
+      renderWithRouter(
+        <DataTable columns={testColumns} data={makeRows(3)} onRowClick={onRowClick} rowHref={href} />
+      );
+
+      const anchor = screen.getByTestId('table-row-0').querySelector('a')!;
+      fireEvent.click(anchor);
+      // The anchor already navigates; running onRowClick too would push the
+      // same route twice.
+      expect(onRowClick).not.toHaveBeenCalled();
+    });
+
+    it('keeps the existing keyboard handler working', () => {
+      const onRowClick = vi.fn();
+      const data = makeRows(3);
+      renderWithRouter(
+        <DataTable columns={testColumns} data={data} onRowClick={onRowClick} rowHref={href} />
+      );
+
+      const row = screen.getByTestId('table-row-1');
+      act(() => row.focus());
+      expect(row.className).toContain('keyboard-selected');
+      fireEvent.keyDown(row, { key: 'Enter' });
+      expect(onRowClick).toHaveBeenCalledWith(data[1]);
+
+      fireEvent.keyDown(row, { key: 'j' });
+      expect(document.activeElement).toBe(screen.getByTestId('table-row-2'));
+    });
+
+    it('skips the selection checkbox column when choosing the anchor cell', () => {
+      renderWithRouter(
+        <DataTable
+          columns={testColumns}
+          data={makeRows(3)}
+          onRowClick={vi.fn()}
+          rowHref={href}
+          enableRowSelection
+        />
+      );
+
+      const row = screen.getByTestId('table-row-0');
+      const cells = row.querySelectorAll('td');
+      // First cell keeps its checkbox untouched; the anchor lands on the first
+      // data cell instead.
+      expect(cells[0].querySelector('input[type="checkbox"]')).not.toBeNull();
+      expect(cells[0].querySelector('a')).toBeNull();
+      expect(cells[1].querySelector('a')).toHaveAttribute('href', '/containers/1/1');
+    });
+
+    it('renders the anchor without a clickable row too', () => {
+      renderWithRouter(<DataTable columns={testColumns} data={makeRows(2)} rowHref={href} />);
+      const row = screen.getByTestId('table-row-0');
+      expect(row.querySelector('a')).toHaveAttribute('href', '/containers/1/1');
+      // No onRowClick means no focusable row and no link role on the <tr>.
+      expect(row).not.toHaveAttribute('tabindex');
+      expect(row).not.toHaveAttribute('role');
+    });
+
+    it('applies to virtualized rows as well', () => {
+      renderWithRouter(
+        <DataTable columns={testColumns} data={makeRows(100)} onRowClick={vi.fn()} rowHref={href} />
+      );
+      expect(screen.getByTestId('virtual-scroll-container')).toBeInTheDocument();
+      expect(screen.getByTestId('table-row-0').querySelector('a')).toHaveAttribute(
+        'href',
+        '/containers/1/1'
+      );
     });
   });
 

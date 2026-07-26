@@ -1,9 +1,17 @@
 import type { Insight } from '../schemas/insight.js';
+import type { RationaleSource } from '../schemas/remediation.js';
 
 /** Result of a suggested remediation action. */
 export interface SuggestActionResult {
   actionId: string;
   actionType: string;
+  /**
+   * Where the rationale stored on the action came from. Always `pattern-match`
+   * at suggestion time — the LLM analysis, if any, replaces it asynchronously.
+   */
+  rationaleSource?: RationaleSource;
+  /** Stable id of the keyword rule that matched (see ACTION_PATTERNS). */
+  patternId?: string;
 }
 
 /**

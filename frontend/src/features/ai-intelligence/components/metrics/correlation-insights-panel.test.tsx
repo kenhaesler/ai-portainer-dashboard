@@ -5,7 +5,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 const mockUseCorrelations = vi.fn();
 const mockUseCorrelationInsights = vi.fn();
 
-vi.mock('@/features/observability/hooks/use-correlations', () => ({
+// Passthrough mock: only the two data hooks are stubbed. `correlationPairKey`
+// is a pure function and stays real — it is the join key the component and the
+// server agree on, so a stubbed version would let a mismatch pass unnoticed.
+vi.mock('@/features/observability/hooks/use-correlations', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/features/observability/hooks/use-correlations')>()),
   useCorrelations: (...args: unknown[]) => mockUseCorrelations(...args),
   useCorrelationInsights: (...args: unknown[]) => mockUseCorrelationInsights(...args),
 }));

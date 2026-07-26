@@ -294,7 +294,7 @@ describe('Correlation Routes', () => {
       expect(mockChatStream).not.toHaveBeenCalled();
     });
 
-    it('returns fallback insights when LLM fails', async () => {
+    it('returns fallback insights with a single stated reason when the LLM fails', async () => {
       mockFindCorrelatedContainers.mockResolvedValue(samplePairs);
       mockChatStream.mockRejectedValue(new Error('Ollama down'));
 
@@ -308,6 +308,39 @@ describe('Correlation Routes', () => {
       expect(body.insights).toHaveLength(2);
       expect(body.insights[0].narrative).toBeNull();
       expect(body.summary).toBeNull();
+      // One reason for the whole batch, so the UI need not print a failure per row.
+      expect(body.narrativeStatus).toBe('unavailable');
+      expect(body.narrativeUnavailableReason).toContain('LLM_API_URL');
+    });
+
+    it('keys every insight to its pair so a client cannot mismatch narratives', async () => {
+      mockFindCorrelatedContainers.mockResolvedValue(samplePairs);
+      mockChatStream.mockResolvedValue(
+        '1. Coupled through the request path.\n2. Inverse memory relationship.\nSUMMARY: Two correlations.',
+      );
+
+      const res = await app.inject({ method: 'GET', url: '/api/metrics/correlations/insights' });
+      const body = res.json();
+
+      expect(body.insights[0].pairKey).toBe('nginx-proxy|api-server|cpu');
+      expect(body.insights[1].pairKey).toBe('postgres|redis-cache|memory');
+      expect(body.narrativeStatus).toBe('ok');
+      expect(body.narrativeUnavailableReason).toBeNull();
+      // The server states how many pairs it found, so a client slicing its own
+      // top-10 from a filtered list can tell the sets differ.
+      expect(body.pairsTotal).toBe(2);
+    });
+
+    it('reports an unparseable model response once, not once per pair', async () => {
+      mockFindCorrelatedContainers.mockResolvedValue(samplePairs);
+      mockChatStream.mockResolvedValue('I am unable to analyse these correlations.');
+
+      const res = await app.inject({ method: 'GET', url: '/api/metrics/correlations/insights' });
+      const body = res.json();
+
+      expect(body.insights.every((i: { narrative: string | null }) => i.narrative === null)).toBe(true);
+      expect(body.narrativeStatus).toBe('unparsed');
+      expect(body.narrativeUnavailableReason).toContain('could not be matched');
     });
 
     it('serves cached insights on repeat request', async () => {
@@ -418,13 +451,14 @@ describe('parseInsightsResponse', () => {
 2. Postgres and Redis show inverse memory patterns due to cache eviction policies.
 SUMMARY: The stack has two notable correlations worth monitoring.`;
 
-    const { insights, summary } = parseInsightsResponse(response, samplePairs);
+    const { insights, summary, narrativeStatus } = parseInsightsResponse(response, samplePairs);
 
     expect(insights).toHaveLength(2);
     expect(insights[0].narrative).toContain('tightly coupled');
     expect(insights[0].containerA).toBe('nginx-proxy');
     expect(insights[1].narrative).toContain('cache eviction');
     expect(summary).toContain('two notable correlations');
+    expect(narrativeStatus).toBe('ok');
   });
 
   it('handles response without summary', () => {
@@ -438,14 +472,118 @@ SUMMARY: The stack has two notable correlations worth monitoring.`;
     expect(summary).toBeNull();
   });
 
-  it('returns null narrative when line not found', () => {
+  it('returns null narratives and an unparsed status when nothing can be attributed', () => {
     const response = 'Some unstructured response without numbering.';
 
-    const { insights } = parseInsightsResponse(response, samplePairs);
+    const { insights, narrativeStatus, narrativeUnavailableReason } = parseInsightsResponse(response, samplePairs);
 
     expect(insights).toHaveLength(2);
     expect(insights[0].narrative).toBeNull();
     expect(insights[1].narrative).toBeNull();
+    // A single unattributable sentence must NOT be pinned to pair 1 and
+    // presented as its explanation.
+    expect(narrativeStatus).toBe('unparsed');
+    expect(narrativeUnavailableReason).toContain('could not be matched');
+  });
+
+  // ── formatting variations the old `startsWith('1.')` check silently dropped ──
+
+  it('parses `1)` style numbering', () => {
+    const { insights, narrativeStatus } = parseInsightsResponse(
+      '1) Proxy fans out to the API.\n2) Cache pressure moves inversely.',
+      samplePairs,
+    );
+    expect(insights[0].narrative).toBe('Proxy fans out to the API.');
+    expect(insights[1].narrative).toBe('Cache pressure moves inversely.');
+    expect(narrativeStatus).toBe('ok');
+  });
+
+  it('parses bold-markdown numbering', () => {
+    const { insights, narrativeStatus } = parseInsightsResponse(
+      '**1.** Proxy fans out to the API.\n**2.** Cache pressure moves inversely.',
+      samplePairs,
+    );
+    expect(insights[0].narrative).toBe('Proxy fans out to the API.');
+    expect(narrativeStatus).toBe('ok');
+  });
+
+  it('parses `Pair N:` headings', () => {
+    const { insights, narrativeStatus } = parseInsightsResponse(
+      'Pair 1: Proxy fans out to the API.\nPair 2: Cache pressure moves inversely.',
+      samplePairs,
+    );
+    expect(insights[0].narrative).toBe('Proxy fans out to the API.');
+    expect(narrativeStatus).toBe('ok');
+  });
+
+  it('parses a bulleted list positionally when the counts line up', () => {
+    const { insights, narrativeStatus } = parseInsightsResponse(
+      '- Proxy fans out to the API.\n- Cache pressure moves inversely.',
+      samplePairs,
+    );
+    expect(insights[0].narrative).toBe('Proxy fans out to the API.');
+    expect(insights[1].narrative).toBe('Cache pressure moves inversely.');
+    expect(narrativeStatus).toBe('ok');
+  });
+
+  it('parses plain paragraphs positionally when the counts line up', () => {
+    const { insights, narrativeStatus } = parseInsightsResponse(
+      'Proxy fans out to the API.\nCache pressure moves inversely.',
+      samplePairs,
+    );
+    expect(insights[0].narrative).toBe('Proxy fans out to the API.');
+    expect(narrativeStatus).toBe('ok');
+  });
+
+  it('attributes by container name when the model ignored the numbering', () => {
+    const { insights, narrativeStatus } = parseInsightsResponse(
+      'Some preamble about the fleet.\n'
+      + 'postgres and redis-cache trade memory as the cache evicts.\n'
+      + 'nginx-proxy forwards every request to api-server.',
+      samplePairs,
+    );
+    expect(insights[0].narrative).toContain('nginx-proxy forwards');
+    expect(insights[1].narrative).toContain('postgres and redis-cache');
+    expect(narrativeStatus).toBe('ok');
+  });
+
+  it('keeps multi-line explanations attached to their number', () => {
+    const { insights } = parseInsightsResponse(
+      '1. Proxy fans out to the API.\n   Both scale with inbound traffic.\n2. Cache pressure moves inversely.',
+      samplePairs,
+    );
+    expect(insights[0].narrative).toBe('Proxy fans out to the API. Both scale with inbound traffic.');
+  });
+
+  it('reports partial attribution rather than claiming success', () => {
+    const { insights, narrativeStatus, narrativeUnavailableReason } = parseInsightsResponse(
+      '1. Only the first pair was explained.',
+      samplePairs,
+    );
+    expect(insights[0].narrative).toBe('Only the first pair was explained.');
+    expect(insights[1].narrative).toBeNull();
+    expect(narrativeStatus).toBe('partial');
+    expect(narrativeUnavailableReason).toContain('only some pairs');
+  });
+
+  it('reads a bolded SUMMARY heading', () => {
+    const { summary } = parseInsightsResponse(
+      '1. A.\n2. B.\n**SUMMARY:** Two correlations worth watching.',
+      samplePairs,
+    );
+    expect(summary).toBe('Two correlations worth watching.');
+  });
+
+  it('emits a stable pairKey for every insight', () => {
+    const { insights } = parseInsightsResponse('1. A.\n2. B.', samplePairs);
+    expect(insights[0].pairKey).toBe('nginx-proxy|api-server|cpu');
+    expect(insights[1].pairKey).toBe('postgres|redis-cache|memory');
+  });
+
+  it('reports ok for an empty pair list', () => {
+    const { insights, narrativeStatus } = parseInsightsResponse('anything', []);
+    expect(insights).toEqual([]);
+    expect(narrativeStatus).toBe('ok');
   });
 });
 

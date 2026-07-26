@@ -648,9 +648,14 @@ describe('getContainer — Docker inspect normalization (#1387)', () => {
     expect(udp?.PublicPort).toBeUndefined();
     expect(udp?.Type).toBe('udp');
 
+    // The host bind address is part of the mapping — a loopback publish and a
+    // world-facing one must not be indistinguishable downstream.
+    expect(tcp?.IP).toBe('0.0.0.0');
+    expect(udp?.IP).toBeUndefined();
+
     // normalizeContainer consumes the mapped Ports[] — verify it survives.
     const ports = normalizeContainer(c, 4, 'prod').ports;
-    expect(ports).toContainEqual({ private: 80, public: 8080, type: 'tcp' });
+    expect(ports).toContainEqual({ private: 80, public: 8080, type: 'tcp', ip: '0.0.0.0' });
     expect(ports).toContainEqual({ private: 53, public: undefined, type: 'udp' });
   });
 

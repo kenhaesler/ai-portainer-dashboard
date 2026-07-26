@@ -17,6 +17,7 @@ import {
   RefreshCw,
   Filter,
   MessageSquare,
+  Regex,
 } from 'lucide-react';
 import {
   useRemediationActions,
@@ -83,11 +84,23 @@ type ActionRecord = {
 type AnalysisPriority = 'high' | 'medium' | 'low';
 type AnalysisSeverity = 'critical' | 'warning' | 'info';
 
+const ANALYSIS_SEVERITIES: AnalysisSeverity[] = ['critical', 'warning', 'info'];
+
+/**
+ * Where the rationale text came from. `pattern-match` is a fixed string picked
+ * by the regex table in `remediation-service.ts`; only `llm-analysis` is model
+ * output. Mirrors `RationaleSourceSchema` in `@dashboard/contracts`.
+ */
+type AnalysisSource = 'pattern-match' | 'llm-analysis';
+
 interface ParsedAnalysis {
   root_cause: string;
-  severity: AnalysisSeverity;
+  /** Null when the model supplied no severity — render no badge, never a default. */
+  severity: AnalysisSeverity | null;
   log_analysis: string;
-  confidence_score: number;
+  /** Null when the model supplied no score — render no badge, never a default. */
+  confidence_score: number | null;
+  analysis_source?: AnalysisSource;
   recommended_actions: Array<{
     action: string;
     priority: AnalysisPriority;
@@ -101,8 +114,15 @@ function parseActionAnalysis(raw: string | undefined): ParsedAnalysis | null {
   try {
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     if (!parsed || typeof parsed !== 'object') return null;
-    if (typeof parsed.root_cause !== 'string' || typeof parsed.confidence_score !== 'number') return null;
-    if (!['critical', 'warning', 'info'].includes(String(parsed.severity))) return null;
+    if (typeof parsed.root_cause !== 'string') return null;
+    // null/absent is a first-class value for both badges: it means "the model
+    // supplied none", which must render as no badge. Only a present-but-
+    // wrong-typed value rejects the payload — rejecting on null would drop the
+    // whole analysis and fall back to printing raw JSON as prose.
+    const rawConfidence = parsed.confidence_score;
+    if (rawConfidence != null && typeof rawConfidence !== 'number') return null;
+    const rawSeverity = parsed.severity;
+    if (rawSeverity != null && !ANALYSIS_SEVERITIES.includes(rawSeverity as AnalysisSeverity)) return null;
     if (!Array.isArray(parsed.recommended_actions)) return null;
 
     const recommendedActions = parsed.recommended_actions
@@ -121,14 +141,34 @@ function parseActionAnalysis(raw: string | undefined): ParsedAnalysis | null {
 
     return {
       root_cause: parsed.root_cause,
-      severity: parsed.severity as AnalysisSeverity,
+      severity: rawSeverity == null ? null : (rawSeverity as AnalysisSeverity),
       log_analysis: typeof parsed.log_analysis === 'string' ? parsed.log_analysis : '',
-      confidence_score: Math.max(0, Math.min(1, parsed.confidence_score)),
+      confidence_score: rawConfidence == null ? null : Math.max(0, Math.min(1, rawConfidence)),
+      analysis_source:
+        parsed.analysis_source === 'pattern-match' || parsed.analysis_source === 'llm-analysis'
+          ? parsed.analysis_source
+          : undefined,
       recommended_actions: recommendedActions,
     };
   } catch {
     return null;
   }
+}
+
+/**
+ * Provenance of a row's rationale text.
+ *
+ * A rationale that does not parse as JSON is always one of the five fixed
+ * strings from the `ACTION_PATTERNS` regex table, so it is `pattern-match` by
+ * construction. A parsed analysis carries its own `analysis_source`; when an
+ * older stored payload omits it the source is genuinely unknown, and we say so
+ * rather than asserting a bot wrote it.
+ */
+function resolveAnalysisSource(rationale: string | undefined): AnalysisSource | null {
+  if (!rationale) return null;
+  const parsed = parseActionAnalysis(rationale);
+  if (!parsed) return 'pattern-match';
+  return parsed.analysis_source ?? null;
 }
 
 /**
@@ -175,14 +215,22 @@ function AnalysisSummaryCell({ action }: { action: ActionRecord }) {
             shouldCollapse && !isExpanded && 'max-h-28 overflow-hidden'
           )}
         >
-        <div className="flex flex-wrap items-center gap-2">
-          <span className={cn('rounded px-2 py-0.5 font-medium', severityClasses)}>
-            {severityLabel}
-          </span>
-          <span className="rounded bg-muted px-2 py-0.5 font-medium text-foreground">
-            Confidence: {(parsedAnalysis.confidence_score * 100).toFixed(0)}%
-          </span>
-        </div>
+        {/* Both badges are omitted when the model supplied no value. A default
+            rendered as an authoritative measurement is worse than no badge. */}
+        {(severityLabel || parsedAnalysis.confidence_score !== null) && (
+          <div className="flex flex-wrap items-center gap-2">
+            {severityLabel && (
+              <span className={cn('rounded px-2 py-0.5 font-medium', severityClasses)}>
+                {severityLabel}
+              </span>
+            )}
+            {parsedAnalysis.confidence_score !== null && (
+              <span className="rounded bg-muted px-2 py-0.5 font-medium text-foreground">
+                Confidence: {(parsedAnalysis.confidence_score * 100).toFixed(0)}%
+              </span>
+            )}
+          </div>
+        )}
         <p className="text-muted-foreground">
           <span className="font-medium text-foreground">Root Cause:</span> {parsedAnalysis.root_cause}
         </p>
@@ -502,12 +550,35 @@ export default function RemediationPage() {
       header: 'Suggested By',
       enableSorting: false,
       cell: ({ row }) => {
-        const suggestedBy = row.original.suggested_by || row.original.suggestedBy || 'AI Monitor';
+        const action = row.original;
+        const source = resolveAnalysisSource(action.rationale || action.description);
+        const suggestedBy = action.suggested_by || action.suggestedBy;
+
+        // A rule-derived rationale is not AI output and must not wear the bot.
+        if (source === 'pattern-match') {
+          return (
+            <div
+              className="flex items-center gap-2"
+              title="Fixed text selected by a keyword rule, not model output"
+            >
+              <Regex className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm">Pattern match</span>
+            </div>
+          );
+        }
+
+        if (source === 'llm-analysis') {
+          return (
+            <div className="flex items-center gap-2" title="Generated by the LLM from logs and metrics">
+              <Bot className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm">{suggestedBy || 'AI analysis'}</span>
+            </div>
+          );
+        }
+
+        // Unknown provenance: report what was stored, assert nothing about it.
         return (
-          <div className="flex items-center gap-2">
-            <Bot className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm">{suggestedBy}</span>
-          </div>
+          <span className="text-sm text-muted-foreground">{suggestedBy || '—'}</span>
         );
       },
     },

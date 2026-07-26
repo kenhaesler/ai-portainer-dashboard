@@ -208,7 +208,18 @@ describe('AiMonitorPage', () => {
             { type: 'memory', currentValue: 80, mean: 50, zScore: 2.1 },
           ],
           compositeScore: 4.08,
-          pattern: 'Resource Exhaustion: Both CPU and memory are elevated',
+          pattern: 'cpu z=3.50, memory z=2.10 — both above the z>2 rule threshold',
+          patternMatch: {
+            id: 'cpu-and-memory-deviation' as const,
+            label: 'CPU and memory both deviating',
+            zScoreThreshold: 2,
+            triggeredBy: [
+              { type: 'cpu', zScore: 3.5 },
+              { type: 'memory', zScore: 2.1 },
+            ],
+            withinThreshold: [],
+            summary: 'cpu z=3.50, memory z=2.10 — both above the z>2 rule threshold',
+          },
           severity: 'high' as const,
           timestamp: '2025-01-15T10:00:00Z',
         },
@@ -222,7 +233,7 @@ describe('AiMonitorPage', () => {
     // sections: "ML-Detected Anomalies" + "Container Health".
     expect(screen.getByText('ML-Detected Anomalies')).toBeTruthy();
     expect(screen.getByText('web-server')).toBeTruthy();
-    expect(screen.getByText('Resource Exhaustion')).toBeTruthy();
+    expect(screen.getByText('CPU and memory both deviating')).toBeTruthy();
     expect(screen.getByText('4.08')).toBeTruthy();
     // z-score values shown
     expect(screen.getByText('3.5')).toBeTruthy();
@@ -318,7 +329,7 @@ describe('AiMonitorPage', () => {
     expect(screen.queryByText('Adaptive')).toBeNull();
   });
 
-  it('renders pattern badge with correct short label extracted from full pattern string', () => {
+  it('renders the rule label and the z-scores it fired on, not a diagnosis', () => {
     vi.mocked(useCorrelatedAnomalies).mockReturnValue({
       data: [
         {
@@ -328,7 +339,15 @@ describe('AiMonitorPage', () => {
             { type: 'memory', currentValue: 90, mean: 45, zScore: 2.8 },
           ],
           compositeScore: 2.8,
-          pattern: 'Memory Leak Suspected: Memory usage is elevated while CPU remains normal',
+          pattern: 'memory z=2.80 above the z>2 rule threshold, cpu z=0.40 within it',
+          patternMatch: {
+            id: 'memory-only-deviation' as const,
+            label: 'Memory deviating, CPU within threshold',
+            zScoreThreshold: 2,
+            triggeredBy: [{ type: 'memory', zScore: 2.8 }],
+            withinThreshold: [{ type: 'cpu', zScore: 0.4 }],
+            summary: 'memory z=2.80 above the z>2 rule threshold, cpu z=0.40 within it',
+          },
           severity: 'medium' as const,
           timestamp: '2025-01-15T10:00:00Z',
         },
@@ -338,12 +357,47 @@ describe('AiMonitorPage', () => {
 
     renderPage();
 
-    // Short label only, not full description
-    expect(screen.getByText('Memory Leak Suspected')).toBeTruthy();
-    // The description part appears separately
-    expect(
-      screen.getByText('Memory usage is elevated while CPU remains normal'),
-    ).toBeTruthy();
+    // The badge names what was observed, keyed off the stable rule id.
+    const badge = screen.getByTestId('pattern-badge');
+    expect(badge.textContent).toBe('Memory deviating, CPU within threshold');
+    expect(badge.getAttribute('data-pattern-id')).toBe('memory-only-deviation');
+
+    // The body restates the rule and the numbers it fired on.
+    expect(screen.getByTestId('pattern-rule-summary').textContent).toBe(
+      'memory z=2.80 above the z>2 rule threshold, cpu z=0.40 within it',
+    );
+
+    // The old hardcoded diagnosis must not come back. It rendered
+    // byte-identically on every card that hit the same rule branch.
+    expect(screen.queryByText(/suggesting gradual memory accumulation/)).toBeNull();
+    expect(screen.queryByText('Memory Leak Suspected')).toBeNull();
+  });
+
+  it('falls back to the pattern string when patternMatch is absent (stale server build)', () => {
+    vi.mocked(useCorrelatedAnomalies).mockReturnValue({
+      data: [
+        {
+          containerId: 'c3',
+          containerName: 'legacy-api',
+          metrics: [{ type: 'memory', currentValue: 90, mean: 45, zScore: 2.8 }],
+          compositeScore: 2.8,
+          pattern: 'memory z=2.80 above the z>2 rule threshold',
+          patternMatch: null,
+          severity: 'medium' as const,
+          timestamp: '2025-01-15T10:00:00Z',
+        },
+      ],
+      isLoading: false,
+    } as ReturnType<typeof useCorrelatedAnomalies>);
+
+    renderPage();
+
+    // Body degrades to the legacy string rather than to a blank card...
+    expect(screen.getByTestId('pattern-rule-summary').textContent).toBe(
+      'memory z=2.80 above the z>2 rule threshold',
+    );
+    // ...but no badge, since there is no rule id to label it with.
+    expect(screen.queryByTestId('pattern-badge')).toBeNull();
   });
 
   it('acknowledges an unacknowledged insight from the insight card', () => {

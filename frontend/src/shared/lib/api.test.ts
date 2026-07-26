@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { api } from './api';
+import { ApiError } from './api-error';
 import { AUTH_TOKEN_KEY } from './auth-constants';
 
 // Mock fetch globally
@@ -213,7 +214,85 @@ describe('ApiClient', () => {
     });
   });
 
+  // A 401 answering a request that is trying to *establish* a session is not an
+  // expired session. Before this, a mistyped password surfaced as the literal
+  // text "Session expired" on the login form and tore down auth state.
+  describe('suppressSessionExpiry', () => {
+    it('does not rewrite the message or fire auth:expired on a suppressed 401', async () => {
+      const eventSpy = vi.fn();
+      window.addEventListener('auth:expired', eventSpy);
+
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        json: () => Promise.resolve({ error: 'Invalid credentials' }),
+      });
+
+      api.setToken('some-token');
+
+      await expect(
+        api.post('/api/auth/login', { username: 'a', password: 'b' }, { suppressSessionExpiry: true })
+      ).rejects.toThrow('Invalid credentials');
+
+      expect(eventSpy).not.toHaveBeenCalled();
+      expect(api.getToken()).toBe('some-token');
+
+      window.removeEventListener('auth:expired', eventSpy);
+    });
+
+    it('carries the 401 status through on a suppressed 401 so callers can branch on it', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        json: () => Promise.resolve({}),
+      });
+
+      const err = await api
+        .post('/api/auth/login', {}, { suppressSessionExpiry: true })
+        .catch((e: unknown) => e);
+
+      expect(err).toBeInstanceOf(ApiError);
+      expect((err as ApiError).status).toBe(401);
+    });
+
+    it('still applies session-expiry handling when the flag is not set', async () => {
+      const eventSpy = vi.fn();
+      window.addEventListener('auth:expired', eventSpy);
+
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        json: () => Promise.resolve({ error: 'Invalid credentials' }),
+      });
+
+      await expect(api.post('/api/auth/login', {})).rejects.toThrow('Session expired');
+      expect(eventSpy).toHaveBeenCalled();
+
+      window.removeEventListener('auth:expired', eventSpy);
+    });
+
+    it('does not forward the flag to the server as a fetch option', async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({}) });
+
+      await api.post('/api/auth/login', { username: 'a' }, { suppressSessionExpiry: true });
+
+      const init = mockFetch.mock.calls[0][1] as Record<string, unknown>;
+      expect(init).not.toHaveProperty('suppressSessionExpiry');
+    });
+  });
+
   describe('error handling', () => {
+    it('describes a 429 as a rate limit rather than a bare HTTP code', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 429,
+        json: () => Promise.resolve({}),
+      });
+
+      await expect(api.get('/api/busy')).rejects.toThrow('Too many requests — rate limit reached');
+    });
+
+
     it('should throw error for non-ok response', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: false,

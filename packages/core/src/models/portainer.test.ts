@@ -8,6 +8,7 @@ import {
   ImageSchema,
   EndpointArraySchema,
   ContainerArraySchema,
+  containerFromInspect,
 } from './portainer.js';
 
 describe('Portainer Models', () => {
@@ -448,5 +449,61 @@ describe('Portainer Models', () => {
       const result = EndpointArraySchema.safeParse('not an array');
       expect(result.success).toBe(false);
     });
+  });
+});
+
+describe('containerFromInspect port bindings', () => {
+  const base = {
+    Id: 'abc123',
+    Name: '/web',
+    Created: '2026-07-26T08:00:00.000Z',
+    State: { Status: 'running', Running: true },
+    Config: { Image: 'nginx:latest', Labels: {} },
+  };
+
+  it('carries the host bind IP through for each binding', () => {
+    const container = containerFromInspect({
+      ...base,
+      NetworkSettings: {
+        Ports: {
+          '5432/tcp': [{ HostIp: '127.0.0.1', HostPort: '5432' }],
+        },
+      },
+    });
+
+    expect(container.Ports).toEqual([
+      { IP: '127.0.0.1', PrivatePort: 5432, PublicPort: 5432, Type: 'tcp' },
+    ]);
+  });
+
+  it('keeps both bindings of a dual-stack publish instead of dropping one', () => {
+    // Docker lists IPv4 and IPv6 separately. Taking bindings[0] silently hid
+    // one of them; discarding the IP made the survivors indistinguishable.
+    const container = containerFromInspect({
+      ...base,
+      NetworkSettings: {
+        Ports: {
+          '80/tcp': [
+            { HostIp: '0.0.0.0', HostPort: '8080' },
+            { HostIp: '::', HostPort: '8080' },
+          ],
+        },
+      },
+    });
+
+    expect(container.Ports).toHaveLength(2);
+    expect(container.Ports!.map((p) => p.IP)).toEqual(['0.0.0.0', '::']);
+    expect(container.Ports!.every((p) => p.PublicPort === 8080)).toBe(true);
+  });
+
+  it('still reports an exposed but unpublished port', () => {
+    const container = containerFromInspect({
+      ...base,
+      NetworkSettings: { Ports: { '9000/tcp': null } },
+    });
+
+    expect(container.Ports).toEqual([
+      { PrivatePort: 9000, PublicPort: undefined, Type: 'tcp' },
+    ]);
   });
 });
