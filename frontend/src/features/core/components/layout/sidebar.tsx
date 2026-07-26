@@ -15,6 +15,7 @@ import {
   type NavDestination,
 } from '@/features/core/lib/navigation-manifest';
 import { m, AnimatePresence, useReducedMotion } from 'framer-motion';
+import { PRODUCT_NAME } from '@/shared/lib/product';
 
 function AnimatedBadge({ count }: { count: number }) {
   const prevCountRef = useRef(count);
@@ -284,9 +285,8 @@ export function Sidebar({ forceRail = false }: { forceRail?: boolean } = {}) {
                   }
                 >
                   <span className="truncate text-sm font-semibold text-sidebar-foreground">
-                    Docker Insights
+                    {PRODUCT_NAME}
                   </span>
-                  <span className="text-[10px] text-muted-foreground">powered by AI</span>
                 </m.div>
               )}
             </AnimatePresence>

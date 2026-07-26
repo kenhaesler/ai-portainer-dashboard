@@ -44,6 +44,32 @@ Backend uses npm workspaces under `packages/` with a `core/` kernel (`@dashboard
 
 **Unknown metric samples are excluded, never zero-filled (#1567):** `collectMetrics()` (`packages/observability/src/services/metrics-collector.ts`) returns `cpu`/`memory` as `number | null` — `null` when `system_cpu_usage` (CPU), `memory_stats.usage`, or `memory_stats.limit` (memory) is missing/non-positive in the Docker stats payload, i.e. the percentage genuinely cannot be computed this cycle. The scheduler (`packages/server/src/scheduler.ts`) skips writing that `metric_type` row entirely rather than persisting a fabricated `0` (the `metrics.value` column stays `NOT NULL` — no migration; "unknown" is the row's absence, not a null cell). Latest reads return only rows sharing each container's newest collection timestamp, so an omitted metric is not silently carried forward from an older cycle. `buildFleetResources()` (`packages/foundation/src/routes/dashboard.ts`) tracks independent CPU/memory sample counts so a container with a known memory reading but unknown CPU doesn't dilute the fleet CPU average (and vice versa), while independently known `memory_bytes` still contributes to per-stack totals. No total-node-memory fallback is used for a missing memory limit: Docker already reports host-total memory as `limit` when a container has no explicit cap, so a still-missing limit signals a malformed payload, not an unlimited container.
 
+**Design-critique remediation (2026-07-26):** a whole-app review produced 173 findings; see
+`@docs/architecture.md` ("Design-critique remediation") for the full rationale. Four invariants
+worth knowing before touching UI:
+
+1. **Navigation comes from one manifest.** `frontend/src/features/core/lib/navigation-manifest.ts`
+   feeds the sidebar, breadcrumb, command palette, mobile nav and shortcuts overlay. There were
+   previously six hand-maintained copies and they had drifted (breadcrumb read "Dashboard /
+   Dashboard" on 7 of 20 routes; Cmd-K was missing 5 destinations). Do not add a seventh — add to
+   the manifest. `navigation-manifest.test.ts` fails if an entry lacks a breadcrumb label or a
+   palette entry. `NAV_CHORDS` lives there too, not in `app-layout.tsx`, because the shortcuts
+   overlay needs it and `app-layout` renders that overlay (the cycle left it `undefined` at
+   module-init).
+2. **`useAutoRefresh` owns the timer.** Pass `{ onTick }`; never hand-roll a `window.setInterval`
+   at the call site. Six pages previously showed a pulsing "live" dot over a dropdown that
+   scheduled nothing. Pass a page-specific `storageKey` unless the page should share the global
+   cadence. Prefer `setRefreshInterval` over the deprecated `setInterval` alias — destructuring the
+   latter shadows `window.setInterval` in the consuming module.
+3. **Never render a default as if it were a measurement.** `clampConfidenceScore` and
+   `parseSeverity` return `null` when the model supplied nothing; omit the badge rather than
+   showing a fallback number. Likewise, label rule-derived text as such (`rationaleSource`) — a
+   threshold rule presented under a Brain icon as "ML-Detected" is the failure this review named
+   most often. The maths is sound; it is the framing that must not overclaim.
+4. **Use `PageHeader` and `PRODUCT_NAME`.** One `<h1>` per page from
+   `shared/components/layout/page-header.tsx` (no gradient/icon/size-override prop, deliberately);
+   the product's name comes from `shared/lib/product.ts` and is **Container Insights**.
+
 ## Security (Mandatory)
 
 1. **Auth & RBAC** — JWT via `jose` (32+ char secrets); session store in PostgreSQL, validated server-side per request. OIDC/SSO via `openid-client` v6 with PKCE; login rate-limited (`LOGIN_RATE_LIMIT`). OIDC roles derive only from group→role mappings on every login; the `oidc.allow_unmapped_viewer` setting (Settings → Security, default **off**/restrictive) controls the fallback: off ⇒ a login resolving to no mapped role (and no `*` wildcard) is denied `403` (`oidc_login_denied` audit) and the user's lingering sessions are revoked (`invalidateAllUserSessions`, best-effort), enforced for new *and* existing users; on ⇒ unmatched *new* users get `viewer` while existing users keep their stored role (the `resolvedRole || existingUser?.role || 'viewer'` fallback). A `*` wildcard applies even to users who present no groups. Local auth is unaffected. Gate lives in `packages/foundation/src/routes/oidc.ts`. `fastify.authenticate` on all protected routes; mutating endpoints (POST/PUT/DELETE) and sensitive reads (Backups, Settings, Cache, User Management) MUST also use `fastify.requireRole('admin')` — never assume `authenticate` alone is sufficient for admin actions. Role changes, password resets, user deletions, and OIDC group-mapping downgrades revoke all of the target's sessions immediately (`invalidateAllUserSessions`, best-effort) — the role is frozen into the signed JWT, so without revocation a demotion only takes effect at token expiry. Live Socket.IO connections re-validate their session (and the `admin` role on the remediation namespace) every 60s and are disconnected on revocation/demotion (`packages/core/src/plugins/socket-io.ts`). Insight acknowledgement is gated `requireRole('operator')`; `/health/ready/detail` is admin-only.

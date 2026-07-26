@@ -2,6 +2,7 @@ import { version as reactVersion } from 'react';
 import { ChevronRight, Settings2 } from 'lucide-react';
 import { useCacheStats } from '@/features/core/hooks/use-cache-admin';
 import { useSystemInfo } from '@/features/core/hooks/use-system-info';
+import { PRODUCT_NAME } from '@/shared/lib/product';
 
 export interface CacheStatsSummary {
   backend: 'multi-layer' | 'memory-only';
@@ -51,7 +52,7 @@ export function GeneralTab({ theme }: GeneralTabProps) {
         <div className="mt-4 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           <div className="rounded-lg bg-muted/50 p-4">
             <p className="text-xs text-muted-foreground">Application</p>
-            <p className="font-medium mt-1">Docker Insight</p>
+            <p className="font-medium mt-1">{PRODUCT_NAME}</p>
           </div>
           <div className="rounded-lg bg-muted/50 p-4">
             <p className="text-xs text-muted-foreground">Version</p>
