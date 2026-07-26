@@ -162,27 +162,57 @@ describe('CorrelationInsightsPanel', () => {
     expect(skeletons.length).toBeGreaterThanOrEqual(2);
   });
 
-  it('shows fallback text when narrative is null', () => {
+  it('states why narratives are missing once, not per row', () => {
+    // Previously each row printed an italic "Insight unavailable", so a single
+    // unparseable model response rendered the same failure ten times with no
+    // cause and no retry. The reason is now said once above the list, and the
+    // correlation values — which are computed from metrics and stand on their
+    // own — keep the panel useful when the model does not answer.
+    mockUseCorrelations.mockReturnValue({
+      data: { pairs: samplePairs },
+      isLoading: false,
+    });
+    mockUseCorrelationInsights.mockReturnValue({
+      data: {
+        insights: [],
+        summary: null,
+        narrativeStatus: 'unparsed',
+        narrativeUnavailableReason:
+          'The model returned an unrecognised format, so explanations are unavailable for these pairs.',
+      },
+      isLoading: false,
+    });
+    renderPanel({ llmAvailable: true });
+
+    const reason = screen.getByTestId('narrative-unavailable-reason');
+    expect(reason).toBeInTheDocument();
+    expect(reason).toHaveAttribute('data-narrative-status', 'unparsed');
+    expect(screen.getAllByTestId('narrative-unavailable-reason')).toHaveLength(1);
+    expect(screen.queryByText('Insight unavailable')).not.toBeInTheDocument();
+
+    // The correlation data itself still renders.
+    expect(screen.getAllByText('nginx-proxy').length).toBeGreaterThan(0);
+  });
+
+  it('does not show an unavailable reason when narratives parsed cleanly', () => {
     mockUseCorrelations.mockReturnValue({
       data: { pairs: [samplePairs[0]] },
       isLoading: false,
     });
     mockUseCorrelationInsights.mockReturnValue({
       data: {
-        insights: [{
-          containerA: 'nginx-proxy',
-          containerB: 'api-server',
-          metricType: 'cpu',
-          correlation: 0.94,
-          narrative: null,
-        }],
+        insights: [],
         summary: null,
+        narrativeStatus: 'ok',
+        narrativeUnavailableReason: null,
       },
       isLoading: false,
     });
     renderPanel({ llmAvailable: true });
 
-    expect(screen.getByText('Insight unavailable')).toBeInTheDocument();
+    expect(
+      screen.queryByTestId('narrative-unavailable-reason'),
+    ).not.toBeInTheDocument();
   });
 
   it('renders correlation coefficient values', () => {

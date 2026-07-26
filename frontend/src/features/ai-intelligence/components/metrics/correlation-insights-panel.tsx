@@ -151,7 +151,15 @@ export const CorrelationInsightsPanel = memo(function CorrelationInsightsPanel({
   const narrativeMap = useMemo(() => {
     const map = new Map<string, string | null>();
     for (const insight of insights) {
-      map.set(insight.pairKey, insight.narrative);
+      // Prefer the server-supplied key — it is what stops this list and the
+      // route's own top-N from drifting apart when a container filter is
+      // active. Fall back to deriving it so a payload from an older backend
+      // degrades to "narratives still shown" rather than "every narrative
+      // silently missing".
+      const key =
+        insight.pairKey ??
+        correlationPairKey(insight.containerA, insight.containerB, insight.metricType);
+      map.set(key, insight.narrative);
     }
     return map;
   }, [insights]);

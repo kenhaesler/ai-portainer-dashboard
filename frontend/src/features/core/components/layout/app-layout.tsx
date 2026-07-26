@@ -17,7 +17,10 @@ import { useKeyChord } from '@/shared/hooks/use-key-chord';
 import type { ChordBinding } from '@/shared/hooks/use-key-chord';
 import { AnimatePresence, m, useReducedMotion } from 'framer-motion';
 import { ErrorBoundary } from '@/shared/components/feedback/error-boundary';
-import { breadcrumbLabelForPath } from '@/features/core/lib/navigation-manifest';
+import {
+  breadcrumbLabelForPath,
+  NAV_CHORDS,
+} from '@/features/core/lib/navigation-manifest';
 
 /**
  * Catches render errors thrown by the active page so one failing route
@@ -46,22 +49,16 @@ function getRouteDepth(pathname: string): number {
   return pathname.split('/').filter(Boolean).length;
 }
 
-/** `g`-chord key assignments, paired with the manifest path they jump to. */
-export const NAV_CHORDS: ReadonlyArray<readonly [string, string]> = [
-  ['gh', '/'],
-  ['gw', '/workloads'],
-  ['gf', '/infrastructure'],
-  ['gl', '/health'],
-  ['gi', '/images'],
-  ['gn', '/topology'],
-  ['gm', '/metrics'],
-  ['gr', '/remediation'],
-  ['ge', '/traces'],
-  ['gx', '/assistant'],
-  ['go', '/edge-logs'],
-  ['gv', '/logs'],
-  ['gs', '/settings'],
-];
+/**
+ * `g`-chord key assignments, re-exported for existing importers.
+ *
+ * The definition lives in the navigation manifest alongside the destinations it
+ * points at. It was briefly declared here, which created a cycle: the keyboard
+ * shortcuts overlay needs the chords to label itself, and this module imports
+ * that overlay — so `NAV_CHORDS` read as `undefined` at module-init time
+ * whenever the graph was entered through the router.
+ */
+export { NAV_CHORDS };
 
 /**
  * True between 768px and 1023px. At 820px the full 256px sidebar spent ~37%

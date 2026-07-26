@@ -315,3 +315,28 @@ export function closestDestination(pathname: string): NavDestination | null {
   }
   return best ? best.destination : null;
 }
+
+/**
+ * `g`-chord key assignments, paired with the manifest path they jump to.
+ *
+ * Lives here rather than in the layout so that anything needing to *label* a
+ * chord (the keyboard-shortcuts overlay) can read it without importing the
+ * layout that renders that overlay. Declaring it in app-layout.tsx created
+ * exactly that cycle, and `NAV_CHORDS` resolved to `undefined` at module-init
+ * time whenever the graph was entered through the router.
+ */
+export const NAV_CHORDS: ReadonlyArray<readonly [string, string]> = [
+  ['gh', '/'],
+  ['gw', '/workloads'],
+  ['gf', '/infrastructure'],
+  ['gl', '/health'],
+  ['gi', '/images'],
+  ['gn', '/topology'],
+  ['gm', '/metrics'],
+  ['gr', '/remediation'],
+  ['ge', '/traces'],
+  ['gx', '/assistant'],
+  ['go', '/edge-logs'],
+  ['gv', '/logs'],
+  ['gs', '/settings'],
+];

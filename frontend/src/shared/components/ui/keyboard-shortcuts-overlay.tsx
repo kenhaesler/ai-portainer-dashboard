@@ -1,7 +1,9 @@
 import { useEffect, useCallback } from 'react';
 import { cn } from '@/shared/lib/utils';
-import { NAV_CHORDS } from '@/features/core/components/layout/app-layout';
-import { breadcrumbLabelForPath } from '@/features/core/lib/navigation-manifest';
+import {
+  NAV_CHORDS,
+  breadcrumbLabelForPath,
+} from '@/features/core/lib/navigation-manifest';
 
 interface ShortcutEntry {
   keys: string[];

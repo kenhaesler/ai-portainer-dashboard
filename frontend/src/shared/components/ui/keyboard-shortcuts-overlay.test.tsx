@@ -1,8 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { KeyboardShortcutsOverlay } from './keyboard-shortcuts-overlay';
-import { NAV_CHORDS } from '@/features/core/components/layout/app-layout';
-import { breadcrumbLabelForPath } from '@/features/core/lib/navigation-manifest';
+import {
+  NAV_CHORDS,
+  breadcrumbLabelForPath,
+} from '@/features/core/lib/navigation-manifest';
 
 describe('KeyboardShortcutsOverlay — labels derive from the navigation manifest', () => {
   // This overlay used to carry its own hardcoded copy of the route labels — the
