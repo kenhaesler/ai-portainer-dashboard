@@ -11,6 +11,9 @@ let mockQueryString = 'endpoint=1&stack=workers';
 vi.mock('react-router-dom', () => ({
   useSearchParams: () => [new URLSearchParams(mockQueryString), mockSetSearchParams],
   useNavigate: () => mockNavigate,
+  Link: ({ to, children, ...rest }: { to: string; children?: ReactNode }) => (
+    <a href={to} {...rest}>{children}</a>
+  ),
 }));
 
 vi.mock('@/shared/lib/csv-export', () => ({
@@ -87,11 +90,17 @@ vi.mock('@/features/containers/hooks/use-containers', () => ({
   useContainers: (...args: unknown[]) => mockUseContainers(...args),
 }));
 
+let mockAutoRefreshOptions: { onTick?: () => void } | undefined;
+
 vi.mock('@/shared/hooks/use-auto-refresh', () => ({
-  useAutoRefresh: () => ({
-    interval: 30,
-    setInterval: vi.fn(),
-  }),
+  useAutoRefresh: (_interval?: number, opts?: { onTick?: () => void }) => {
+    mockAutoRefreshOptions = opts;
+    return {
+      interval: 30,
+      setRefreshInterval: vi.fn(),
+      setInterval: vi.fn(),
+    };
+  },
 }));
 
 vi.mock('@/shared/hooks/use-force-refresh', () => ({
@@ -113,6 +122,8 @@ vi.mock('@/shared/components/ui/themed-select', () => ({
 
 let mockOnSelectionChange: ((rows: Array<{ id: string; name: string; endpointId: number }>) => void) | undefined;
 let mockColumns: any[] | undefined;
+let mockRowHref: ((row: any) => string) | undefined;
+let mockRowLabel: ((row: any) => string) | undefined;
 
 vi.mock('@/shared/components/tables/data-table', () => ({
   DataTable: ({
@@ -125,6 +136,8 @@ vi.mock('@/shared/components/tables/data-table', () => ({
     onRowClick,
     autoFit,
     minTableWidth,
+    rowHref,
+    rowLabel,
   }: {
     columns?: any[];
     data: Array<{ name: string }>;
@@ -135,9 +148,13 @@ vi.mock('@/shared/components/tables/data-table', () => ({
     onRowClick?: (row: { id: string; name: string; endpointId: number }) => void;
     autoFit?: boolean;
     minTableWidth?: number;
+    rowHref?: (row: any) => string;
+    rowLabel?: (row: any) => string;
   }) => {
     mockOnSelectionChange = onSelectionChange;
     mockColumns = columns;
+    mockRowHref = rowHref;
+    mockRowLabel = rowLabel;
     return (
       <div
         data-testid="workloads-table"
@@ -242,6 +259,7 @@ vi.mock('@/shared/components/forms/workload-smart-search', () => ({
   },
 }));
 
+import { findDestination } from '@/features/core/lib/navigation-manifest';
 import WorkloadExplorerPage from './workload-explorer';
 
 describe('WorkloadExplorerPage', () => {
@@ -669,30 +687,13 @@ describe('WorkloadExplorerPage', () => {
     expect(params.get('state')).toBe('running');
   });
 
-  it('clicking the Group cell filters by the container group, preserving other filters', () => {
+  it('still offers group filtering via the Group dropdown after the Group column was dropped', () => {
     mockQueryString = 'endpoint=1&state=running';
     render(<WorkloadExplorerPage />);
-
-    const groupColumn = mockColumns?.find((col: { id?: string }) => col.id === 'group');
-    expect(groupColumn).toBeDefined();
-
-    const workloadContainer = {
-      id: 'c-workers',
-      name: 'workers-api-1',
-      image: 'workers:latest',
-      labels: { 'com.docker.compose.project': 'workers' },
-    };
-    const cellResult = groupColumn.cell({ row: { original: workloadContainer } });
-    const { container } = render(cellResult);
-    const groupButton = container.querySelector('button');
-    expect(groupButton).not.toBeNull();
-    fireEvent.click(groupButton!);
-
-    expect(mockSetSearchParams).toHaveBeenCalledTimes(1);
-    const params = mockSetSearchParams.mock.calls[0][0] as URLSearchParams;
-    expect(params.get('group')).toBe('workload');
-    expect(params.get('endpoint')).toBe('1');
-    expect(params.get('state')).toBe('running');
+    // The column went away; the filter did not.
+    expect(screen.getByTestId('group-select')).toBeInTheDocument();
+    expect(screen.getAllByText('System').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Workload').length).toBeGreaterThanOrEqual(1);
   });
 
   it('clicking the Image cell filters by image, preserving other filters', () => {
@@ -1076,18 +1077,28 @@ describe('WorkloadExplorerPage — columns (#1288)', () => {
     return typeof col?.header === 'string' ? col.header : undefined;
   }
 
-  it('renders columns in order Name, Stackname, State, Endpoint, Imagename, Group (no Actions column)', () => {
+  it('renders columns in order Name, Favourite, Stack, State, Endpoint, Image (no Actions column)', () => {
     render(<WorkloadExplorerPage />);
     const ids = mockColumns?.map((c) => c.id ?? c.accessorKey);
-    expect(ids).toEqual(['name', 'stack', 'state', 'endpointName', 'image', 'group']);
+    // The favourite star has its own column so the Name cell can be wrapped in
+    // the row anchor — an <a> may not contain a <button>.
+    expect(ids).toEqual(['name', 'favorite', 'stack', 'state', 'endpointName', 'image']);
   });
 
-  it('renames the stack and image headers to Stackname and Imagename', () => {
+  it('labels the stack and image columns Stack and Image, matching the filter dropdowns', () => {
     render(<WorkloadExplorerPage />);
     const stack = mockColumns?.find((c) => c.id === 'stack');
     const image = mockColumns?.find((c) => c.accessorKey === 'image');
-    expect(columnHeader(stack)).toBe('Stackname');
-    expect(columnHeader(image)).toBe('Imagename');
+    // "Stackname"/"Imagename" were data keys typed as labels, while the
+    // dropdowns directly above them said Stack and Endpoint.
+    expect(columnHeader(stack)).toBe('Stack');
+    expect(columnHeader(image)).toBe('Image');
+  });
+
+  it('drops the Group column, which drew an identical unlabelled icon on every row', () => {
+    render(<WorkloadExplorerPage />);
+    const ids = new Set(mockColumns?.map((c) => c.id ?? c.accessorKey));
+    expect(ids.has('group')).toBe(false);
   });
 
   it('omits the rate, errorRate, p95Ms, and age columns', () => {
@@ -1127,7 +1138,7 @@ describe('WorkloadExplorerPage — columns (#1288)', () => {
     );
   });
 
-  it('Name cell tag button is single-line (whitespace-nowrap)', () => {
+  it('Name cell tag is single-line and contains no interactive element', () => {
     render(<WorkloadExplorerPage />);
     const nameCol = mockColumns?.find((c) => c.accessorKey === 'name');
     expect(nameCol).toBeDefined();
@@ -1136,11 +1147,44 @@ describe('WorkloadExplorerPage — columns (#1288)', () => {
       getValue: () => 'workers-api-1',
     });
     const { container } = render(cellResult);
-    // The name tag button is the one that links to the container detail page
-    // (the FavoriteButton mock is a separate <button>). Find it by its bg class.
-    const tagButton = container.querySelector('button.bg-primary\\/10');
-    expect(tagButton).not.toBeNull();
-    expect(tagButton?.className).toContain('whitespace-nowrap');
+    const tag = container.querySelector('span.bg-primary\\/10');
+    expect(tag).not.toBeNull();
+    expect(tag?.className).toContain('whitespace-nowrap');
+    // DataTable wraps this cell in the row's <a href>; a nested button would
+    // be invalid HTML and would swallow the link.
+    expect(container.querySelector('button')).toBeNull();
+    expect(container.querySelector('a')).toBeNull();
+  });
+
+  it('marks only system containers with an inline System chip in the Name cell', () => {
+    render(<WorkloadExplorerPage />);
+    const nameCol = mockColumns?.find((c) => c.accessorKey === 'name');
+
+    // beyla (grafana/beyla) is classified as a system container.
+    const { container: sys } = render(
+      nameCol.cell({
+        row: { original: defaultContainersMock.data[1] },
+        getValue: () => 'beyla',
+      }),
+    );
+    expect(sys.textContent).toContain('System');
+
+    // A plain workload carries no chip — the column has variance now.
+    const { container: workload } = render(
+      nameCol.cell({
+        row: { original: defaultContainersMock.data[0] },
+        getValue: () => 'workers-api-1',
+      }),
+    );
+    expect(workload.textContent).not.toContain('System');
+  });
+
+  it('renders the favourite star in its own column with an accessible header', () => {
+    render(<WorkloadExplorerPage />);
+    const favCol = mockColumns?.find((c) => c.id === 'favorite');
+    expect(favCol).toBeDefined();
+    const { container } = render(favCol.header());
+    expect(container.querySelector('.sr-only')?.textContent).toBe('Favourite');
   });
 
   it('Stackname cell renders the stack tag with whitespace-nowrap', () => {
@@ -1156,25 +1200,211 @@ describe('WorkloadExplorerPage — columns (#1288)', () => {
     expect(tagButton?.className).toContain('whitespace-nowrap');
   });
 
-  it('renders the Group cell as a labelled, clickable icon (System=Cog, Workload=Box)', () => {
+  it('uses theme tokens, not raw palette colours, for the Stack and Endpoint cells', () => {
     render(<WorkloadExplorerPage />);
-    const groupCol = mockColumns?.find((c) => c.id === 'group');
-    expect(groupCol).toBeDefined();
+    const stackCol = mockColumns?.find((c) => c.id === 'stack');
+    const endpointCol = mockColumns?.find((c) => c.accessorKey === 'endpointName');
 
-    // System container (beyla → grafana/beyla image)
-    const systemCell = groupCol.cell({ row: { original: defaultContainersMock.data[1] } });
-    const { container: sysC } = render(systemCell);
-    const sysWrap = sysC.querySelector('button[aria-label="Filter by System"]');
-    expect(sysWrap).not.toBeNull();
-    expect(sysWrap?.querySelector('svg.lucide-cog')).toBeInTheDocument();
-    expect(sysWrap?.className).toContain('bg-amber-100');
+    const { container: stackC } = render(
+      stackCol.cell({ row: { original: defaultContainersMock.data[0] }, getValue: () => undefined }),
+    );
+    const stackBtn = stackC.querySelector('button');
+    // purple is reserved for AI insight; the app ships 8 light themes, so a
+    // hardcoded purple-100/purple-900 pair fails on most of them.
+    expect(stackBtn?.className).not.toMatch(/purple/);
 
-    // Workload container (workers-api-1)
-    const workloadCell = groupCol.cell({ row: { original: defaultContainersMock.data[0] } });
-    const { container: wlC } = render(workloadCell);
-    const wlWrap = wlC.querySelector('button[aria-label="Filter by Workload"]');
-    expect(wlWrap).not.toBeNull();
-    expect(wlWrap?.querySelector('svg.lucide-box')).toBeInTheDocument();
-    expect(wlWrap?.className).toContain('bg-slate-100');
+    const { container: epC } = render(
+      endpointCol.cell({ row: { original: { endpointId: 1, endpointName: 'local' } } }),
+    );
+    const epBtn = epC.querySelector('button');
+    // The saturated blue pill was the highest-chroma element on the page and
+    // repeated one value on every row.
+    expect(epBtn?.className).not.toMatch(/blue/);
+    expect(epBtn?.className).toContain('text-muted-foreground');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Design-critique remediation: header, auto-refresh, row links, mobile cards
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('WorkloadExplorerPage — page header', () => {
+  beforeEach(() => {
+    mockQueryString = 'endpoint=1';
+    mockSetSearchParams.mockReset();
+    mockNavigate.mockReset();
+    mockUseContainers.mockReturnValue(defaultContainersMock);
+  });
+
+  it('renders exactly one h1, titled with the nav manifest label', () => {
+    render(<WorkloadExplorerPage />);
+    const headings = screen.getAllByRole('heading', { level: 1 });
+    expect(headings).toHaveLength(1);
+    // The sidebar says "Workloads"; the page used to say "Workload Explorer".
+    expect(headings[0]).toHaveTextContent(findDestination('/workloads')!.label);
+    expect(headings[0]).toHaveTextContent('Workloads');
+    expect(screen.getByTestId('page-header')).toBeInTheDocument();
+  });
+
+  it('replaces the "Browse and manage containers" subtitle with live counts', () => {
+    render(<WorkloadExplorerPage />);
+    // Observer-first: nothing on this page manages anything.
+    expect(screen.queryByText(/browse and manage containers/i)).not.toBeInTheDocument();
+    expect(screen.getByTestId('page-header-subtitle')).toHaveTextContent(
+      '3 containers across 1 endpoint',
+    );
+  });
+
+  it('singularises the subtitle for a single container', () => {
+    mockQueryString = 'endpoint=1&stack=workers';
+    render(<WorkloadExplorerPage />);
+    expect(screen.getByTestId('page-header-subtitle')).toHaveTextContent(
+      '1 container across 1 endpoint',
+    );
+  });
+
+  it('keeps the subtitle visible on mobile, since it carries state the title does not', () => {
+    render(<WorkloadExplorerPage />);
+    expect(screen.getByTestId('page-header-subtitle').className).not.toContain('hidden');
+  });
+
+  it('renders the same h1 while the containers query is still loading', () => {
+    mockUseContainers.mockReturnValue({ ...defaultContainersMock, isLoading: true, data: undefined });
+    render(<WorkloadExplorerPage />);
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Workloads');
+    // No fabricated "0 containers" count before the data has arrived.
+    expect(screen.queryByTestId('page-header-subtitle')).not.toBeInTheDocument();
+  });
+
+  it('renders the h1 on the error branch too', () => {
+    mockUseContainers.mockReturnValue({
+      ...defaultContainersMock,
+      isError: true,
+      error: new Error('boom'),
+      data: undefined,
+    });
+    render(<WorkloadExplorerPage />);
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Workloads');
+    expect(screen.getByText('Failed to load containers')).toBeInTheDocument();
+  });
+});
+
+describe('WorkloadExplorerPage — auto-refresh actually refreshes', () => {
+  beforeEach(() => {
+    mockQueryString = 'endpoint=1';
+    mockSetSearchParams.mockReset();
+    mockNavigate.mockReset();
+    mockAutoRefreshOptions = undefined;
+  });
+
+  it('passes onTick to useAutoRefresh, and the tick refetches', () => {
+    const refetch = vi.fn();
+    mockUseContainers.mockReturnValue({ ...defaultContainersMock, refetch });
+    render(<WorkloadExplorerPage />);
+
+    // Before this, the interval dropdown wrote a localStorage preference and
+    // scheduled no fetch, while the control rendered a pulsing "live" dot.
+    expect(mockAutoRefreshOptions?.onTick).toBeTypeOf('function');
+    expect(refetch).not.toHaveBeenCalled();
+
+    act(() => {
+      mockAutoRefreshOptions!.onTick!();
+    });
+    expect(refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows a data-freshness stamp once the query reports an update time', () => {
+    mockUseContainers.mockReturnValue({
+      ...defaultContainersMock,
+      dataUpdatedAt: Date.now() - 3000,
+    });
+    render(<WorkloadExplorerPage />);
+    expect(screen.getByText(/^Updated /)).toBeInTheDocument();
+  });
+
+  it('shows no freshness stamp when the query has never resolved', () => {
+    mockUseContainers.mockReturnValue({ ...defaultContainersMock, dataUpdatedAt: 0 });
+    render(<WorkloadExplorerPage />);
+    expect(screen.queryByText(/^Updated /)).not.toBeInTheDocument();
+  });
+});
+
+describe('WorkloadExplorerPage — rows are real links', () => {
+  beforeEach(() => {
+    mockQueryString = 'endpoint=1';
+    mockRowHref = undefined;
+    mockRowLabel = undefined;
+    mockUseContainers.mockReturnValue(defaultContainersMock);
+  });
+
+  it('passes rowHref so cmd-click, middle-click and "copy link address" work', () => {
+    render(<WorkloadExplorerPage />);
+    expect(mockRowHref).toBeTypeOf('function');
+    expect(mockRowHref!(defaultContainersMock.data[0])).toBe('/containers/1/c-workers');
+  });
+
+  it('passes a rowLabel naming the destination, so AT hears more than "row"', () => {
+    render(<WorkloadExplorerPage />);
+    expect(mockRowLabel!(defaultContainersMock.data[0])).toBe('Open container workers-api-1');
+  });
+
+  it('keeps the whole-row click handler alongside the anchor', () => {
+    render(<WorkloadExplorerPage />);
+    expect(screen.getByTestId('workloads-table')).toHaveAttribute('data-has-row-click', 'true');
+  });
+});
+
+describe('WorkloadExplorerPage — mobile card list', () => {
+  beforeEach(() => {
+    mockQueryString = 'endpoint=1';
+    mockUseContainers.mockReturnValue(defaultContainersMock);
+  });
+
+  it('renders one card per visible container, each a real link', () => {
+    render(<WorkloadExplorerPage />);
+    const list = screen.getByTestId('workload-card-list');
+    const links = list.querySelectorAll('a');
+    expect(links).toHaveLength(3);
+    expect(links[0].getAttribute('href')).toBe('/containers/1/c-workers');
+  });
+
+  it('shows the state on every card — the question a phone is opened to answer', () => {
+    render(<WorkloadExplorerPage />);
+    const list = screen.getByTestId('workload-card-list');
+    // StatusBadge is stubbed as the bare state string.
+    expect(list.textContent).toContain('workers-api-1');
+    expect(list.textContent).toContain('running');
+  });
+
+  it('shows stack and image on the second line', () => {
+    render(<WorkloadExplorerPage />);
+    const list = screen.getByTestId('workload-card-list');
+    expect(list.textContent).toContain('workers · workers:latest');
+    // A container with no stack says so rather than rendering a bare dot, and
+    // the image drops its registry path to fit a phone-width card.
+    expect(list.textContent).toContain('No stack · beyla:latest');
+  });
+
+  it('hides the table below md and the cards from md up', () => {
+    render(<WorkloadExplorerPage />);
+    expect(screen.getByTestId('workload-card-list').parentElement?.className).toContain('md:hidden');
+    expect(screen.getByTestId('workloads-table').parentElement?.className).toContain('hidden');
+    expect(screen.getByTestId('workloads-table').parentElement?.className).toContain('md:block');
+  });
+
+  it('mirrors the search-filtered rows, not the unfiltered list', () => {
+    render(<WorkloadExplorerPage />);
+    act(() => {
+      mockOnFiltered?.([defaultContainersMock.data[0]]);
+    });
+    expect(screen.getByTestId('workload-card-list').querySelectorAll('a')).toHaveLength(1);
+  });
+
+  it('states plainly when nothing matches', () => {
+    mockQueryString = 'endpoint=1&state=stopped';
+    render(<WorkloadExplorerPage />);
+    expect(screen.getByTestId('workload-card-list').textContent).toContain(
+      'No containers match these filters.',
+    );
   });
 });

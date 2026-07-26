@@ -1,27 +1,6 @@
 import { useRef, useEffect, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import {
-  LayoutDashboard,
-  Boxes,
-  Server,
-  HeartPulse,
-  PackageOpen,
-  Network,
-  BarChart3,
-  Shield,
-  ShieldAlert,
-  GitBranch,
-  MessageSquare,
-  Activity,
-  FileBarChart,
-  ScrollText,
-  FileSearch,
-  Radio,
-  Bug,
-  Settings,
-  ChevronRight,
-  ChevronDown,
-} from 'lucide-react';
+import { useLocation, Link } from 'react-router-dom';
+import { ChevronRight, ChevronDown } from 'lucide-react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { SidebarLogo } from '@/shared/components/icons/sidebar-logo';
 import { useUiStore } from '@/stores/ui-store';
@@ -30,80 +9,13 @@ import { useRemediationActions } from '@/features/operations/hooks/use-remediati
 import { useHarborEnabled } from '@/features/security/hooks/use-harbor-vulnerabilities';
 import { usePrefetch } from '@/shared/hooks/use-prefetch';
 import { cn } from '@/shared/lib/utils';
+import {
+  sidebarNavigation,
+  pinnedNavDestinations,
+  type NavDestination,
+} from '@/features/core/lib/navigation-manifest';
 import { m, AnimatePresence, useReducedMotion } from 'framer-motion';
-
-interface NavItem {
-  label: string;
-  to: string;
-  icon: React.ComponentType<{ className?: string }>;
-  badge?: number;
-  /** When true, the item is hidden from the sidebar. */
-  hidden?: boolean;
-}
-
-interface NavGroup {
-  title: string;
-  items: NavItem[];
-}
-
-// Grouped by operator intent: what's running -> is it healthy -> ask the AI ->
-// why -> security posture -> act. Remediation is the one mutating
-// workflow and lives alone under Operations to keep the observer-first
-// separation between looking and acting. Settings is pinned separately
-// (see `settingsItem`), out of the themed groups.
-const navigation: NavGroup[] = [
-  {
-    title: 'Overview',
-    items: [
-      { label: 'Home', to: '/', icon: LayoutDashboard },
-      { label: 'Workload Explorer', to: '/workloads', icon: Boxes },
-      { label: 'Infrastructure', to: '/infrastructure', icon: Server },
-      { label: 'Image Footprint', to: '/images', icon: PackageOpen },
-    ],
-  },
-  {
-    title: 'Monitoring',
-    items: [
-      { label: 'Health & Monitoring', to: '/health', icon: HeartPulse },
-      { label: 'Metrics Dashboard', to: '/metrics', icon: BarChart3 },
-    ],
-  },
-  {
-    title: 'Intelligence',
-    items: [
-      { label: 'LLM Assistant', to: '/assistant', icon: MessageSquare },
-      { label: 'LLM Observability', to: '/llm-observability', icon: Activity },
-    ],
-  },
-  {
-    title: 'Diagnostics',
-    items: [
-      { label: 'Trace Explorer', to: '/traces', icon: GitBranch },
-      { label: 'eBPF Coverage', to: '/ebpf-coverage', icon: Bug },
-      { label: 'Network Topology', to: '/topology', icon: Network },
-      { label: 'Packet Capture', to: '/packet-capture', icon: Radio },
-      { label: 'Log Viewer', to: '/logs', icon: ScrollText },
-      { label: 'Edge Agent Logs', to: '/edge-logs', icon: FileSearch },
-    ],
-  },
-  {
-    title: 'Security',
-    items: [
-      { label: 'Security Audit', to: '/security/audit', icon: Shield },
-      { label: 'Vulnerabilities', to: '/security/vulnerabilities', icon: ShieldAlert },
-    ],
-  },
-  {
-    title: 'Operations',
-    items: [
-      { label: 'Remediation', to: '/remediation', icon: Shield },
-      { label: 'Reports', to: '/reports', icon: FileBarChart },
-    ],
-  },
-];
-
-// Pinned at the foot of the sidebar, separated from the themed groups.
-const settingsItem: NavItem = { label: 'Settings', to: '/settings', icon: Settings };
+import { PRODUCT_NAME } from '@/shared/lib/product';
 
 function AnimatedBadge({ count }: { count: number }) {
   const prevCountRef = useRef(count);
@@ -138,7 +50,14 @@ function AnimatedBadge({ count }: { count: number }) {
   );
 }
 
-function ScrollGradient({ navRef }: { navRef: React.RefObject<HTMLElement | null> }) {
+/**
+ * Scroll affordance for the nav. The previous cue was an 8px
+ * `from-sidebar-background/40` fade — invisible on the eight light themes,
+ * which meant two whole groups could sit below the fold at 1440x900 with
+ * nothing on screen saying so. This uses a full-opacity fade, a hard rule at
+ * the cut line and a chevron, so the cue survives every theme.
+ */
+function ScrollCue({ navRef }: { navRef: React.RefObject<HTMLElement | null> }) {
   const [showBottom, setShowBottom] = useState(false);
 
   useEffect(() => {
@@ -166,33 +85,38 @@ function ScrollGradient({ navRef }: { navRef: React.RefObject<HTMLElement | null
 
   return (
     <div
-      className="pointer-events-none absolute bottom-12 left-0 right-0 h-8 bg-gradient-to-t from-sidebar-background/40 to-transparent"
+      className="pointer-events-none sticky bottom-0 left-0 right-0 -mt-10 flex h-10 items-end justify-center border-b border-sidebar-border bg-gradient-to-t from-sidebar-background via-sidebar-background/85 to-transparent"
       aria-hidden="true"
       data-testid="scroll-gradient"
-    />
+    >
+      <ChevronDown className="mb-0.5 h-3.5 w-3.5 text-muted-foreground" />
+    </div>
   );
 }
 
-function NavLink({
+function NavItemLink({
   item,
   isActive,
   collapsed,
   reducedMotion,
   pendingCount,
   onPrefetch,
-  onNavigate,
 }: {
-  item: NavItem;
+  item: NavDestination;
   isActive: boolean;
   collapsed: boolean;
   reducedMotion: boolean | null;
   pendingCount: number;
   onPrefetch?: () => void;
-  onNavigate: () => void;
 }) {
+  // A real anchor, not a <button>: middle-click, Cmd-click to a new tab and
+  // the hover status-bar preview are the core power-user navigation gestures
+  // and none of them exist without an href.
   const link = (
-    <button
-      type="button"
+    <Link
+      to={item.path}
+      state={{ source: 'sidebar-nav' }}
+      aria-current={isActive ? 'page' : undefined}
       className={cn(
         'relative flex w-full items-center gap-3 rounded-md px-2 py-2 text-sm font-medium transition-colors duration-200',
         isActive
@@ -202,7 +126,6 @@ function NavLink({
       )}
       onMouseEnter={onPrefetch}
       onFocus={onPrefetch}
-      onClick={onNavigate}
     >
       <>
         {isActive && (
@@ -242,16 +165,14 @@ function NavLink({
               }
             >
               <span className="truncate">{item.label}</span>
-              {item.to === '/remediation' ? (
+              {item.path === '/remediation' ? (
                 <AnimatedBadge count={pendingCount} />
-              ) : item.badge != null && item.badge > 0 ? (
-                <AnimatedBadge count={item.badge} />
               ) : null}
             </m.span>
           )}
         </AnimatePresence>
       </>
-    </button>
+    </Link>
   );
 
   return (
@@ -277,8 +198,12 @@ function NavLink({
   );
 }
 
-export function Sidebar() {
-  const navigate = useNavigate();
+/**
+ * @param forceRail Collapse to the 64px icon rail regardless of the stored
+ * preference. AppLayout sets this between 768px and 1023px, where a 256px
+ * sidebar costs a third of the viewport.
+ */
+export function Sidebar({ forceRail = false }: { forceRail?: boolean } = {}) {
   const location = useLocation();
   const sidebarCollapsed = useUiStore((s) => s.sidebarCollapsed);
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
@@ -293,6 +218,8 @@ export function Sidebar() {
   const navRef = useRef<HTMLElement>(null);
   const hasAnimatedBg = dashboardBackground !== 'none';
   const { prefetchContainers, prefetchEndpoints, prefetchDashboard, prefetchImages, prefetchStacks } = usePrefetch();
+
+  const collapsed = sidebarCollapsed || forceRail;
 
   // Wrap prefetch in requestIdleCallback to avoid blocking hover interactions
   const idlePrefetch = (fn: (() => void) | undefined) => {
@@ -314,27 +241,10 @@ export function Sidebar() {
     '/images': idlePrefetch(prefetchImages),
   };
 
-  // Compute effective nav — hide items that are feature-gated
-  const effectiveNavigation = navigation.map((group) => ({
-    ...group,
-    items: group.items.filter((item) => {
-      if (item.to === '/security/vulnerabilities') {
-        return harborEnabled?.enabled === true;
-      }
-      return !item.hidden;
-    }),
-  }));
+  const navigation = sidebarNavigation({ harborEnabled: harborEnabled?.enabled === true });
 
   const isItemActive = (to: string) =>
     to === '/' ? location.pathname === '/' : location.pathname.startsWith(to);
-
-  const handleNavigate = (to: string) => {
-    if (to === '/') {
-      window.location.assign('/');
-      return;
-    }
-    navigate(to, { state: { source: 'sidebar-nav', ts: Date.now() } });
-  };
 
   return (
     <TooltipPrimitive.Provider delayDuration={200}>
@@ -344,7 +254,7 @@ export function Sidebar() {
         className={cn(
           'fixed left-4 top-4 bottom-4 z-30 flex flex-col rounded-2xl bg-sidebar-background/80 backdrop-blur-xl shadow-lg ring-1 ring-black/5 dark:ring-white/10',
           !potatoMode && 'transition-[width,background-color] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]',
-          sidebarCollapsed ? 'w-16' : 'w-64'
+          collapsed ? 'w-16' : 'w-64'
         )}
       >
         {/* Brand */}
@@ -362,7 +272,7 @@ export function Sidebar() {
               <SidebarLogo />
             </m.div>
             <AnimatePresence>
-              {!sidebarCollapsed && (
+              {!collapsed && (
                 <m.div
                   className="flex flex-col"
                   initial={reducedMotion ? false : { opacity: 0, x: -8 }}
@@ -375,9 +285,8 @@ export function Sidebar() {
                   }
                 >
                   <span className="truncate text-sm font-semibold text-sidebar-foreground">
-                    Docker Insights
+                    {PRODUCT_NAME}
                   </span>
-                  <span className="text-[10px] text-muted-foreground">powered by AI</span>
                 </m.div>
               )}
             </AnimatePresence>
@@ -385,18 +294,20 @@ export function Sidebar() {
         </div>
 
         {/* Navigation */}
-        <nav ref={navRef} className="relative flex-1 overflow-y-auto py-4">
-          {effectiveNavigation.map((group, groupIndex) => {
-            const isGroupCollapsed = collapsedGroups[group.title] && !sidebarCollapsed;
+        <nav ref={navRef} aria-label="Primary" className="relative flex-1 overflow-y-auto py-4">
+          {navigation.map((group, groupIndex) => {
+            const isGroupCollapsed = collapsedGroups[group.title] && !collapsed;
             return (
               <div key={group.title} className="mb-2">
-                {sidebarCollapsed ? (
+                {collapsed ? (
                   groupIndex > 0 ? (
                     <div className="mx-3 my-2 h-px bg-border/50" role="separator" />
                   ) : null
                 ) : (
                   <button
+                    type="button"
                     onClick={() => toggleGroup(group.title)}
+                    aria-expanded={!isGroupCollapsed}
                     className="mb-1 flex w-full items-center justify-between border-b border-border/20 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
                   >
                     <span>{group.title}</span>
@@ -420,15 +331,14 @@ export function Sidebar() {
                 >
                   <ul className="space-y-0.5 overflow-hidden px-2">
                     {group.items.map((item) => (
-                      <NavLink
-                        key={item.to}
+                      <NavItemLink
+                        key={item.path}
                         item={item}
-                        isActive={isItemActive(item.to)}
-                        collapsed={sidebarCollapsed}
+                        isActive={isItemActive(item.path)}
+                        collapsed={collapsed}
                         reducedMotion={reducedMotion}
                         pendingCount={pendingCount}
-                        onPrefetch={prefetchMap[item.to]}
-                        onNavigate={() => handleNavigate(item.to)}
+                        onPrefetch={prefetchMap[item.path]}
                       />
                     ))}
                   </ul>
@@ -436,42 +346,47 @@ export function Sidebar() {
               </div>
             );
           })}
-          <ScrollGradient navRef={navRef} />
+          <ScrollCue navRef={navRef} />
         </nav>
 
         {/* Settings — pinned at the foot, separated from the themed groups */}
         <div className="border-t border-border/30 px-2 pt-2">
           <ul className="space-y-0.5">
-            <NavLink
-              item={settingsItem}
-              isActive={isItemActive(settingsItem.to)}
-              collapsed={sidebarCollapsed}
-              reducedMotion={reducedMotion}
-              pendingCount={pendingCount}
-              onNavigate={() => handleNavigate(settingsItem.to)}
-            />
+            {pinnedNavDestinations.map((item) => (
+              <NavItemLink
+                key={item.path}
+                item={item}
+                isActive={isItemActive(item.path)}
+                collapsed={collapsed}
+                reducedMotion={reducedMotion}
+                pendingCount={pendingCount}
+              />
+            ))}
           </ul>
         </div>
 
-        {/* Collapse toggle */}
-        <div className="p-2">
-          <button
-            onClick={toggleSidebar}
-            className="flex w-full items-center justify-center rounded-md p-2 text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-            aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          >
-            <m.span
-              animate={{ rotate: sidebarCollapsed ? 0 : 180 }}
-              transition={
-                reducedMotion
-                  ? { duration: 0 }
-                  : { type: 'spring', stiffness: 300, damping: 25 }
-              }
+        {/* Collapse toggle — hidden when the viewport forces the rail */}
+        {!forceRail && (
+          <div className="p-2">
+            <button
+              type="button"
+              onClick={toggleSidebar}
+              className="flex w-full items-center justify-center rounded-md p-2 text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+              aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             >
-              <ChevronRight className="h-4 w-4" />
-            </m.span>
-          </button>
-        </div>
+              <m.span
+                animate={{ rotate: collapsed ? 0 : 180 }}
+                transition={
+                  reducedMotion
+                    ? { duration: 0 }
+                    : { type: 'spring', stiffness: 300, damping: 25 }
+                }
+              >
+                <ChevronRight className="h-4 w-4" />
+              </m.span>
+            </button>
+          </div>
+        )}
       </aside>
     </TooltipPrimitive.Provider>
   );

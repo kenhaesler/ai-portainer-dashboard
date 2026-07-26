@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { ImageTreemap, getLabelStyleForFill, CustomContent } from './image-treemap';
+import { ImageTreemap, getCellFillOpacity, CustomContent } from './image-treemap';
 
 // ResponsiveContainer requires a measurable parent DOM node (jsdom has no
 // layout engine), so we replace it with a simple pass-through wrapper.
@@ -28,6 +28,7 @@ function renderCell(overrides: Record<string, unknown> = {}) {
     index: 0,
     name: 'nginx',
     size: 100_000_000,
+    maxSize: 100_000_000,
     onCellClick: vi.fn(),
     ...overrides,
   };
@@ -55,14 +56,83 @@ describe('ImageTreemap', () => {
     expect(screen.queryByText('No image data')).not.toBeInTheDocument();
   });
 
-  it('uses dark text for bright treemap cell colors', () => {
-    const style = getLabelStyleForFill('#a5b4fc');
-    expect(style.fill).toBe('#0f172a');
-  });
+  describe('cell colour encodes size, not cell order', () => {
+    function renderedRect(overrides: Record<string, unknown> = {}) {
+      const { container } = render(
+        <svg>
+          <CustomContent
+            x={0}
+            y={0}
+            width={200}
+            height={100}
+            name="nginx"
+            size={100_000_000}
+            maxSize={100_000_000}
+            {...overrides}
+          />
+        </svg>,
+      );
+      return container.querySelector('rect')!;
+    }
 
-  it('uses white text for dark treemap cell colors', () => {
-    const style = getLabelStyleForFill('#1e293b');
-    expect(style.fill).toBe('#ffffff');
+    it('fills every cell from the same single hue token', () => {
+      const first = renderedRect({ index: 0, name: 'a', size: 10_000_000 });
+      const eighth = renderedRect({ index: 7, name: 'b', size: 90_000_000 });
+
+      // The old palette cycled 15 hard-coded pastel hex values by `index`.
+      expect(first.getAttribute('fill')).toBe('var(--color-chart-1)');
+      expect(eighth.getAttribute('fill')).toBe('var(--color-chart-1)');
+    });
+
+    it('does not vary the fill with the cell index at equal size', () => {
+      const a = renderedRect({ index: 0, size: 50_000_000 });
+      const b = renderedRect({ index: 9, size: 50_000_000 });
+
+      expect(a.getAttribute('fill-opacity')).toBe(b.getAttribute('fill-opacity'));
+    });
+
+    it('ramps opacity monotonically with relative size', () => {
+      const small = getCellFillOpacity(1_000_000, 100_000_000);
+      const medium = getCellFillOpacity(25_000_000, 100_000_000);
+      const large = getCellFillOpacity(100_000_000, 100_000_000);
+
+      expect(small).toBeLessThan(medium);
+      expect(medium).toBeLessThan(large);
+      expect(large).toBeCloseTo(0.85, 5);
+    });
+
+    it('floors the ramp for zero-size or unknown-max cells', () => {
+      expect(getCellFillOpacity(0, 100)).toBeCloseTo(0.2, 5);
+      expect(getCellFillOpacity(100, 0)).toBeCloseTo(0.2, 5);
+    });
+
+    it('uses theme tokens rather than raw hex for label and separator colours', () => {
+      const { container } = render(
+        <svg>
+          <CustomContent
+            x={0}
+            y={0}
+            width={200}
+            height={100}
+            name="nginx"
+            size={100_000_000}
+            maxSize={100_000_000}
+          />
+        </svg>,
+      );
+
+      const rect = container.querySelector('rect')!;
+      expect(rect.getAttribute('stroke')).toBe('var(--color-card)');
+
+      // Both label lines (name + size) must be theme-driven; a fixed white/dark
+      // pair only worked because the fill was a known pastel.
+      const texts = [...container.querySelectorAll('text')];
+      expect(texts.length).toBeGreaterThan(0);
+      for (const text of texts) {
+        expect(text.getAttribute('fill')).toMatch(/^var\(--color-/);
+        expect(text.getAttribute('stroke')).toBe('var(--color-card)');
+      }
+    });
   });
 
   describe('accessibility', () => {
@@ -138,7 +208,7 @@ describe('ImageTreemap', () => {
       fireEvent.focus(button);
       const focusRing = screen.getByTestId('focus-ring');
       expect(focusRing).toBeInTheDocument();
-      expect(focusRing.getAttribute('stroke')).toBe('#ffffff');
+      expect(focusRing.getAttribute('stroke')).toBe('var(--color-foreground)');
       expect(focusRing.getAttribute('stroke-width')).toBe('2');
       expect(focusRing.getAttribute('fill')).toBe('none');
     });

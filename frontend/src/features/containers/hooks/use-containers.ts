@@ -14,6 +14,12 @@ export interface Container {
     private: number;
     public?: number;
     type: string;
+    /**
+     * Docker's host-side bind address (`0.0.0.0`, `127.0.0.1`, `::`, …).
+     * Declared by `ContainerPortSchema` in `@dashboard/contracts` and emitted by
+     * the normalizer. Undefined when the port is exposed but not published.
+     */
+    ip?: string;
   }>;
   created: number;
   labels: Record<string, string>;

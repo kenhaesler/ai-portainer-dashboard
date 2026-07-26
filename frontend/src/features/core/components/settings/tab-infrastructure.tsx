@@ -9,11 +9,14 @@ import {
   Eye,
   EyeOff,
   HardDriveDownload,
+  Info,
   Loader2,
   RefreshCw,
   Trash2,
+  Wifi,
 } from 'lucide-react';
 import { SettingsSection, DEFAULT_SETTINGS, type SettingsTabProps } from './shared';
+import { useCacheClear } from '@/features/core/hooks/use-cache-admin';
 import {
   usePortainerBackups,
   useCreatePortainerBackup,
@@ -22,13 +25,17 @@ import {
   type PortainerBackupFile,
 } from '@/features/core/hooks/use-portainer-backups';
 import { DataTable } from '@/shared/components/tables/data-table';
+import { ConfirmDialog } from '@/shared/components/feedback/confirm-dialog';
 import { formatBytes } from '@/shared/lib/utils';
 import { toast } from 'sonner';
 
 export function InfrastructureTab({ editedValues, originalValues, onChange, isSaving }: SettingsTabProps) {
+  const cacheClear = useCacheClear();
+
   return (
     <div className="space-y-6">
-      {/* Cache Settings */}
+      {/* Cache Settings — the cache administration action lives with the cache
+          settings rather than on the tab an admin happens to land on. */}
       <SettingsSection
         title="Cache"
         icon={<Database className="h-5 w-5" />}
@@ -38,7 +45,27 @@ export function InfrastructureTab({ editedValues, originalValues, onChange, isSa
         originalValues={originalValues}
         onChange={onChange}
         disabled={isSaving}
-        status="configured"
+        footerContent={
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-muted-foreground">
+              Clearing drops every cached Portainer response. The next page load refetches from
+              Portainer directly, so expect one slower round of requests.
+            </p>
+            <button
+              type="button"
+              onClick={() => cacheClear.mutate()}
+              disabled={cacheClear.isPending}
+              className="flex items-center gap-2 rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium hover:bg-accent disabled:opacity-50"
+            >
+              {cacheClear.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <RefreshCw className="h-3.5 w-3.5" />
+              )}
+              Clear All Cache
+            </button>
+          </div>
+        }
       />
 
       {/* Backup Schedule Settings */}
@@ -66,7 +93,19 @@ export function InfrastructureTab({ editedValues, originalValues, onChange, isSa
         originalValues={originalValues}
         onChange={onChange}
         disabled={isSaving}
-        status="configured"
+      />
+
+      {/* Edge Agent — how this dashboard polls the fleet, which is
+          infrastructure, not a third-party integration. */}
+      <SettingsSection
+        title="Edge Agent"
+        icon={<Wifi className="h-5 w-5" />}
+        category="edgeAgent"
+        settings={DEFAULT_SETTINGS.edgeAgent}
+        values={editedValues}
+        originalValues={originalValues}
+        onChange={onChange}
+        disabled={isSaving}
       />
 
       {/* Backup Management */}
@@ -82,6 +121,9 @@ export function PortainerBackupManagement() {
   const [manualPassword, setManualPassword] = useState('');
   const [showManualPassword, setShowManualPassword] = useState(false);
   const [deletingFile, setDeletingFile] = useState<string | null>(null);
+  // Deletion is permanent and there is no restore path from this screen, so the
+  // click only ever opens a confirmation naming the exact archive (#backup-delete-confirm).
+  const [pendingDelete, setPendingDelete] = useState<PortainerBackupFile | null>(null);
 
   const backups = data?.backups ?? [];
 
@@ -105,22 +147,26 @@ export function PortainerBackupManagement() {
     }
   }, []);
 
-  const handleDelete = useCallback(
-    (filename: string) => {
-      setDeletingFile(filename);
-      deleteBackupMut.mutate(filename, {
-        onSuccess: () => {
-          toast.success(`Deleted ${filename}`);
-          setDeletingFile(null);
-        },
-        onError: (err) => {
-          toast.error(`Delete failed: ${err.message}`);
-          setDeletingFile(null);
-        },
-      });
-    },
-    [deleteBackupMut],
-  );
+  const requestDelete = useCallback((backup: PortainerBackupFile) => {
+    setPendingDelete(backup);
+  }, []);
+
+  const confirmDelete = useCallback(() => {
+    if (!pendingDelete) return;
+    const filename = pendingDelete.filename;
+    setPendingDelete(null);
+    setDeletingFile(filename);
+    deleteBackupMut.mutate(filename, {
+      onSuccess: () => {
+        toast.success(`Deleted ${filename}`);
+        setDeletingFile(null);
+      },
+      onError: (err) => {
+        toast.error(`Delete failed: ${err.message}`);
+        setDeletingFile(null);
+      },
+    });
+  }, [deleteBackupMut, pendingDelete]);
 
   const columns = useMemo<ColumnDef<PortainerBackupFile, unknown>[]>(
     () => [
@@ -162,10 +208,10 @@ export function PortainerBackupManagement() {
                 Download
               </button>
               <button
-                onClick={() => handleDelete(backup.filename)}
+                onClick={() => requestDelete(backup)}
                 disabled={deletingFile === backup.filename}
                 className="flex items-center gap-1.5 rounded-md border border-destructive/30 bg-background px-2.5 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50"
-                title="Delete"
+                title={`Delete ${backup.filename}`}
               >
                 {deletingFile === backup.filename ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -179,7 +225,7 @@ export function PortainerBackupManagement() {
         },
       },
     ],
-    [handleDownload, handleDelete, deletingFile],
+    [handleDownload, requestDelete, deletingFile],
   );
 
   return (
@@ -196,6 +242,22 @@ export function PortainerBackupManagement() {
           <p className="text-sm text-muted-foreground">
             Create a manual backup of your Portainer server configuration. This calls the Portainer API and saves the resulting archive locally.
           </p>
+          {/* An operator must not discover the missing restore path during an outage. */}
+          <div
+            data-testid="backup-recovery-note"
+            className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3"
+          >
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+            <div className="space-y-1 text-sm">
+              <p className="font-medium">This dashboard cannot restore a backup.</p>
+              <p className="text-muted-foreground">
+                Recovery is a Portainer operation: download the archive, then load it from a Portainer
+                instance&apos;s &quot;Restore from backup&quot; screen. Archives are written to the
+                dashboard&apos;s backup directory on this host — keep a copy elsewhere, or a host loss
+                takes the backups with it.
+              </p>
+            </div>
+          </div>
           <div className="flex items-end gap-3">
             <div className="flex-1 max-w-sm">
               <label htmlFor="manual-backup-password" className="text-sm font-medium mb-1 block">
@@ -276,6 +338,23 @@ export function PortainerBackupManagement() {
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        onConfirm={confirmDelete}
+        onCancel={() => setPendingDelete(null)}
+        title="Delete this backup?"
+        description={
+          pendingDelete
+            ? `${pendingDelete.filename}, created ${new Date(pendingDelete.createdAt).toLocaleString()}. ` +
+              'The archive is removed from this host and cannot be recovered from Portainer. ' +
+              'Download it first if you are not certain.'
+            : ''
+        }
+        confirmLabel="Delete backup"
+        variant="danger"
+        data-testid="confirm-delete-backup"
+      />
     </div>
   );
 }

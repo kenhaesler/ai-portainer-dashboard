@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { type ColumnDef } from '@tanstack/react-table';
 import {
@@ -9,10 +9,10 @@ import {
   Network,
   Download,
   Clock,
+  Search,
   Server,
   Box,
-  ZoomIn,
-  ZoomOut,
+  ShieldCheck,
   TrendingUp,
   TrendingDown,
   Minus,
@@ -30,7 +30,8 @@ import { MetricsLineChart } from '@/shared/components/charts/metrics-line-chart'
 import { AnomalySparkline } from '@/shared/components/charts/anomaly-sparkline';
 import { NetworkTrafficTooltip } from '@/shared/components/charts/network-traffic-tooltip';
 import { RefreshControls } from '@/shared/components/ui/refresh-controls';
-import { FleetSearch } from '@/features/containers/components/fleet/fleet-search';
+import { PageHeader } from '@/shared/components/layout/page-header';
+import { DataFreshness } from '@/shared/components/feedback/data-freshness';
 import { EmptyState } from '@/shared/components/feedback/empty-state';
 import { SkeletonText, SkeletonChart, SkeletonTableRow } from '@/shared/components/feedback/skeleton';
 import { DataTable } from '@/shared/components/tables/data-table';
@@ -97,6 +98,60 @@ function formatMemSize(bytes: number): string {
   return `${Math.round(mb)} MB`;
 }
 
+/**
+ * The last endpoint/container the operator looked at.
+ *
+ * The page's whole subject sat behind two clicks on every visit, and in a
+ * one-endpoint fleet the first of those clicks had exactly one answer. This is
+ * re-validated against the live container list before it is applied, so a
+ * container that has since been removed falls back to the empty state rather
+ * than selecting something that no longer exists.
+ */
+const LAST_SELECTION_KEY = 'metrics-dashboard:last-selection';
+
+export interface MetricsSelection {
+  endpointId: number;
+  containerId: string;
+}
+
+export function readLastSelection(): MetricsSelection | null {
+  try {
+    const raw = localStorage.getItem(LAST_SELECTION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<MetricsSelection>;
+    if (typeof parsed?.endpointId !== 'number' || typeof parsed?.containerId !== 'string') {
+      return null;
+    }
+    return { endpointId: parsed.endpointId, containerId: parsed.containerId };
+  } catch {
+    return null;
+  }
+}
+
+function writeLastSelection(selection: MetricsSelection): void {
+  try {
+    localStorage.setItem(LAST_SELECTION_KEY, JSON.stringify(selection));
+  } catch {
+    // Ignore storage errors (private mode, quota).
+  }
+}
+
+/**
+ * Docker reports the host's total RAM as a container's `limit` when no explicit
+ * cap is set, so "limit == host total" is the signal for an unconstrained
+ * container rather than a missing reading.
+ */
+function resolveMemoryLimit(
+  limitBytes: number | null | undefined,
+  hostTotalBytes: number | null | undefined,
+): { limit: number; isHostTotal: boolean } | null {
+  if (limitBytes == null) return null;
+  return {
+    limit: limitBytes,
+    isHostTotal: hostTotalBytes != null && limitBytes >= hostTotalBytes * 0.99,
+  };
+}
+
 function exportToCSV(data: Array<{ timestamp: string; value: number }>, filename: string) {
   const csv = [
     'timestamp,value',
@@ -153,10 +208,8 @@ export default function MetricsDashboardPage() {
   const [selectedContainer, setSelectedContainer] = useState<string | null>(null);
   const [containerQuery, setContainerQuery] = useState('');
   const [timeRange, setTimeRange] = useState('1h');
-  const [zoomLevel, setZoomLevel] = useState(1);
   const [chatOpen, setChatOpen] = useState(false);
   const [showSecondaryPanels, setShowSecondaryPanels] = useState(false);
-  const { interval, setInterval } = useAutoRefresh(0);
 
   // Check if LLM is available (hide Ask AI button when the LLM endpoint is unreachable)
   const { data: llmModels } = useLlmModels();
@@ -166,7 +219,8 @@ export default function MetricsDashboardPage() {
   const { data: endpoints, isLoading: endpointsLoading, isPending: endpointsPending } = useEndpoints();
 
   // Fetch containers
-  const { data: allContainers, isLoading: containersLoading, isPending: containersPending, refetch, isFetching } = useContainers();
+  const containersQuery = useContainers();
+  const { data: allContainers, isLoading: containersLoading, isPending: containersPending, refetch, isFetching } = containersQuery;
   const { data: networkRatesData } = useNetworkRates(selectedEndpoint ?? undefined);
   const { data: stacks } = useStacks();
 
@@ -250,37 +304,29 @@ export default function MetricsDashboardPage() {
   }, [selectedContainerData, networkRatesData]);
 
   // Fetch metrics for each type
-  const {
-    data: cpuMetrics,
-    isLoading: cpuLoading,
-    isError: cpuError,
-  } = useContainerMetrics(
+  const cpuQuery = useContainerMetrics(
     selectedEndpoint ?? undefined,
     selectedContainer ?? undefined,
     'cpu',
     timeRange
   );
+  const { data: cpuMetrics, isLoading: cpuLoading, isError: cpuError } = cpuQuery;
 
-  const {
-    data: memoryMetrics,
-    isLoading: memoryLoading,
-    isError: memoryError,
-  } = useContainerMetrics(
+  const memoryQuery = useContainerMetrics(
     selectedEndpoint ?? undefined,
     selectedContainer ?? undefined,
     'memory',
     timeRange
   );
+  const { data: memoryMetrics, isLoading: memoryLoading, isError: memoryError } = memoryQuery;
 
-  const {
-    data: memoryBytesMetrics,
-    isLoading: memoryBytesLoading,
-  } = useContainerMetrics(
+  const memoryBytesQuery = useContainerMetrics(
     selectedEndpoint ?? undefined,
     selectedContainer ?? undefined,
     'memory_bytes',
     timeRange
   );
+  const { data: memoryBytesMetrics, isLoading: memoryBytesLoading } = memoryBytesQuery;
 
   const { data: containerMeta } = useContainerMetricsMeta(
     selectedEndpoint ?? undefined,
@@ -304,6 +350,35 @@ export default function MetricsDashboardPage() {
   const hasForecastData =
     (cpuForecast && !('error' in cpuForecast)) ||
     (memoryForecast && !('error' in memoryForecast));
+
+  // The refresh dropdown now schedules the fetches it advertises. It used to be
+  // read once and passed to `<RefreshControls>` and nowhere else — the control
+  // rendered a pulsing "live" dot over a timer that did not exist. The
+  // page-specific `storageKey` is the other half: with one shared key this page
+  // asked for `useAutoRefresh(0)` and opened showing "Every 30s" because a
+  // different page had stored 30.
+  const handleTick = useCallback(() => {
+    refetch?.();
+    cpuQuery.refetch?.();
+    memoryQuery.refetch?.();
+    memoryBytesQuery.refetch?.();
+    forecastOverviewQuery.refetch?.();
+  }, [refetch, cpuQuery, memoryQuery, memoryBytesQuery, forecastOverviewQuery]);
+  const { interval, setRefreshInterval } = useAutoRefresh(0, {
+    onTick: handleTick,
+    storageKey: 'metrics',
+  });
+
+  // Second signal for a stalled poll: the newest fetch time of what is on
+  // screen. Without it a frozen page and a healthy one look identical.
+  const lastUpdated = useMemo(() => {
+    const stamps = [
+      containersQuery.dataUpdatedAt,
+      cpuQuery.dataUpdatedAt,
+      memoryQuery.dataUpdatedAt,
+    ].filter((t): t is number => typeof t === 'number' && t > 0);
+    return stamps.length > 0 ? Math.max(...stamps) : null;
+  }, [containersQuery.dataUpdatedAt, cpuQuery.dataUpdatedAt, memoryQuery.dataUpdatedAt]);
 
   // Pre-filter explanations by metric type for reuse
   const cpuExplanations = useMemo(
@@ -387,8 +462,10 @@ export default function MetricsDashboardPage() {
   }, [containerMeta, selectedEndpointData, stats.cpu.avg]);
 
   const memoryDenominatorLabel = useMemo(() => {
-    const limit = containerMeta?.memoryLimitBytes ?? null;
-    const hostTotal = selectedEndpointData?.totalMemory ?? null;
+    const resolved = resolveMemoryLimit(
+      containerMeta?.memoryLimitBytes,
+      selectedEndpointData?.totalMemory,
+    );
     // Numerator matches the "Avg Memory %" headline above this label: use the
     // range-average used bytes (memoryBytesData is in MB → ×1MiB) when the series
     // has data, falling back to the live `/meta` sample only when it's empty.
@@ -396,12 +473,35 @@ export default function MetricsDashboardPage() {
       ? stats.memoryBytes.avg * 1024 * 1024
       : null;
     const used = avgUsedBytes ?? containerMeta?.usedBytes ?? null;
-    if (limit == null || used == null) return null;
-    const isHostTotal = hostTotal != null && limit >= hostTotal * 0.99;
-    return isHostTotal
-      ? `${formatMemSize(used)} / ${formatMemSize(limit)} host (no limit set)`
-      : `${formatMemSize(used)} / ${formatMemSize(limit)} limit`;
+    if (resolved == null || used == null) return null;
+    return resolved.isHostTotal
+      ? `${formatMemSize(used)} / ${formatMemSize(resolved.limit)} host (no limit set)`
+      : `${formatMemSize(used)} / ${formatMemSize(resolved.limit)} limit`;
   }, [containerMeta, selectedEndpointData, stats.memoryBytes.avg, memoryBytesData]);
+
+  // The reasoning behind each percentage used to live in a native `title=` on
+  // the KPI sub-label: no keyboard access, no touch access, ~1s hover delay, and
+  // this page ships on phones. It is now a persistent caption under the chart —
+  // where the axis it explains is actually read.
+  const cpuAxisNote = useMemo(() => {
+    const cores = containerMeta?.onlineCpus ?? selectedEndpointData?.totalCpu ?? null;
+    const convention = 'Docker stats convention: 100% = one full CPU core.';
+    return cores
+      ? `${convention} ${cores} core${cores === 1 ? '' : 's'} online, so this axis reaches ${cores * 100}%.`
+      : `${convention} On a multi-core host the axis can exceed 100%.`;
+  }, [containerMeta, selectedEndpointData]);
+
+  const memoryAxisNote = useMemo(() => {
+    const resolved = resolveMemoryLimit(
+      containerMeta?.memoryLimitBytes,
+      selectedEndpointData?.totalMemory,
+    );
+    const formula = 'Memory % = (usage − cache) ÷ limit.';
+    if (resolved == null) return formula;
+    return resolved.isHostTotal
+      ? `${formula} No limit set, so the denominator is the host's ${formatMemSize(resolved.limit)} of RAM.`
+      : `${formula} Limit: ${formatMemSize(resolved.limit)}.`;
+  }, [containerMeta, selectedEndpointData]);
 
   const rankedForecasts = useMemo<RankedForecast[]>(() => {
     const forecasts = forecastOverviewQuery.data ?? [];
@@ -421,6 +521,20 @@ export default function MetricsDashboardPage() {
     );
   }, [rankedForecasts]);
 
+  const allForecastsHealthy =
+    rankedForecasts.length > 0 && riskBuckets.critical === 0 && riskBuckets.warning === 0;
+
+  // State the basis of the ordering rather than letting "Rank 1" imply a
+  // projected breach. With no `timeToThreshold` anywhere, `getForecastRiskScore`
+  // falls back to trend bucket plus current value — which is how a container
+  // sitting at 19.5% memory ended up ranked first.
+  const forecastRankBasisNote = useMemo(() => {
+    if (rankedForecasts.length === 0) return null;
+    return rankedForecasts.every((forecast) => forecast.timeToThreshold === null)
+      ? 'No series has a projected breach time, so rank orders by trend, then by current value.'
+      : null;
+  }, [rankedForecasts]);
+
   useEffect(() => {
     const timeoutId = window.setTimeout(() => setShowSecondaryPanels(true), 250);
 
@@ -428,6 +542,39 @@ export default function MetricsDashboardPage() {
       window.clearTimeout(timeoutId);
     };
   }, []);
+
+  // Open on something. This page's subject is one container's series, and it
+  // opened on an empty state behind two dropdowns — the first of which, in a
+  // one-endpoint fleet, has exactly one answer. Runs once, and only while the
+  // operator has not already chosen.
+  const autoSelectedRef = useRef(false);
+  useEffect(() => {
+    if (autoSelectedRef.current) return;
+    if (!endpoints || !allContainers) return;
+    if (selectedEndpoint !== null) {
+      autoSelectedRef.current = true;
+      return;
+    }
+    autoSelectedRef.current = true;
+
+    const last = readLastSelection();
+    const restored = last
+      ? allContainers.find((c) => c.id === last.containerId && c.endpointId === last.endpointId)
+      : undefined;
+    if (restored && endpoints.some((ep) => ep.id === restored.endpointId)) {
+      setSelectedEndpoint(restored.endpointId);
+      setSelectedContainer(restored.id);
+      return;
+    }
+    if (endpoints.length === 1) {
+      setSelectedEndpoint(endpoints[0].id);
+    }
+  }, [endpoints, allContainers, selectedEndpoint]);
+
+  useEffect(() => {
+    if (selectedEndpoint === null || !selectedContainer) return;
+    writeLastSelection({ endpointId: selectedEndpoint, containerId: selectedContainer });
+  }, [selectedEndpoint, selectedContainer]);
 
   // Handle endpoint change
   const handleEndpointChange = (endpointId: number) => {
@@ -437,9 +584,10 @@ export default function MetricsDashboardPage() {
     setContainerQuery('');
   };
 
-  const handleRefresh = () => {
-    refetch();
-  };
+  // Manual refresh and a scheduled tick do the same work — a "Refresh" that
+  // reloaded only the container list while the charts stayed put would be the
+  // same broken promise the dropdown used to make.
+  const handleRefresh = handleTick;
 
   const drillIntoForecast = useCallback((containerId: string) => {
     const match = allContainers?.find((container) => container.id === containerId);
@@ -490,7 +638,7 @@ export default function MetricsDashboardPage() {
       cell: ({ row }) => {
         const riskLevel = getForecastRiskLevel(row.original);
         return (
-          <span className={cn('inline-flex rounded-full px-2 py-0.5 text-xs font-medium', RISK_BADGE_STYLES[riskLevel])}>
+          <span className={cn('inline-flex rounded-full px-2 py-0.5 text-xs font-medium capitalize', RISK_BADGE_STYLES[riskLevel])}>
             {riskLevel}
           </span>
         );
@@ -524,27 +672,25 @@ export default function MetricsDashboardPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Metrics Dashboard</h1>
-          <p className="text-muted-foreground">
-            CPU/memory time series with anomaly detection
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {hasSelection && llmAvailable && (
-            <button
-              onClick={() => setChatOpen(true)}
-              className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-blue-600 to-purple-600 px-3 py-2 text-sm font-medium text-white shadow-sm transition-all hover:shadow-md"
-            >
-              <Bot className="h-4 w-4" />
-              Ask AI
-            </button>
-          )}
-          <RefreshControls interval={interval} onIntervalChange={setInterval} onRefresh={handleRefresh} isLoading={isFetching} />
-        </div>
-      </div>
+      <PageHeader
+        title="Metrics Dashboard"
+        subtitle="CPU/memory time series with anomaly detection"
+        actions={
+          <>
+            {hasSelection && llmAvailable && (
+              <button
+                onClick={() => setChatOpen(true)}
+                className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-blue-600 to-purple-600 px-3 py-2 text-sm font-medium text-white shadow-sm transition-all hover:shadow-md"
+              >
+                <Bot className="h-4 w-4" />
+                Ask AI
+              </button>
+            )}
+            <DataFreshness lastUpdated={lastUpdated} onRefresh={handleRefresh} />
+            <RefreshControls interval={interval} onIntervalChange={setRefreshInterval} onRefresh={handleRefresh} isLoading={isFetching} />
+          </>
+        }
+      />
 
       {/* Controls */}
       <div className="flex flex-wrap items-center gap-4 rounded-lg border bg-card p-4">
@@ -566,7 +712,7 @@ export default function MetricsDashboardPage() {
           />
         </div>
 
-        {/* Container Selector */}
+        {/* Stack Selector */}
         <div className="flex items-center gap-2">
           <Box className="h-4 w-4 text-muted-foreground" />
           <ThemedSelect
@@ -592,32 +738,52 @@ export default function MetricsDashboardPage() {
           />
         </div>
 
-        {/* Container Selector */}
-        <div className="flex flex-col gap-2 min-w-[16rem]">
-          <FleetSearch
-            key={`${selectedEndpoint ?? 'none'}-${selectedStack ?? 'all'}`}
-            label="Search containers"
-            placeholder="Search containers..."
-            onSearch={setContainerQuery}
-            totalCount={filteredContainers.length}
-            filteredCount={searchedContainers.length}
+        {/* Container Selector + its own filter.
+            The filter used to be a full-width, card-backed search pill sitting
+            above this select — wider and higher contrast than the control it
+            narrows, and easily read as a page-wide search when it only ever
+            filtered this dropdown's options. It is now a compact field attached
+            to the select, sized and styled to match it. */}
+        <div className="flex items-center gap-2">
+          <Box className="h-4 w-4 text-muted-foreground" />
+          <ThemedSelect
+            value={selectedContainer ?? '__placeholder__'}
+            onValueChange={(val) => val !== '__placeholder__' && setSelectedContainer(val)}
+            placeholder="Select container..."
+            disabled={!selectedEndpoint || containersLoading}
+            options={[
+              { value: '__placeholder__', label: 'Select container...', disabled: true },
+              ...groupedContainerOptions,
+            ]}
           />
-          <div className="flex items-center gap-2">
-            <Box className="h-4 w-4 text-muted-foreground" />
-            <ThemedSelect
-              value={selectedContainer ?? '__placeholder__'}
-              onValueChange={(val) => val !== '__placeholder__' && setSelectedContainer(val)}
-              placeholder="Select container..."
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="text"
+              value={containerQuery}
+              onChange={(event) => setContainerQuery(event.target.value)}
+              placeholder="Filter"
+              aria-label="Search containers"
               disabled={!selectedEndpoint || containersLoading}
-              options={[
-                { value: '__placeholder__', label: 'Select container...', disabled: true },
-                ...groupedContainerOptions,
-              ]}
+              className={cn(
+                'h-9 w-28 rounded-md border border-input bg-background pl-7 pr-2 text-[16px] sm:text-sm shadow-xs',
+                'placeholder:text-muted-foreground/70',
+                'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
+                'disabled:cursor-not-allowed disabled:opacity-50',
+              )}
             />
           </div>
+          {containerQuery.trim() !== '' && (
+            <span className="text-xs text-muted-foreground" data-testid="container-filter-count">
+              {searchedContainers.length} of {filteredContainers.length}
+            </span>
+          )}
         </div>
 
-        {/* Time Range Selector */}
+        {/* Time Range Selector — the only zoom a time series has. A separate
+            magnifier pair used to sit at the end of this row scaling the chart's
+            pixel height; it promised a time-window change this control already
+            makes, so it is gone rather than relabelled. */}
         <div className="flex items-center gap-2">
           <Clock className="h-4 w-4 text-muted-foreground" />
           <div className="flex rounded-md border border-input overflow-hidden">
@@ -636,27 +802,6 @@ export default function MetricsDashboardPage() {
               </button>
             ))}
           </div>
-        </div>
-
-        {/* Zoom Controls */}
-        <div className="flex items-center gap-1 ml-auto">
-          <button
-            onClick={() => setZoomLevel((z) => Math.max(0.5, z - 0.25))}
-            className="rounded-md p-2 hover:bg-muted"
-            title="Zoom out"
-          >
-            <ZoomOut className="h-4 w-4" />
-          </button>
-          <span className="text-sm text-muted-foreground min-w-[3rem] text-center">
-            {Math.round(zoomLevel * 100)}%
-          </span>
-          <button
-            onClick={() => setZoomLevel((z) => Math.min(2, z + 0.25))}
-            className="rounded-md p-2 hover:bg-muted"
-            title="Zoom in"
-          >
-            <ZoomIn className="h-4 w-4" />
-          </button>
         </div>
       </div>
 
@@ -756,12 +901,7 @@ export default function MetricsDashboardPage() {
                   <p className="text-sm font-medium text-muted-foreground">Avg CPU</p>
                   <p className="mt-2 text-3xl font-bold tracking-tight">{stats.cpu.avg.toFixed(1)}%</p>
                   {cpuCoresLabel && (
-                    <p
-                      className="text-xs text-muted-foreground mt-1"
-                      title="Docker stats convention — 100% = one full CPU core, so this peaks at 100% × online cores."
-                    >
-                      {cpuCoresLabel}
-                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">{cpuCoresLabel}</p>
                   )}
                   <AnomalySparkline
                     values={cpuData.map((d) => d.value)}
@@ -775,12 +915,7 @@ export default function MetricsDashboardPage() {
                   <p className="text-sm font-medium text-muted-foreground">Avg Memory</p>
                   <p className="mt-2 text-3xl font-bold tracking-tight">{stats.memory.avg.toFixed(1)}%</p>
                   {memoryDenominatorLabel && (
-                    <p
-                      className="text-xs text-muted-foreground mt-1"
-                      title="memory% = (usage − cache) ÷ limit. Unconstrained containers report the host's total RAM as the limit."
-                    >
-                      {memoryDenominatorLabel}
-                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">{memoryDenominatorLabel}</p>
                   )}
                   <AnomalySparkline
                     values={memoryData.map((d) => d.value)}
@@ -850,9 +985,12 @@ export default function MetricsDashboardPage() {
                   label="CPU Usage"
                   color="#3b82f6"
                   unit="%"
-                  height={300 * zoomLevel}
+                  height={300}
                   anomalyExplanations={cpuExplanations}
                 />
+                <p className="mt-2 text-xs text-muted-foreground" data-testid="cpu-axis-note">
+                  {cpuAxisNote}
+                </p>
                 {cpuError && (
                   <div className="mt-4 flex items-center gap-2 text-sm text-destructive">
                     <AlertTriangle className="h-4 w-4" />
@@ -884,9 +1022,12 @@ export default function MetricsDashboardPage() {
                   label="Memory Usage"
                   color="#8b5cf6"
                   unit="%"
-                  height={300 * zoomLevel}
+                  height={300}
                   anomalyExplanations={memoryExplanations}
                 />
+                <p className="mt-2 text-xs text-muted-foreground" data-testid="memory-axis-note">
+                  {memoryAxisNote}
+                </p>
                 {memoryError && (
                   <div className="mt-4 flex items-center gap-2 text-sm text-destructive">
                     <AlertTriangle className="h-4 w-4" />
@@ -921,8 +1062,11 @@ export default function MetricsDashboardPage() {
                   label="Memory"
                   color="#06b6d4"
                   unit=" MB"
-                  height={300 * zoomLevel}
+                  height={300}
                 />
+                <p className="mt-2 text-xs text-muted-foreground" data-testid="memory-bytes-axis-note">
+                  Resident memory in MB — the numerator of the percentage beside it.
+                </p>
               </div>
               </SpotlightCard>
             </div>
@@ -932,8 +1076,10 @@ export default function MetricsDashboardPage() {
           <div className="space-y-6">
             <div className="flex items-center gap-2">
               <TrendingUp className="h-5 w-5 text-indigo-500" />
-              <h3 className="text-lg font-semibold">Capacity Forecasts</h3>
-              <span className="text-sm text-muted-foreground">(24h projection)</span>
+              {/* Same horizon as the fleet-wide section below, so it is named
+                  the same way; scope is what differs and scope is what the
+                  headings now carry. */}
+              <h3 className="text-lg font-semibold">Capacity Forecast — This Container (Next 24h)</h3>
             </div>
 
             {hasForecastData ? (
@@ -996,21 +1142,30 @@ export default function MetricsDashboardPage() {
       <div className="rounded-lg border bg-card p-6 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-xl font-semibold">Forecast Overview (Next 24h)</h2>
+            <h2 className="text-xl font-semibold">Capacity Forecast — Fleet (Next 24h)</h2>
             <p className="text-sm text-muted-foreground">
               Risk-ranked capacity outlook across containers.
             </p>
           </div>
+          {/* Zero buckets are not news. The row used to read
+              "Critical: 0  Warning: 0  Healthy: 20" above a table whose every
+              row said the same thing. */}
           <div className="flex flex-wrap items-center gap-2 text-xs">
-            <span className="rounded-full bg-red-100 px-2.5 py-1 font-medium text-red-700 dark:bg-red-900/30 dark:text-red-400">
-              Critical: {riskBuckets.critical}
-            </span>
-            <span className="rounded-full bg-amber-100 px-2.5 py-1 font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
-              Warning: {riskBuckets.warning}
-            </span>
-            <span className="rounded-full bg-emerald-100 px-2.5 py-1 font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
-              Healthy: {riskBuckets.healthy}
-            </span>
+            {riskBuckets.critical > 0 && (
+              <span className="rounded-full bg-red-100 px-2.5 py-1 font-medium text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                Critical: {riskBuckets.critical}
+              </span>
+            )}
+            {riskBuckets.warning > 0 && (
+              <span className="rounded-full bg-amber-100 px-2.5 py-1 font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                Warning: {riskBuckets.warning}
+              </span>
+            )}
+            {riskBuckets.healthy > 0 && (
+              <span className="rounded-full bg-emerald-100 px-2.5 py-1 font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+                Healthy: {riskBuckets.healthy}
+              </span>
+            )}
           </div>
         </div>
 
@@ -1037,8 +1192,46 @@ export default function MetricsDashboardPage() {
             title="No forecast data available"
             description="Keep metrics collection running to build cross-container forecast insights."
           />
+        ) : allForecastsHealthy ? (
+          /* One sentence, because that is the entire content. This was eight
+             columns and two pages of pagination whose every row read
+             "No breach predicted / healthy" — the table is still one click
+             away, and it comes back automatically the moment a row is not
+             healthy. */
+          <div className="mt-4" data-testid="forecast-overview-all-clear">
+            <div className="flex items-start gap-2 text-sm">
+              <ShieldCheck className="mt-0.5 h-4 w-4 flex-shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
+              <p>
+                No capacity breaches projected in the next 24h
+                {' '}
+                <span className="text-muted-foreground">
+                  ({rankedForecasts.length} container/metric series checked)
+                </span>
+              </p>
+            </div>
+            <details className="mt-3">
+              <summary className="cursor-pointer text-sm text-muted-foreground hover:text-foreground">
+                Show all {rankedForecasts.length} series
+              </summary>
+              <div className="mt-3">
+                {forecastRankBasisNote && (
+                  <p className="mb-2 text-xs text-muted-foreground">{forecastRankBasisNote}</p>
+                )}
+                <DataTable
+                  columns={forecastColumns}
+                  data={rankedForecasts}
+                  getRowId={(forecast) => `${forecast.containerId}-${forecast.metricType}`}
+                  hideSearch
+                  minTableWidth={880}
+                />
+              </div>
+            </details>
+          </div>
         ) : (
           <div className="mt-4">
+            {forecastRankBasisNote && (
+              <p className="mb-2 text-xs text-muted-foreground">{forecastRankBasisNote}</p>
+            )}
             <DataTable
               columns={forecastColumns}
               data={rankedForecasts}

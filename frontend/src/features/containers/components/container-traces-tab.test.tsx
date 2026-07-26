@@ -26,7 +26,7 @@ vi.mock('recharts', async (importOriginal) => {
 
 import { useRed } from '@/features/observability/hooks/use-red';
 import { useTraces } from '@/features/observability/hooks/use-traces';
-import { ContainerTracesTab } from './container-traces-tab';
+import { ContainerTracesTab, LATENCY_SERIES } from './container-traces-tab';
 
 const mockUseRed = vi.mocked(useRed);
 const mockUseTraces = vi.mocked(useTraces);
@@ -61,7 +61,7 @@ describe('ContainerTracesTab', () => {
     expect(screen.getByTestId('no-trace-data-callout')).toBeInTheDocument();
   });
 
-  it('renders the four panels when RED data is present', () => {
+  it('renders the three panels when RED data is present', () => {
     mockUseRed.mockReturnValue({
       data: {
         buckets: [
@@ -88,8 +88,11 @@ describe('ContainerTracesTab', () => {
     renderTab();
 
     expect(screen.getByText(/RED summary/i)).toBeInTheDocument();
-    expect(screen.getByText(/Top outgoing calls/i)).toBeInTheDocument();
-    expect(screen.getByText(/Top incoming calls/i)).toBeInTheDocument();
+    expect(screen.getByText(/Slowest calls \(last 1h\)/i)).toBeInTheDocument();
+    // The two direction-labelled panels issued identical queries and rendered
+    // identical rows; one honest panel replaces them.
+    expect(screen.queryByText(/Top outgoing calls/i)).toBeNull();
+    expect(screen.queryByText(/Top incoming calls/i)).toBeNull();
     expect(screen.getByText(/Latency.*timeline|sparkline|over time/i)).toBeInTheDocument();
     // Rate shown
     expect(screen.getByText(/1\.50.*\/s/)).toBeInTheDocument();
@@ -115,20 +118,19 @@ describe('ContainerTracesTab', () => {
     }
   });
 
-  it('fetches outgoing and incoming traces filtered by container name', () => {
+  it('issues one traces query, filtered by container name', () => {
     mockUseRed.mockReturnValue({ data: { buckets: [], truncated: false } } as any);
     mockUseTraces.mockReturnValue({ data: [] } as any);
 
     renderTab('api-2');
 
     const calls = mockUseTraces.mock.calls.map(([opts]) => opts);
-    // Should have both a client (outgoing) and server (incoming) call.
-    const outgoing = calls.find((c) => c?.containerName === 'api-2');
-    expect(outgoing).toBeDefined();
-    expect(calls.length).toBeGreaterThanOrEqual(2);
+    // The second, identical query backed a panel that duplicated the first.
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.containerName).toBe('api-2');
   });
 
-  it('renders top outgoing/incoming rows with deep links to /traces?trace=…', () => {
+  it('renders call rows with deep links to /traces?trace=…', () => {
     mockUseRed.mockReturnValue({
       data: {
         buckets: [
@@ -164,5 +166,17 @@ describe('ContainerTracesTab', () => {
 
     const link = screen.getAllByRole('link', { name: /GET \/foo/i })[0];
     expect(link.getAttribute('href')).toMatch(/\/traces\?.*trace=t1/);
+  });
+
+  it('draws the latency series with theme tokens, not hardcoded hex', () => {
+    // Recharts lays out nothing in jsdom (zero-size container), so assert the
+    // shipped series definition the chart renders from.
+    expect(LATENCY_SERIES.map((s) => s.dataKey)).toEqual(['p50', 'p95', 'errorRate']);
+    for (const series of LATENCY_SERIES) {
+      expect(series.stroke).toMatch(/^var\(--color-/);
+    }
+    // p95 must not borrow purple, which is reserved for AI insight.
+    expect(LATENCY_SERIES.find((s) => s.dataKey === 'p95')?.stroke).toBe('var(--color-chart-2)');
+    expect(LATENCY_SERIES.find((s) => s.dataKey === 'errorRate')?.stroke).toBe('var(--color-destructive)');
   });
 });

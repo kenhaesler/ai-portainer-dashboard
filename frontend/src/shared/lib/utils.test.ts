@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { escapeRegExp, formatBytes, formatDuration, formatRelativeAge, getImageShortName, truncate, cn } from './utils';
+import { escapeRegExp, formatBytes, formatDate, formatDuration, formatRelativeAge, getImageShortName, truncate, cn, INVALID_DATE_PLACEHOLDER } from './utils';
 
 describe('formatBytes', () => {
   it('should return "0 B" for 0 bytes', () => {
@@ -231,5 +231,36 @@ describe('cn', () => {
 
   it('should handle undefined and null', () => {
     expect(cn('foo', undefined, null, 'bar')).toBe('foo bar');
+  });
+});
+
+describe('formatDate', () => {
+  it('formats a valid ISO timestamp', () => {
+    expect(formatDate('2026-07-26T08:46:00Z')).toMatch(/Jul 26/);
+  });
+
+  it('accepts the SQLite "YYYY-MM-DD HH:MM:SS" shape', () => {
+    expect(formatDate('2026-07-26 08:46:00')).toMatch(/Jul 26/);
+  });
+
+  it('returns "N/A" for null, undefined and empty string', () => {
+    expect(formatDate(null)).toBe('N/A');
+    expect(formatDate(undefined)).toBe('N/A');
+    expect(formatDate('')).toBe('N/A');
+  });
+
+  // The old fallback was the literal string 'Invalid date', which rendered ~20
+  // times in one table on /health when an upstream field arrived in a shape
+  // `new Date()` rejects. A formatter's failure mode must read as "no value",
+  // not as English prose addressed to the operator.
+  it('falls back to a neutral dash — not English prose — for an unparseable value', () => {
+    expect(formatDate('not-a-date')).toBe(INVALID_DATE_PLACEHOLDER);
+    expect(formatDate('not-a-date')).toBe('—');
+    expect(formatDate('not-a-date')).not.toMatch(/invalid/i);
+    expect(formatDate('not-a-date')).not.toMatch(/[a-z]/i);
+  });
+
+  it('uses the same dash for an Invalid Date object', () => {
+    expect(formatDate(new Date('nope'))).toBe(INVALID_DATE_PLACEHOLDER);
   });
 });

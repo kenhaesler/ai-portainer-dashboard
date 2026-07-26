@@ -102,7 +102,13 @@ describe('detectCorrelatedAnomalies (real PG, set-based rewrite)', () => {
     expect(a.containerName).toBe('web');
     expect(a.severity).toBe('critical');
     expect(a.compositeScore).toBeGreaterThanOrEqual(5);
-    expect(a.pattern).toContain('CPU Spike');
+    // The classification is structured now: a stable id plus the z-scores and
+    // threshold that fired it, rather than a fixed English sentence.
+    expect(a.patternMatch?.id).toBe('cpu-only-deviation');
+    expect(a.patternMatch?.zScoreThreshold).toBe(2);
+    expect(a.patternMatch?.triggeredBy[0].type).toBe('cpu');
+    expect(a.pattern).toBe(a.patternMatch?.summary);
+    expect(a.pattern).toContain('cpu z=');
 
     // Only the elevated metric is reported; its z-score reflects the fresh spike.
     expect(a.metrics).toHaveLength(1);

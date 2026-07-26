@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { LlmLatencyBreakdown } from './llm-latency-breakdown';
+import { LlmLatencyBreakdown, formatWindowLabel } from './llm-latency-breakdown';
 
 const mockApiGet = vi.fn();
 
@@ -50,6 +50,59 @@ describe('LlmLatencyBreakdown', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('no-trace-data-callout')).toBeInTheDocument();
+    });
+  });
+
+  // Regression: the empty branch used to `return` a bare callout, which left
+  // this the only card on /llm-observability with no heading at all.
+  it('keeps the section heading in the empty state', async () => {
+    mockApiGet.mockResolvedValue({ traces: [] });
+
+    renderWithProviders(<LlmLatencyBreakdown peers={['api.anthropic.com']} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('no-trace-data-callout')).toBeInTheDocument();
+    });
+    expect(screen.getByText(/LLM latency breakdown/i)).toBeInTheDocument();
+  });
+
+  // Regression: the callout hardcoded "in the last hour" while the page's
+  // range selector above it read 24h.
+  it('interpolates the selected window into both the caption and the empty state', async () => {
+    mockApiGet.mockResolvedValue({ traces: [] });
+
+    renderWithProviders(<LlmLatencyBreakdown peers={['api.anthropic.com']} hours={24} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('no-trace-data-callout')).toBeInTheDocument();
+    });
+    expect(screen.getByText(/No outbound LLM spans seen in the last 24h\./)).toBeInTheDocument();
+    expect(screen.getByText(/per upstream provider, last 24h\./)).toBeInTheDocument();
+    expect(screen.queryByText(/last hour/)).toBeNull();
+  });
+
+  it('queries the window implied by the hours prop', async () => {
+    mockApiGet.mockResolvedValue({ traces: [] });
+
+    renderWithProviders(<LlmLatencyBreakdown peers={['api.anthropic.com']} hours={168} />);
+
+    await waitFor(() => expect(mockApiGet).toHaveBeenCalled());
+    const params = mockApiGet.mock.calls[0][1] as { from: string; to: string };
+    const spanHours = (Date.parse(params.to) - Date.parse(params.from)) / 3_600_000;
+    expect(Math.round(spanHours)).toBe(168);
+  });
+
+  describe('formatWindowLabel', () => {
+    it('renders hours below two days and days above', () => {
+      expect(formatWindowLabel(1)).toBe('last 1h');
+      expect(formatWindowLabel(6)).toBe('last 6h');
+      expect(formatWindowLabel(24)).toBe('last 24h');
+      expect(formatWindowLabel(168)).toBe('last 7d');
+    });
+
+    it('falls back to 1h for nonsense input rather than rendering NaN', () => {
+      expect(formatWindowLabel(0)).toBe('last 1h');
+      expect(formatWindowLabel(Number.NaN)).toBe('last 1h');
     });
   });
 

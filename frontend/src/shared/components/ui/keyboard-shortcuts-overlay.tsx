@@ -1,5 +1,9 @@
 import { useEffect, useCallback } from 'react';
 import { cn } from '@/shared/lib/utils';
+import {
+  NAV_CHORDS,
+  breadcrumbLabelForPath,
+} from '@/features/core/lib/navigation-manifest';
 
 interface ShortcutEntry {
   keys: string[];
@@ -11,23 +15,23 @@ interface ShortcutCategory {
   shortcuts: ShortcutEntry[];
 }
 
+/**
+ * Chord labels are derived from the navigation manifest rather than written out
+ * again here. This file used to hold a sixth independent copy of the route
+ * labels, and it had already drifted — it advertised "Go to Network Topology",
+ * "Go to Trace Explorer" and "Go to LLM Assistant" while the nav and breadcrumb
+ * said Topology, Traces and Assistant. Deriving them means a renamed
+ * destination cannot leave a stale label behind in the shortcuts overlay.
+ */
+const navigationShortcuts: ShortcutEntry[] = NAV_CHORDS.map(([keys, path]) => ({
+  keys: keys.split(''),
+  label: `Go to ${breadcrumbLabelForPath(path) ?? path}`,
+}));
+
 const categories: ShortcutCategory[] = [
   {
     title: 'Navigation (vim-style)',
-    shortcuts: [
-      { keys: ['g', 'h'], label: 'Go to Home' },
-      { keys: ['g', 'w'], label: 'Go to Workloads' },
-      { keys: ['g', 'f'], label: 'Go to Fleet' },
-      { keys: ['g', 'l'], label: 'Go to Health & Monitoring' },
-      { keys: ['g', 'i'], label: 'Go to Images' },
-      { keys: ['g', 'n'], label: 'Go to Network Topology' },
-      { keys: ['g', 'm'], label: 'Go to Metrics' },
-      { keys: ['g', 'r'], label: 'Go to Remediation' },
-      { keys: ['g', 'e'], label: 'Go to Trace Explorer' },
-      { keys: ['g', 'x'], label: 'Go to LLM Assistant' },
-      { keys: ['g', 'o'], label: 'Go to Edge Logs' },
-      { keys: ['g', 's'], label: 'Go to Settings' },
-    ],
+    shortcuts: navigationShortcuts,
   },
   {
     title: 'Quick Actions',

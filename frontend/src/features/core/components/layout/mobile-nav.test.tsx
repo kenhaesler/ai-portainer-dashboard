@@ -1,17 +1,25 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MobileBottomNav } from './mobile-bottom-nav';
 
 vi.mock('@/shared/lib/utils', () => ({
   cn: (...classes: (string | boolean | undefined)[]) => classes.filter(Boolean).join(' '),
 }));
 
+vi.mock('@/features/security/hooks/use-harbor-vulnerabilities', () => ({
+  useHarborEnabled: () => ({ data: { enabled: true } }),
+}));
+
 function renderNav(initialRoute = '/') {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <MemoryRouter initialEntries={[initialRoute]}>
-      <MobileBottomNav />
-    </MemoryRouter>,
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[initialRoute]}>
+        <MobileBottomNav />
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
 
@@ -33,7 +41,7 @@ describe('MobileBottomNav - Mobile Optimization', () => {
 
   it('More button opens secondary navigation drawer', () => {
     renderNav();
-    fireEvent.click(screen.getByLabelText('More pages'));
+    fireEvent.click(screen.getByLabelText('More pages', { selector: 'button' }));
     expect(screen.getByText('More Pages')).toBeTruthy();
     expect(screen.getByText('Settings')).toBeTruthy();
     expect(screen.getByText('Infrastructure')).toBeTruthy();
@@ -41,7 +49,7 @@ describe('MobileBottomNav - Mobile Optimization', () => {
 
   it('secondary nav items in drawer have adequate touch targets', () => {
     renderNav();
-    fireEvent.click(screen.getByLabelText('More pages'));
+    fireEvent.click(screen.getByLabelText('More pages', { selector: 'button' }));
     const settingsLink = screen.getAllByText('Settings')[0].closest('a');
     // Drawer items use p-3 (12px padding) + icon (24px) + text = well above 48px
     expect(settingsLink?.className).toContain('p-3');
@@ -49,10 +57,10 @@ describe('MobileBottomNav - Mobile Optimization', () => {
 
   it('drawer closes on close button click', () => {
     renderNav();
-    fireEvent.click(screen.getByLabelText('More pages'));
+    fireEvent.click(screen.getByLabelText('More pages', { selector: 'button' }));
     expect(screen.getByText('More Pages')).toBeTruthy();
-    fireEvent.click(screen.getByLabelText('Close menu'));
-    // Drawer transitions off-screen (translate-y-full) — still in DOM but hidden
+    fireEvent.click(screen.getByLabelText('Close more pages'));
+    expect(screen.queryByText('More Pages')).toBeNull();
   });
 
   it('has mobile navigation aria label', () => {

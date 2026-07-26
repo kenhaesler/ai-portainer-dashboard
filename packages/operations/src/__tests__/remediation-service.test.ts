@@ -39,6 +39,9 @@ import {
   buildRemediationPrompt,
   isProtectedContainer,
   initRemediationDeps,
+  clampConfidenceScore,
+  parseSeverity,
+  classifyRationaleSource,
 } from '../services/remediation-service.js';
 import * as portainerClient from '@dashboard/core/portainer/portainer-client.js';
 import { cache } from '@dashboard/core/portainer/portainer-cache.js';
@@ -113,7 +116,7 @@ describe('remediation-service', () => {
       endpoint_id: 1,
     } as any);
 
-    expect(result).toEqual({ actionId: 'action-123', actionType: 'INVESTIGATE' });
+    expect(result).toEqual({ actionId: 'action-123', actionType: 'INVESTIGATE', rationaleSource: 'pattern-match', patternId: expect.any(String) });
     expect(mockInsertAction).toHaveBeenCalledWith(expect.objectContaining({ action_type: 'INVESTIGATE' }));
     expect(mockBroadcastNewAction).toHaveBeenCalledTimes(1);
   });
@@ -150,7 +153,7 @@ describe('remediation-service', () => {
       endpoint_id: 1,
     } as any);
 
-    expect(result).toEqual({ actionId: 'action-123', actionType: 'RESTART_CONTAINER' });
+    expect(result).toEqual({ actionId: 'action-123', actionType: 'RESTART_CONTAINER', rationaleSource: 'pattern-match', patternId: expect.any(String) });
     expect(mockHasPendingAction).toHaveBeenCalledWith('container-2', 'RESTART_CONTAINER');
     expect(mockInsertAction).toHaveBeenCalledTimes(1);
   });
@@ -222,7 +225,7 @@ describe('remediation-service', () => {
       endpoint_id: 1,
     } as any);
 
-    expect(result).toEqual({ actionId: 'action-123', actionType: 'INVESTIGATE' });
+    expect(result).toEqual({ actionId: 'action-123', actionType: 'INVESTIGATE', rationaleSource: 'pattern-match', patternId: expect.any(String) });
 
     await flushMicrotasks();
 
@@ -269,7 +272,7 @@ describe('remediation-service', () => {
       endpoint_id: 1,
     } as any);
 
-    expect(result).toEqual({ actionId: 'action-123', actionType: 'RESTART_CONTAINER' });
+    expect(result).toEqual({ actionId: 'action-123', actionType: 'RESTART_CONTAINER', rationaleSource: 'pattern-match', patternId: expect.any(String) });
 
     await flushMicrotasks();
 
@@ -306,7 +309,7 @@ describe('remediation-service', () => {
       endpoint_id: 1,
     } as any);
 
-    expect(result).toEqual({ actionId: 'action-123', actionType: 'RESTART_CONTAINER' });
+    expect(result).toEqual({ actionId: 'action-123', actionType: 'RESTART_CONTAINER', rationaleSource: 'pattern-match', patternId: expect.any(String) });
 
     await flushMicrotasks();
 
@@ -334,7 +337,7 @@ describe('remediation-service', () => {
       endpoint_id: 1,
     } as any);
 
-    expect(result).toEqual({ actionId: 'action-123', actionType: 'RESTART_CONTAINER' });
+    expect(result).toEqual({ actionId: 'action-123', actionType: 'RESTART_CONTAINER', rationaleSource: 'pattern-match', patternId: expect.any(String) });
 
     await flushMicrotasks();
 
@@ -506,6 +509,89 @@ describe('parseRemediationAnalysis', () => {
     const result = parseRemediationAnalysis('unstructured llm response');
     expect(result.root_cause).toContain('unstructured');
     expect(result.recommended_actions).toHaveLength(0);
+  });
+
+  // "Not supplied" must be distinguishable from "the model said 0.5" — the UI
+  // renders confidence as an authoritative badge, so a default must not reach it.
+  it('reports a missing confidence_score as null, not 0.5', () => {
+    const result = parseRemediationAnalysis('{"root_cause":"a","severity":"info","recommended_actions":[],"log_analysis":""}');
+    expect(result.confidence_score).toBeNull();
+  });
+
+  it('reports a missing severity as null, not "warning"', () => {
+    const result = parseRemediationAnalysis('{"root_cause":"a","recommended_actions":[],"log_analysis":"","confidence_score":0.9}');
+    expect(result.severity).toBeNull();
+  });
+
+  it('keeps a supplied confidence of 0.5 distinguishable from an absent one', () => {
+    const supplied = parseRemediationAnalysis('{"root_cause":"a","severity":"info","recommended_actions":[],"log_analysis":"","confidence_score":0.5}');
+    const absent = parseRemediationAnalysis('{"root_cause":"a","severity":"info","recommended_actions":[],"log_analysis":""}');
+    expect(supplied.confidence_score).toBe(0.5);
+    expect(absent.confidence_score).toBeNull();
+  });
+
+  it('supplies no confidence or severity for an unstructured response', () => {
+    const result = parseRemediationAnalysis('the container looks unhealthy to me');
+    expect(result.confidence_score).toBeNull();
+    expect(result.severity).toBeNull();
+  });
+
+  it('marks parsed analyses as llm-analysis', () => {
+    const result = parseRemediationAnalysis('{"root_cause":"a","severity":"info","recommended_actions":[],"log_analysis":"","confidence_score":0.4}');
+    expect(result.analysis_source).toBe('llm-analysis');
+  });
+});
+
+describe('clampConfidenceScore', () => {
+  it('clamps supplied numbers into 0..1', () => {
+    expect(clampConfidenceScore(1.5)).toBe(1);
+    expect(clampConfidenceScore(-2)).toBe(0);
+    expect(clampConfidenceScore(0.42)).toBe(0.42);
+  });
+
+  it('returns null for anything the model did not supply as a finite number', () => {
+    expect(clampConfidenceScore(undefined)).toBeNull();
+    expect(clampConfidenceScore(null)).toBeNull();
+    expect(clampConfidenceScore('0.8')).toBeNull();
+    expect(clampConfidenceScore(NaN)).toBeNull();
+  });
+});
+
+describe('parseSeverity', () => {
+  it('passes through the three valid severities', () => {
+    expect(parseSeverity('critical')).toBe('critical');
+    expect(parseSeverity('warning')).toBe('warning');
+    expect(parseSeverity('info')).toBe('info');
+  });
+
+  it('returns null instead of defaulting to warning', () => {
+    expect(parseSeverity(undefined)).toBeNull();
+    expect(parseSeverity('sev1')).toBeNull();
+  });
+});
+
+describe('classifyRationaleSource', () => {
+  it('labels a plain ACTION_PATTERNS string as pattern-match', () => {
+    expect(classifyRationaleSource('Container is reporting unhealthy status. Restarting may resolve the issue.'))
+      .toBe('pattern-match');
+  });
+
+  it('labels a stored analysis payload as llm-analysis', () => {
+    const stored = JSON.stringify({
+      root_cause: 'pool exhausted',
+      severity: 'warning',
+      recommended_actions: [],
+      log_analysis: '',
+      confidence_score: 0.7,
+      analysis_source: 'llm-analysis',
+    });
+    expect(classifyRationaleSource(stored)).toBe('llm-analysis');
+  });
+
+  it('returns null when there is no rationale to attribute', () => {
+    expect(classifyRationaleSource('')).toBeNull();
+    expect(classifyRationaleSource(null)).toBeNull();
+    expect(classifyRationaleSource(undefined)).toBeNull();
   });
 });
 

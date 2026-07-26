@@ -4,6 +4,7 @@ import { getConfig } from '@dashboard/core/config/index.js';
 import { getEffectiveMonitoringConfig } from '@dashboard/core/services/settings-store.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { extractLlmJson } from '@dashboard/core/utils/llm-json.js';
+import { clampConfidenceScore } from '@dashboard/core/utils/model-confidence.js';
 import { getContainerLogs, getContainers } from '@dashboard/core/portainer/portainer-client.js';
 import { cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
 import { isLlmAvailable, chatStream } from './llm-client.js';
@@ -60,7 +61,15 @@ export interface ParsedInvestigationResult {
   contributing_factors: string[];
   severity_assessment: string;
   recommended_actions: RecommendedAction[];
-  confidence_score: number;
+  /**
+   * 0–1 when the model supplied a usable score, null when it did not.
+   *
+   * Null rather than a constant is the point: this used to be `0.5` for "the
+   * model said nothing", which the UI rendered as an authoritative
+   * "Confidence: 50%" badge. `severity_assessment` keeps its `'unknown'`
+   * default — that string is honest about itself, a number is not.
+   */
+  confidence_score: number | null;
   ai_summary: string;
 }
 
@@ -71,14 +80,16 @@ export function parseInvestigationResponse(raw: string): ParsedInvestigationResu
     return validateParsedResult(parsed);
   }
 
-  // Fallback: treat raw text as the root cause with low confidence
+  // Fallback: unstructured model output. We have prose and nothing else — the
+  // model stated no confidence, so we report none rather than inventing the
+  // 0.3 that used to be rendered as a measured value.
   const fallbackCause = raw.trim().slice(0, 2000);
   return {
     root_cause: fallbackCause,
     contributing_factors: [],
     severity_assessment: 'unknown',
     recommended_actions: [],
-    confidence_score: 0.3,
+    confidence_score: null,
     ai_summary: fallbackCause.slice(0, 200),
   };
 }
@@ -115,9 +126,9 @@ function validateParsedResult(parsed: Record<string, unknown>): ParsedInvestigat
         .filter((a): a is RecommendedAction => a !== null)
     : [];
 
-  const confidenceScore = typeof parsed.confidence_score === 'number'
-    ? Math.max(0, Math.min(1, parsed.confidence_score))
-    : 0.5;
+  // Null when the model supplied nothing usable — see clampConfidenceScore.
+  // The old `: 0.5` branch also let a NaN through as a confidence.
+  const confidenceScore = clampConfidenceScore(parsed.confidence_score);
 
   const aiSummary = typeof parsed.ai_summary === 'string'
     ? parsed.ai_summary.slice(0, 200)
@@ -364,7 +375,10 @@ async function runInvestigation(investigationId: string, insight: Insight): Prom
         contributing_factors: '[]',
         severity_assessment: 'unknown',
         recommended_actions: '[]',
-        confidence_score: 0.1,
+        // No logs and no metrics were gathered, so no analysis ran. A 0.1
+        // "confidence" here described the confidence of nothing, and sat
+        // beside prose that says the investigation was aborted.
+        confidence_score: null,
         ai_summary: 'Investigation aborted due to insufficient evidence — no logs or metrics available for analysis.',
         analysis_duration_ms: durationMs,
         llm_model: config.LLM_MODEL,

@@ -38,6 +38,51 @@ describe('normalizeContainer', () => {
     expect(result.networks).toEqual(['bridge', 'custom_net']);
   });
 
+  // The UI used to hardcode "0.0.0.0" in its Host IP column because the
+  // normalizer dropped Docker's `IP`. A loopback-only publish and a
+  // world-facing one must not render identically.
+  it('carries the host bind IP through for each published port', () => {
+    const container = makeContainer({
+      Ports: [
+        { IP: '127.0.0.1', PrivatePort: 5432, PublicPort: 5432, Type: 'tcp' },
+        { IP: '0.0.0.0', PrivatePort: 80, PublicPort: 8080, Type: 'tcp' },
+      ],
+    } as Partial<Container>);
+
+    const result = normalizeContainer(container, 1, 'local');
+
+    expect(result.ports).toEqual([
+      { private: 5432, public: 5432, type: 'tcp', ip: '127.0.0.1' },
+      { private: 80, public: 8080, type: 'tcp', ip: '0.0.0.0' },
+    ]);
+  });
+
+  it('keeps the IPv4 and IPv6 bindings of one mapping distinguishable', () => {
+    // Docker publishes these as two entries; without the IP they collapse into
+    // two identical rows and the table looks broken.
+    const container = makeContainer({
+      Ports: [
+        { IP: '0.0.0.0', PrivatePort: 80, PublicPort: 8080, Type: 'tcp' },
+        { IP: '::', PrivatePort: 80, PublicPort: 8080, Type: 'tcp' },
+      ],
+    } as Partial<Container>);
+
+    const result = normalizeContainer(container, 1, 'local');
+
+    expect(result.ports.map((p) => p.ip)).toEqual(['0.0.0.0', '::']);
+  });
+
+  it('omits ip for an exposed but unpublished port', () => {
+    const container = makeContainer({
+      Ports: [{ PrivatePort: 9000, Type: 'tcp' }],
+    } as Partial<Container>);
+
+    const result = normalizeContainer(container, 1, 'local');
+
+    expect(result.ports).toEqual([{ private: 9000, public: undefined, type: 'tcp' }]);
+    expect(result.ports[0].ip).toBeUndefined();
+  });
+
   it('returns empty networkIPs when no networks exist', () => {
     const container = makeContainer({
       NetworkSettings: undefined,

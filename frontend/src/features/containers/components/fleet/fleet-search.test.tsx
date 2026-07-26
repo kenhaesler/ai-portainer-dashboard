@@ -133,6 +133,32 @@ describe('FleetSearch', () => {
     expect(screen.getByRole('button', { name: 'status:up' })).toBeInTheDocument();
   });
 
+  it('renders example chips below the field, not overlaid on it', () => {
+    renderSearch({ examples: ['name:prod', 'status:up'] });
+
+    const input = screen.getByRole('textbox');
+    const group = screen.getByRole('group', { name: /example searches/i });
+
+    // The chip strip used to be absolutely positioned inside the input's own
+    // relative wrapper. It must now be a sibling block after the field row.
+    expect(group.className).not.toMatch(/absolute/);
+    expect(group.contains(input)).toBe(false);
+    expect(input.parentElement?.contains(group)).toBe(false);
+  });
+
+  it('keeps the placeholder visible while example chips are shown', () => {
+    renderSearch({
+      placeholder: 'Search endpoints... (name:prod status:up)',
+      examples: ['name:prod', 'status:up'],
+    });
+
+    // `placeholder:text-transparent` was the suppression that turned the field
+    // into a blank slab — the syntax hint has to stay readable.
+    const input = screen.getByRole('textbox');
+    expect(input.className).not.toContain('placeholder:text-transparent');
+    expect(screen.getByPlaceholderText('Search endpoints... (name:prod status:up)')).toBeInTheDocument();
+  });
+
   it('hides example chips once a query is typed', () => {
     renderSearch({ examples: ['name:prod'] });
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'x' } });

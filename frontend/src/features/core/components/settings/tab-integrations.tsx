@@ -9,7 +9,6 @@ import {
   Search,
   ShieldAlert,
   Webhook,
-  Wifi,
 } from 'lucide-react';
 import { SettingsSection, DEFAULT_SETTINGS, REDACTED_SECRET, type SettingsTabProps } from './shared';
 import { cn } from '@/shared/lib/utils';
@@ -54,31 +53,9 @@ export function IntegrationsTab({ editedValues, originalValues, onChange, isSavi
         disabled={isSaving}
       />
 
-      {/* Edge Agent Settings */}
-      <SettingsSection
-        title="Edge Agent"
-        icon={<Wifi className="h-5 w-5" />}
-        category="edgeAgent"
-        settings={DEFAULT_SETTINGS.edgeAgent}
-        values={editedValues}
-        originalValues={originalValues}
-        onChange={onChange}
-        disabled={isSaving}
-      />
-
-      {/* Status Page Settings */}
-      <SettingsSection
-        title="Public Status Page"
-        icon={<Globe className="h-5 w-5" />}
-        category="statusPage"
-        settings={DEFAULT_SETTINGS.statusPage}
-        values={editedValues}
-        originalValues={originalValues}
-        onChange={onChange}
-        disabled={isSaving}
-        status={editedValues['status.page.enabled'] === 'true' ? 'configured' : 'not-configured'}
-        statusLabel={editedValues['status.page.enabled'] === 'true' ? 'Enabled' : 'Disabled'}
-      />
+      {/* Edge Agent moved to Infrastructure — it tunes how the dashboard polls
+          the fleet, not a third-party integration. Public Status Page moved to
+          Security — it is unauthenticated external exposure. */}
     </div>
   );
 }

@@ -3,6 +3,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { CommandPalette, pages } from './command-palette';
+
+const PLACEHOLDER = 'Search containers, images, logs and pages';
 import { useUiStore } from '@/stores/ui-store';
 import { useSearchStore } from '@/stores/search-store';
 import { SearchProvider } from '@/providers/search-provider';
@@ -101,14 +103,14 @@ describe('CommandPalette (Spotlight Style)', () => {
     expect(screen.getByLabelText('Filter by Containers')).toBeInTheDocument();
 
     // Typing state
-    const input = screen.getByPlaceholderText('Search or Ask Neural AI...');
+    const input = screen.getByPlaceholderText(PLACEHOLDER);
     fireEvent.change(input, { target: { value: 'web' } });
     expect(screen.getByLabelText('Filter by Containers')).toBeInTheDocument();
   });
 
   it('toggles category on click and filters results', () => {
     renderPalette();
-    const input = screen.getByPlaceholderText('Search or Ask Neural AI...');
+    const input = screen.getByPlaceholderText(PLACEHOLDER);
     fireEvent.change(input, { target: { value: 'web' } });
 
     // With 'all' category, containers should be visible
@@ -120,7 +122,7 @@ describe('CommandPalette (Spotlight Style)', () => {
     expect(settingsBtn).toHaveAttribute('aria-pressed', 'true');
 
     // Container results should be hidden when settings filter is active
-    expect(screen.queryByText('Infrastructure Units')).not.toBeInTheDocument();
+    expect(screen.queryByText('Containers', { selector: '[cmdk-group-heading]' })).not.toBeInTheDocument();
   });
 
   it('deselects category on second click (returns to all)', () => {
@@ -139,34 +141,34 @@ describe('CommandPalette (Spotlight Style)', () => {
   it('renders recent interactions when query is empty', () => {
     useSearchStore.setState({ recent: [{ term: 'postgres', lastUsed: Date.now() }] });
     renderPalette();
-    expect(screen.getByText('Recent Neural Interactions')).toBeInTheDocument();
+    expect(screen.getByText('Recent')).toBeInTheDocument();
     expect(screen.getByText('postgres')).toBeInTheDocument();
   });
 
   it('renders container results when searching', () => {
     renderPalette();
-    const input = screen.getByPlaceholderText('Search or Ask Neural AI...');
+    const input = screen.getByPlaceholderText(PLACEHOLDER);
     fireEvent.change(input, { target: { value: 'web' } });
-    expect(screen.getByText('Infrastructure Units')).toBeInTheDocument();
+    expect(screen.getByText('Containers', { selector: '[cmdk-group-heading]' })).toBeInTheDocument();
     expect(screen.getByText('web-frontend')).toBeInTheDocument();
   });
 
-  it('shows Neural Run button for natural language queries', () => {
+  it('shows the Ask AI button for natural language queries', () => {
     renderPalette();
-    const input = screen.getByPlaceholderText('Search or Ask Neural AI...');
+    const input = screen.getByPlaceholderText(PLACEHOLDER);
     fireEvent.change(input, { target: { value: 'what containers are running' } });
-    expect(screen.getByText('Neural Run')).toBeInTheDocument();
+    expect(screen.getByText('Ask AI')).toBeInTheDocument();
   });
 
-  it('does not show Neural Run button for simple searches', () => {
+  it('does not show the Ask AI button for simple searches', () => {
     renderPalette();
-    const input = screen.getByPlaceholderText('Search or Ask Neural AI...');
+    const input = screen.getByPlaceholderText(PLACEHOLDER);
     fireEvent.change(input, { target: { value: 'nginx' } });
-    expect(screen.queryByText('Neural Run')).toBeNull();
+    expect(screen.queryByText('Ask AI')).toBeNull();
   });
 
   it('orders the Intelligence pages directly after Monitoring and before Diagnostics, mirroring the sidebar', () => {
-    const order = pages.map((p) => p.to);
+    const order = pages.map((p) => p.path);
     const metrics = order.indexOf('/metrics'); // last Monitoring view
     const assistant = order.indexOf('/assistant'); // Intelligence
     const llmObservability = order.indexOf('/llm-observability'); // Intelligence
@@ -181,28 +183,84 @@ describe('CommandPalette (Spotlight Style)', () => {
 
   it('does not include deprecated backups page in static page entries', () => {
     renderPalette();
-    const input = screen.getByPlaceholderText('Search or Ask Neural AI...');
+    const input = screen.getByPlaceholderText(PLACEHOLDER);
     fireEvent.change(input, { target: { value: 'se' } });
     expect(screen.queryByText('Backups')).not.toBeInTheDocument();
     expect(screen.getAllByText('Settings').length).toBeGreaterThan(0);
   });
 
+
+  it('names things the way the sidebar names them', () => {
+    renderPalette();
+    const input = screen.getByPlaceholderText(PLACEHOLDER);
+    // 'server' matches the mocked endpoints as well as the mocked containers.
+    fireEvent.change(input, { target: { value: 'server' } });
+
+    const headings = Array.from(
+      document.querySelectorAll('[cmdk-group-heading]'),
+    ).map((el) => el.textContent);
+
+    expect(headings).toContain('Containers');
+    expect(headings).toContain('Endpoints');
+    expect(headings).toContain('Pages');
+    expect(headings).toContain('Logs');
+    for (const invented of [
+      'Infrastructure Units',
+      'Nodes',
+      'Neural Navigation',
+      'Binary Blueprints',
+      'Neural Log Stream',
+    ]) {
+      expect(headings).not.toContain(invented);
+    }
+  });
+
+  it('carries no "Neural" vocabulary anywhere in the rendered palette', () => {
+    renderPalette();
+    const input = screen.getByPlaceholderText(PLACEHOLDER);
+    fireEvent.change(input, { target: { value: 'what containers are running' } });
+    expect(document.body.textContent).not.toMatch(/neural/i);
+  });
+
+  it('drops the tautological footer credit from the shortcut bar', () => {
+    renderPalette();
+    expect(screen.queryByText(/powered by/i)).toBeNull();
+    expect(screen.queryByText(/AI Intelligence/i)).toBeNull();
+  });
+
+  it('labels the shortcut bar with plain verbs', () => {
+    renderPalette();
+    expect(screen.getByText('Navigate')).toBeInTheDocument();
+    expect(screen.getByText('Open')).toBeInTheDocument();
+    expect(screen.queryByText('Traverse')).toBeNull();
+    expect(screen.queryByText('Execute')).toBeNull();
+  });
+
+  it('offers the destinations the hand-maintained list used to omit', () => {
+    const paths = pages.map((p) => p.path);
+    expect(paths).toContain('/logs');
+    expect(paths).toContain('/packet-capture');
+    expect(paths).toContain('/ebpf-coverage');
+    expect(paths).toContain('/reports');
+    expect(paths).toContain('/security/vulnerabilities');
+  });
+
   it('starts compact and expands when typing', () => {
     renderPalette();
-    const dialog = screen.getByPlaceholderText('Search or Ask Neural AI...').closest('[class*="z-[101]"]');
+    const dialog = screen.getByPlaceholderText(PLACEHOLDER).closest('[class*="z-[101]"]');
     // Dialog should exist and have the base classes
     expect(dialog?.className).toContain('z-[101]');
     expect(dialog?.className).toContain('w-full');
 
     // Verify typing updates the query state
-    const input = screen.getByPlaceholderText('Search or Ask Neural AI...');
+    const input = screen.getByPlaceholderText(PLACEHOLDER);
     fireEvent.change(input, { target: { value: 'test' } });
     expect((input as HTMLInputElement).value).toBe('test');
   });
 
   it('respects prefers-reduced-motion via CSS utility classes', () => {
     renderPalette();
-    const dialog = screen.getByPlaceholderText('Search or Ask Neural AI...').closest('[class*="z-[101]"]');
+    const dialog = screen.getByPlaceholderText(PLACEHOLDER).closest('[class*="z-[101]"]');
     expect(dialog).toBeInTheDocument();
     expect(dialog?.className).toContain('z-[101]');
   });

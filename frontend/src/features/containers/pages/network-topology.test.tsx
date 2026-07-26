@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
-import NetworkTopologyPage from './network-topology';
+import NetworkTopologyPage, { resolveNetworkMembers } from './network-topology';
 import { useUiStore } from '@/stores/ui-store';
 
 // Mock data hooks at the boundary
@@ -26,8 +26,12 @@ vi.mock('@/features/observability/hooks/use-service-map', () => ({
   useServiceMap: vi.fn(),
 }));
 
+const autoRefreshCalls: Array<[number, { onTick?: () => void } | undefined]> = [];
 vi.mock('@/shared/hooks/use-auto-refresh', () => ({
-  useAutoRefresh: () => ({ interval: 30, setInterval: vi.fn() }),
+  useAutoRefresh: (defaultInterval: number, opts?: { onTick?: () => void }) => {
+    autoRefreshCalls.push([defaultInterval, opts]);
+    return { interval: 30, setRefreshInterval: vi.fn(), setInterval: vi.fn() };
+  },
 }));
 
 // Stub TopologyGraph — it depends on @xyflow/react which is heavy in jsdom and
@@ -38,17 +42,25 @@ vi.mock('@/features/containers/components/network/topology-graph', () => ({
     networks,
     showObservedTraffic,
     observedEdges,
+    onNodeClick,
   }: {
     containers: Array<{ id: string; name: string }>;
     networks: Array<{ id: string; name: string }>;
     showObservedTraffic?: boolean;
     observedEdges?: Array<{ source: string; target: string; callCount: number }>;
+    onNodeClick?: (nodeId: string) => void;
   }) => (
     <div data-testid="topology-graph">
       <span data-testid="topology-container-count">{containers.length}</span>
       <span data-testid="topology-network-count">{networks.length}</span>
       <span data-testid="topology-show-observed">{String(Boolean(showObservedTraffic))}</span>
       <span data-testid="topology-observed-count">{observedEdges?.length ?? 0}</span>
+      {/* Stand-in for clicking a node, so the detail side panel is reachable. */}
+      {containers.map((c) => (
+        <button key={c.id} onClick={() => onNodeClick?.(`container-${c.id}`)}>
+          select {c.name}
+        </button>
+      ))}
     </div>
   ),
 }));
@@ -167,17 +179,22 @@ describe('NetworkTopologyPage', () => {
     mockUseServiceMap.mockReturnValue({ data: undefined } as any);
   });
 
-  it('renders the page heading and description', () => {
+  it('renders one h1 matching the navigation label, with the fleet fact as subtitle', () => {
     setHooks({ containers: [makeContainer()], networks: [makeNetwork()] });
 
     renderPage();
 
+    const headings = screen.getAllByRole('heading', { level: 1 });
+    expect(headings).toHaveLength(1);
+    expect(headings[0]).toHaveTextContent('Topology');
+
+    // The old subtitle was three synonyms for "graph"; the counts are the fact.
     expect(
-      screen.getByRole('heading', { name: 'Network Topology' }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText('Interactive network graph visualization'),
-    ).toBeInTheDocument();
+      screen.queryByText('Interactive network graph visualization'),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId('page-header-subtitle')).toHaveTextContent(
+      '1 container across 1 network',
+    );
   });
 
   it('renders the topology graph with container and network counts', () => {
@@ -206,6 +223,18 @@ describe('NetworkTopologyPage', () => {
 
     expect(screen.getByText(/2 containers/)).toBeInTheDocument();
     expect(screen.getByText(/2 networks/)).toBeInTheDocument();
+    // ...and only once — it used to sit in the filter row as well.
+    expect(screen.getAllByText(/2 containers across 2 networks/)).toHaveLength(1);
+  });
+
+  it('wires the refresh interval to an actual tick', () => {
+    setHooks({ containers: [makeContainer()], networks: [makeNetwork()] });
+
+    renderPage();
+
+    // The hook owns the timer; the page must hand it something to call.
+    const opts = autoRefreshCalls.at(-1)?.[1];
+    expect(typeof opts?.onTick).toBe('function');
   });
 
   it('shows the loading skeleton while data is loading', () => {
@@ -321,5 +350,74 @@ describe('NetworkTopologyPage', () => {
       renderPage();
       expect(screen.getByTestId('topology-observed-count')).toHaveTextContent('2');
     });
+  });
+
+  describe('container detail panel — ports', () => {
+    function selectContainerWithPorts(ports: unknown[]) {
+      // Both hooks must be stubbed here. `clearMocks` resets call history but
+      // NOT return values, so stubbing only `useContainers` left this test
+      // passing on whatever `useNetworks` value a previously-run test happened
+      // to leave behind — and failing when run alone.
+      setHooks({ containers: [makeContainer({ ports })], networks: [makeNetwork()] });
+      renderPage();
+      fireEvent.click(screen.getByRole('button', { name: 'select web' }));
+    }
+
+    it('shows the host bind address, so a loopback publish is not read as world-facing', () => {
+      selectContainerWithPorts([
+        { private: 5432, public: 5432, type: 'tcp', ip: '127.0.0.1' },
+      ]);
+
+      expect(screen.getByText('127.0.0.1:5432 → 5432/tcp')).toBeInTheDocument();
+    });
+
+    it('keeps the IPv4 and IPv6 bindings of one publish distinguishable', () => {
+      // Docker emits these as two entries. Without the bind address the panel
+      // printed the same line twice, which reads as a rendering fault.
+      selectContainerWithPorts([
+        { private: 80, public: 8080, type: 'tcp', ip: '0.0.0.0' },
+        { private: 80, public: 8080, type: 'tcp', ip: '::' },
+      ]);
+
+      expect(screen.getByText('0.0.0.0:8080 → 80/tcp')).toBeInTheDocument();
+      expect(screen.getByText('[::]:8080 → 80/tcp')).toBeInTheDocument();
+      expect(screen.getAllByText('all interfaces')).toHaveLength(2);
+    });
+
+    it('marks an exposed but unpublished port without inventing a bind address', () => {
+      selectContainerWithPorts([{ private: 9000, type: 'tcp' }]);
+
+      expect(screen.getByText('9000/tcp')).toBeInTheDocument();
+      expect(screen.queryByText('all interfaces')).not.toBeInTheDocument();
+    });
+  });
+});
+
+describe('resolveNetworkMembers', () => {
+  const fleet = [
+    { id: 'aaaaaaaaaaaa1111', name: 'container-insights-backend' },
+    { id: 'bbbbbbbbbbbb2222', name: 'container-insights-redis' },
+  ];
+
+  it('names each connected container instead of showing a raw hex id', () => {
+    expect(resolveNetworkMembers(['aaaaaaaaaaaa1111'], fleet)).toEqual([
+      {
+        id: 'aaaaaaaaaaaa1111',
+        shortId: 'aaaaaaaaaaaa',
+        name: 'container-insights-backend',
+      },
+    ]);
+  });
+
+  it('keeps the short id and invents no name when the container is not in scope', () => {
+    const [member] = resolveNetworkMembers(['ffffffffffff9999'], fleet);
+    expect(member.name).toBeNull();
+    expect(member.shortId).toBe('ffffffffffff');
+  });
+
+  it('preserves order and handles an empty fleet', () => {
+    const members = resolveNetworkMembers(['bbbbbbbbbbbb2222', 'aaaaaaaaaaaa1111'], []);
+    expect(members.map((m) => m.shortId)).toEqual(['bbbbbbbbbbbb', 'aaaaaaaaaaaa']);
+    expect(members.every((m) => m.name === null)).toBe(true);
   });
 });

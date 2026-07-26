@@ -156,6 +156,21 @@ describe('NormalizedContainerSchema', () => {
       labels: {}, networks: ['bridge'], networkIPs: { bridge: '172.17.0.2' } };
     expect(NormalizedContainerSchema.parse(raw).networkIPs).toEqual({ bridge: '172.17.0.2' });
   });
+
+  it('preserves the host bind IP on ports (this schema serializes the response)', () => {
+    // parse() strips undeclared keys, so an absent `ip` here means the field
+    // never reaches the client no matter what the normalizer emits — which is
+    // how the container detail table came to hardcode "0.0.0.0".
+    const raw = { id: 'c1', name: 'nginx', image: 'nginx:latest', state: 'running',
+      status: 'Up', endpointId: 1, endpointName: 'local',
+      ports: [
+        { private: 5432, public: 5432, type: 'tcp', ip: '127.0.0.1' },
+        { private: 80, public: 8080, type: 'tcp', ip: '::' },
+      ],
+      created: 1700000000, labels: {}, networks: [], networkIPs: {} };
+    const parsed = NormalizedContainerSchema.parse(raw);
+    expect(parsed.ports.map((p) => p.ip)).toEqual(['127.0.0.1', '::']);
+  });
 });
 
 describe('NormalizedEndpointSchema', () => {
@@ -225,6 +240,26 @@ describe('RemediationAnalysisResultSchema', () => {
     expect(() =>
       RemediationAnalysisResultSchema.parse({ root_cause: 'x', severity: 'info',
         recommended_actions: [], log_analysis: 'x', confidence_score: 1.5 })
+    ).toThrow();
+  });
+
+  it('represents "the model supplied no confidence" as null, not a default', () => {
+    const parsed = RemediationAnalysisResultSchema.parse({ root_cause: 'x', severity: null,
+      recommended_actions: [], log_analysis: 'x', confidence_score: null });
+    expect(parsed.confidence_score).toBeNull();
+    expect(parsed.severity).toBeNull();
+  });
+
+  it('carries the rationale provenance when supplied', () => {
+    const parsed = RemediationAnalysisResultSchema.parse({ root_cause: 'x', severity: 'info',
+      recommended_actions: [], log_analysis: 'x', confidence_score: 0.5, analysis_source: 'llm-analysis' });
+    expect(parsed.analysis_source).toBe('llm-analysis');
+  });
+
+  it('rejects an unknown provenance value', () => {
+    expect(() =>
+      RemediationAnalysisResultSchema.parse({ root_cause: 'x', severity: 'info',
+        recommended_actions: [], log_analysis: 'x', confidence_score: 0.5, analysis_source: 'vibes' })
     ).toThrow();
   });
 });

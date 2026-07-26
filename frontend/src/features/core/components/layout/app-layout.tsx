@@ -17,6 +17,10 @@ import { useKeyChord } from '@/shared/hooks/use-key-chord';
 import type { ChordBinding } from '@/shared/hooks/use-key-chord';
 import { AnimatePresence, m, useReducedMotion } from 'framer-motion';
 import { ErrorBoundary } from '@/shared/components/feedback/error-boundary';
+import {
+  breadcrumbLabelForPath,
+  NAV_CHORDS,
+} from '@/features/core/lib/navigation-manifest';
 
 /**
  * Catches render errors thrown by the active page so one failing route
@@ -45,6 +49,38 @@ function getRouteDepth(pathname: string): number {
   return pathname.split('/').filter(Boolean).length;
 }
 
+/**
+ * `g`-chord key assignments, re-exported for existing importers.
+ *
+ * The definition lives in the navigation manifest alongside the destinations it
+ * points at. It was briefly declared here, which created a cycle: the keyboard
+ * shortcuts overlay needs the chords to label itself, and this module imports
+ * that overlay — so `NAV_CHORDS` read as `undefined` at module-init time
+ * whenever the graph was entered through the router.
+ */
+export { NAV_CHORDS };
+
+/**
+ * True between 768px and 1023px. At 820px the full 256px sidebar spent ~37%
+ * of the viewport on navigation, which is why the workloads table showed two
+ * columns there. The 64px icon rail (with its tooltips) already existed;
+ * this just switches to it automatically and gives 192px back.
+ */
+export function useTabletRail(): boolean {
+  const [isRail, setIsRail] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const mql = window.matchMedia('(min-width: 768px) and (max-width: 1023px)');
+    const update = () => setIsRail(mql.matches);
+    update();
+    mql.addEventListener?.('change', update);
+    return () => mql.removeEventListener?.('change', update);
+  }, []);
+
+  return isRail;
+}
+
 export function AppLayout() {
   const { isAuthenticated } = useAuth();
   const sidebarCollapsed = useUiStore((s) => s.sidebarCollapsed);
@@ -63,6 +99,8 @@ export function AppLayout() {
   const reducedMotion = useReducedMotion();
   const disableVisualMotion = reducedMotion || potatoMode;
   const [direction, setDirection] = useState(1);
+  const tabletRail = useTabletRail();
+  const railMode = sidebarCollapsed || tabletRail;
   const previousDepthRef = useRef(getRouteDepth(location.pathname));
   const { hasPlayed, markPlayed } = useEntrancePlayed();
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -85,23 +123,16 @@ export function AppLayout() {
     };
   }, [disableVisualMotion, hasPlayed, markPlayed]);
 
-  // Vim-style g+key chord navigation
+  // Vim-style g+key chord navigation. Only the key assignment lives here —
+  // the destination's name comes from the route manifest, so the overlay can
+  // never disagree with the sidebar about what a page is called.
   const chordBindings: ChordBinding[] = useMemo(
-    () => [
-      { keys: 'gh', action: () => navigate('/'), label: 'Go to Home' },
-      { keys: 'gw', action: () => navigate('/workloads'), label: 'Go to Workloads' },
-      { keys: 'gf', action: () => navigate('/infrastructure'), label: 'Go to Infrastructure' },
-      { keys: 'gl', action: () => navigate('/health'), label: 'Go to Health & Monitoring' },
-      { keys: 'gi', action: () => navigate('/images'), label: 'Go to Images' },
-      { keys: 'gn', action: () => navigate('/topology'), label: 'Go to Network Topology' },
-      { keys: 'gm', action: () => navigate('/metrics'), label: 'Go to Metrics' },
-      { keys: 'gr', action: () => navigate('/remediation'), label: 'Go to Remediation' },
-      { keys: 'ge', action: () => navigate('/traces'), label: 'Go to Trace Explorer' },
-      { keys: 'gx', action: () => navigate('/assistant'), label: 'Go to LLM Assistant' },
-      { keys: 'go', action: () => navigate('/edge-logs'), label: 'Go to Edge Logs' },
-      { keys: 'gv', action: () => navigate('/logs'), label: 'Go to Log Viewer' },
-      { keys: 'gs', action: () => navigate('/settings'), label: 'Go to Settings' },
-    ],
+    () =>
+      NAV_CHORDS.map(([keys, path]) => ({
+        keys,
+        action: () => navigate(path),
+        label: `Go to ${breadcrumbLabelForPath(path) ?? path}`,
+      })),
     [navigate],
   );
 
@@ -216,13 +247,14 @@ export function AppLayout() {
             : { duration: 0 }
         }
       >
-        <Sidebar />
+        <Sidebar forceRail={tabletRail} />
       </m.div>
       <div
+        data-testid="app-content"
         className={cn(
           'relative z-10 flex flex-1 flex-col overflow-hidden',
           !disableVisualMotion && 'transition-all duration-300',
-          sidebarCollapsed ? 'md:ml-[calc(64px+2rem)]' : 'md:ml-[calc(256px+2rem)]',
+          railMode ? 'md:ml-[calc(64px+2rem)]' : 'md:ml-[calc(256px+2rem)]',
         )}
       >
         {/* Header — drops in from top */}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ReactFlow,
   Background,
@@ -107,6 +107,64 @@ export function capAndSortRpcEdges(edges: RpcEdgeInput[]): RpcEdgeInput[] {
     .slice()
     .sort((a, b) => b.callCount - a.callCount)
     .slice(0, RPC_EDGE_CAP);
+}
+
+export interface RpcMatchResult {
+  /** Edges whose source *and* target both resolve to a container on canvas. */
+  matched: RpcEdgeInput[];
+  /** Edges that will not be drawn because a name did not resolve. */
+  unmatched: RpcEdgeInput[];
+  /** Distinct span service names with no container of that name, sorted. */
+  unmatchedServices: string[];
+}
+
+/**
+ * Resolve observed RPC edges against the containers on canvas.
+ *
+ * The overlay matches span service names to `container.name` exactly, which is
+ * a real constraint — Beyla reports `api-gateway` while the container is called
+ * `container-insights-backend`. Previously that mismatch was silent: every edge
+ * hit `continue`, drawing nothing, while the checkbox still read "Observed
+ * traffic (3)" and the structural graph was dimmed to 0.2 to make room for a
+ * layer that never appeared. Returning the misses lets the caller say so.
+ */
+export function matchRpcEdgesToContainers(
+  edges: RpcEdgeInput[],
+  containers: Pick<ContainerData, 'name'>[],
+): RpcMatchResult {
+  const names = new Set(containers.map((c) => c.name));
+  const matched: RpcEdgeInput[] = [];
+  const unmatched: RpcEdgeInput[] = [];
+  const unmatchedServices = new Set<string>();
+
+  for (const edge of capAndSortRpcEdges(edges)) {
+    const hasSource = names.has(edge.source);
+    const hasTarget = names.has(edge.target);
+    if (hasSource && hasTarget) {
+      matched.push(edge);
+      continue;
+    }
+    unmatched.push(edge);
+    if (!hasSource) unmatchedServices.add(edge.source);
+    if (!hasTarget) unmatchedServices.add(edge.target);
+  }
+
+  return { matched, unmatched, unmatchedServices: [...unmatchedServices].sort() };
+}
+
+/**
+ * The `↓… ↑…` chip for a container↔network edge, or `undefined` when there is
+ * nothing to say.
+ *
+ * This used to emit a label whenever a rate *object* existed, without checking
+ * that the rate was non-zero — so an idle fleet drew thirteen identical
+ * `↓0B/s ↑0B/s` chips, the highest-contrast repeated element on the canvas,
+ * carrying exactly zero information.
+ */
+export function formatEdgeRateLabel(rate: NetworkRate | undefined): string | undefined {
+  if (!rate) return undefined;
+  if (rate.rxBytesPerSec + rate.txBytesPerSec <= 0) return undefined;
+  return `↓${formatRate(rate.rxBytesPerSec)} ↑${formatRate(rate.txBytesPerSec)}`;
 }
 
 // --- End RPC overlay helpers ---
@@ -273,9 +331,11 @@ const nodeTypes = {
   'stack-group': StackGroupNode,
 };
 
-// Node dimensions for elkjs layout
-const CONTAINER_W = 140;
-const CONTAINER_H = 90;
+// Node dimensions for elkjs layout. Container nodes reserve the 160px their
+// label is now allowed to occupy (it was clipped at 100px, which is narrower
+// than a compose prefix), plus room for the ring on the selected node.
+const CONTAINER_W = 176;
+const CONTAINER_H = 80;
 const NETWORK_W = 140;
 const NETWORK_H = 90;
 
@@ -419,6 +479,17 @@ export function TopologyGraph({
 }: TopologyGraphProps) {
   const potatoMode = useUiStore((state) => state.potatoMode);
   const relatedSet = useMemo(() => new Set(relatedNodeIds ?? []), [relatedNodeIds]);
+  const [showMiniMap, setShowMiniMap] = useState(false);
+
+  // Resolve the overlay before anything decides to de-emphasise the graph for
+  // it. Dimming to 0.2 for a layer that draws nothing is strictly a loss.
+  const rpcMatch = useMemo(
+    () => matchRpcEdgesToContainers(observedEdges ?? [], containers),
+    [observedEdges, containers],
+  );
+  const overlayActive = showObservedTraffic && rpcMatch.matched.length > 0;
+  const overlayMatchedNothing =
+    showObservedTraffic && rpcMatch.matched.length === 0 && rpcMatch.unmatched.length > 0;
 
   // Phase 1: Categorize stacks, classify inline/external networks, sort everything
   const { blueprints, externalNets } = useMemo(() => {
@@ -540,6 +611,9 @@ export function TopologyGraph({
           extent: 'parent' as const,
           data: {
             label: container.name,
+            // The group box already displays the compose project; the node
+            // strips it from its own label so siblings stay distinguishable.
+            groupLabel: bp.stackName,
             state: container.state,
             image: container.image,
             selected: childId === selectedNodeId,
@@ -587,11 +661,10 @@ export function TopologyGraph({
           : { sourceHandle: 'bottom' as HandleDirection, targetHandle: 'top' as HandleDirection };
 
         const edgeStyle = getEdgeStyle(container.id, container.state, networkRates);
-        const rate = networkRates?.[container.id];
-        const edgeLabel = rate ? `↓${formatRate(rate.rxBytesPerSec)} ↑${formatRate(rate.txBytesPerSec)}` : undefined;
-        // Fade structural edges when the RPC overlay is on so observed
-        // traffic reads as the primary signal.
-        const structuralOpacity = showObservedTraffic ? 0.2 : 0.7;
+        const edgeLabel = formatEdgeRateLabel(networkRates?.[container.id]);
+        // Fade structural edges when the RPC overlay actually draws something,
+        // so observed traffic reads as the primary signal.
+        const structuralOpacity = overlayActive ? 0.2 : 0.7;
         edges.push({
           id: `e-${container.id}-${net.id}`,
           source: sourceId,
@@ -599,15 +672,22 @@ export function TopologyGraph({
           sourceHandle: handles.sourceHandle,
           targetHandle: handles.targetHandle,
           type: 'smoothstep',
-          animated: !potatoMode && !showObservedTraffic && container.state === 'running',
+          animated: !potatoMode && !overlayActive && container.state === 'running',
           style: {
             stroke: edgeStyle.stroke,
             strokeWidth: edgeStyle.strokeWidth,
             opacity: structuralOpacity,
           },
           label: edgeLabel,
-          labelStyle: { fontSize: 10, fill: 'var(--color-muted-foreground)' },
-          labelBgStyle: { fill: 'var(--color-card)', opacity: 0.9 },
+          // The label has to fade with its own stroke. It did not, so a 0.2
+          // line carried a full-opacity chip and the layer meant to recede
+          // became the loudest thing on the canvas.
+          labelStyle: {
+            fontSize: 10,
+            fill: 'var(--color-muted-foreground)',
+            opacity: structuralOpacity,
+          },
+          labelBgStyle: { fill: 'var(--color-card)', opacity: 0.9 * structuralOpacity },
           labelBgPadding: [4, 2],
           labelBgBorderRadius: 4,
         });
@@ -616,12 +696,11 @@ export function TopologyGraph({
 
     // Observed RPC overlay edges (#1233). Service names from spans are
     // matched to container nodes by `container.name`.
-    if (showObservedTraffic && observedEdges && observedEdges.length > 0) {
+    if (showObservedTraffic && rpcMatch.matched.length > 0) {
       const containerByName = new Map<string, ContainerData>();
       for (const c of containers) containerByName.set(c.name, c);
 
-      const capped = capAndSortRpcEdges(observedEdges);
-      for (const rpc of capped) {
+      for (const rpc of rpcMatch.matched) {
         const src = containerByName.get(rpc.source);
         const tgt = containerByName.get(rpc.target);
         if (!src || !tgt) continue;
@@ -673,7 +752,7 @@ export function TopologyGraph({
     }
 
     return { nodes, edges };
-  }, [blueprints, externalNets, layoutPositions, containers, networks, networkRates, relatedSet, selectedNodeId, potatoMode, showObservedTraffic, observedEdges]);
+  }, [blueprints, externalNets, layoutPositions, containers, networks, networkRates, relatedSet, selectedNodeId, potatoMode, showObservedTraffic, overlayActive, rpcMatch]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
@@ -703,6 +782,43 @@ export function TopologyGraph({
   return (
     <div className="h-full rounded-lg border relative">
       <TopologyLegend />
+
+      {/*
+        Say when the overlay resolved nothing. Silently dimming the structural
+        graph for an empty layer left the operator staring at a faded canvas
+        with a checkbox claiming three observed edges.
+      */}
+      {overlayMatchedNothing && (
+        <div
+          role="status"
+          className="absolute left-1/2 top-3 z-10 max-w-[min(32rem,90%)] -translate-x-1/2 rounded-md border border-amber-500/40 bg-card/95 px-3 py-2 text-xs shadow-sm backdrop-blur-sm"
+        >
+          <span className="font-medium text-amber-700 dark:text-amber-400">
+            {rpcMatch.unmatched.length} observed{' '}
+            {rpcMatch.unmatched.length === 1 ? 'edge' : 'edges'} could not be matched to
+            containers.
+          </span>{' '}
+          <span className="text-muted-foreground">
+            Traces name {rpcMatch.unmatchedServices.slice(0, 3).join(', ')}
+            {rpcMatch.unmatchedServices.length > 3
+              ? ` and ${rpcMatch.unmatchedServices.length - 3} more`
+              : ''}
+            ; no container on this endpoint carries{' '}
+            {rpcMatch.unmatchedServices.length === 1 ? 'that name' : 'those names'}. Set
+            OTEL_SERVICE_NAME to the container name to link them.
+          </span>
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={() => setShowMiniMap((v) => !v)}
+        aria-pressed={showMiniMap}
+        className="absolute bottom-4 right-4 z-10 rounded-md border bg-card/95 px-2.5 py-1.5 text-xs font-medium text-muted-foreground shadow-sm backdrop-blur-sm transition-colors hover:bg-accent hover:text-foreground"
+      >
+        {showMiniMap ? 'Hide minimap' : 'Minimap'}
+      </button>
+
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -720,7 +836,12 @@ export function TopologyGraph({
       >
         <Background />
         <Controls />
-        <MiniMap />
+        {/*
+          Off by default: it floats over the canvas bottom-right and covered the
+          bridge/none/host column, and `fitView` already shows the whole graph
+          on a fleet this size.
+        */}
+        {showMiniMap && <MiniMap className="!bottom-14" pannable zoomable />}
       </ReactFlow>
     </div>
   );

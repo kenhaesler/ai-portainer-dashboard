@@ -150,7 +150,8 @@ export { sweepExpiredEntries as _sweepExpiredEntries };
 // Simple in-memory cache for LLM insights (15 min TTL)
 const INSIGHTS_TTL = 15 * 60 * 1000;
 export const MAX_INSIGHTS_CACHE = 500;
-const insightsCache = new Map<string, { insights: CorrelationInsight[]; summary: string | null; expiresAt: number }>();
+interface InsightsCacheEntry extends CorrelationInsightsResult { expiresAt: number }
+const insightsCache = new Map<string, InsightsCacheEntry>();
 
 /** Clear the insights cache (for testing) */
 export function clearInsightsCache() {
@@ -163,20 +164,166 @@ export function getInsightsCacheSize(): number {
 }
 
 /** @internal Exported for testing only */
-export function setCachedInsights(key: string, insights: CorrelationInsight[], summary: string | null): void {
+export function setCachedInsights(
+  key: string,
+  insights: CorrelationInsight[],
+  summary: string | null,
+  narrative: Pick<CorrelationInsightsResult, 'narrativeStatus' | 'narrativeUnavailableReason'> = {
+    narrativeStatus: 'ok',
+    narrativeUnavailableReason: null,
+  },
+): void {
   if (insightsCache.size >= MAX_INSIGHTS_CACHE) {
     const firstKey = insightsCache.keys().next().value;
     if (firstKey) insightsCache.delete(firstKey);
   }
-  insightsCache.set(key, { insights, summary, expiresAt: Date.now() + INSIGHTS_TTL });
+  insightsCache.set(key, {
+    insights,
+    summary,
+    narrativeStatus: narrative.narrativeStatus,
+    narrativeUnavailableReason: narrative.narrativeUnavailableReason,
+    expiresAt: Date.now() + INSIGHTS_TTL,
+  });
 }
 
 export interface CorrelationInsight {
+  /**
+   * Stable key for the (containerA, containerB, metric) triple this narrative
+   * belongs to, so a client can join narratives onto its own pair list instead
+   * of relying on array position. Both sides slice their own top-10 from
+   * independently filtered lists, so position is not a safe join key.
+   * Format: `containerA|containerB|metricType`.
+   */
+  pairKey: string;
   containerA: string;
   containerB: string;
   metricType: string;
   correlation: number;
   narrative: string | null;
+}
+
+/**
+ * Why the narratives are missing, when they are.
+ * - `ok`      — every pair got a narrative.
+ * - `partial` — some pairs did; the rest are null.
+ * - `unparsed`— the model answered but nothing could be attributed to a pair.
+ * - `unavailable` — the model call failed.
+ */
+export type NarrativeStatus = 'ok' | 'partial' | 'unparsed' | 'unavailable';
+
+export interface CorrelationInsightsResult {
+  insights: CorrelationInsight[];
+  summary: string | null;
+  narrativeStatus: NarrativeStatus;
+  /**
+   * One operator-facing sentence explaining a non-`ok` status, for the UI to
+   * render ONCE above the list — not once per row. Null when status is `ok`.
+   */
+  narrativeUnavailableReason: string | null;
+}
+
+/** Join key shared with the client. Container names cannot contain `|`. */
+export function correlationPairKey(containerA: string, containerB: string, metricType: string): string {
+  return `${containerA}|${containerB}|${metricType}`;
+}
+
+const NARRATIVE_REASONS: Record<Exclude<NarrativeStatus, 'ok'>, string> = {
+  partial: 'The model returned narratives for only some pairs. The correlation values below are computed from metrics and are unaffected.',
+  unparsed: 'The model returned a response that could not be matched to any container pair. The correlation values below are computed from metrics and are unaffected.',
+  unavailable: 'Could not reach the language model. Check LLM_API_URL and LLM_API_TOKEN under Settings → AI. The correlation values below are computed from metrics and are unaffected.',
+};
+
+/** Strip markdown emphasis / stray list punctuation the model may wrap text in. */
+function cleanNarrative(text: string): string | null {
+  const cleaned = text
+    .replace(/^[\s*_`>#-]+/, '')
+    .replace(/[\s*_`]+$/, '')
+    .trim();
+  // Two characters is not a narrative; treat it as nothing rather than render it.
+  return cleaned.length >= 3 ? cleaned : null;
+}
+
+interface ResponseBlocks {
+  /** Blocks the model numbered explicitly, keyed by that number. */
+  indexed: Map<number, string>;
+  /** Unnumbered blocks, split on blank lines so multi-line paragraphs stay whole. */
+  paragraphs: string[];
+  /** One entry per non-empty line, markers stripped. */
+  lineBlocks: string[];
+  /**
+   * Blocks the model marked as list items with a `-`/`*`/`•` bullet.
+   *
+   * Tracked separately because these are the only unnumbered blocks whose
+   * ORDER the model asserted. Ordinary prose lines carry no such claim, so
+   * their position is not evidence of anything (see the positional pass).
+   */
+  bulletBlocks: string[];
+}
+
+// `**1.** text`, `1) text`, `2 - text`, `Pair 3: text`, `#4 text`
+const INDEX_MARKER = /^[\s*_`#>-]*(?:pair\s*)?(\d{1,2})\s*[.):\]\-–]\s*(.*)$/i;
+const BULLET_MARKER = /^\s*[-*•]\s+(.*)$/;
+
+/**
+ * Segment a model response three ways so attribution can pick whichever
+ * segmentation actually lines up with the pairs.
+ *
+ * Accepts the ordinary shapes models produce: `1.`, `1)`, `1:`, `1 -`,
+ * `**1.**`, `#1`, `Pair 1:`, `-`/`*`/`•` bullets, and prose. Lines following a
+ * marker without one of their own belong to that marker's block.
+ */
+function splitResponseBlocks(lines: string[]): ResponseBlocks {
+  const indexed = new Map<number, string>();
+  const paragraphs: string[] = [];
+  const lineBlocks: string[] = [];
+  const bulletBlocks: string[] = [];
+
+  let current: { index: number | null; parts: string[] } | null = null;
+  const flush = () => {
+    if (!current) return;
+    const text = current.parts.join(' ').trim();
+    if (text) {
+      if (current.index !== null) indexed.set(current.index, text);
+      else paragraphs.push(text);
+    }
+    current = null;
+  };
+
+  for (const line of lines) {
+    if (!line) { flush(); continue; }
+
+    const asIndexed = INDEX_MARKER.exec(line);
+    if (asIndexed) {
+      flush();
+      current = { index: Number(asIndexed[1]), parts: asIndexed[2] ? [asIndexed[2]] : [] };
+      if (asIndexed[2]) lineBlocks.push(asIndexed[2].trim());
+      continue;
+    }
+
+    const asBullet = BULLET_MARKER.exec(line);
+    if (asBullet) {
+      flush();
+      current = { index: null, parts: [asBullet[1]] };
+      lineBlocks.push(asBullet[1].trim());
+      bulletBlocks.push(asBullet[1].trim());
+      continue;
+    }
+
+    lineBlocks.push(line);
+    if (current) current.parts.push(line);
+    else current = { index: null, parts: [line] };
+  }
+  flush();
+
+  return { indexed, paragraphs, lineBlocks, bulletBlocks };
+}
+
+/** True when a block names both containers of a pair — strong enough to attribute by content. */
+function mentionsBothContainers(block: string, pair: CorrelationPair): boolean {
+  const haystack = block.toLowerCase();
+  const a = pair.containerA.name.toLowerCase();
+  const b = pair.containerB.name.toLowerCase();
+  return a.length > 2 && b.length > 2 && haystack.includes(a) && haystack.includes(b);
 }
 
 export function buildCorrelationPrompt(pairs: CorrelationPair[]): string {
@@ -190,34 +337,129 @@ export function buildCorrelationPrompt(pairs: CorrelationPair[]): string {
 ${pairDescriptions}`;
 }
 
+/**
+ * Attribute the model's narratives to correlation pairs.
+ *
+ * The previous implementation matched only a line literally starting with `N.`
+ * or `N)`. Any other formatting — a bulleted list, bold numbering, plain
+ * paragraphs, a leading preamble — nulled every narrative at once, and the UI
+ * printed the same "Insight unavailable" line ten times with no cause. This
+ * version tries, in order of how much evidence it has:
+ *
+ *  1. explicit list indices (robust to reordering and to a missing entry),
+ *  2. container names appearing in a block (attribution by content),
+ *  3. position, but ONLY within an explicitly bulleted list of exactly one item
+ *     per pair. Bare prose is never read positionally: an unstructured answer
+ *     would otherwise be pinned to pair 1 and presented as its explanation.
+ *
+ * A block is used at most once, and blocks that overlap one already used are
+ * treated as used, so no two pairs can end up asserting the same sentence.
+ *
+ * Anything it cannot attribute stays null and is reported through
+ * `narrativeStatus` / `narrativeUnavailableReason` so the caller can say why
+ * once instead of rendering a failure per row. Under-attributing is the
+ * intended direction of failure: a null narrative costs the operator a
+ * sentence, a misattributed one tells them something untrue about a container.
+ */
 export function parseInsightsResponse(
   response: string,
   pairs: CorrelationPair[],
-): { insights: CorrelationInsight[]; summary: string | null } {
-  const lines = response.split('\n').map(l => l.trim()).filter(Boolean);
-  const summaryIdx = lines.findIndex(l => l.toUpperCase().startsWith('SUMMARY:'));
-  const summary = summaryIdx >= 0 ? lines[summaryIdx].replace(/^SUMMARY:\s*/i, '').trim() : null;
+): CorrelationInsightsResult {
+  // Blank lines are kept: they are the only paragraph boundary the model gives us.
+  const lines = response.split('\n').map(l => l.trim());
+  // Tolerate `SUMMARY:`, `**SUMMARY:**`, `## Summary:` etc.
+  const summaryIdx = lines.findIndex(l => /^[\s*_`#>-]*summary\s*:/i.test(l));
+  const summary = summaryIdx >= 0
+    ? cleanNarrative(lines[summaryIdx].replace(/^[\s*_`#>-]*summary\s*:/i, ''))
+    : null;
   const narrativeLines = summaryIdx >= 0 ? lines.slice(0, summaryIdx) : lines;
 
-  const insights: CorrelationInsight[] = pairs.map((pair, idx) => {
-    // Try to find line starting with "N." or "N)"
-    const prefix = `${idx + 1}.`;
-    const prefixAlt = `${idx + 1})`;
-    const matchLine = narrativeLines.find(l => l.startsWith(prefix) || l.startsWith(prefixAlt));
-    const narrative = matchLine
-      ? matchLine.replace(/^\d+[.)]\s*/, '').trim()
-      : null;
+  const { indexed, paragraphs, lineBlocks, bulletBlocks } = splitResponseBlocks(narrativeLines);
 
-    return {
-      containerA: pair.containerA.name,
-      containerB: pair.containerB.name,
-      metricType: pair.metricType,
-      correlation: pair.correlation,
-      narrative,
-    };
+  const narratives: Array<string | null> = pairs.map((_, idx) => {
+    const block = indexed.get(idx + 1);
+    return block ? cleanNarrative(block) : null;
   });
 
-  return { insights, summary };
+  // Content-based attribution for anything the index pass missed: a block that
+  // names both containers of a pair is evidence, not a guess. Each block is
+  // claimed at most once.
+  //
+  // `claimed` is keyed on the CLEANED text, which is also what the index pass
+  // stored. Comparing a raw block against a cleaned narrative never matches, so
+  // a block the index pass had already used (`**1.** …` — raw in `lineBlocks`,
+  // cleaned in `narratives`) could be handed to a second pair as well, putting
+  // the same sentence on two cards and still reporting `ok`. That duplication is
+  // precisely what this module was rewritten to stop.
+  // A block counts as claimed if it overlaps one already used, not merely if it
+  // is byte-identical. `paragraphs` entries are space-joins of the very lines
+  // held individually in `lineBlocks`, so an exact-match test lets a pair be
+  // handed a paragraph that CONTAINS another pair's sentence — two cards then
+  // assert overlapping text about different containers.
+  const claimed: string[] = [];
+  const isClaimed = (cleaned: string) =>
+    claimed.some((c) => c === cleaned || c.includes(cleaned) || cleaned.includes(c));
+  for (const narrative of narratives) if (narrative) claimed.push(narrative);
+  pairs.forEach((pair, idx) => {
+    if (narratives[idx]) return;
+    for (const candidates of [lineBlocks, paragraphs]) {
+      for (const block of candidates) {
+        const cleaned = cleanNarrative(block);
+        if (!cleaned || isClaimed(cleaned)) continue;
+        if (!mentionsBothContainers(block, pair)) continue;
+        narratives[idx] = cleaned;
+        claimed.push(cleaned);
+        return;
+      }
+    }
+  });
+
+  // Positional fallback — accepted ONLY for an explicitly marked list.
+  //
+  // Position is evidence only where the model asserted an order. A bulleted
+  // list of exactly one item per pair does assert one; a run of bare prose
+  // does not, and reading it positionally is a guess dressed as an answer. An
+  // earlier attempt kept prose and tried to screen out headings by punctuation,
+  // which was worse than useless: it deleted a blockquote or bolded narrative
+  // from the middle of the list and silently shifted every later sentence onto
+  // the wrong pair, reporting `ok` where the unfiltered code had correctly
+  // returned nothing. Prose that genuinely explains a pair almost always names
+  // its containers, and the content pass above already attributes that on real
+  // evidence.
+  const attributedAny = narratives.some((n) => n !== null);
+  if (pairs.length > 0 && !attributedAny && bulletBlocks.length === pairs.length) {
+    bulletBlocks.forEach((block, idx) => { narratives[idx] = cleanNarrative(block); });
+  }
+
+  const insights: CorrelationInsight[] = pairs.map((pair, idx) => ({
+    pairKey: correlationPairKey(pair.containerA.name, pair.containerB.name, pair.metricType),
+    containerA: pair.containerA.name,
+    containerB: pair.containerB.name,
+    metricType: pair.metricType,
+    correlation: pair.correlation,
+    narrative: narratives[idx],
+  }));
+
+  const withNarrative = narratives.filter(Boolean).length;
+  const narrativeStatus: NarrativeStatus = pairs.length === 0 || withNarrative === pairs.length
+    ? 'ok'
+    : withNarrative === 0
+      ? 'unparsed'
+      : 'partial';
+
+  if (narrativeStatus !== 'ok') {
+    log.warn(
+      { pairCount: pairs.length, withNarrative, responsePreview: response.slice(0, 200) },
+      'Correlation narratives could not be fully attributed to pairs',
+    );
+  }
+
+  return {
+    insights,
+    summary,
+    narrativeStatus,
+    narrativeUnavailableReason: narrativeStatus === 'ok' ? null : NARRATIVE_REASONS[narrativeStatus],
+  };
 }
 
 export async function correlationRoutes(fastify: FastifyInstance, opts: CorrelationRoutesOpts) {
@@ -310,7 +552,13 @@ export async function correlationRoutes(fastify: FastifyInstance, opts: Correlat
     const cacheKey = `${safeHours}:${safeMin}`;
     const cached = insightsCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) {
-      return { insights: cached.insights, summary: cached.summary };
+      return {
+        insights: cached.insights,
+        summary: cached.summary,
+        narrativeStatus: cached.narrativeStatus,
+        narrativeUnavailableReason: cached.narrativeUnavailableReason,
+        pairsTotal: cached.insights.length,
+      };
     }
 
     // Compute correlations (wrapped in statement timeout for expensive pairwise query)
@@ -318,10 +566,14 @@ export async function correlationRoutes(fastify: FastifyInstance, opts: Correlat
       opts.findCorrelatedContainers(safeHours, safeMin, client),
     );
     if (pairs.length === 0) {
-      return { insights: [], summary: null };
+      return { insights: [], summary: null, narrativeStatus: 'ok' as const, narrativeUnavailableReason: null, pairsTotal: 0 };
     }
 
-    // Limit to top 10 pairs for LLM prompt
+    // Limit to top 10 pairs for LLM prompt. `pairsTotal` travels with the
+    // response so a client that sliced its own top-10 from a differently
+    // filtered list can tell that the two lists are not the same set; every
+    // insight also carries `pairKey`, so narratives are joined by identity
+    // rather than by array position.
     const topPairs = pairs.slice(0, 10);
     const prompt = buildCorrelationPrompt(topPairs);
 
@@ -333,20 +585,29 @@ export async function correlationRoutes(fastify: FastifyInstance, opts: Correlat
         'correlation_insights',
       );
 
-      const { insights, summary } = parseInsightsResponse(response.trim(), topPairs);
-      setCachedInsights(cacheKey, insights, summary);
-      return { insights, summary };
+      const parsed = parseInsightsResponse(response.trim(), topPairs);
+      setCachedInsights(cacheKey, parsed.insights, parsed.summary, parsed);
+      return { ...parsed, pairsTotal: pairs.length };
     } catch (err) {
       log.warn({ err }, 'Failed to generate correlation insights');
-      // Return pairs without narratives
+      // Correlations are computed from metrics and stand on their own; return
+      // them with an explicit reason the narratives are missing so the UI can
+      // say it once instead of printing a failure per row.
       const fallbackInsights: CorrelationInsight[] = topPairs.map(p => ({
+        pairKey: correlationPairKey(p.containerA.name, p.containerB.name, p.metricType),
         containerA: p.containerA.name,
         containerB: p.containerB.name,
         metricType: p.metricType,
         correlation: p.correlation,
         narrative: null,
       }));
-      return { insights: fallbackInsights, summary: null };
+      return {
+        insights: fallbackInsights,
+        summary: null,
+        narrativeStatus: 'unavailable' as const,
+        narrativeUnavailableReason: NARRATIVE_REASONS.unavailable,
+        pairsTotal: pairs.length,
+      };
     }
   });
 }

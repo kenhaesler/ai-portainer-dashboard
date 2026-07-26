@@ -1,4 +1,4 @@
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import { formatBytes } from '@/shared/lib/utils';
 
 interface ImageData {
@@ -68,14 +68,9 @@ export function ImageSunburst({ data }: ImageSunburstProps) {
           ))}
         </Pie>
         <Tooltip content={<CustomTooltip />} />
-        <Legend
-          layout="horizontal"
-          align="center"
-          verticalAlign="bottom"
-          iconType="circle"
-          iconSize={8}
-          wrapperStyle={{ fontSize: '12px', paddingTop: 16 }}
-        />
+        {/* No <Legend>: every slice is already labelled in place with its
+            registry and share, so a legend below repeats all of them and
+            spends vertical space the image table needs. */}
       </PieChart>
     </ResponsiveContainer>
   );

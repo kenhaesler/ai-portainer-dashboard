@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Sidebar } from './sidebar';
 import { useUiStore } from '@/stores/ui-store';
+import { navDestinations } from '@/features/core/lib/navigation-manifest';
 
 vi.mock('@/features/operations/hooks/use-remediation', () => ({
   useRemediationActions: vi.fn(),
@@ -13,14 +14,14 @@ import { useRemediationActions } from '@/features/operations/hooks/use-remediati
 
 const mockUseRemediationActions = vi.mocked(useRemediationActions);
 
-function renderSidebar() {
+function renderSidebar(props: { forceRail?: boolean } = {}) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
-        <Sidebar />
+        <Sidebar {...props} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -32,7 +33,7 @@ function renderSidebar() {
  * child of <nav>; the title is the header button's first span, items are <li>s.
  */
 function getNavGroups() {
-  const nav = screen.getByRole('navigation');
+  const nav = screen.getByRole('navigation', { name: 'Primary' });
   const groupDivs = Array.from(nav.children).filter((el) =>
     el.classList.contains('mb-2'),
   ) as HTMLElement[];
@@ -134,7 +135,6 @@ describe('Sidebar', () => {
       'Operations',
     ]);
     // Old grab-bag groups are gone.
-    expect(screen.queryByText('Containers')).not.toBeInTheDocument();
     expect(screen.queryByText('Backups')).not.toBeInTheDocument();
     expect(screen.getByText(/Settings/i)).toBeInTheDocument();
   });
@@ -168,7 +168,7 @@ describe('Sidebar', () => {
     const diagnostics = getNavGroups().find((g) => g.title === 'Diagnostics');
     const items = diagnostics?.items ?? [];
     const logViewer = items.indexOf('Log Viewer');
-    const edgeLogs = items.indexOf('Edge Agent Logs');
+    const edgeLogs = items.indexOf('Edge Logs');
     expect(logViewer).toBeGreaterThanOrEqual(0);
     expect(edgeLogs).toBeGreaterThanOrEqual(0);
     expect(Math.abs(logViewer - edgeLogs)).toBe(1);
@@ -189,7 +189,7 @@ describe('Sidebar', () => {
     renderSidebar();
 
     // Settings remains reachable...
-    expect(screen.getByRole('button', { name: /Settings/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Settings/i })).toBeInTheDocument();
     // ...but is no longer an item inside any of the titled groups.
     for (const group of getNavGroups()) {
       expect(group.items).not.toContain('Settings');
@@ -218,5 +218,120 @@ describe('Sidebar', () => {
     const badge = screen.getByTestId('sidebar-badge');
     expect(badge).toBeInTheDocument();
     expect(badge).toHaveTextContent('1');
+  });
+
+  // --- Navigation is made of real links -----------------------------------
+
+  it('renders every destination as an anchor with an href, not a button', () => {
+    mockUseRemediationActions.mockReturnValue({ data: [] } as any);
+
+    renderSidebar();
+
+    const expected = navDestinations.filter(
+      (d) => !d.paletteOnly && d.featureGate === undefined,
+    );
+    for (const destination of expected) {
+      const link = screen.getByRole('link', { name: new RegExp(`^${destination.label}$`, 'i') });
+      expect(link.tagName).toBe('A');
+      expect(link).toHaveAttribute('href', destination.path);
+    }
+    // Middle-click / Cmd-click need an href; nothing in the nav list is a button.
+    const navList = screen.getByRole('navigation', { name: 'Primary' });
+    expect(navList.querySelectorAll('li button')).toHaveLength(0);
+  });
+
+  it('routes Home client-side like every other destination (no full page reload)', () => {
+    mockUseRemediationActions.mockReturnValue({ data: [] } as any);
+    const assign = vi.fn();
+    const original = window.location;
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { ...original, assign },
+    });
+
+    try {
+      renderSidebar();
+      const home = screen.getByRole('link', { name: /^Home$/i });
+      expect(home).toHaveAttribute('href', '/');
+      home.click();
+      expect(assign).not.toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(window, 'location', { configurable: true, value: original });
+    }
+  });
+
+  it('marks the active destination with aria-current', () => {
+    mockUseRemediationActions.mockReturnValue({ data: [] } as any);
+    renderSidebar();
+    expect(screen.getByRole('link', { name: /^Home$/i })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: /^Reports$/i })).not.toHaveAttribute('aria-current');
+  });
+
+  it('names the nav and exposes group expansion state to assistive tech', () => {
+    mockUseRemediationActions.mockReturnValue({ data: [] } as any);
+    renderSidebar();
+    expect(screen.getByRole('navigation', { name: 'Primary' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Overview' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+  });
+
+  // --- Scroll affordance ---------------------------------------------------
+
+  it('shows no scroll cue when the nav fits', () => {
+    mockUseRemediationActions.mockReturnValue({ data: [] } as any);
+    renderSidebar();
+    expect(screen.queryByTestId('scroll-gradient')).toBeNull();
+  });
+
+  it('draws a scroll cue that is visible on light themes when groups fall below the fold', () => {
+    mockUseRemediationActions.mockReturnValue({ data: [] } as any);
+    const scrollHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollHeight');
+    const clientHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientHeight');
+    Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
+      configurable: true,
+      get: () => 600,
+    });
+    Object.defineProperty(HTMLElement.prototype, 'clientHeight', {
+      configurable: true,
+      get: () => 300,
+    });
+
+    try {
+      renderSidebar();
+      const cue = screen.getByTestId('scroll-gradient');
+      // A hard rule at the cut line, plus a fade at real opacity — the old
+      // 8px `from-sidebar-background/40` fade was invisible on light themes.
+      expect(cue.className).toContain('border-b');
+      expect(cue.className).toContain('border-sidebar-border');
+      expect(cue.className).toContain('from-sidebar-background');
+      expect(cue.className).not.toContain('from-sidebar-background/40');
+    } finally {
+      if (scrollHeight) {
+        Object.defineProperty(HTMLElement.prototype, 'scrollHeight', scrollHeight);
+      }
+      if (clientHeight) {
+        Object.defineProperty(HTMLElement.prototype, 'clientHeight', clientHeight);
+      }
+    }
+  });
+
+  // --- Tablet rail --------------------------------------------------------
+
+  it('collapses to the 64px icon rail when the viewport forces it', () => {
+    mockUseRemediationActions.mockReturnValue({ data: [] } as any);
+    renderSidebar({ forceRail: true });
+
+    expect(screen.getByTestId('sidebar').className).toContain('w-16');
+    expect(screen.getByTestId('sidebar').className).not.toContain('w-64');
+    // The manual toggle would be a no-op at this width.
+    expect(screen.queryByLabelText(/sidebar$/i)).toBeNull();
+  });
+
+  it('keeps the full width when the viewport allows it', () => {
+    mockUseRemediationActions.mockReturnValue({ data: [] } as any);
+    renderSidebar();
+    expect(screen.getByTestId('sidebar').className).toContain('w-64');
   });
 });

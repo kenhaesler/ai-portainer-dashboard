@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeAll } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 
@@ -33,6 +33,12 @@ const mockStats = {
   ],
 };
 
+function isoMinutesAgo(minutes: number): string {
+  return new Date(Date.now() - minutes * 60 * 1000).toISOString();
+}
+
+// Timestamps are relative to now: the page narrows the newest-50 traces to the
+// selected range, so fixed calendar dates would fall out of every window.
 const mockTraces = [
   {
     id: 1,
@@ -46,7 +52,7 @@ const mockTraces = [
     status: 'success',
     user_query: 'What containers are using the most memory?',
     response_preview: 'Based on the metrics...',
-    created_at: '2025-01-15 10:30:00',
+    created_at: isoMinutesAgo(10),
   },
   {
     id: 2,
@@ -60,7 +66,7 @@ const mockTraces = [
     status: 'error',
     user_query: 'Show CPU anomalies',
     response_preview: null,
-    created_at: '2025-01-15 10:25:00',
+    created_at: isoMinutesAgo(200),
   },
 ];
 
@@ -71,11 +77,12 @@ vi.mock('@/features/ai-intelligence/hooks/use-llm-observability', () => ({
 }));
 
 vi.mock('@/shared/hooks/use-auto-refresh', () => ({
-  useAutoRefresh: vi.fn().mockReturnValue({ interval: 0, setInterval: vi.fn() }),
+  useAutoRefresh: vi.fn().mockReturnValue({ interval: 0, setRefreshInterval: vi.fn(), setInterval: vi.fn() }),
 }));
 
 import { useLlmTraces, useLlmStats } from '@/features/ai-intelligence/hooks/use-llm-observability';
-import LlmObservabilityPage from './llm-observability';
+import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
+import LlmObservabilityPage, { tracesWithinWindow } from './llm-observability';
 
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -88,27 +95,57 @@ function renderPage() {
   );
 }
 
+function withStats(stats: unknown) {
+  vi.mocked(useLlmStats).mockReturnValue({
+    data: stats,
+    isLoading: false,
+    refetch: vi.fn(),
+  } as unknown as ReturnType<typeof useLlmStats>);
+}
+
+function withTraces(traces: unknown[]) {
+  vi.mocked(useLlmTraces).mockReturnValue({
+    data: traces,
+    isLoading: false,
+    refetch: vi.fn(),
+  } as unknown as ReturnType<typeof useLlmTraces>);
+}
+
+// Every test starts from the same hook state — the file previously relied on
+// mockReturnValue leaking between tests in declaration order.
+beforeEach(() => {
+  withStats(null);
+  withTraces([]);
+  vi.mocked(useAutoRefresh).mockReturnValue({
+    interval: 0,
+    setRefreshInterval: vi.fn(),
+    setInterval: vi.fn(),
+  } as unknown as ReturnType<typeof useAutoRefresh>);
+});
+
 describe('LlmObservabilityPage', () => {
-  it('renders the page title and subtitle', () => {
+  it('renders the page title through the shared PageHeader', () => {
     renderPage();
-    expect(screen.getByText('LLM Observability')).toBeTruthy();
-    expect(screen.getByText('Monitor LLM usage and performance')).toBeTruthy();
+    const header = screen.getByTestId('page-header');
+    expect(within(header).getByRole('heading', { level: 1 }).textContent).toBe('LLM Observability');
   });
 
-  it('shows empty state when no traces exist', () => {
+  // "Monitor LLM usage and performance" is the title as a verb phrase: delete
+  // it and the operator loses nothing, so it is gone.
+  it('carries no restated subtitle', () => {
     renderPage();
-    expect(screen.getByText('No LLM traces yet')).toBeTruthy();
-    expect(
-      screen.getByText('LLM interactions will appear here once the assistant is used.')
-    ).toBeTruthy();
+    expect(screen.queryByText('Monitor LLM usage and performance')).toBeNull();
+    expect(screen.queryByTestId('page-header-subtitle')).toBeNull();
+  });
+
+  it('shows a range-scoped empty state when no traces exist', () => {
+    renderPage();
+    expect(screen.getByText('No LLM calls in the last 24h')).toBeTruthy();
+    expect(screen.queryByText('No LLM traces yet')).toBeNull();
   });
 
   it('renders KPI cards with stats data', () => {
-    vi.mocked(useLlmStats).mockReturnValue({
-      data: mockStats,
-      isLoading: false,
-      refetch: vi.fn(),
-    } as ReturnType<typeof useLlmStats>);
+    withStats(mockStats);
 
     renderPage();
     expect(screen.getByText('Total Queries')).toBeTruthy();
@@ -118,11 +155,7 @@ describe('LlmObservabilityPage', () => {
   });
 
   it('spaces the KPI cards with a gap-6 grid', () => {
-    vi.mocked(useLlmStats).mockReturnValue({
-      data: mockStats,
-      isLoading: false,
-      refetch: vi.fn(),
-    } as ReturnType<typeof useLlmStats>);
+    withStats(mockStats);
 
     const { container } = renderPage();
     // The KPI grid wraps the four metric cards; it must use the wider gap-6
@@ -150,11 +183,7 @@ describe('LlmObservabilityPage', () => {
   });
 
   it('renders model breakdown table with data', () => {
-    vi.mocked(useLlmStats).mockReturnValue({
-      data: mockStats,
-      isLoading: false,
-      refetch: vi.fn(),
-    } as ReturnType<typeof useLlmStats>);
+    withStats(mockStats);
 
     renderPage();
     expect(screen.getByText('Model Breakdown')).toBeTruthy();
@@ -165,47 +194,34 @@ describe('LlmObservabilityPage', () => {
   });
 
   it('does not render feedback summary card', () => {
-    vi.mocked(useLlmStats).mockReturnValue({
-      data: mockStats,
-      isLoading: false,
-      refetch: vi.fn(),
-    } as ReturnType<typeof useLlmStats>);
+    withStats(mockStats);
 
     renderPage();
     expect(screen.queryByText('Feedback Summary')).toBeNull();
   });
 
-  it('renders when stats payload is missing model breakdown', () => {
-    vi.mocked(useLlmStats).mockReturnValue({
-      data: {
-        totalQueries: 10,
-        totalTokens: 1200,
-        avgLatencyMs: 700,
-        errorRate: 0,
-        avgFeedbackScore: null,
-        feedbackCount: 0,
-      } as unknown as ReturnType<typeof useLlmStats>['data'],
-      isLoading: false,
-      refetch: vi.fn(),
-    } as ReturnType<typeof useLlmStats>);
+  // Was a bare <p>No model data available.</p> — the only one of the page's
+  // three empty states that bypassed the shared primitive.
+  it('uses the shared EmptyState, naming the range, when no model data exists', () => {
+    withStats({
+      totalQueries: 10,
+      totalTokens: 1200,
+      avgLatencyMs: 700,
+      errorRate: 0,
+      avgFeedbackScore: null,
+      feedbackCount: 0,
+    });
 
     renderPage();
     expect(screen.getByText('Model Breakdown')).toBeTruthy();
-    expect(screen.getByText('No model data available.')).toBeTruthy();
+    expect(screen.queryByText('No model data available.')).toBeNull();
+    expect(screen.getByText('No model recorded in the last 24h')).toBeTruthy();
+    expect(screen.getAllByTestId('empty-state-card').length).toBeGreaterThan(0);
   });
 
-
   it('renders traces table with data', () => {
-    vi.mocked(useLlmStats).mockReturnValue({
-      data: mockStats,
-      isLoading: false,
-      refetch: vi.fn(),
-    } as ReturnType<typeof useLlmStats>);
-    vi.mocked(useLlmTraces).mockReturnValue({
-      data: mockTraces,
-      isLoading: false,
-      refetch: vi.fn(),
-    } as ReturnType<typeof useLlmTraces>);
+    withStats(mockStats);
+    withTraces(mockTraces);
 
     renderPage();
     expect(screen.getByText('What containers are using the most memory?')).toBeTruthy();
@@ -215,16 +231,8 @@ describe('LlmObservabilityPage', () => {
   });
 
   it('renders both shared DataTables when stats and traces have data', () => {
-    vi.mocked(useLlmStats).mockReturnValue({
-      data: mockStats,
-      isLoading: false,
-      refetch: vi.fn(),
-    } as ReturnType<typeof useLlmStats>);
-    vi.mocked(useLlmTraces).mockReturnValue({
-      data: mockTraces,
-      isLoading: false,
-      refetch: vi.fn(),
-    } as ReturnType<typeof useLlmTraces>);
+    withStats(mockStats);
+    withTraces(mockTraces);
 
     renderPage();
     // Three shared DataTables on this page: Model Breakdown + Recent Traces (this
@@ -236,11 +244,7 @@ describe('LlmObservabilityPage', () => {
   });
 
   it('blurs query column by default and reveals on toggle', () => {
-    vi.mocked(useLlmTraces).mockReturnValue({
-      data: mockTraces,
-      isLoading: false,
-      refetch: vi.fn(),
-    } as ReturnType<typeof useLlmTraces>);
+    withTraces(mockTraces);
 
     renderPage();
     const queryCell = screen.getByText('What containers are using the most memory?');
@@ -271,5 +275,141 @@ describe('LlmObservabilityPage', () => {
     const { container } = renderPage();
     const skeletons = container.querySelectorAll('[role="status"]');
     expect(skeletons.length).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Design-critique fixes: the range selector drove half the page silently, the
+// refresh dropdown scheduled nothing, and four tiles rendered a confident
+// "Error Rate 0.0%" over zero calls.
+// ---------------------------------------------------------------------------
+
+describe('tracesWithinWindow', () => {
+  it('drops traces older than the window', () => {
+    const rows = [
+      { created_at: isoMinutesAgo(10) },
+      { created_at: isoMinutesAgo(200) },
+    ] as Parameters<typeof tracesWithinWindow>[0];
+    expect(tracesWithinWindow(rows, 1)).toHaveLength(1);
+    expect(tracesWithinWindow(rows, 24)).toHaveLength(2);
+  });
+
+  it('keeps rows whose timestamp cannot be parsed rather than hiding a real call', () => {
+    const rows = [{ created_at: 'not-a-date' }] as Parameters<typeof tracesWithinWindow>[0];
+    expect(tracesWithinWindow(rows, 1)).toHaveLength(1);
+  });
+});
+
+describe('time range drives the whole page', () => {
+  it('narrows the traces table when the range shrinks to 1h', () => {
+    withStats(mockStats);
+    withTraces(mockTraces);
+
+    renderPage();
+    // Both rows visible at the default 24h.
+    expect(screen.getByText('Show CPU anomalies')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: '1h' }));
+
+    // The 200-minute-old trace is outside the 1h window.
+    expect(screen.queryByText('Show CPU anomalies')).toBeNull();
+    expect(screen.getByText('What containers are using the most memory?')).toBeTruthy();
+  });
+
+  it('states the trace cap and the window next to the section heading', () => {
+    withStats(mockStats);
+    withTraces(mockTraces);
+
+    renderPage();
+    expect(screen.getByText('up to 50 newest, last 24h')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: '6h' }));
+    expect(screen.getByText('up to 50 newest, last 6h')).toBeTruthy();
+  });
+
+  it('passes the selected window down to the latency breakdown', () => {
+    withStats(mockStats);
+
+    renderPage();
+    expect(screen.getByText(/per upstream provider, last 24h\./)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: '7d' }));
+    expect(screen.getByText(/per upstream provider, last 7d\./)).toBeTruthy();
+  });
+});
+
+describe('auto-refresh control', () => {
+  it('hands the hook an onTick so the interval actually schedules a fetch', () => {
+    renderPage();
+    const call = vi.mocked(useAutoRefresh).mock.calls[0];
+    expect(call[0]).toBe(30);
+    expect(typeof call[1]?.onTick).toBe('function');
+  });
+
+  it('refetches stats and traces when the tick fires', () => {
+    const refetchStats = vi.fn();
+    const refetchTraces = vi.fn();
+    vi.mocked(useLlmStats).mockReturnValue({
+      data: mockStats,
+      isLoading: false,
+      refetch: refetchStats,
+    } as unknown as ReturnType<typeof useLlmStats>);
+    vi.mocked(useLlmTraces).mockReturnValue({
+      data: mockTraces,
+      isLoading: false,
+      refetch: refetchTraces,
+    } as unknown as ReturnType<typeof useLlmTraces>);
+
+    renderPage();
+    const onTick = vi.mocked(useAutoRefresh).mock.calls[0][1]?.onTick;
+    onTick?.();
+
+    expect(refetchStats).toHaveBeenCalled();
+    expect(refetchTraces).toHaveBeenCalled();
+  });
+});
+
+describe('zero-traffic state', () => {
+  it('collapses the four tiles to one line with a link to the assistant', () => {
+    withStats({
+      totalQueries: 0,
+      totalTokens: 0,
+      avgLatencyMs: 0,
+      errorRate: 0,
+      avgFeedbackScore: null,
+      feedbackCount: 0,
+      modelBreakdown: [],
+    });
+
+    renderPage();
+    // "Error Rate 0.0%" over zero calls is undefined, not 0%.
+    expect(screen.queryByText('Error Rate')).toBeNull();
+    expect(screen.queryByText('0.0%')).toBeNull();
+
+    const line = screen.getByTestId('llm-no-traffic');
+    expect(line.textContent).toContain('No LLM calls in the last 24h');
+    expect(within(line).getByRole('link', { name: 'Assistant' })).toHaveAttribute('href', '/assistant');
+  });
+
+  it('still renders the tiles once there is traffic', () => {
+    withStats(mockStats);
+
+    renderPage();
+    expect(screen.queryByTestId('llm-no-traffic')).toBeNull();
+    expect(screen.getByText('Error Rate')).toBeTruthy();
+  });
+});
+
+describe('error rate tile', () => {
+  it('does not put a downward trend arrow on a rising error rate', () => {
+    withStats({ ...mockStats, errorRate: 0.12 });
+
+    const { container } = renderPage();
+    expect(screen.getByText('12.0%')).toBeTruthy();
+    // The old tile rendered trend="down" — a green/red arrow whose direction
+    // reads as "improving" on the one metric where down is good.
+    expect(screen.queryByText('Above 5%')).toBeNull();
+    expect(container.querySelector('.lucide-trending-down')).toBeNull();
+    expect(screen.getByText(/above the 5% error threshold/i)).toBeTruthy();
   });
 });

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 
@@ -57,8 +57,15 @@ vi.mock('@/features/ai-intelligence/hooks/use-incidents', () => ({
   }),
 }));
 
+// Captures the `onTick` the page passes. The page used to hand-roll its own
+// `window.setInterval` effect; the hook owns the timer now, so the wiring is
+// one argument and this is what asserts it is still there.
+const capturedAutoRefresh: { onTick?: () => void } = {};
 vi.mock('@/shared/hooks/use-auto-refresh', () => ({
-  useAutoRefresh: vi.fn().mockReturnValue({ interval: 0, setInterval: vi.fn() }),
+  useAutoRefresh: vi.fn((_default?: number, opts?: { onTick?: () => void }) => {
+    capturedAutoRefresh.onTick = opts?.onTick;
+    return { interval: 0, setRefreshInterval: vi.fn(), setInterval: vi.fn() };
+  }),
 }));
 
 vi.mock('@/features/observability/hooks/use-correlated-anomalies', () => ({
@@ -208,7 +215,18 @@ describe('AiMonitorPage', () => {
             { type: 'memory', currentValue: 80, mean: 50, zScore: 2.1 },
           ],
           compositeScore: 4.08,
-          pattern: 'Resource Exhaustion: Both CPU and memory are elevated',
+          pattern: 'cpu z=3.50, memory z=2.10 — both above the z>2 rule threshold',
+          patternMatch: {
+            id: 'cpu-and-memory-deviation' as const,
+            label: 'CPU and memory both deviating',
+            zScoreThreshold: 2,
+            triggeredBy: [
+              { type: 'cpu', zScore: 3.5 },
+              { type: 'memory', zScore: 2.1 },
+            ],
+            withinThreshold: [],
+            summary: 'cpu z=3.50, memory z=2.10 — both above the z>2 rule threshold',
+          },
           severity: 'high' as const,
           timestamp: '2025-01-15T10:00:00Z',
         },
@@ -218,15 +236,24 @@ describe('AiMonitorPage', () => {
 
     renderPage();
 
-    // Section was renamed from "Anomalies & Health Issues" to clearer twin
-    // sections: "ML-Detected Anomalies" + "Container Health".
-    expect(screen.getByText('ML-Detected Anomalies')).toBeTruthy();
+    // The section is named for what actually runs: a root-mean-square of
+    // per-metric z-scores plus a z-score threshold rule. "ML-Detected
+    // Anomalies" under a Brain glyph claimed inference that never happened.
+    expect(screen.getByText('Correlated metric deviations')).toBeTruthy();
+    expect(screen.queryByText('ML-Detected Anomalies')).toBeNull();
     expect(screen.getByText('web-server')).toBeTruthy();
-    expect(screen.getByText('Resource Exhaustion')).toBeTruthy();
+    expect(screen.getByText('CPU and memory both deviating')).toBeTruthy();
     expect(screen.getByText('4.08')).toBeTruthy();
-    // z-score values shown
-    expect(screen.getByText('3.5')).toBeTruthy();
-    expect(screen.getByText('2.1')).toBeTruthy();
+    // Signed z-score values shown.
+    expect(screen.getByText('+3.5')).toBeTruthy();
+    expect(screen.getByText('+2.1')).toBeTruthy();
+    // One severity vocabulary: a composite-score "high" reads as Warning, the
+    // same word the filter chips, KPI tiles and insight feed use. The card
+    // used to say Critical/High/Medium/Low with no way to rank it against the
+    // feed's Critical/Warning/Info.
+    const card = within(screen.getByTestId('correlated-anomaly-card'));
+    expect(card.getByText('Warning')).toBeTruthy();
+    expect(card.queryByText('High')).toBeNull();
   });
 
   it('hides correlated anomalies section when array is empty', () => {
@@ -236,7 +263,7 @@ describe('AiMonitorPage', () => {
     } as ReturnType<typeof useCorrelatedAnomalies>);
 
     renderPage();
-    expect(screen.queryByText('ML-Detected Anomalies')).toBeNull();
+    expect(screen.queryByText('Correlated metric deviations')).toBeNull();
   });
 
   it('renders IncidentGroupsView section (rollup replaces flat list)', () => {
@@ -262,6 +289,10 @@ describe('AiMonitorPage', () => {
           suggested_action: 'Check for runaway processes',
           is_acknowledged: 0,
           created_at: '2025-01-15T10:00:00Z',
+          // The typed column the backend writes. The badge used to be scraped
+          // out of the description with /method:\\s*(\\w+)/, which cannot match
+          // a hyphen — so "method: isolation-forest" was badged "Z-Score".
+          detection_method: 'ml-anomaly',
         },
       ],
       isLoading: false,
@@ -278,7 +309,12 @@ describe('AiMonitorPage', () => {
 
     renderPage();
 
-    expect(screen.getByText('Adaptive')).toBeTruthy();
+    const badge = screen.getByTestId('detection-method-badge');
+    expect(badge).toHaveAttribute('data-detection-method', 'ml-anomaly');
+    expect(badge).toHaveTextContent('Metric anomaly');
+    // The description still says "method: adaptive"; the badge no longer
+    // invents a technique the persisted column cannot distinguish.
+    expect(screen.queryByText('Z-Score')).toBeNull();
   });
 
   it('hides detection method badge on non-anomaly insight', () => {
@@ -313,12 +349,13 @@ describe('AiMonitorPage', () => {
 
     renderPage();
 
+    // No `detection_method` on the record -> no badge at all, rather than a
+    // `?? config.zscore` default asserting a detector that never ran.
+    expect(screen.queryByTestId('detection-method-badge')).toBeNull();
     expect(screen.queryByText('Z-Score')).toBeNull();
-    expect(screen.queryByText('Bollinger')).toBeNull();
-    expect(screen.queryByText('Adaptive')).toBeNull();
   });
 
-  it('renders pattern badge with correct short label extracted from full pattern string', () => {
+  it('renders the rule label and the z-scores it fired on, not a diagnosis', () => {
     vi.mocked(useCorrelatedAnomalies).mockReturnValue({
       data: [
         {
@@ -328,7 +365,15 @@ describe('AiMonitorPage', () => {
             { type: 'memory', currentValue: 90, mean: 45, zScore: 2.8 },
           ],
           compositeScore: 2.8,
-          pattern: 'Memory Leak Suspected: Memory usage is elevated while CPU remains normal',
+          pattern: 'memory z=2.80 above the z>2 rule threshold, cpu z=0.40 within it',
+          patternMatch: {
+            id: 'memory-only-deviation' as const,
+            label: 'Memory deviating, CPU within threshold',
+            zScoreThreshold: 2,
+            triggeredBy: [{ type: 'memory', zScore: 2.8 }],
+            withinThreshold: [{ type: 'cpu', zScore: 0.4 }],
+            summary: 'memory z=2.80 above the z>2 rule threshold, cpu z=0.40 within it',
+          },
           severity: 'medium' as const,
           timestamp: '2025-01-15T10:00:00Z',
         },
@@ -338,12 +383,47 @@ describe('AiMonitorPage', () => {
 
     renderPage();
 
-    // Short label only, not full description
-    expect(screen.getByText('Memory Leak Suspected')).toBeTruthy();
-    // The description part appears separately
-    expect(
-      screen.getByText('Memory usage is elevated while CPU remains normal'),
-    ).toBeTruthy();
+    // The badge names what was observed, keyed off the stable rule id.
+    const badge = screen.getByTestId('pattern-badge');
+    expect(badge.textContent).toBe('Memory deviating, CPU within threshold');
+    expect(badge.getAttribute('data-pattern-id')).toBe('memory-only-deviation');
+
+    // The body restates the rule and the numbers it fired on.
+    expect(screen.getByTestId('pattern-rule-summary').textContent).toBe(
+      'memory z=2.80 above the z>2 rule threshold, cpu z=0.40 within it',
+    );
+
+    // The old hardcoded diagnosis must not come back. It rendered
+    // byte-identically on every card that hit the same rule branch.
+    expect(screen.queryByText(/suggesting gradual memory accumulation/)).toBeNull();
+    expect(screen.queryByText('Memory Leak Suspected')).toBeNull();
+  });
+
+  it('falls back to the pattern string when patternMatch is absent (stale server build)', () => {
+    vi.mocked(useCorrelatedAnomalies).mockReturnValue({
+      data: [
+        {
+          containerId: 'c3',
+          containerName: 'legacy-api',
+          metrics: [{ type: 'memory', currentValue: 90, mean: 45, zScore: 2.8 }],
+          compositeScore: 2.8,
+          pattern: 'memory z=2.80 above the z>2 rule threshold',
+          patternMatch: null,
+          severity: 'medium' as const,
+          timestamp: '2025-01-15T10:00:00Z',
+        },
+      ],
+      isLoading: false,
+    } as ReturnType<typeof useCorrelatedAnomalies>);
+
+    renderPage();
+
+    // Body degrades to the legacy string rather than to a blank card...
+    expect(screen.getByTestId('pattern-rule-summary').textContent).toBe(
+      'memory z=2.80 above the z>2 rule threshold',
+    );
+    // ...but no badge, since there is no rule id to label it with.
+    expect(screen.queryByTestId('pattern-badge')).toBeNull();
   });
 
   it('acknowledges an unacknowledged insight from the insight card', () => {
@@ -410,19 +490,23 @@ describe('AiMonitorPage', () => {
 
     renderPage();
 
-    // New score formula: healthy / (healthy + unhealthy). 1 healthy + 1
-    // unhealthy = 50.0%. The db (no healthcheck) and cache (exited) are
-    // excluded from the denominator so the operator's healthcheck coverage
-    // gap doesn't penalise the score.
-    expect(screen.getByText('Overall Health Score')).toBeTruthy();
-    expect(screen.getAllByText('50.0%').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText('Running')).toBeTruthy();
-    expect(screen.getByText('Healthy')).toBeTruthy();
-    expect(screen.getAllByText('Unhealthy').length).toBeGreaterThanOrEqual(1);
-    // The "Stopped" stat card was replaced by "No Healthcheck" — surfacing
-    // the cohort that's actually excluded from scoring is more useful than
-    // counting exited containers (already shown elsewhere as health issues).
-    expect(screen.getByText('No Healthcheck')).toBeTruthy();
+    // The hero is a count now, not a percentage: 1 unhealthy + 1 stopped
+    // container, and no unacknowledged insights in this fixture.
+    expect(screen.getByTestId('needs-attention-count')).toHaveTextContent('2');
+    expect(screen.queryByText('Overall Health Score')).toBeNull();
+    // The healthcheck pass rate is still here, named for what it measures and
+    // stating its exclusion: healthy / (healthy + unhealthy) = 50%, with the
+    // db (no healthcheck) and cache (exited) outside the denominator.
+    expect(screen.getByTestId('healthcheck-pass-rate')).toHaveTextContent('50%');
+    expect(screen.getByTestId('healthcheck-pass-rate')).toHaveTextContent(
+      '1 of 2 containers with a healthcheck',
+    );
+    // /health collapses the container-status strip to a single line — Home
+    // already carried the full tile grid.
+    expect(screen.getByTestId('fleet-status-line')).toHaveTextContent(
+      '4 containers · 3 running · 1 healthy · 1 unhealthy · 1 without a healthcheck',
+    );
+    expect(screen.queryByText('No Healthcheck')).toBeNull();
   });
 
   it('shows skeleton loading state for health section', () => {
@@ -453,11 +537,12 @@ describe('AiMonitorPage', () => {
 
     renderPage();
 
-    // Empty fleet now shows "No healthchecks configured" instead of an
-    // arbitrary 0.0% — the new score formula returns null when no container
-    // reports a health signal and we surface that as N/A so operators are
-    // not misled by a bogus zero.
-    expect(screen.getByTestId('health-score-na')).toBeTruthy();
+    // Empty fleet: no pass rate can be computed, so we say so rather than
+    // rendering an arbitrary 0%.
+    expect(screen.getByTestId('healthcheck-pass-rate')).toHaveTextContent(
+      /Healthcheck pass rate unavailable/,
+    );
+    expect(screen.getByTestId('needs-attention-count')).toHaveTextContent('0');
     // No NaN should ever leak into the rendered DOM.
     expect(document.body.textContent ?? '').not.toContain('NaN');
   });
@@ -743,5 +828,132 @@ describe('AiMonitorPage — false-positive feedback (#1298)', () => {
 
     renderPage();
     expect(screen.queryByTestId('anomaly-feedback-rate-row')).toBeNull();
+  });
+
+  it('wires the auto-refresh dropdown through the hook onTick, not a hand-rolled timer', () => {
+    const refetch = vi.fn();
+    const containerRefetch = vi.fn();
+    vi.mocked(useMonitoring).mockReturnValue({
+      insights: [],
+      isLoading: false,
+      error: null,
+      subscribedSeverities: new Set(['critical', 'warning', 'info']),
+      subscribeSeverity: vi.fn(),
+      unsubscribeSeverity: vi.fn(),
+      acknowledgeInsight: vi.fn(),
+      acknowledgeError: null,
+      isAcknowledging: false,
+      acknowledgingInsightId: null,
+      refetch,
+    } as unknown as ReturnType<typeof useMonitoring>);
+    vi.mocked(useContainers).mockReturnValue({
+      data: [],
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: containerRefetch,
+      isFetching: false,
+    } as unknown as ReturnType<typeof useContainers>);
+
+    renderPage();
+
+    expect(capturedAutoRefresh.onTick).toBeTypeOf('function');
+    capturedAutoRefresh.onTick?.();
+    expect(refetch).toHaveBeenCalledTimes(1);
+    expect(containerRefetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders the page title through the shared PageHeader with live-state subtitle', () => {
+    renderPage();
+
+    const header = screen.getByTestId('page-header');
+    expect(within(header).getByRole('heading', { level: 1 })).toHaveTextContent(
+      'Health & Monitoring',
+    );
+    // The old subtitle promised "real-time AI-powered insights".
+    expect(screen.queryByText(/AI-powered/i)).toBeNull();
+    expect(screen.getByTestId('page-header-subtitle')).toHaveTextContent(/insight/);
+  });
+
+  it('collapses re-emissions of the same fact into one row with a disclosure', async () => {
+    // A missing HEALTHCHECK is a configuration state, not an event; 12 of 20
+    // Info insights on a real fleet were two facts restated hourly, each with
+    // the same 40-word remediation paragraph.
+    const repeated = [3, 2, 1].map((hour) => ({
+      id: `hc-${hour}`,
+      endpoint_id: 1,
+      endpoint_name: 'local',
+      container_id: 'c-lcm-web',
+      container_name: 'lcm-web',
+      severity: 'info' as const,
+      category: 'health-check',
+      title: 'Container "lcm-web" has no health check configured',
+      description: 'Add a HEALTHCHECK instruction to the image.',
+      suggested_action: null,
+      is_acknowledged: 0,
+      created_at: `2026-07-26T0${hour}:00:00Z`,
+    }));
+    vi.mocked(useMonitoring).mockReturnValue({
+      insights: repeated,
+      isLoading: false,
+      error: null,
+      subscribedSeverities: new Set(['critical', 'warning', 'info']),
+      subscribeSeverity: vi.fn(),
+      unsubscribeSeverity: vi.fn(),
+      acknowledgeInsight: vi.fn(),
+      acknowledgeError: null,
+      isAcknowledging: false,
+      acknowledgingInsightId: null,
+      refetch: vi.fn(),
+    } as unknown as ReturnType<typeof useMonitoring>);
+
+    renderPage();
+
+    // One group, one visible card, and the other two behind a disclosure that
+    // prints its own count so the "Info" tile still reconciles.
+    expect(screen.getAllByTestId('insight-group')).toHaveLength(1);
+    const toggle = screen.getByTestId('insight-group-toggle');
+    expect(toggle).toHaveTextContent('Show 2 earlier occurrences');
+    expect(screen.getAllByRole('heading', { level: 3 })).toHaveLength(1);
+
+    fireEvent.click(toggle);
+    expect(screen.getAllByRole('heading', { level: 3 })).toHaveLength(3);
+  });
+
+  it('does not group insights that differ by container or title', () => {
+    const distinct = [
+      {
+        id: 'a', endpoint_id: 1, endpoint_name: 'local', container_id: 'c1',
+        container_name: 'lcm-web', severity: 'info' as const, category: 'health-check',
+        title: 'Container "lcm-web" has no health check configured',
+        description: '', suggested_action: null, is_acknowledged: 0,
+        created_at: '2026-07-26T03:00:00Z',
+      },
+      {
+        id: 'b', endpoint_id: 1, endpoint_name: 'local', container_id: 'c2',
+        container_name: 'docker-portainer-1', severity: 'info' as const, category: 'health-check',
+        title: 'Container "docker-portainer-1" has no health check configured',
+        description: '', suggested_action: null, is_acknowledged: 0,
+        created_at: '2026-07-26T03:00:00Z',
+      },
+    ];
+    vi.mocked(useMonitoring).mockReturnValue({
+      insights: distinct,
+      isLoading: false,
+      error: null,
+      subscribedSeverities: new Set(['critical', 'warning', 'info']),
+      subscribeSeverity: vi.fn(),
+      unsubscribeSeverity: vi.fn(),
+      acknowledgeInsight: vi.fn(),
+      acknowledgeError: null,
+      isAcknowledging: false,
+      acknowledgingInsightId: null,
+      refetch: vi.fn(),
+    } as unknown as ReturnType<typeof useMonitoring>);
+
+    renderPage();
+
+    expect(screen.getAllByTestId('insight-group')).toHaveLength(2);
+    expect(screen.queryByTestId('insight-group-toggle')).toBeNull();
   });
 });

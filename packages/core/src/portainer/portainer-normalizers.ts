@@ -51,7 +51,17 @@ export interface NormalizedContainer {
   created: number;
   endpointId: number;
   endpointName: string;
-  ports: Array<{ private: number; public?: number; type: string }>;
+  /**
+   * Published port mappings.
+   *
+   * `ip` is Docker's host-side bind address for the mapping and is deliberately
+   * carried through: whether a port is bound to `127.0.0.1` or `0.0.0.0` is the
+   * most security-relevant fact about it, and it is also what distinguishes the
+   * IPv4 and IPv6 bindings Docker publishes for the same port (which otherwise
+   * render as two identical rows). Undefined when Docker reported no bind
+   * address — an exposed-but-unpublished port.
+   */
+  ports: Array<{ private: number; public?: number; type: string; ip?: string }>;
   networks: string[];
   networkIPs: Record<string, string>;
   labels: Record<string, string>;
@@ -333,6 +343,9 @@ export function normalizeContainer(
       private: p.PrivatePort || 0,
       public: p.PublicPort,
       type: p.Type || 'tcp',
+      // Docker's host bind address. Dropping it made the UI assert a constant
+      // "0.0.0.0" for every mapping, including loopback-only ones.
+      ...(p.IP ? { ip: p.IP } : {}),
     })),
     networks: Object.keys(c.NetworkSettings?.Networks || {}),
     networkIPs: Object.fromEntries(

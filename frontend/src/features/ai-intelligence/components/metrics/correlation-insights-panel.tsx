@@ -1,6 +1,11 @@
 import { memo, useMemo } from 'react';
-import { Link2, Bot, ArrowUpDown, TrendingUp, TrendingDown } from 'lucide-react';
-import { useCorrelations, useCorrelationInsights, type CorrelationPair } from '@/features/observability/hooks/use-correlations';
+import { Link2, Bot, ArrowUpDown, TrendingUp, TrendingDown, Info } from 'lucide-react';
+import {
+  useCorrelations,
+  useCorrelationInsights,
+  correlationPairKey,
+  type CorrelationPair,
+} from '@/features/observability/hooks/use-correlations';
 import { cn } from '@/shared/lib/utils';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 import { EmptyState } from '@/shared/components/feedback/empty-state';
@@ -11,33 +16,86 @@ interface CorrelationInsightsPanelProps {
   selectedContainerId?: string | null;
 }
 
-function strengthColor(pair: CorrelationPair): string {
-  const absR = Math.abs(pair.correlation);
-  if (absR >= 0.9) {
-    return pair.direction === 'positive'
-      ? 'text-emerald-600 dark:text-emerald-400'
-      : 'text-red-600 dark:text-red-400';
-  }
-  return pair.direction === 'positive'
-    ? 'text-blue-600 dark:text-blue-400'
-    : 'text-orange-600 dark:text-orange-400';
+/**
+ * Badge colour keyed to |r| — never to its sign.
+ *
+ * This palette reads green as "healthy" and red as "error", so painting
+ * `r = -0.99` red asserted that the pair was broken. A strong negative
+ * correlation is neither bad news nor good news, only strong. Colour now
+ * carries strength alone: direction is on the TrendingUp/TrendingDown glyph
+ * inside the same badge, and the sign is printed in the coefficient beside it.
+ */
+function strengthClasses(pair: CorrelationPair): string {
+  return Math.abs(pair.correlation) >= 0.9
+    ? 'bg-primary/15 text-primary'
+    : 'bg-muted text-muted-foreground';
 }
 
-function strengthBg(pair: CorrelationPair): string {
-  const absR = Math.abs(pair.correlation);
-  if (absR >= 0.9) {
-    return pair.direction === 'positive'
-      ? 'bg-emerald-100 dark:bg-emerald-900/30'
-      : 'bg-red-100 dark:bg-red-900/30';
+const AXIS_LABEL_BOUNDARIES = new Set(['-', '_', '.']);
+
+/**
+ * Longest prefix shared by every label, trimmed back to a `-`/`_`/`.` boundary
+ * so a word is never cut in half. Empty when the labels share nothing useful
+ * (fewer than two labels, no common prefix, or one label *is* the prefix).
+ */
+export function commonAxisPrefix(names: string[]): string {
+  if (names.length < 2) return '';
+  let prefix = names[0];
+  for (const name of names.slice(1)) {
+    let i = 0;
+    while (i < prefix.length && i < name.length && prefix[i] === name[i]) i += 1;
+    prefix = prefix.slice(0, i);
+    if (!prefix) return '';
   }
-  return pair.direction === 'positive'
-    ? 'bg-blue-100 dark:bg-blue-900/30'
-    : 'bg-orange-100 dark:bg-orange-900/30';
+  let boundary = -1;
+  for (let i = prefix.length - 1; i >= 0; i -= 1) {
+    if (AXIS_LABEL_BOUNDARIES.has(prefix[i])) {
+      boundary = i;
+      break;
+    }
+  }
+  if (boundary < 0) return '';
+  const trimmed = prefix.slice(0, boundary + 1);
+  // Stripping must leave every label with something to read.
+  return names.every((name) => name.length > trimmed.length) ? trimmed : '';
+}
+
+/**
+ * Axis labels for the heatmap, shortened without deleting what distinguishes
+ * them. Every container in a compose fleet shares a project prefix, so the old
+ * `slice(0, 10) + '…'` turned six of twelve columns into "container-…". Strip
+ * the shared prefix first, then — if a name is still too long — drop characters
+ * from the LEFT and keep the tail, which is where the instance number lives.
+ * The full name stays in the cell's `title`.
+ */
+export function shortenAxisLabels(names: string[], maxLength = 12): Map<string, string> {
+  const prefix = commonAxisPrefix(names);
+  const labels = new Map<string, string>();
+  for (const name of names) {
+    const stripped = prefix ? name.slice(prefix.length) : name;
+    labels.set(
+      name,
+      stripped.length > maxLength ? `…${stripped.slice(stripped.length - maxLength)}` : stripped,
+    );
+  }
+  return labels;
+}
+
+/**
+ * Cell fill keyed to |r| on a single ramp of the theme's primary token. It used
+ * to be green for a positive r and red for a negative one — status colours for
+ * a non-status quantity. The signed value is printed in the cell, so the fill
+ * only needs to carry strength.
+ */
+function heatmapCellStyle(r: number): { backgroundColor: string } {
+  const absR = Math.min(1, Math.abs(r));
+  const mix = Math.round(8 + absR * 37);
+  return { backgroundColor: `color-mix(in srgb, var(--color-primary) ${mix}%, transparent)` };
 }
 
 function HeatmapGrid({ pairs }: { pairs: CorrelationPair[] }) {
   // Build unique container list and correlation map
-  const { containers, matrix } = useMemo(() => {
+  const { containers, matrix, labels, strippedPrefix } = useMemo(() => {
     const nameSet = new Set<string>();
     for (const p of pairs) {
       nameSet.add(p.containerA.name);
@@ -51,20 +109,31 @@ function HeatmapGrid({ pairs }: { pairs: CorrelationPair[] }) {
       matrix.set(keyAB, p.correlation);
       matrix.set(keyBA, p.correlation);
     }
-    return { containers, matrix };
+    return {
+      containers,
+      matrix,
+      labels: shortenAxisLabels(containers),
+      strippedPrefix: commonAxisPrefix(containers),
+    };
   }, [pairs]);
 
   if (containers.length === 0) return null;
 
   return (
-    <div className="overflow-x-auto">
+    <div className="space-y-2">
+      {strippedPrefix && (
+        <p className="text-[11px] text-muted-foreground" data-testid="heatmap-prefix-note">
+          Shared prefix <span className="font-mono">{strippedPrefix}</span> removed from axis labels.
+        </p>
+      )}
+      <div className="overflow-x-auto">
       <table className="text-xs" data-testid="correlation-heatmap">
         <thead>
           <tr>
             <th className="px-1 py-1 text-left font-normal text-muted-foreground" />
             {containers.map((name) => (
-              <th key={name} className="px-1 py-1 font-normal text-muted-foreground truncate max-w-[80px]" title={name}>
-                {name.length > 10 ? name.slice(0, 10) + '…' : name}
+              <th key={name} className="px-1 py-1 font-normal text-muted-foreground whitespace-nowrap" title={name}>
+                {labels.get(name)}
               </th>
             ))}
           </tr>
@@ -72,8 +141,8 @@ function HeatmapGrid({ pairs }: { pairs: CorrelationPair[] }) {
         <tbody>
           {containers.map((rowName) => (
             <tr key={rowName}>
-              <td className="px-1 py-1 text-muted-foreground truncate max-w-[80px] font-medium" title={rowName}>
-                {rowName.length > 10 ? rowName.slice(0, 10) + '…' : rowName}
+              <td className="px-1 py-1 text-muted-foreground whitespace-nowrap font-medium" title={rowName}>
+                {labels.get(rowName)}
               </td>
               {containers.map((colName) => {
                 if (rowName === colName) {
@@ -98,14 +167,11 @@ function HeatmapGrid({ pairs }: { pairs: CorrelationPair[] }) {
                     </td>
                   );
                 }
-                const absR = Math.abs(r);
-                const opacity = Math.max(0.3, absR);
-                const bgColor = r > 0 ? `rgba(16,185,129,${opacity})` : `rgba(239,68,68,${opacity})`;
                 return (
                   <td key={colName} className="px-1 py-1">
                     <div
-                      className="h-6 w-6 rounded flex items-center justify-center text-[10px] font-medium text-white"
-                      style={{ backgroundColor: bgColor }}
+                      className="h-6 w-6 rounded flex items-center justify-center text-[10px] font-medium text-foreground"
+                      style={heatmapCellStyle(r)}
                       title={`${rowName} ↔ ${colName}: r=${r.toFixed(2)}`}
                     >
                       {r.toFixed(1)}
@@ -117,6 +183,7 @@ function HeatmapGrid({ pairs }: { pairs: CorrelationPair[] }) {
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }
@@ -136,12 +203,25 @@ export const CorrelationInsightsPanel = memo(function CorrelationInsightsPanel({
     );
   }, [allPairs, selectedContainerId]);
   const summary = insightsData?.summary ?? null;
+  const narrativeStatus = insightsData?.narrativeStatus ?? 'ok';
+  const narrativeUnavailableReason = insightsData?.narrativeUnavailableReason ?? null;
 
-  // Build a map from pair key to narrative
+  // Keyed by the server's `pairKey`, not by array position. Both sides slice
+  // their own top-10 — the server from the unfiltered list, this panel from a
+  // list that may be filtered to one container — so position is not a safe
+  // join key and silently mismatched narratives were possible.
   const narrativeMap = useMemo(() => {
     const map = new Map<string, string | null>();
     for (const insight of insights) {
-      map.set(`${insight.containerA}:${insight.containerB}:${insight.metricType}`, insight.narrative);
+      // Prefer the server-supplied key — it is what stops this list and the
+      // route's own top-N from drifting apart when a container filter is
+      // active. Fall back to deriving it so a payload from an older backend
+      // degrades to "narratives still shown" rather than "every narrative
+      // silently missing".
+      const key =
+        insight.pairKey ??
+        correlationPairKey(insight.containerA, insight.containerB, insight.metricType);
+      map.set(key, insight.narrative);
     }
     return map;
   }, [insights]);
@@ -193,11 +273,27 @@ export const CorrelationInsightsPanel = memo(function CorrelationInsightsPanel({
         />
       ) : (
         <div className="space-y-4">
+          {/* Why the narratives are missing — said once, above the list, rather
+              than as an italic failure repeated on every row. The correlation
+              values are computed from metrics and stand on their own, so the
+              panel stays useful when the model does not answer. */}
+          {llmAvailable && !insightsLoading && narrativeUnavailableReason && (
+            <div
+              role="status"
+              data-testid="narrative-unavailable-reason"
+              data-narrative-status={narrativeStatus}
+              className="flex items-start gap-2 rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground"
+            >
+              <Info className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" aria-hidden />
+              <span>{narrativeUnavailableReason}</span>
+            </div>
+          )}
+
           {/* Correlation pair cards */}
           <div className="space-y-3">
             {pairs.slice(0, 10).map((pair) => {
               const narrative = narrativeMap.get(
-                `${pair.containerA.name}:${pair.containerB.name}:${pair.metricType}`,
+                correlationPairKey(pair.containerA.name, pair.containerB.name, pair.metricType),
               );
               const DirectionIcon = pair.direction === 'positive' ? TrendingUp : TrendingDown;
 
@@ -206,14 +302,19 @@ export const CorrelationInsightsPanel = memo(function CorrelationInsightsPanel({
                   key={`${pair.containerA.id}-${pair.containerB.id}-${pair.metricType}`}
                   className="rounded-md border border-border/60 bg-background/50 px-4 py-3"
                 >
-                  <div className="flex flex-wrap items-center gap-2 text-sm">
-                    <span className="font-medium">{pair.containerA.name}</span>
-                    <span className="text-muted-foreground">↔</span>
-                    <span className="font-medium">{pair.containerB.name}</span>
+                  {/* Two deliberate lines — the pair, then its measurements.
+                      As one flex-wrap run of six children this collapsed to
+                      three ragged lines at tablet width, where the persistent
+                      sidebar takes ~28% of the viewport. */}
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+                    <span className="font-medium break-all">{pair.containerA.name}</span>
+                    <span className="text-muted-foreground" aria-hidden>↔</span>
+                    <span className="font-medium break-all">{pair.containerB.name}</span>
+                  </div>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-2">
                     <span className={cn(
                       'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium',
-                      strengthBg(pair),
-                      strengthColor(pair),
+                      strengthClasses(pair),
                     )}>
                       <DirectionIcon className="h-3 w-3" />
                       r = {pair.correlation.toFixed(2)}
@@ -226,20 +327,17 @@ export const CorrelationInsightsPanel = memo(function CorrelationInsightsPanel({
                     </span>
                   </div>
 
-                  {/* AI narrative */}
-                  {llmAvailable && (
+                  {/* AI narrative — omitted entirely when absent. A row with no
+                      narrative shows the correlation alone; the banner above
+                      already explains why, once. */}
+                  {llmAvailable && (insightsLoading || narrative) && (
                     <div className="mt-2">
                       {insightsLoading ? (
                         <div className="h-5 animate-pulse rounded bg-muted" />
-                      ) : narrative ? (
+                      ) : (
                         <p className="text-xs leading-relaxed text-foreground/80">
                           <Bot className="inline h-3 w-3 text-purple-500 mr-1" />
                           {narrative}
-                        </p>
-                      ) : (
-                        <p className="text-xs text-muted-foreground italic">
-                          <Bot className="inline h-3 w-3 text-purple-500/50 mr-1" />
-                          Insight unavailable
                         </p>
                       )}
                     </div>

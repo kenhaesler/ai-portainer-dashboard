@@ -1,29 +1,53 @@
 import { useLocation, Link } from 'react-router-dom';
-import { Sun, Moon, Search, LogOut, User, Keyboard } from 'lucide-react';
+import { Sun, Moon, Search, LogOut, User } from 'lucide-react';
 import { useAuth } from '@/providers/auth-provider';
 import { useThemeStore } from '@/stores/theme-store';
 import { useUiStore } from '@/stores/ui-store';
 import { useHeaderContextStore } from '@/stores/header-context-store';
 import { cn } from '@/shared/lib/utils';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo, type ReactNode } from 'react';
 import { ConnectionOrb } from '@/shared/components/ui/connection-orb';
+import { breadcrumbLabelForPath } from '@/features/core/lib/navigation-manifest';
+import { useContainerDetail } from '@/features/containers/hooks/use-container-detail';
 
-const routeLabels: Record<string, string> = {
-  '/': 'Home',
-  '/workloads': 'Workload Explorer',
-  '/infrastructure': 'Infrastructure',
-  '/health': 'Health & Monitoring',
-  '/images': 'Image Footprint',
-  '/topology': 'Network Topology',
-  '/metrics': 'Metrics Dashboard',
-  '/remediation': 'Remediation',
-  '/traces': 'Trace Explorer',
-  '/assistant': 'LLM Assistant',
-  '/security/audit': 'Security Audit',
-  '/edge-logs': 'Edge Agent Logs',
-  '/settings': 'Settings',
-};
+interface Crumb {
+  key: string;
+  label: string;
+  /** Set on every crumb except the last one, which is the current page. */
+  path?: string;
+  /** Rendered instead of `label` when the crumb resolves live data. */
+  node?: ReactNode;
+}
 
+/**
+ * `navigator.platform` is deprecated and returns `""` in some hardened
+ * browsers, which silently rendered `Ctrl+K` to Mac users. Check the modern
+ * `userAgentData.platform` first and fall back through the legacy fields.
+ */
+export function prefersCommandKey(nav: Navigator = navigator): boolean {
+  const withData = nav as Navigator & { userAgentData?: { platform?: string } };
+  const haystack = [
+    withData.userAgentData?.platform ?? '',
+    nav.platform ?? '',
+    nav.userAgent ?? '',
+  ].join(' ');
+  return /mac|iphone|ipad|ipod/i.test(haystack);
+}
+
+/**
+ * Names the container rather than the route template. The breadcrumb used to
+ * read the hardcoded "Container Details" while the page's own h1 showed the
+ * container name. Shares the containers query with the page below it, so this
+ * costs no extra request.
+ */
+function ContainerCrumb({ endpointId, containerId }: { endpointId: number; containerId: string }) {
+  const { data } = useContainerDetail(endpointId, containerId);
+  return (
+    <span className="truncate font-medium text-foreground" data-testid="header-container-name">
+      {data?.name ?? containerId.slice(0, 12)}
+    </span>
+  );
+}
 
 export function Header() {
   const location = useLocation();
@@ -51,24 +75,43 @@ export function Header() {
   );
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
+  const isMacKeyboard = useMemo(() => prefersCommandKey(), []);
 
   // Check if the current route is a container detail page
   const containerDetailMatch = location.pathname.match(/^\/containers\/(\d+)\/([a-f0-9]+)$/);
 
-  const currentLabel = routeLabels[location.pathname] || 'Dashboard';
-  let breadcrumbs = [
-    { label: 'Dashboard', path: '/' },
-    ...(location.pathname !== '/'
-      ? [{ label: currentLabel, path: location.pathname }]
-      : []),
-  ];
+  // Every label comes from the one route manifest — the header used to keep
+  // its own 13-entry copy of a 20-route list, so 7 routes fell through to the
+  // literal "Dashboard" and rendered "Dashboard / Dashboard".
+  const currentLabel = breadcrumbLabelForPath(location.pathname);
 
-  // Handle dynamic container detail breadcrumbs
+  let breadcrumbs: Crumb[];
   if (containerDetailMatch) {
     breadcrumbs = [
-      { label: 'Dashboard', path: '/' },
-      { label: 'Workload Explorer', path: '/workloads' },
-      { label: 'Container Details', path: location.pathname },
+      { key: '/', label: 'Home', path: '/' },
+      { key: '/workloads', label: 'Workloads', path: '/workloads' },
+      {
+        key: location.pathname,
+        label: 'Container',
+        node: (
+          <ContainerCrumb
+            endpointId={Number(containerDetailMatch[1])}
+            containerId={containerDetailMatch[2]}
+          />
+        ),
+      },
+    ];
+  } else {
+    breadcrumbs = [
+      { key: '/', label: 'Home', path: '/' },
+      ...(location.pathname !== '/'
+        ? [{
+          key: location.pathname,
+          // A genuinely unknown path is the 404 route; say so rather than
+          // naming some other page.
+          label: currentLabel ?? 'Page not found',
+        }]
+        : []),
     ];
   }
 
@@ -114,23 +157,29 @@ export function Header() {
     <header
       data-testid="header"
       data-animated-bg={hasAnimatedBg || undefined}
-      className="relative z-40 mx-2 mt-2 flex h-12 shrink-0 items-center justify-between rounded-2xl bg-sidebar-background/80 backdrop-blur-xl shadow-lg ring-1 ring-black/5 dark:ring-white/10 px-2 md:mx-4 md:mt-4 md:px-4"
+      className="relative z-40 mx-2 mt-2 flex h-12 shrink-0 items-center justify-between gap-2 rounded-2xl bg-sidebar-background/80 backdrop-blur-xl shadow-lg ring-1 ring-black/5 dark:ring-white/10 px-2 md:mx-4 md:mt-4 md:px-4"
     >
-      {/* Breadcrumbs */}
-      <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-sm">
+      {/* Breadcrumbs — must be able to shrink, or at ~820px it pushes the
+          right-hand cluster (including the only route to Log out) off-screen. */}
+      <nav
+        aria-label="Breadcrumb"
+        className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden text-sm"
+      >
         {breadcrumbs.map((crumb, index) => (
-          <span key={crumb.path} className="flex items-center gap-1.5">
+          <span key={crumb.key} className="flex min-w-0 items-center gap-1.5">
             {index > 0 && (
               <span className="text-muted-foreground">/</span>
             )}
             {index === breadcrumbs.length - 1 ? (
-              <span className="font-medium text-foreground">
-                {crumb.label}
-              </span>
+              crumb.node ?? (
+                <span className="truncate font-medium text-foreground">
+                  {crumb.label}
+                </span>
+              )
             ) : (
               <Link
-                to={crumb.path}
-                className="text-muted-foreground transition-colors hover:text-foreground"
+                to={crumb.path ?? '/'}
+                className="truncate text-muted-foreground transition-colors hover:text-foreground"
               >
                 {crumb.label}
               </Link>
@@ -138,16 +187,16 @@ export function Header() {
           </span>
         ))}
         {metricsContainerName && (
-          <span className="flex items-center gap-1.5">
+          <span className="flex min-w-0 items-center gap-1.5">
             <span className="text-muted-foreground">/</span>
-            <span className="font-medium text-foreground" data-testid="header-context-name">
+            <span className="truncate font-medium text-foreground" data-testid="header-context-name">
               {metricsContainerName}
             </span>
           </span>
         )}
         {(appBuildRef || buildChannel) && (
           <span
-            className="ml-2 inline-flex items-center rounded-full border border-border/60 bg-muted/60 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
+            className="ml-2 hidden shrink-0 items-center rounded-full border border-border/60 bg-muted/60 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground md:inline-flex"
             aria-label={`Build ${buildBadge}`}
             title={`Build ${buildBadge}`}
           >
@@ -157,37 +206,18 @@ export function Header() {
       </nav>
 
       {/* Right-side actions */}
-      <div className="flex items-center gap-2">
+      <div className="flex shrink-0 items-center gap-2">
         {/* Command palette trigger */}
         <button
+          type="button"
           onClick={() => setCommandPaletteOpen(true)}
+          aria-label="Search"
           className="flex items-center gap-2 rounded-xl bg-muted/50 px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted"
         >
           <Search className="h-4 w-4" />
-          <span className="hidden sm:inline">Search...</span>
           <kbd className="pointer-events-none hidden select-none rounded-md bg-background/80 px-1.5 py-0.5 font-mono text-xs sm:inline-block">
-            {navigator.platform.includes('Mac') ? '⌘' : 'Ctrl+'}K
+            {isMacKeyboard ? '⌘' : 'Ctrl+'}K
           </kbd>
-          <kbd className="pointer-events-none hidden select-none rounded-md bg-background/80 px-1.5 py-0.5 font-mono text-xs sm:inline-block">
-            /
-          </kbd>
-        </button>
-
-        <button
-          type="button"
-          role="switch"
-          aria-checked={Boolean(potatoMode)}
-          aria-label={`Potato mode ${potatoMode ? 'on' : 'off'}`}
-          title="Toggle Potato Mode"
-          onClick={() => setPotatoMode(Boolean(!potatoMode))}
-          className={cn(
-            'inline-flex h-8 w-8 items-center justify-center rounded-full border text-xs font-medium',
-            potatoMode
-              ? 'border-primary bg-primary/10 text-primary'
-              : 'border-border bg-muted text-muted-foreground'
-          )}
-        >
-          <span aria-hidden="true">🥔</span>
         </button>
 
         {/* Theme toggle — pill switch between two configured themes */}
@@ -237,10 +267,41 @@ export function Header() {
           </button>
 
           {userMenuOpen && (
-            <div className="absolute right-0 top-full z-50 mt-1 w-48 rounded-md border border-border bg-popover p-1 shadow-lg">
+            <div className="absolute right-0 top-full z-50 mt-1 w-60 rounded-md border border-border bg-popover p-1 shadow-lg">
               <div className="px-2 py-1.5 text-sm text-muted-foreground">
                 Signed in as <span className="font-medium text-foreground">{username}</span>
               </div>
+              <div className="my-1 h-px bg-border" />
+              {/* Potato mode: a real performance switch, previously an
+                  unlabelled emoji in the header cluster. */}
+              <button
+                type="button"
+                role="switch"
+                aria-checked={Boolean(potatoMode)}
+                aria-label={`Potato mode ${potatoMode ? 'on' : 'off'}`}
+                data-testid="potato-mode-toggle"
+                onClick={() => setPotatoMode(Boolean(!potatoMode))}
+                className="flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent"
+              >
+                <span aria-hidden="true" className="leading-5">🥔</span>
+                <span className="flex flex-col">
+                  <span className="font-medium text-foreground">Potato mode</span>
+                  <span className="text-xs text-muted-foreground">
+                    Stops all animation and the gradient background.
+                  </span>
+                </span>
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    'ml-auto shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium',
+                    potatoMode
+                      ? 'bg-primary/10 text-primary'
+                      : 'bg-muted text-muted-foreground'
+                  )}
+                >
+                  {potatoMode ? 'On' : 'Off'}
+                </span>
+              </button>
               <div className="my-1 h-px bg-border" />
               <button
                 data-testid="logout-button"

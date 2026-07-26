@@ -1,4 +1,5 @@
 import { lazy, Suspense } from 'react';
+import type { RouteObject } from 'react-router-dom';
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { AppLayout } from '@/features/core/components/layout/app-layout';
 import { RouteErrorBoundary } from '@/shared/components/feedback/route-error-boundary';
@@ -33,6 +34,7 @@ const InvestigationDetail = lazy(() => import('@/features/ai-intelligence/pages/
 const SecurityAudit = lazy(() => import('@/features/security/pages/security-audit'));
 const EbpfCoverage = lazy(() => import('@/features/security/pages/ebpf-coverage'));
 const HarborVulnerabilities = lazy(() => import('@/features/security/pages/harbor-vulnerabilities'));
+const NotFound = lazy(() => import('@/features/core/pages/not-found'));
 
 function PageLoader() {
   return (
@@ -50,7 +52,13 @@ function LazyPage({ children }: { children: React.ReactNode }) {
   );
 }
 
-export const router = createBrowserRouter([
+/**
+ * The route table, exported separately from the browser router so tests can
+ * walk it without instantiating history. `navigation-manifest.test.ts` uses it
+ * to prove every reachable route has a navigation entry or a documented
+ * exemption.
+ */
+export const appRoutes: RouteObject[] = [
   {
     path: '/login',
     element: <LazyPage><Login /></LazyPage>,
@@ -100,7 +108,12 @@ export const router = createBrowserRouter([
       { path: 'investigations/insight/:insightId', element: <LazyPage><InvestigationDetail /></LazyPage> },
       { path: 'backups', element: <ProtectedRoute requiredRole="admin"><LazyPage><Backups /></LazyPage></ProtectedRoute> },
       { path: 'settings', element: <ProtectedRoute requiredRole="admin"><LazyPage><Settings /></LazyPage></ProtectedRoute> },
+      // Real 404 inside the shell. Previously `<Navigate to="/" replace />`,
+      // which silently turned every bad URL into Home and, because of
+      // `replace`, left the user unable to go Back to where they came from.
+      { path: '*', element: <LazyPage><NotFound /></LazyPage> },
     ],
   },
-  { path: '*', element: <Navigate to="/" replace />, errorElement: <RouteErrorBoundary /> },
-]);
+];
+
+export const router = createBrowserRouter(appRoutes);

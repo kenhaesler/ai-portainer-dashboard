@@ -1,14 +1,8 @@
-import { useMemo, version as reactVersion } from 'react';
-import { type ColumnDef } from '@tanstack/react-table';
-import { Loader2, RefreshCw, Settings2 } from 'lucide-react';
-import { DataTable } from '@/shared/components/tables/data-table';
-import { useCacheStats, useCacheClear } from '@/features/core/hooks/use-cache-admin';
+import { version as reactVersion } from 'react';
+import { ChevronRight, Settings2 } from 'lucide-react';
+import { useCacheStats } from '@/features/core/hooks/use-cache-admin';
 import { useSystemInfo } from '@/features/core/hooks/use-system-info';
-
-interface CacheEntryRow {
-  key: string;
-  expiresIn: number;
-}
+import { PRODUCT_NAME } from '@/shared/lib/product';
 
 export interface CacheStatsSummary {
   backend: 'multi-layer' | 'memory-only';
@@ -42,55 +36,23 @@ interface GeneralTabProps {
 export function GeneralTab({ theme }: GeneralTabProps) {
   const { data: cacheStats } = useCacheStats();
   const { data: systemInfo } = useSystemInfo();
-  const cacheClear = useCacheClear();
   const redisSystemInfo = getRedisSystemInfo(cacheStats);
-
-  const cacheEntryColumns = useMemo<ColumnDef<CacheEntryRow, unknown>[]>(
-    () => [
-      {
-        accessorKey: 'key',
-        header: 'Key',
-        cell: ({ getValue }) => (
-          <span className="font-mono text-xs">{getValue<string>()}</span>
-        ),
-      },
-      {
-        accessorKey: 'expiresIn',
-        header: () => <span className="block text-right">Expires In (TTL)</span>,
-        cell: ({ getValue }) => (
-          <span className="block text-right text-muted-foreground">{getValue<number>()}s</span>
-        ),
-      },
-    ],
-    [],
-  );
 
   return (
     <div className="space-y-6">
-      {/* System Info */}
-      <div className="rounded-lg border bg-card p-6">
-        <div className="mb-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Settings2 className="h-5 w-5" />
-            <h2 className="text-lg font-semibold">System Information</h2>
-          </div>
-          <button
-            onClick={() => cacheClear.mutate()}
-            disabled={cacheClear.isPending}
-            className="flex items-center gap-2 rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium hover:bg-accent disabled:opacity-50"
-          >
-            {cacheClear.isPending ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <RefreshCw className="h-3.5 w-3.5" />
-            )}
-            Clear All Cache
-          </button>
-        </div>
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      {/* System Info — a disclosure, because nobody opens Settings to read a
+          version string. Cache administration lives with the cache settings on
+          the Infrastructure tab. */}
+      <details data-testid="system-information" className="group rounded-lg border bg-card p-6" open>
+        <summary className="flex cursor-pointer list-none items-center gap-2 [&::-webkit-details-marker]:hidden">
+          <ChevronRight className="h-4 w-4 shrink-0 transition-transform group-open:rotate-90" />
+          <Settings2 className="h-5 w-5" />
+          <h2 className="text-lg font-semibold">System Information</h2>
+        </summary>
+        <div className="mt-4 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           <div className="rounded-lg bg-muted/50 p-4">
             <p className="text-xs text-muted-foreground">Application</p>
-            <p className="font-medium mt-1">Docker Insight</p>
+            <p className="font-medium mt-1">{PRODUCT_NAME}</p>
           </div>
           <div className="rounded-lg bg-muted/50 p-4">
             <p className="text-xs text-muted-foreground">Version</p>
@@ -141,36 +103,21 @@ export function GeneralTab({ theme }: GeneralTabProps) {
                 <p className="font-medium mt-1">{cacheStats?.hitRate ?? 'N/A'}</p>
               </div>
             </div>
+            {/* The per-key table that used to live here was `redis-cli KEYS`
+                shipped as product surface — its own label conceded the reader
+                had no use for it. The count is the part that reads. */}
             {cacheStats?.entries && cacheStats.entries.length > 0 && (
-              <div className="mt-4 grid gap-3 lg:grid-cols-2">
-                <div className="rounded-lg border border-border/50 bg-muted/20 p-3">
-                  <p className="text-xs font-medium">Redis Keys</p>
-                  <p className="mt-1 text-lg font-semibold">{redisSystemInfo.keys}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Count of keys currently stored in Redis (L2 cache). More keys means more reusable cached responses.
-                  </p>
-                </div>
-                <div className="rounded-lg border border-border/50 bg-muted/20">
-                  <div className="border-b border-border/50 px-3 py-2">
-                    <p className="text-xs font-medium">Cached Entry Keys</p>
-                    <p className="text-xs text-muted-foreground">
-                      Internal cache identifiers used by the backend for stored query results.
-                    </p>
-                  </div>
-                  <div className="p-3">
-                    <DataTable
-                      columns={cacheEntryColumns}
-                      data={cacheStats.entries}
-                      getRowId={(entry) => entry.key}
-                      hideSearch
-                    />
-                  </div>
-                </div>
+              <div className="mt-4 rounded-lg border border-border/50 bg-muted/20 p-3">
+                <p className="text-xs font-medium">Redis Keys</p>
+                <p className="mt-1 text-lg font-semibold">{redisSystemInfo.keys}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Count of keys currently stored in Redis (L2 cache). More keys means more reusable cached responses.
+                </p>
               </div>
             )}
           </div>
         </div>
-      </div>
+      </details>
 
       {/* Caching model — informational, not a toggle. See #1312. */}
       <div

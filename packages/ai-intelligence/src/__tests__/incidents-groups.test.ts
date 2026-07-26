@@ -142,6 +142,23 @@ describe('getIncidentGroups', () => {
     expect(cpu.incident_count).toBe(4);
   });
 
+  it('emits timestamps as ISO-8601 UTC that new Date() accepts', async () => {
+    // Regression: these columns used to be selected with a `::text` cast, which
+    // bypasses the driver's timestamptz parser and yields
+    // `2026-07-26 08:46:29.123456+00` — a shape the UI's formatDate() turns into
+    // Invalid Date. See toIsoTimestamp() in incident-store.ts.
+    const result = await getIncidentGroups({ status: 'active' });
+    const cpu = result.groups.find((g) => g.signature === 'anomaly:ml-anomaly:cpu')!;
+    const isoish = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+    expect(cpu.earliest_at).toMatch(isoish);
+    expect(cpu.latest_update_at).toMatch(isoish);
+    for (const row of cpu.top_containers) {
+      expect(row.created_at).toMatch(isoish);
+      expect(row.latest_at).toMatch(isoish);
+      expect(Number.isNaN(new Date(row.created_at!).getTime())).toBe(false);
+    }
+  });
+
   it('surfaces latest_description from the root-cause insight and latest_summary from the incident', async () => {
     const result = await getIncidentGroups({ status: 'active' });
     const cpu = result.groups.find((g) => g.signature === 'anomaly:ml-anomaly:cpu')!;

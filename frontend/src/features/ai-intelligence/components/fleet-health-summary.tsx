@@ -1,37 +1,47 @@
-import { Activity, AlertCircle, AlertTriangle, CheckCircle2, HelpCircle, Info } from 'lucide-react';
+import { Activity, AlertCircle, AlertTriangle, CheckCircle2, ChevronRight, HelpCircle, Info } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { SkeletonChart } from '@/shared/components/feedback/skeleton';
 import { HealthScoreCard } from '@/shared/components/data-display/health-score-card';
 import {
   calculateHealthStats,
-  calculateHealthScore,
+  calculateHealthcheckPassRate,
   type HealthStats,
 } from '@/shared/lib/health-score';
 
 // Re-export the shared helpers so existing imports from this module keep
 // working. The canonical home for the types and calculators is
-// `@/shared/lib/health-score` — see that file for the score formula.
-export { calculateHealthStats, calculateHealthScore };
+// `@/shared/lib/health-score` — see that file for the pass-rate formula and
+// for `calculateNeedsAttention`, which drives the hero.
+export { calculateHealthStats, calculateHealthcheckPassRate };
 export type { HealthStats };
 
 /**
- * Compact horizontal stat tile used in the Fleet Vitals strip. Replaces the
- * earlier 4-card grid of large boxed stats — keeps all four numbers visible
- * but in roughly half the vertical mass so the hero score still dominates.
+ * Compact horizontal stat tile used in the Fleet Vitals strip.
+ *
+ * Deliberately count-only. Each tile used to carry its own percentage of
+ * `stats.total`, which put `11 · 85%` (11/13) forty pixels from a hero reading
+ * `100.0%` (11/11) with neither denominator labelled. One denominator per row
+ * now: the row states `of N containers` once and the tiles state counts.
  */
 function HealthStatTile({
   icon: Icon,
   label,
   value,
-  percentage,
   variant = 'default',
   onClick,
+  to,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   value: number;
-  percentage?: number;
   variant?: 'default' | 'success' | 'warning' | 'danger' | 'info';
   onClick?: () => void;
+  /**
+   * Destination for a tile that drills into the rows behind its number. Pass
+   * it conditionally — a tile reading `0` that links to an empty filtered
+   * table is a dead end wearing a chevron.
+   */
+  to?: string;
 }) {
   const iconVariantClasses = {
     default: 'text-muted-foreground',
@@ -47,25 +57,32 @@ function HealthStatTile({
         <Icon className="h-4 w-4" />
       </div>
       <div className="flex-1 min-w-0">
-        <div className="flex items-baseline gap-2">
-          <span className="text-xl font-bold tabular-nums leading-none">{value}</span>
-          {percentage !== undefined && value > 0 && (
-            <span className="text-xs text-muted-foreground tabular-nums">{percentage.toFixed(0)}%</span>
-          )}
-        </div>
+        <span className="text-xl font-bold tabular-nums leading-none">{value}</span>
         <p className="text-xs text-muted-foreground mt-0.5 truncate">{label}</p>
       </div>
     </>
   );
 
+  // A tile that navigates says so. Without the chevron the five dead tiles and
+  // the one live one were styled identically.
+  const affordance = <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />;
+  const interactiveClasses =
+    'flex w-full items-center gap-3 rounded-md bg-muted/40 px-3 py-2 text-left transition-colors hover:bg-muted/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer';
+
+  if (to) {
+    return (
+      <Link to={to} className={interactiveClasses} data-testid={`fleet-tile-link-${label}`}>
+        {inner}
+        {affordance}
+      </Link>
+    );
+  }
+
   if (onClick) {
     return (
-      <button
-        type="button"
-        onClick={onClick}
-        className="flex w-full items-center gap-3 rounded-md bg-muted/40 px-3 py-2 text-left transition-colors hover:bg-muted/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer"
-      >
+      <button type="button" onClick={onClick} className={interactiveClasses}>
         {inner}
+        {affordance}
       </button>
     );
   }
@@ -79,31 +96,44 @@ function HealthStatTile({
 
 /**
  * Optional second row of stat tiles for insight counts (Total / Critical /
- * Warning / Info). When provided, renders below the container-status row
- * inside the same hero pane so the page only has one Vitals card to scan.
+ * Warning / Info).
+ *
+ * `unacknowledgedCritical` / `unacknowledgedWarning` are what the hero's
+ * "Needs attention" number is built from; they are optional so a caller that
+ * has not computed them yet degrades to a container-only count rather than to
+ * a wrong one.
  */
 export interface InsightStats {
   total: number;
   critical: number;
   warning: number;
   info: number;
+  unacknowledgedCritical?: number;
+  unacknowledgedWarning?: number;
 }
 
 /**
  * Caller-supplied tile appended after the four container-status tiles (e.g.
  * Stopped, Security Findings on the Home page). Rendered with the same
- * `HealthStatTile`; an `onClick` turns it into a button.
+ * `HealthStatTile`; `to` makes it a link, `onClick` a button.
  */
 export interface ExtraTile {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   value: number;
-  percentage?: number;
   variant?: 'default' | 'success' | 'warning' | 'danger' | 'info';
   onClick?: () => void;
+  to?: string;
 }
 
-export function FleetHealthSummary({ stats, isLoading, insightStats, statusColumns = 4, extraTiles }: {
+export function FleetHealthSummary({
+  stats,
+  isLoading,
+  insightStats,
+  statusColumns = 4,
+  extraTiles,
+  layout = 'status-first',
+}: {
   stats: HealthStats | null;
   isLoading: boolean;
   insightStats?: InsightStats;
@@ -111,10 +141,94 @@ export function FleetHealthSummary({ stats, isLoading, insightStats, statusColum
   statusColumns?: 3 | 4;
   /** Tiles appended after the four container-status tiles. */
   extraTiles?: ExtraTile[];
+  /**
+   * `'status-first'` (Home) renders the container-status tiles in full.
+   * `'insights-first'` (Health & Monitoring) leads with the insight tiles and
+   * collapses container status to one line — Home has already carried that
+   * strip in full, and navigating Home → Health used to leave the top ~180px
+   * of the viewport unchanged.
+   */
+  layout?: 'status-first' | 'insights-first';
 }) {
   if (isLoading || !stats) {
     return <SkeletonChart size="md" className="h-44" />;
   }
+
+  const insightCounts = insightStats
+    ? {
+        critical: insightStats.unacknowledgedCritical ?? 0,
+        warning: insightStats.unacknowledgedWarning ?? 0,
+      }
+    : undefined;
+
+  const insightTiles = insightStats ? (
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <HealthStatTile icon={Activity} label="Total Insights" value={insightStats.total} />
+      <HealthStatTile
+        icon={AlertTriangle}
+        label="Critical"
+        value={insightStats.critical}
+        variant="danger"
+      />
+      <HealthStatTile
+        icon={AlertCircle}
+        label="Warnings"
+        value={insightStats.warning}
+        variant="warning"
+      />
+      <HealthStatTile icon={Info} label="Info" value={insightStats.info} variant="info" />
+    </div>
+  ) : null;
+
+  const statusTiles = (
+    <div className="flex flex-col gap-1.5">
+      {/* One denominator for the whole row, stated once. */}
+      <p className="text-xs text-muted-foreground" data-testid="fleet-status-denominator">
+        of {stats.total} containers
+      </p>
+      <div className={`grid grid-cols-2 gap-2 ${statusColumns === 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-4'}`}>
+        <HealthStatTile
+          icon={Activity}
+          label="Running"
+          value={stats.running}
+          variant="success"
+          to={stats.running > 0 ? '/workloads?state=running' : undefined}
+        />
+        <HealthStatTile icon={CheckCircle2} label="Healthy" value={stats.healthy} variant="success" />
+        <HealthStatTile
+          icon={AlertTriangle}
+          label="Unhealthy"
+          value={stats.unhealthy}
+          variant="danger"
+          to={stats.unhealthy > 0 ? '/health' : undefined}
+        />
+        <HealthStatTile
+          icon={HelpCircle}
+          label="No Healthcheck"
+          value={stats.noHealthcheck}
+          variant={stats.noHealthcheck > 0 ? 'warning' : 'default'}
+        />
+        {extraTiles?.map((tile) => (
+          <HealthStatTile
+            key={tile.label}
+            icon={tile.icon}
+            label={tile.label}
+            value={tile.value}
+            variant={tile.variant}
+            onClick={tile.onClick}
+            to={tile.to}
+          />
+        ))}
+      </div>
+    </div>
+  );
+
+  const collapsedStatusLine = (
+    <p className="text-xs text-muted-foreground" data-testid="fleet-status-line">
+      {stats.total} containers · {stats.running} running · {stats.healthy} healthy ·{' '}
+      {stats.unhealthy} unhealthy · {stats.noHealthcheck} without a healthcheck
+    </p>
+  );
 
   return (
     <div
@@ -122,79 +236,20 @@ export function FleetHealthSummary({ stats, isLoading, insightStats, statusColum
       data-testid="fleet-health-hero"
     >
       <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-        {/* Hero — score + issue count */}
-        <HealthScoreCard stats={stats} />
+        {/* Hero — needs-attention count + healthcheck pass rate */}
+        <HealthScoreCard stats={stats} insightCounts={insightCounts} />
 
-        {/* Compact status strip — container stats on row 1, insights stats on
-            row 2 (when supplied). Two rows of 4 tiles inside the same hero. */}
         <div className="flex flex-col gap-2 lg:w-auto">
-          <div className={`grid grid-cols-2 gap-2 ${statusColumns === 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-4'}`}>
-            <HealthStatTile
-              icon={Activity}
-              label="Running"
-              value={stats.running}
-              percentage={stats.total > 0 ? (stats.running / stats.total) * 100 : 0}
-              variant="success"
-            />
-            <HealthStatTile
-              icon={CheckCircle2}
-              label="Healthy"
-              value={stats.healthy}
-              percentage={stats.total > 0 ? (stats.healthy / stats.total) * 100 : 0}
-              variant="success"
-            />
-            <HealthStatTile
-              icon={AlertTriangle}
-              label="Unhealthy"
-              value={stats.unhealthy}
-              percentage={stats.total > 0 ? (stats.unhealthy / stats.total) * 100 : 0}
-              variant="danger"
-            />
-            <HealthStatTile
-              icon={HelpCircle}
-              label="No Healthcheck"
-              value={stats.noHealthcheck}
-              percentage={stats.total > 0 ? (stats.noHealthcheck / stats.total) * 100 : 0}
-              variant={stats.noHealthcheck > 0 ? 'warning' : 'default'}
-            />
-            {extraTiles?.map((tile) => (
-              <HealthStatTile
-                key={tile.label}
-                icon={tile.icon}
-                label={tile.label}
-                value={tile.value}
-                percentage={tile.percentage}
-                variant={tile.variant}
-                onClick={tile.onClick}
-              />
-            ))}
-          </div>
-          {insightStats && (
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              <HealthStatTile
-                icon={Activity}
-                label="Total Insights"
-                value={insightStats.total}
-              />
-              <HealthStatTile
-                icon={AlertTriangle}
-                label="Critical"
-                value={insightStats.critical}
-                variant="danger"
-              />
-              <HealthStatTile
-                icon={AlertCircle}
-                label="Warnings"
-                value={insightStats.warning}
-                variant="warning"
-              />
-              <HealthStatTile
-                icon={Info}
-                label="Info"
-                value={insightStats.info}
-                variant="info"
-              />
-            </div>
+          {layout === 'insights-first' ? (
+            <>
+              {insightTiles}
+              {collapsedStatusLine}
+            </>
+          ) : (
+            <>
+              {statusTiles}
+              {insightTiles}
+            </>
           )}
         </div>
       </div>

@@ -18,7 +18,14 @@ export interface CorrelatedAnomaly {
     zScore: number;
   }>;
   compositeScore: number;
+  /**
+   * `patternMatch.summary`, or null when no rule fired. Kept as a plain string
+   * for existing consumers; prefer `patternMatch` for anything that wants to
+   * show which rule fired and on what numbers.
+   */
   pattern: string | null;
+  /** The deterministic rule that fired, with the values that triggered it. */
+  patternMatch: MetricPatternMatch | null;
   severity: 'low' | 'medium' | 'high' | 'critical';
   timestamp: string;
 }
@@ -70,33 +77,126 @@ export function calculateCompositeScore(zScores: number[]): number {
   return Math.round(rms * 100) / 100;
 }
 
+/** z-score a metric must exceed for the deviation rules below to count it. */
+export const PATTERN_Z_SCORE_THRESHOLD = 2;
+
+/** Stable ids for the deterministic deviation rules in `identifyPattern`. */
+export type MetricPatternId =
+  | 'cpu-and-memory-deviation'
+  | 'memory-only-deviation'
+  | 'cpu-only-deviation';
+
+export interface PatternMetricObservation {
+  type: string;
+  zScore: number;
+}
+
 /**
- * Identify known patterns from correlated metric anomalies.
+ * The outcome of `identifyPattern` — which rule fired, on which metrics, and at
+ * what threshold.
+ *
+ * This used to be a single hardcoded English sentence per branch ("…suggesting
+ * gradual memory accumulation"), which read as a diagnosis the code had not
+ * made and rendered byte-identically on every card that hit the same branch.
+ * The classification is worth keeping; the prose was not. `summary` now
+ * restates the rule with the measured z-scores so the operator can see the
+ * arithmetic, and `id` / `triggeredBy` / `zScoreThreshold` let the UI render the
+ * rule itself instead of a sentence.
+ */
+export interface MetricPatternMatch {
+  id: MetricPatternId;
+  /** Names what was observed, not what caused it. */
+  label: string;
+  /** The z-score each `triggeredBy` metric had to exceed. */
+  zScoreThreshold: number;
+  /** Metrics that crossed the threshold. */
+  triggeredBy: PatternMetricObservation[];
+  /** Metrics the rule inspected that stayed within the threshold. */
+  withinThreshold: PatternMetricObservation[];
+  /** Restatement of the rule and the numbers it fired on. Not an inference. */
+  summary: string;
+}
+
+function formatObservation(m: PatternMetricObservation): string {
+  return `${m.type} z=${m.zScore.toFixed(2)}`;
+}
+
+function formatObservations(metrics: PatternMetricObservation[]): string {
+  return metrics.map(formatObservation).join(', ');
+}
+
+/**
+ * Classify a container's elevated metrics against three fixed deviation rules.
+ *
+ * Deterministic: a metric counts as deviating when its z-score exceeds
+ * `PATTERN_Z_SCORE_THRESHOLD`. Nothing is inferred about the cause. Returns
+ * null when no rule matches.
  */
 export function identifyPattern(
   metrics: Array<{ type: string; zScore: number }>,
-): string | null {
+): MetricPatternMatch | null {
   const cpuMetric = metrics.find((m) => m.type === 'cpu');
   const memMetric = metrics.find((m) => m.type === 'memory');
   const memBytesMetric = metrics.find((m) => m.type === 'memory_bytes');
 
-  const cpuHigh = cpuMetric && cpuMetric.zScore > 2;
-  const memHigh = memMetric && memMetric.zScore > 2;
-  const memBytesHigh = memBytesMetric && memBytesMetric.zScore > 2;
+  const threshold = PATTERN_Z_SCORE_THRESHOLD;
+  const observed = (m?: { type: string; zScore: number }): PatternMetricObservation[] =>
+    m ? [{ type: m.type, zScore: m.zScore }] : [];
 
-  // Both CPU and memory are anomalous
+  const cpuHigh = !!cpuMetric && cpuMetric.zScore > threshold;
+  const memHigh = !!memMetric && memMetric.zScore > threshold;
+  const memBytesHigh = !!memBytesMetric && memBytesMetric.zScore > threshold;
+
+  const cpuObserved = observed(cpuMetric);
+  const memoryObserved = [...observed(memMetric), ...observed(memBytesMetric)];
+  const memoryTriggered = [
+    ...(memHigh ? observed(memMetric) : []),
+    ...(memBytesHigh ? observed(memBytesMetric) : []),
+  ];
+  const memoryWithin = [
+    ...(memMetric && !memHigh ? observed(memMetric) : []),
+    ...(memBytesMetric && !memBytesHigh ? observed(memBytesMetric) : []),
+  ];
+
+  // Both CPU and memory deviate.
   if (cpuHigh && (memHigh || memBytesHigh)) {
-    return 'Resource Exhaustion: Both CPU and memory are elevated, suggesting a resource-intensive workload or memory leak with CPU thrashing';
+    const triggeredBy = [...cpuObserved, ...memoryTriggered];
+    return {
+      id: 'cpu-and-memory-deviation',
+      label: 'CPU and memory both deviating',
+      zScoreThreshold: threshold,
+      triggeredBy,
+      withinThreshold: memoryWithin,
+      summary: `${formatObservations(triggeredBy)} — both above the z>${threshold} rule threshold`,
+    };
   }
 
-  // Memory high but CPU normal
+  // Memory deviates, CPU stays within the threshold.
   if (!cpuHigh && (memHigh || memBytesHigh)) {
-    return 'Memory Leak Suspected: Memory usage is elevated while CPU remains normal, suggesting gradual memory accumulation';
+    return {
+      id: 'memory-only-deviation',
+      label: 'Memory deviating, CPU within threshold',
+      zScoreThreshold: threshold,
+      triggeredBy: memoryTriggered,
+      withinThreshold: [...cpuObserved, ...memoryWithin],
+      summary: `${formatObservations(memoryTriggered)} above the z>${threshold} rule threshold`
+        + (cpuMetric ? `, ${formatObservation(cpuObserved[0])} within it` : ', no CPU sample this window'),
+    };
   }
 
-  // CPU high but memory normal
+  // CPU deviates, memory stays within the threshold.
   if (cpuHigh && !memHigh && !memBytesHigh) {
-    return 'CPU Spike: CPU usage is elevated while memory remains stable, suggesting a compute-intensive operation or busy loop';
+    return {
+      id: 'cpu-only-deviation',
+      label: 'CPU deviating, memory within threshold',
+      zScoreThreshold: threshold,
+      triggeredBy: cpuObserved,
+      withinThreshold: memoryObserved,
+      summary: `${formatObservation(cpuObserved[0])} above the z>${threshold} rule threshold`
+        + (memoryObserved.length > 0
+          ? `, ${formatObservations(memoryObserved)} within it`
+          : ', no memory sample this window'),
+    };
   }
 
   return null;
@@ -387,7 +487,7 @@ export async function detectCorrelatedAnomalies(
       zScore: s.z_score,
     }));
 
-    const pattern = identifyPattern(metricDetails);
+    const patternMatch = identifyPattern(metricDetails);
     const severity = scoreSeverity(compositeScore);
 
     results.push({
@@ -395,7 +495,8 @@ export async function detectCorrelatedAnomalies(
       containerName,
       metrics: metricDetails,
       compositeScore,
-      pattern,
+      pattern: patternMatch?.summary ?? null,
+      patternMatch,
       severity,
       timestamp: new Date().toISOString(),
     });

@@ -1,6 +1,47 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { KeyboardShortcutsOverlay } from './keyboard-shortcuts-overlay';
+import {
+  NAV_CHORDS,
+  breadcrumbLabelForPath,
+} from '@/features/core/lib/navigation-manifest';
+
+describe('KeyboardShortcutsOverlay — labels derive from the navigation manifest', () => {
+  // This overlay used to carry its own hardcoded copy of the route labels — the
+  // sixth such copy in the app — and it had already drifted, advertising "Go to
+  // Network Topology" / "Go to Trace Explorer" / "Go to LLM Assistant" while the
+  // sidebar and breadcrumb said Topology / Traces / Assistant. These tests fail
+  // if anyone reintroduces a hand-written label here.
+
+  it('renders one navigation entry per chord, labelled from the manifest', () => {
+    render(<KeyboardShortcutsOverlay open onClose={vi.fn()} />);
+
+    for (const [, path] of NAV_CHORDS) {
+      const label = breadcrumbLabelForPath(path);
+      expect(
+        label,
+        `no manifest breadcrumb label for chord target ${path}`,
+      ).toBeTruthy();
+      expect(screen.getByText(`Go to ${label}`)).toBeInTheDocument();
+    }
+  });
+
+  it('shows no label that the manifest does not know about', () => {
+    render(<KeyboardShortcutsOverlay open onClose={vi.fn()} />);
+
+    const known = new Set(
+      NAV_CHORDS.map(([, path]) => `Go to ${breadcrumbLabelForPath(path)}`),
+    );
+    const rendered = screen
+      .getAllByText(/^Go to /)
+      .map((el) => el.textContent?.trim() ?? '');
+
+    expect(rendered.length).toBe(NAV_CHORDS.length);
+    for (const label of rendered) {
+      expect(known, `stale hand-written label: ${label}`).toContain(label);
+    }
+  });
+});
 
 describe('KeyboardShortcutsOverlay', () => {
   it('should not render when open is false', () => {

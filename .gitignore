@@ -75,3 +75,9 @@ frontend/vite.config.d.ts
 # `/` anchors to repo root only, leaving frontend/public/*.png tracked.
 /*.png
 .superpowers/
+
+# Design-review tooling scratch (critique snapshots, live-preview state, caches).
+# Only `frontend/.gitignore` covered this, so a `.impeccable/` at the repo root
+# — and the one the tool writes beside it — showed up as untracked and was one
+# `git add -A` away from being committed.
+.impeccable/

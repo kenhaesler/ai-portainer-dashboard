@@ -14,17 +14,23 @@ export interface ResourceOverviewCardProps {
   isLoading?: boolean;
 }
 
+/**
+ * Two fleet gauges, one hue.
+ *
+ * The bars were `from-cyan-300 to-blue-400` and `from-violet-300 to-purple-400`
+ * — raw palette values that ignore the 16 themes, and violet/purple is the hue
+ * DESIGN.md reserves for AI insight. A memory series is not an AI insight and
+ * not a status. Two intensities of the theme accent separate the two series
+ * without borrowing a meaning from somewhere else; each bar is labelled anyway.
+ */
 function ProgressBar({ percent, variant }: { percent: number; variant: 'cpu' | 'memory' }) {
   const clamped = Math.min(100, Math.max(0, percent));
-  const gradient =
-    variant === 'cpu'
-      ? 'from-cyan-300 to-blue-400'
-      : 'from-violet-300 to-purple-400';
+  const fill = variant === 'cpu' ? 'bg-primary' : 'bg-primary/60';
 
   return (
     <div className="h-3 w-full overflow-hidden rounded-full bg-muted/50">
       <div
-        className={`h-full bg-gradient-to-r ${gradient} transition-all duration-500`}
+        className={`h-full ${fill} transition-all duration-500`}
         style={{ width: `${clamped}%` }}
         role="progressbar"
         aria-valuenow={clamped}
@@ -88,7 +94,7 @@ export const ResourceOverviewCard = memo(function ResourceOverviewCard({
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="flex flex-col gap-2 rounded-xl border border-border/60 bg-background/35 p-4">
             <div className="flex items-center gap-2">
-              <Cpu className="h-4 w-4 text-cyan-400" />
+              <Cpu className="h-4 w-4 text-muted-foreground" />
               <span className="text-sm font-medium text-muted-foreground">Total CPU</span>
             </div>
             <span className="text-xl font-semibold">{totalCpu.toFixed(2)}</span>
@@ -96,7 +102,7 @@ export const ResourceOverviewCard = memo(function ResourceOverviewCard({
           </div>
           <div className="flex flex-col gap-2 rounded-xl border border-border/60 bg-background/35 p-4">
             <div className="flex items-center gap-2">
-              <MemoryStick className="h-4 w-4 text-violet-400" />
+              <MemoryStick className="h-4 w-4 text-muted-foreground" />
               <span className="text-sm font-medium text-muted-foreground">Total Memory</span>
             </div>
             <span className="text-xl font-semibold">{(totalMemory / 1024 / 1024 / 1024).toFixed(2)}</span>

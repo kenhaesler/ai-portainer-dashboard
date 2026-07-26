@@ -45,6 +45,13 @@ export interface InsightCardProps {
     is_acknowledged: number;
     created_at: string;
     /**
+     * Typed detector identifier written by the backend
+     * (`packages/ai-intelligence/src/services/monitoring-service.ts`). Optional
+     * because non-anomaly insights and pre-migration-030 rows carry none — in
+     * which case no detector badge is rendered.
+     */
+    detection_method?: string;
+    /**
      * Optional multi-signal payload — present when correlated suppression
      * collapsed co-occurring anomalies (e.g. latency p95 + error rate) for
      * the same `(service, minute)` window into a single insight (#1296).
@@ -61,12 +68,64 @@ export interface InsightCardProps {
 }
 
 /**
+ * One signed z-score bar, drawn as an offset from a centre line. Shared by the
+ * insight dimension breakdown and the correlated-anomaly cards on
+ * Health & Monitoring so the two surfaces cannot drift.
+ *
+ * Two things it fixes. The bar used to be drawn as `|z| / 5` from the left
+ * edge, so `memory -2.8` rendered identically to `+2.8` — and the sign is the
+ * difference between "spiking" and "collapsed". And the colour band is now
+ * keyed to the *displayed* one-decimal value, so two bars both labelled "2.0"
+ * can no longer render in different colours and different lengths because one
+ * was 1.96 and the other 2.04.
+ *
+ * Half the track is one direction, so |z| = 5 fills a half. The bands
+ * themselves are unchanged: red ≥ 3, amber ≥ 2, blue below.
+ */
+export function ZScoreBar({
+  label,
+  zScore,
+  labelWidthClass = 'w-20',
+  testId,
+}: {
+  label: string;
+  zScore: number;
+  labelWidthClass?: string;
+  testId?: string;
+}) {
+  const displayed = Number(zScore.toFixed(1));
+  const absZ = Math.abs(displayed);
+  const halfPct = Math.min((absZ / 5) * 50, 50);
+  const barColor = absZ >= 3 ? 'bg-red-500' : absZ >= 2 ? 'bg-amber-500' : 'bg-blue-500';
+  const negative = displayed < 0;
+
+  return (
+    <div className="flex items-center gap-2" data-testid={testId ?? `zscore-bar-${label}`}>
+      <span className={cn('text-xs text-muted-foreground truncate font-mono', labelWidthClass)}>
+        {label}
+      </span>
+      <div className="relative h-2 flex-1 rounded-full bg-muted">
+        <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border" aria-hidden />
+        <span
+          className={cn('absolute inset-y-0 rounded-full transition-all', barColor)}
+          data-testid={`zscore-fill-${label}`}
+          data-direction={negative ? 'negative' : 'positive'}
+          style={negative ? { right: '50%', width: `${halfPct}%` } : { left: '50%', width: `${halfPct}%` }}
+        />
+      </div>
+      <span className="w-12 text-right text-xs tabular-nums text-muted-foreground" title="z-score">
+        {`${displayed > 0 ? '+' : ''}${displayed.toFixed(1)}`}
+      </span>
+    </div>
+  );
+}
+
+/**
  * Per-dimension z-score / value / baseline breakdown for a correlated
- * anomaly insight. Visual language deliberately mirrors
- * `CorrelatedAnomalyCard` on the AI monitor page (z-bar widths capped at
- * z=5, severity colour bands red ≥ 3 / amber ≥ 2 / blue < 2) so the two
- * surfaces feel like the same product. Renders nothing when the array is
- * empty so single-dimension insights keep their existing look.
+ * anomaly insight. Uses the same `ZScoreBar` as `CorrelatedAnomalyCard` on the
+ * Health & Monitoring page so the two surfaces feel like the same product.
+ * Renders nothing when the array is empty so single-dimension insights keep
+ * their existing look.
  */
 export function InsightDimensionBreakdown({ dimensions }: { dimensions: AnomalyDimension[] }) {
   if (dimensions.length === 0) return null;
@@ -74,28 +133,15 @@ export function InsightDimensionBreakdown({ dimensions }: { dimensions: AnomalyD
     <div>
       <h4 className="text-sm font-medium mb-2">Correlated Signals</h4>
       <div className="space-y-1.5" data-testid="insight-dimension-bars">
-        {dimensions.map((d) => {
-          const absZ = Math.abs(d.zScore);
-          const widthPct = Math.min((absZ / 5) * 100, 100);
-          // Match CorrelatedAnomalyCard's severity bands (ai-monitor.tsx
-          // lines 58-79): red ≥ 3, amber ≥ 2, blue < 2.
-          const barColor = absZ >= 3 ? 'bg-red-500' : absZ >= 2 ? 'bg-amber-500' : 'bg-blue-500';
-
-          return (
-            <div key={d.type} className="flex items-center gap-2" data-testid={`insight-dimension-${d.type}`}>
-              <span className="text-xs text-muted-foreground w-24 truncate font-mono">{d.type}</span>
-              <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
-                <div
-                  className={cn('h-full rounded-full transition-all', barColor)}
-                  style={{ width: `${widthPct}%` }}
-                />
-              </div>
-              <span className="text-xs tabular-nums text-muted-foreground w-12 text-right" title="z-score">
-                {d.zScore.toFixed(1)}
-              </span>
-            </div>
-          );
-        })}
+        {dimensions.map((d) => (
+          <ZScoreBar
+            key={d.type}
+            label={d.type}
+            zScore={d.zScore}
+            labelWidthClass="w-24"
+            testId={`insight-dimension-${d.type}`}
+          />
+        ))}
       </div>
       <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground sm:grid-cols-3">
         {dimensions.map((d) => (
@@ -188,30 +234,45 @@ export function SeverityBadge({ severity }: { severity: Severity }) {
   );
 }
 
+/**
+ * Which detector produced this insight, read from the typed
+ * `insights.detection_method` column.
+ *
+ * It used to be scraped out of the description with `/method:\s*(\w+)/`. `\w`
+ * excludes the hyphen, so a row reading "method: isolation-forest" captured
+ * `isolation`, missed the lookup, and fell through to a `?? config.zscore`
+ * default — badging isolation-forest anomalies "Z-Score" and leaving the
+ * 'isolation-forest' entry as unreachable code.
+ *
+ * Two consequences of reading the typed column, both deliberate. The labels are
+ * the persisted detector identifiers, not the statistical technique — the
+ * backend writes `ml-anomaly` for both the adaptive z-score path and the
+ * isolation-forest path, so the column genuinely cannot tell them apart and
+ * this badge must not pretend otherwise (hence "Metric anomaly", not "ML"). And
+ * an unrecognised or absent method renders nothing at all rather than
+ * defaulting: a badge is a claim about what ran, and there is no honest default.
+ */
+const DETECTION_METHOD_LABELS: Record<string, string> = {
+  threshold: 'Threshold',
+  'ml-anomaly': 'Metric anomaly',
+  prediction: 'Forecast',
+  'health-check': 'Healthcheck',
+  'log-pattern': 'Log pattern',
+  'security-scan': 'Security scan',
+};
+
 export function DetectionMethodBadge({ method }: { method: string }) {
-  const config: Record<string, { label: string; className: string }> = {
-    zscore: {
-      label: 'Z-Score',
-      className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-    },
-    bollinger: {
-      label: 'Bollinger',
-      className: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400',
-    },
-    adaptive: {
-      label: 'Adaptive',
-      className: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
-    },
-    'isolation-forest': {
-      label: 'Isolation Forest',
-      className: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
-    },
-  };
-  const entry = config[method] ?? config.zscore;
+  const label = DETECTION_METHOD_LABELS[method];
+  if (!label) return null;
   return (
-    <span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium', entry.className)}>
+    <span
+      className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground"
+      title={`Detector: ${method}`}
+      data-testid="detection-method-badge"
+      data-detection-method={method}
+    >
       <Activity className="h-3 w-3" />
-      {entry.label}
+      {label}
     </span>
   );
 }
@@ -397,9 +458,7 @@ export function InsightCard({
   const hasInvestigation = !!investigation;
   const isInvestigating = investigation && ['pending', 'gathering', 'analyzing'].includes(investigation.status);
 
-  const detectionMethod = insight.category === 'anomaly'
-    ? insight.description.match(/method:\s*(\w+)/)?.[1] ?? null
-    : null;
+  const detectionMethod = insight.detection_method ?? null;
 
   return (
     <div

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import type { Insight } from '@dashboard/contracts';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 
@@ -107,7 +108,20 @@ vi.mock('sonner', () => ({
   },
 }));
 
-import LlmAssistantPage from './llm-assistant';
+// The suggestion grid is now generated from live insights, so the HTTP
+// boundary is mocked (per CLAUDE.md: mock the call, not the hook wrapping it).
+const mockApiGet = vi.fn().mockResolvedValue({ insights: [], total: 0 });
+vi.mock('@/shared/lib/api', () => ({
+  api: {
+    get: (...args: unknown[]) => mockApiGet(...args),
+    post: vi.fn(),
+    put: vi.fn(),
+    delete: vi.fn(),
+    request: vi.fn(),
+  },
+}));
+
+import LlmAssistantPage, { suggestionsFromInsights, buildSuggestions } from './llm-assistant';
 import { useLlmChat } from '@/features/ai-intelligence/hooks/use-llm-chat';
 import { useLlmModels } from '@/features/ai-intelligence/hooks/use-llm-models';
 import { useAuth } from '@/providers/auth-provider';
@@ -130,10 +144,47 @@ describe('LlmAssistantPage', () => {
     vi.clearAllMocks();
   });
 
-  it('renders welcome screen when no messages', () => {
+  // The heading was "Welcome to Your AI Assistant" over "I have real-time
+  // access to your entire Docker infrastructure" — a first-person capability
+  // claim over six read-only tools.
+  it('states the contract instead of welcoming the operator', () => {
     renderPage();
-    expect(screen.getByText('Welcome to Your AI Assistant')).toBeTruthy();
-    expect(screen.getByText(/real-time access/)).toBeTruthy();
+    expect(screen.queryByText(/Welcome to Your AI Assistant/)).toBeNull();
+    expect(screen.queryByText(/real-time access/)).toBeNull();
+    expect(screen.queryByText(/entire Docker infrastructure/)).toBeNull();
+    expect(screen.getByText('Ask about a container, a metric or an anomaly')).toBeTruthy();
+    expect(
+      screen.getByText(/reads containers, metrics, insights, logs and anomalies/i),
+    ).toBeTruthy();
+    expect(screen.getByText(/cannot start, stop or change anything/i)).toBeTruthy();
+  });
+
+  it('titles the page with the navigation manifest label, without a gradient h1', () => {
+    renderPage();
+    const heading = screen.getByRole('heading', { level: 1 });
+    expect(heading.textContent).toBe('Assistant');
+    expect(heading.className).not.toContain('bg-clip-text');
+    expect(heading.className).not.toContain('gradient');
+  });
+
+  // Six suggestions was four plus a pair that existed to fill a third column.
+  it('offers exactly four suggestions', () => {
+    renderPage();
+    const grid = screen.getByTestId('assistant-empty-state');
+    const cards = within(grid).getAllByRole('button');
+    expect(cards).toHaveLength(4);
+    expect(screen.queryByText('Stack overview')).toBeNull();
+    expect(screen.queryByText('Network topology')).toBeNull();
+  });
+
+  // Every second line used to restate its own title ("Container logs" /
+  // "Fetch recent logs for debugging").
+  it('shows the exact prompt each suggestion will send', () => {
+    renderPage();
+    const card = screen.getByRole('button', { name: /Recent restarts/ });
+    expect(card.textContent).toContain(
+      'Which containers restarted in the last hour, and what do their logs say?',
+    );
   });
 
   it('renders model selector with available models', () => {
@@ -232,10 +283,184 @@ describe('LlmAssistantPage', () => {
     } as any);
 
     renderPage();
-    fireEvent.click(screen.getByRole('button', { name: /Running containers/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Busiest container/i }));
 
     expect(sendMessage).toHaveBeenCalledTimes(1);
-    expect(sendMessage).toHaveBeenCalledWith('Show me all running containers and their resource usage', undefined, 'llama3.2');
+    expect(sendMessage).toHaveBeenCalledWith(
+      'Which container is using the most CPU and memory right now?',
+      undefined,
+      'llama3.2',
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Suggestion generation — the grid is built from live insights so it names the
+// container that is anomalous right now, not a static demo list.
+// ---------------------------------------------------------------------------
+
+describe('suggestionsFromInsights', () => {
+  const insight = (over: Partial<Insight>): Insight => ({
+    id: 'i1',
+    endpoint_id: 1,
+    endpoint_name: 'local',
+    container_id: 'c1',
+    container_name: 'web-api',
+    severity: 'warning',
+    category: 'anomaly',
+    title: 'Memory usage anomaly',
+    description: 'memory z=3.7',
+    suggested_action: null,
+    is_acknowledged: 0,
+    created_at: new Date().toISOString(),
+    ...over,
+  }) as Insight;
+
+  it('returns nothing when there are no insights', () => {
+    expect(suggestionsFromInsights([], 4)).toEqual([]);
+    expect(suggestionsFromInsights(undefined, 4)).toEqual([]);
+  });
+
+  it('names the container and its insight in the prompt', () => {
+    const [s] = suggestionsFromInsights([insight({})], 4);
+    expect(s.label).toBe('web-api');
+    expect(s.prompt).toBe('Why is web-api showing "Memory usage anomaly"? Check its recent metrics and logs.');
+  });
+
+  it('puts critical before warning regardless of array order', () => {
+    const out = suggestionsFromInsights(
+      [
+        insight({ id: 'a', container_name: 'redis', severity: 'warning' }),
+        insight({ id: 'b', container_name: 'postgres', severity: 'critical' }),
+      ],
+      4,
+    );
+    expect(out.map((s) => s.label)).toEqual(['postgres', 'redis']);
+  });
+
+  it('spends at most one slot per container', () => {
+    const out = suggestionsFromInsights(
+      [
+        insight({ id: 'a', container_name: 'redis' }),
+        insight({ id: 'b', container_name: 'redis', title: 'CPU usage anomaly' }),
+      ],
+      4,
+    );
+    expect(out).toHaveLength(1);
+  });
+
+  it('skips acknowledged insights and info-level noise', () => {
+    const out = suggestionsFromInsights(
+      [
+        insight({ id: 'a', container_name: 'redis', is_acknowledged: 1 }),
+        insight({ id: 'b', container_name: 'nginx', severity: 'info' }),
+      ],
+      4,
+    );
+    expect(out).toEqual([]);
+  });
+
+  it('skips fleet-wide insights with no container to name', () => {
+    expect(suggestionsFromInsights([insight({ container_name: null })], 4)).toEqual([]);
+  });
+
+  it('honours the cap', () => {
+    const many = ['a', 'b', 'c', 'd', 'e'].map((n) => insight({ id: n, container_name: n }));
+    expect(suggestionsFromInsights(many, 3)).toHaveLength(3);
+  });
+});
+
+describe('buildSuggestions', () => {
+  it('always yields four, live incidents first', () => {
+    const live = [
+      {
+        id: 'i1',
+        endpoint_id: 1,
+        endpoint_name: 'local',
+        container_id: 'c1',
+        container_name: 'web-api',
+        severity: 'critical',
+        category: 'anomaly',
+        title: 'CPU usage anomaly',
+        description: '',
+        suggested_action: null,
+        is_acknowledged: 0,
+        created_at: new Date().toISOString(),
+      } as Insight,
+    ];
+    const out = buildSuggestions(live, false);
+    expect(out).toHaveLength(4);
+    expect(out[0].label).toBe('web-api');
+  });
+
+  it('keeps a kali-mcp entry when the server is connected, still four total', () => {
+    const out = buildSuggestions(undefined, true);
+    expect(out).toHaveLength(4);
+    expect(out.some((s) => s.prompt.includes('kali-mcp'))).toBe(true);
+  });
+
+  it('offers no kali-mcp entry when the server is absent', () => {
+    const out = buildSuggestions(undefined, false);
+    expect(out.some((s) => s.prompt.includes('kali-mcp'))).toBe(false);
+  });
+});
+
+describe('live-state suggestions in the page', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(useLlmModels).mockReturnValue({
+      data: { models: [{ name: 'llama3.2' }], default: 'llama3.2' },
+    } as any);
+    vi.mocked(useLlmChat).mockReturnValue({
+      messages: [],
+      isStreaming: false,
+      currentResponse: '',
+      activeToolCalls: [],
+      statusMessage: null,
+      sendMessage: vi.fn(),
+      cancelGeneration: vi.fn(),
+      clearHistory: vi.fn(),
+    } as any);
+  });
+
+  it('names the container that is anomalous right now', async () => {
+    mockApiGet.mockResolvedValue({
+      insights: [
+        {
+          id: 'i1',
+          endpoint_id: 1,
+          endpoint_name: 'local',
+          container_id: 'c1',
+          container_name: 'payments-api',
+          severity: 'critical',
+          category: 'anomaly',
+          title: 'Memory usage anomaly',
+          description: '',
+          suggested_action: null,
+          is_acknowledged: 0,
+          created_at: new Date().toISOString(),
+        },
+      ],
+      total: 1,
+    });
+
+    renderPage();
+
+    const card = await screen.findByRole('button', { name: /payments-api/ });
+    expect(card.textContent).toContain(
+      'Why is payments-api showing "Memory usage anomaly"? Check its recent metrics and logs.',
+    );
+    expect(mockApiGet).toHaveBeenCalledWith('/api/monitoring/insights');
+  });
+
+  it('falls back to the baseline four when the insights request fails', async () => {
+    mockApiGet.mockRejectedValue(new Error('offline'));
+
+    renderPage();
+
+    const grid = screen.getByTestId('assistant-empty-state');
+    expect(within(grid).getAllByRole('button')).toHaveLength(4);
+    expect(screen.getByRole('button', { name: /Recent restarts/ })).toBeTruthy();
   });
 });
 
@@ -968,5 +1193,134 @@ describe('Chat send/receive flow (#1050)', () => {
     expect(
       screen.getByText('Error: failed to reach the AI service. Please try again.'),
     ).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Design-critique fixes: this was the one page in the product that opted out
+// of the theme system, and it decorated hardest at the moment of least
+// information.
+// ---------------------------------------------------------------------------
+
+describe('Assistant presentation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockLlmSocket.connected = true;
+    mockApiGet.mockResolvedValue({ insights: [], total: 0 });
+    vi.mocked(useLlmModels).mockReturnValue({
+      data: { models: [{ name: 'llama3.2' }], default: 'llama3.2' },
+    } as any);
+    vi.mocked(useLlmChat).mockReturnValue({
+      messages: [],
+      isStreaming: false,
+      currentResponse: '',
+      activeToolCalls: [],
+      statusMessage: null,
+      sendMessage: vi.fn(),
+      cancelGeneration: vi.fn(),
+      clearHistory: vi.fn(),
+    } as any);
+    vi.mocked(usePromptProfiles).mockReturnValue({ data: undefined } as any);
+    vi.mocked(useAuth).mockReturnValue({
+      isAuthenticated: true,
+      username: 'admin',
+      token: 'test-token',
+      role: 'viewer',
+      login: vi.fn(),
+      loginWithToken: vi.fn(),
+      logout: vi.fn(),
+    });
+  });
+
+  it('uses no blue/purple/emerald gradients in its chrome', () => {
+    const { container } = renderPage();
+    const html = container.innerHTML;
+    expect(html).not.toMatch(/from-blue-\d+/);
+    expect(html).not.toMatch(/to-purple-\d+/);
+    expect(html).not.toMatch(/from-emerald-\d+/);
+  });
+
+  it('gives Send the primary token with no hover scale or coloured shadow', () => {
+    renderPage();
+    const send = screen.getByRole('button', { name: /Send/i });
+    expect(send.className).toContain('bg-primary');
+    expect(send.className).not.toContain('gradient');
+    expect(send.className).not.toContain('hover:scale');
+    expect(send.className).not.toContain('shadow-blue');
+  });
+
+  // Two identical robot glyphs on one empty screen — 48px in the header and
+  // 80px in the hero behind an animate-pulse glow.
+  it('shows one assistant mark on the empty screen, with no pulse glow', () => {
+    const { container } = renderPage();
+    expect(container.querySelectorAll('.lucide-bot')).toHaveLength(1);
+    expect(container.querySelector('.animate-pulse')).toBeNull();
+  });
+
+  // Green means healthy in this palette; it should not also mean "you typed
+  // this". The user's own message gets the quietest treatment available.
+  it('renders the user message on a muted surface, not in status green', () => {
+    vi.mocked(useLlmChat).mockReturnValue({
+      messages: [{ id: 'u1', role: 'user', content: 'Why is redis restarting?', timestamp: new Date().toISOString() }],
+      isStreaming: false,
+      currentResponse: '',
+      activeToolCalls: [],
+      statusMessage: null,
+      sendMessage: vi.fn(),
+      cancelGeneration: vi.fn(),
+      clearHistory: vi.fn(),
+    } as any);
+
+    renderPage();
+    const bubble = screen.getByText('Why is redis restarting?').closest('div');
+    expect(bubble?.className).toContain('bg-muted');
+    expect(bubble?.className).not.toContain('emerald');
+  });
+
+  // The model selector's unconditional min-w-[200px] was clipped off a 390px
+  // viewport by a header row that could not wrap.
+  it('lets the model selector shrink below sm and the header wrap', () => {
+    renderPage();
+    const select = screen.getByRole('combobox');
+    expect(select.className).toContain('min-w-[9rem]');
+    expect(select.className).toContain('sm:min-w-[200px]');
+    expect(select.className).not.toMatch(/(^|\s)min-w-\[200px\]/);
+    expect(screen.getByTestId('page-header').className).toContain('flex-wrap');
+  });
+
+  it('names the cancel affordance the same in both states', () => {
+    renderPage();
+    const input = screen.getByPlaceholderText('Ask about your infrastructure...');
+    fireEvent.change(input, { target: { value: 'ping' } });
+    fireEvent.click(screen.getByRole('button', { name: /Send/i }));
+
+    // Was "Cancel" here and "Stop generating" once the stream started.
+    expect(screen.getByTestId('thinking-indicator').textContent).toContain('Stop generating');
+    expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull();
+  });
+
+  it('drops the only exclamation mark in the app operational copy', () => {
+    vi.mocked(useLlmChat).mockReturnValue({
+      messages: [
+        { id: '1', role: 'assistant', content: '```bash\necho hello\n```', timestamp: new Date().toISOString() },
+      ],
+      isStreaming: false,
+      currentResponse: '',
+      activeToolCalls: [],
+      statusMessage: null,
+      sendMessage: vi.fn(),
+      cancelGeneration: vi.fn(),
+      clearHistory: vi.fn(),
+    } as any);
+
+    // jsdom ships no clipboard implementation.
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: /Copy/i }));
+    expect(writeText).toHaveBeenCalledWith('echo hello');
+    expect(screen.getByText('Copied')).toBeTruthy();
+    expect(screen.queryByText('Copied!')).toBeNull();
   });
 });

@@ -1,14 +1,27 @@
-import { useState } from 'react';
+import { createContext, useContext, useState } from 'react';
 import { Eye, EyeOff, RefreshCw } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 
 export const REDACTED_SECRET = '••••••••';
 
+/**
+ * Blast radius of a setting, for the settings that have one.
+ *
+ * Most of the 107 keys are recoverable: get a cache TTL wrong and you pay a
+ * cache miss. These two classes are not, so they are rendered with their own
+ * chrome and — critically — excluded from auto-save. Nothing here changes what
+ * a setting *does*; it only changes how much friction stands in front of it.
+ *
+ * - `security`    — changes who can reach the dashboard, or how credentials travel.
+ * - `destructive` — *lowering* the value permanently deletes stored data.
+ */
+export type SettingRisk = 'security' | 'destructive';
+
 // Default settings definitions
 export const DEFAULT_SETTINGS = {
   monitoring: [
     { key: 'monitoring.polling_interval', label: 'Polling Interval', description: 'How often to fetch container metrics (seconds)', type: 'number', defaultValue: '30', min: 5, max: 300 },
-    { key: 'monitoring.metric_retention_days', label: 'Metric Retention', description: 'How long to keep historical metrics (days)', type: 'number', defaultValue: '7', min: 1, max: 90 },
+    { key: 'monitoring.metric_retention_days', label: 'Metric Retention', description: 'How long to keep historical metrics (days)', type: 'number', defaultValue: '7', min: 1, max: 90, risk: 'destructive', consequence: 'Lowering this deletes stored metrics older than the new window. Deleted history does not come back if you raise it again.' },
     { key: 'monitoring.enabled', label: 'Enable Monitoring', description: 'Enable background container monitoring', type: 'boolean', defaultValue: 'true' },
     { key: 'monitoring.scheduler_interval_minutes', label: 'Scheduler Interval', description: 'How often the monitoring scheduler runs (minutes). Changes apply without restart.', type: 'number', defaultValue: '5', min: 1, max: 60 },
   ],
@@ -48,18 +61,18 @@ export const DEFAULT_SETTINGS = {
     { key: 'llm.max_tokens', label: 'Max Tokens', description: 'Maximum tokens in LLM response', type: 'number', defaultValue: '20000', min: 256, max: 128000 },
   ],
   authentication: [
-    { key: 'oidc.enabled', label: 'Enable OIDC/SSO', description: 'Enable OpenID Connect single sign-on authentication', type: 'boolean', defaultValue: 'false' },
-    { key: 'oidc.issuer_url', label: 'Issuer URL', description: 'OIDC provider issuer URL (e.g., https://auth.example.com/realms/master)', type: 'string', defaultValue: '' },
-    { key: 'oidc.client_id', label: 'Client ID', description: 'OIDC client identifier registered with your provider', type: 'string', defaultValue: '' },
-    { key: 'oidc.client_secret', label: 'Client Secret', description: 'OIDC client secret for server-side authentication', type: 'password', defaultValue: '' },
-    { key: 'oidc.redirect_uri', label: 'Redirect URI', description: 'Callback URL registered with your IdP. Leave blank to inherit from DASHBOARD_EXTERNAL_URL — when that env var is set, it takes precedence and the value here is ignored.', type: 'string', defaultValue: '' },
-    { key: 'oidc.scopes', label: 'Scopes', description: 'Space-separated OIDC scopes to request', type: 'string', defaultValue: 'openid profile email' },
-    { key: 'oidc.local_auth_enabled', label: 'Keep Local Auth Enabled', description: 'Allow username/password login alongside SSO', type: 'boolean', defaultValue: 'true' },
-    { key: 'oidc.groups_claim', label: 'Groups Claim', description: 'ID token claim name containing group membership. Supports dot-notation for nested claims (e.g., realm_access.roles)', type: 'string', defaultValue: 'groups' },
-    { key: 'oidc.group_role_mappings', label: 'Group-to-Role Mappings', description: 'JSON mapping of IdP group names to dashboard roles. Use * as a wildcard fallback.', type: 'string', defaultValue: '{}' },
-    { key: 'oidc.allow_unmapped_viewer', label: 'Grant viewer role to all IDP users', description: 'When on, IDP users whose groups match no mapping keep access — new users get viewer, existing users keep their current role. When off, only users in a defined group (or any user, if a * wildcard mapping is set) can sign in; everyone else is denied. Local auth is unaffected.', type: 'boolean', defaultValue: 'false' },
-    { key: 'oidc.auto_provision', label: 'Auto-Provision OIDC Users', description: 'Automatically create user records for new OIDC-authenticated users', type: 'boolean', defaultValue: 'true' },
-    { key: 'oidc.allow_insecure_transport', label: 'Allow Insecure Transport (HTTP)', description: '⚠ Permit plain-HTTP OIDC discovery and token exchange. Auth codes and tokens travel unencrypted — enable ONLY for local development against an HTTP-only IdP. Never enable in production.', type: 'boolean', defaultValue: 'false' },
+    { key: 'oidc.enabled', label: 'Enable OIDC/SSO', description: 'Enable OpenID Connect single sign-on authentication', type: 'boolean', defaultValue: 'false', risk: 'security', consequence: 'Switches the sign-in path for every user. A misconfigured provider locks out everyone who has no local password.' },
+    { key: 'oidc.issuer_url', label: 'Issuer URL', description: 'OIDC provider issuer URL (e.g., https://auth.example.com/realms/master)', type: 'string', defaultValue: '', risk: 'security', consequence: 'A wrong issuer fails discovery, and every SSO login fails until it is corrected and the backend restarts.' },
+    { key: 'oidc.client_id', label: 'Client ID', description: 'OIDC client identifier registered with your provider', type: 'string', defaultValue: '', risk: 'security', consequence: 'Must match the client registered with your IdP, or every SSO login is rejected at the provider.' },
+    { key: 'oidc.client_secret', label: 'Client Secret', description: 'OIDC client secret for server-side authentication', type: 'password', defaultValue: '', risk: 'security', consequence: 'A wrong value fails every login. A leaked value lets someone else impersonate this dashboard to your IdP.' },
+    { key: 'oidc.redirect_uri', label: 'Redirect URI', description: 'Callback URL registered with your IdP. Leave blank to inherit from DASHBOARD_EXTERNAL_URL — when that env var is set, it takes precedence and the value here is ignored.', type: 'string', defaultValue: '', risk: 'security', consequence: 'Must be registered verbatim with the IdP. A mismatch fails the callback after the user has already authenticated.' },
+    { key: 'oidc.scopes', label: 'Scopes', description: 'Space-separated OIDC scopes to request', type: 'string', defaultValue: 'openid profile email', risk: 'security', consequence: 'Dropping a scope your mappings depend on (the groups scope, typically) leaves every login with no groups and no mapped role.' },
+    { key: 'oidc.local_auth_enabled', label: 'Keep Local Auth Enabled', description: 'Allow username/password login alongside SSO', type: 'boolean', defaultValue: 'true', risk: 'security', consequence: 'Turning this off removes the username/password fallback. If the IdP is unreachable, nobody can sign in.' },
+    { key: 'oidc.groups_claim', label: 'Groups Claim', description: 'ID token claim name containing group membership. Supports dot-notation for nested claims (e.g., realm_access.roles)', type: 'string', defaultValue: 'groups', risk: 'security', consequence: 'A claim name your IdP does not send means no group ever matches, and every login falls through to the unmapped-user rule.' },
+    { key: 'oidc.group_role_mappings', label: 'Group-to-Role Mappings', description: 'JSON mapping of IdP group names to dashboard roles. Use * as a wildcard fallback.', type: 'string', defaultValue: '{}', risk: 'security', consequence: 'This is what decides who gets admin. A downgrade revokes the affected users’ live sessions immediately.' },
+    { key: 'oidc.allow_unmapped_viewer', label: 'Grant viewer role to all IDP users', description: 'When on, IDP users whose groups match no mapping keep access — new users get viewer, existing users keep their current role. When off, only users in a defined group (or any user, if a * wildcard mapping is set) can sign in; everyone else is denied. Local auth is unaffected.', type: 'boolean', defaultValue: 'false', risk: 'security', consequence: 'On: anyone your IdP authenticates keeps access, mapped or not. Off: unmatched users are denied and their existing sessions are revoked.' },
+    { key: 'oidc.auto_provision', label: 'Auto-Provision OIDC Users', description: 'Automatically create user records for new OIDC-authenticated users', type: 'boolean', defaultValue: 'true', risk: 'security', consequence: 'Creates a dashboard account for every new IdP user who signs in, without an admin approving it.' },
+    { key: 'oidc.allow_insecure_transport', label: 'Allow Insecure Transport (HTTP)', description: 'Permit plain-HTTP OIDC discovery and token exchange. Intended only for local development against an HTTP-only IdP.', type: 'boolean', defaultValue: 'false', risk: 'security', consequence: 'Auth codes and tokens travel unencrypted. Anyone on the network path can capture and replay them. Never enable this in production.' },
   ],
   webhooks: [
     { key: 'webhooks.enabled', label: 'Enable Webhooks', description: 'Enable outbound webhook event delivery', type: 'boolean', defaultValue: 'false' },
@@ -71,10 +84,10 @@ export const DEFAULT_SETTINGS = {
     { key: 'elasticsearch.endpoint', label: 'Elasticsearch URL', description: 'URL of your Elasticsearch cluster (e.g., https://localhost:9200)', type: 'string', defaultValue: '' },
     { key: 'elasticsearch.api_key', label: 'API Key', description: 'Elasticsearch API key for authentication (keep blank for no auth)', type: 'password', defaultValue: '' },
     { key: 'elasticsearch.index_pattern', label: 'Index Pattern', description: 'Index pattern for log searching (e.g., logs-* or filebeat-*)', type: 'string', defaultValue: 'logs-*' },
-    { key: 'elasticsearch.verify_ssl', label: 'Verify SSL', description: 'Verify SSL certificates when connecting', type: 'boolean', defaultValue: 'true' },
+    { key: 'elasticsearch.verify_ssl', label: 'Verify SSL', description: 'Verify SSL certificates when connecting', type: 'boolean', defaultValue: 'true', risk: 'security', consequence: 'Off accepts any certificate, including one presented by a man-in-the-middle holding your API key.' },
   ],
   statusPage: [
-    { key: 'status.page.enabled', label: 'Enable Status Page', description: 'Serve a public status page at /status (no authentication required)', type: 'boolean', defaultValue: 'false' },
+    { key: 'status.page.enabled', label: 'Enable Status Page', description: 'Serve a public status page at /status (no authentication required)', type: 'boolean', defaultValue: 'false', risk: 'security', consequence: 'Publishes /status to anyone who can reach this host, with no sign-in. Endpoint health and incident history become public.' },
     { key: 'status.page.title', label: 'Page Title', description: 'Title displayed on the public status page', type: 'string', defaultValue: 'System Status' },
     { key: 'status.page.description', label: 'Page Description', description: 'Optional description shown below the title', type: 'string', defaultValue: '' },
     { key: 'status.page.show_incidents', label: 'Show Incidents', description: 'Display recent incidents on the status page', type: 'boolean', defaultValue: 'true' },
@@ -124,17 +137,17 @@ export const DEFAULT_SETTINGS = {
     { key: 'ai_tuning.log_analysis_concurrency', label: 'Log Analysis Concurrency', description: 'Parallel container log analysis tasks', type: 'number', defaultValue: '3', min: 1, max: 20 },
   ],
   metricsRetention: [
-    { key: 'infrastructure.metrics_retention_days', label: 'Metrics Retention (days)', description: 'Default retention period for container metrics', type: 'number', defaultValue: '7', min: 1, max: 365 },
-    { key: 'infrastructure.metrics_raw_retention_days', label: 'Raw Metrics Retention (days)', description: 'Retention for raw per-minute metrics', type: 'number', defaultValue: '7', min: 1, max: 90 },
-    { key: 'infrastructure.metrics_rollup_5min_retention_days', label: '5min Rollup Retention (days)', description: 'Retention for 5-minute aggregated metrics', type: 'number', defaultValue: '30', min: 1, max: 365 },
-    { key: 'infrastructure.metrics_rollup_1hour_retention_days', label: '1h Rollup Retention (days)', description: 'Retention for hourly aggregated metrics', type: 'number', defaultValue: '90', min: 1, max: 730 },
-    { key: 'infrastructure.metrics_rollup_1day_retention_days', label: '1d Rollup Retention (days)', description: 'Retention for daily aggregated metrics', type: 'number', defaultValue: '365', min: 1, max: 1825 },
-    { key: 'infrastructure.insights_retention_days', label: 'Insights Retention (days)', description: 'How long to keep AI-generated insights', type: 'number', defaultValue: '7', min: 1, max: 365 },
+    { key: 'infrastructure.metrics_retention_days', label: 'Metrics Retention (days)', description: 'Default retention period for container metrics', type: 'number', defaultValue: '7', min: 1, max: 365, risk: 'destructive', consequence: 'Lowering this deletes container metrics older than the new window on the next cleanup run.' },
+    { key: 'infrastructure.metrics_raw_retention_days', label: 'Raw Metrics Retention (days)', description: 'Retention for raw per-minute metrics', type: 'number', defaultValue: '7', min: 1, max: 90, risk: 'destructive', consequence: 'Lowering this deletes per-minute samples older than the new window. It also caps the day-of-week anomaly baseline, which cannot look back further than raw retention.' },
+    { key: 'infrastructure.metrics_rollup_5min_retention_days', label: '5min Rollup Retention (days)', description: 'Retention for 5-minute aggregated metrics', type: 'number', defaultValue: '30', min: 1, max: 365, risk: 'destructive', consequence: 'Lowering this deletes 5-minute rollups older than the new window.' },
+    { key: 'infrastructure.metrics_rollup_1hour_retention_days', label: '1h Rollup Retention (days)', description: 'Retention for hourly aggregated metrics', type: 'number', defaultValue: '90', min: 1, max: 730, risk: 'destructive', consequence: 'Lowering this deletes hourly rollups older than the new window — the series most long-range charts read from.' },
+    { key: 'infrastructure.metrics_rollup_1day_retention_days', label: '1d Rollup Retention (days)', description: 'Retention for daily aggregated metrics', type: 'number', defaultValue: '365', min: 1, max: 1825, risk: 'destructive', consequence: 'Lowering this deletes daily rollups older than the new window — the longest history the dashboard keeps.' },
+    { key: 'infrastructure.insights_retention_days', label: 'Insights Retention (days)', description: 'How long to keep AI-generated insights', type: 'number', defaultValue: '7', min: 1, max: 365, risk: 'destructive', consequence: 'Lowering this deletes insights older than the new window, along with their acknowledgements.' },
   ],
   portainerBackup: [
     { key: 'portainer_backup.enabled', label: 'Enable Scheduled Backups', description: 'Automatically back up Portainer server configuration on a schedule', type: 'boolean', defaultValue: 'false' },
     { key: 'portainer_backup.interval_hours', label: 'Backup Interval (hours)', description: 'Hours between automated Portainer backups', type: 'number', defaultValue: '24', min: 1, max: 168 },
-    { key: 'portainer_backup.max_count', label: 'Max Backups to Retain', description: 'Maximum number of Portainer backups to keep (oldest deleted first)', type: 'number', defaultValue: '10', min: 1, max: 50 },
+    { key: 'portainer_backup.max_count', label: 'Max Backups to Retain', description: 'Maximum number of Portainer backups to keep (oldest deleted first)', type: 'number', defaultValue: '10', min: 1, max: 50, risk: 'destructive', consequence: 'Lowering this deletes the oldest backup archives until only this many remain. There is no restore from this dashboard.' },
     { key: 'portainer_backup.password', label: 'Backup Password', description: 'Optional encryption password for Portainer backups', type: 'password', defaultValue: '' },
   ],
   edgeAgent: [
@@ -153,12 +166,15 @@ export const DEFAULT_SETTINGS = {
     { key: 'harbor.api_url', label: 'Harbor API URL', description: 'URL of your Harbor Registry (e.g., https://harbor.example.com)', type: 'string', defaultValue: '' },
     { key: 'harbor.robot_name', label: 'Robot Account Name', description: 'Harbor robot account username (e.g., robot$dashboard)', type: 'string', defaultValue: '' },
     { key: 'harbor.robot_secret', label: 'Robot Account Secret', description: 'Harbor robot account secret/password', type: 'password', defaultValue: '' },
-    { key: 'harbor.verify_ssl', label: 'Verify SSL', description: 'Verify SSL certificates when connecting to Harbor', type: 'boolean', defaultValue: 'true' },
+    { key: 'harbor.verify_ssl', label: 'Verify SSL', description: 'Verify SSL certificates when connecting to Harbor', type: 'boolean', defaultValue: 'true', risk: 'security', consequence: 'Off accepts any certificate, including one presented by a man-in-the-middle holding your robot account secret.' },
     { key: 'harbor.sync_interval_minutes', label: 'Sync Interval (minutes)', description: 'How often to sync vulnerabilities from Harbor', type: 'number', defaultValue: '30', min: 5, max: 1440 },
   ],
 } as const;
 
 export type SettingCategory = keyof typeof DEFAULT_SETTINGS;
+
+/** One entry of {@link DEFAULT_SETTINGS}, whichever category it came from. */
+export type SettingDescriptor = (typeof DEFAULT_SETTINGS)[SettingCategory][number];
 
 export const SETTING_CATEGORY_BY_KEY: Record<string, SettingCategory> = Object.entries(DEFAULT_SETTINGS).reduce(
   (acc, [category, settings]) => {
@@ -170,6 +186,105 @@ export const SETTING_CATEGORY_BY_KEY: Record<string, SettingCategory> = Object.e
   {} as Record<string, SettingCategory>,
 );
 
+export const SETTING_BY_KEY: Record<string, SettingDescriptor> = Object.values(DEFAULT_SETTINGS).reduce(
+  (acc, settings) => {
+    (settings as readonly SettingDescriptor[]).forEach((setting) => {
+      acc[setting.key] = setting;
+    });
+    return acc;
+  },
+  {} as Record<string, SettingDescriptor>,
+);
+
+/** The risk class of a setting, or `undefined` for the ordinary majority. */
+export function settingRisk(setting: SettingDescriptor | undefined): SettingRisk | undefined {
+  if (setting && 'risk' in setting) return setting.risk as SettingRisk;
+  return undefined;
+}
+
+/** The one-line consequence of getting a risky setting wrong, if it has one. */
+export function settingConsequence(setting: SettingDescriptor | undefined): string | undefined {
+  if (setting && 'consequence' in setting) return setting.consequence as string;
+  return undefined;
+}
+
+/**
+ * Keys that must never be committed by the debounce.
+ *
+ * Auto-save is right for cosmetics and wrong for anything that changes who can
+ * sign in or deletes stored history — a paused keystroke should not be able to
+ * publish an unauthenticated status page or drop 83 days of metrics.
+ */
+export const GUARDED_SETTING_KEYS: ReadonlySet<string> = new Set(
+  Object.values(SETTING_BY_KEY).filter((s) => settingRisk(s) !== undefined).map((s) => s.key),
+);
+
+export function isGuardedSetting(key: string): boolean {
+  return GUARDED_SETTING_KEYS.has(key);
+}
+
+/**
+ * True when a pending edit to a `destructive` setting *shrinks* its window —
+ * the only direction that deletes anything. Raising a retention window is safe.
+ */
+export function shrinksRetentionWindow(key: string, nextValue: string, previousValue: string): boolean {
+  if (settingRisk(SETTING_BY_KEY[key]) !== 'destructive') return false;
+  // A blank field is an unfinished edit, not a lowered window — `Number('')` is 0
+  // and would otherwise read as the largest shrink possible.
+  if (nextValue.trim() === '' || previousValue.trim() === '') return false;
+  const next = Number(nextValue);
+  const previous = Number(previousValue);
+  if (!Number.isFinite(next) || !Number.isFinite(previous)) return false;
+  return next < previous;
+}
+
+export interface SettingSearchMatch {
+  key: string;
+  label: string;
+  description: string;
+  category: SettingCategory;
+  risk?: SettingRisk;
+}
+
+/**
+ * Find settings by label, description or key.
+ *
+ * 107 keys across 7 tabs, and the only way to find one was to read every tab.
+ * Ranked so a label match beats a description match — searching "retention"
+ * should put "Metrics Retention (days)" above a setting that merely mentions it.
+ */
+export function searchSettings(query: string, limit = 8): SettingSearchMatch[] {
+  const needle = query.trim().toLowerCase();
+  if (needle.length < 2) return [];
+
+  const scored: { match: SettingSearchMatch; score: number }[] = [];
+  for (const [key, setting] of Object.entries(SETTING_BY_KEY)) {
+    const label = setting.label.toLowerCase();
+    const description = setting.description.toLowerCase();
+    let score = 0;
+    if (label.startsWith(needle)) score = 4;
+    else if (label.includes(needle)) score = 3;
+    else if (key.toLowerCase().includes(needle)) score = 2;
+    else if (description.includes(needle)) score = 1;
+    if (score === 0) continue;
+    scored.push({
+      score,
+      match: {
+        key,
+        label: setting.label,
+        description: setting.description,
+        category: SETTING_CATEGORY_BY_KEY[key],
+        risk: settingRisk(setting),
+      },
+    });
+  }
+
+  return scored
+    .sort((a, b) => b.score - a.score || a.match.label.localeCompare(b.match.label))
+    .slice(0, limit)
+    .map((entry) => entry.match);
+}
+
 /** Common props passed down to all settings tab components */
 export interface SettingsTabProps {
   editedValues: Record<string, string>;
@@ -179,30 +294,42 @@ export interface SettingsTabProps {
 }
 
 interface SettingInputProps {
-  setting: (typeof DEFAULT_SETTINGS)[SettingCategory][number];
+  setting: SettingDescriptor;
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
+  /** DOM id, so the row's `<label>` can point at the control. */
+  id?: string;
+  /** Ids of the description / consequence text describing this control. */
+  describedBy?: string;
 }
 
-export function SettingInput({ setting, value, onChange, disabled }: SettingInputProps) {
+export function SettingInput({ setting, value, onChange, disabled, id, describedBy }: SettingInputProps) {
   const [showPassword, setShowPassword] = useState(false);
 
   if (setting.type === 'boolean') {
+    const checked = value === 'true';
     return (
       <button
-        onClick={() => onChange(value === 'true' ? 'false' : 'true')}
+        id={id}
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={setting.label}
+        aria-describedby={describedBy}
+        onClick={() => onChange(checked ? 'false' : 'true')}
         disabled={disabled}
         className={cn(
           'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
-          value === 'true' ? 'bg-primary' : 'bg-muted',
+          'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+          checked ? 'bg-primary' : 'bg-muted',
           disabled && 'opacity-50 cursor-not-allowed'
         )}
       >
         <span
           className={cn(
             'inline-block h-4 w-4 transform rounded-full bg-white transition-transform',
-            value === 'true' ? 'translate-x-6' : 'translate-x-1'
+            checked ? 'translate-x-6' : 'translate-x-1'
           )}
         />
       </button>
@@ -213,16 +340,19 @@ export function SettingInput({ setting, value, onChange, disabled }: SettingInpu
     return (
       <div className="relative">
         <input
+          id={id}
           type={showPassword ? 'text' : 'password'}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           disabled={disabled}
+          aria-describedby={describedBy}
           placeholder="••••••••"
           className="h-9 w-full rounded-md border border-input bg-background px-3 pr-10 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
         />
         <button
           type="button"
           onClick={() => setShowPassword(!showPassword)}
+          aria-label={showPassword ? `Hide ${setting.label}` : `Show ${setting.label}`}
           className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
         >
           {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -232,10 +362,12 @@ export function SettingInput({ setting, value, onChange, disabled }: SettingInpu
   }
 
   const inputProps = {
+    id,
     type: setting.type === 'number' ? 'number' : 'text',
     value,
     onChange: (e: React.ChangeEvent<HTMLInputElement>) => onChange(e.target.value),
     disabled,
+    'aria-describedby': describedBy,
     className: 'h-9 w-full rounded-md border border-input bg-background px-3 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50',
     ...('min' in setting && { min: setting.min }),
     ...('max' in setting && { max: setting.max }),
@@ -245,8 +377,50 @@ export function SettingInput({ setting, value, onChange, disabled }: SettingInpu
   return <input {...inputProps} />;
 }
 
+/**
+ * Keys saved in the last few seconds, so a row can confirm at the row.
+ *
+ * The page-level "All changes saved" banner sits up to 2000px above the field
+ * being edited on the longer tabs, which means the only confirmation that a
+ * security setting committed is off-screen. Provided by the settings page;
+ * rows that render outside it simply never show the pill.
+ */
+const SettingsSavedKeysContext = createContext<ReadonlySet<string>>(new Set<string>());
+
+export function SettingsSavedKeysProvider({
+  savedKeys,
+  children,
+}: {
+  savedKeys: ReadonlySet<string>;
+  children: React.ReactNode;
+}) {
+  return (
+    <SettingsSavedKeysContext.Provider value={savedKeys}>{children}</SettingsSavedKeysContext.Provider>
+  );
+}
+
+/** DOM-id-safe form of a setting key (`oidc.client_id` → `setting-oidc-client_id`). */
+export function settingDomId(key: string): string {
+  return `setting-${key.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+}
+
+const RISK_CHROME: Record<SettingRisk, { rule: string; chip: string; label: string; text: string }> = {
+  security: {
+    rule: 'border-l-2 border-l-destructive/70 pl-3 -ml-px',
+    chip: 'bg-destructive/10 text-destructive',
+    label: 'Security',
+    text: 'text-destructive',
+  },
+  destructive: {
+    rule: 'border-l-2 border-l-amber-500/70 pl-3 -ml-px',
+    chip: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+    label: 'Deletes data',
+    text: 'text-amber-600 dark:text-amber-400',
+  },
+};
+
 interface SettingRowProps {
-  setting: (typeof DEFAULT_SETTINGS)[SettingCategory][number];
+  setting: SettingDescriptor;
   value: string;
   onChange: (value: string) => void;
   hasChanges: boolean;
@@ -254,21 +428,59 @@ interface SettingRowProps {
 }
 
 export function SettingRow({ setting, value, onChange, hasChanges, disabled }: SettingRowProps) {
+  const savedKeys = useContext(SettingsSavedKeysContext);
+  const risk = settingRisk(setting);
+  const consequence = settingConsequence(setting);
+  const chrome = risk ? RISK_CHROME[risk] : undefined;
+  const inputId = settingDomId(setting.key);
+  const descriptionId = `${inputId}-description`;
+  const consequenceId = `${inputId}-consequence`;
+  const justSaved = savedKeys.has(setting.key);
+
   return (
-    <div className="flex items-center justify-between py-4 border-b border-border last:border-0">
-      <div className="flex-1 pr-4">
-        <div className="flex items-center gap-2">
-          <label className="font-medium">{setting.label}</label>
+    <div
+      data-testid={`setting-row-${setting.key}`}
+      data-risk={risk ?? undefined}
+      className="flex items-center justify-between py-4 border-b border-border last:border-0"
+    >
+      <div className={cn('flex-1 pr-4', chrome?.rule)}>
+        <div className="flex flex-wrap items-center gap-2">
+          <label htmlFor={inputId} className="font-medium">{setting.label}</label>
+          {chrome && (
+            <span className={cn('rounded px-1.5 py-0.5 text-xs font-medium', chrome.chip)}>
+              {chrome.label}
+            </span>
+          )}
           {hasChanges && (
             <span className="text-xs text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded">
-              Modified
+              {risk ? 'Unsaved' : 'Modified'}
+            </span>
+          )}
+          {justSaved && !hasChanges && (
+            <span
+              data-testid={`setting-saved-${setting.key}`}
+              className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400"
+            >
+              Saved
             </span>
           )}
         </div>
-        <p className="text-sm text-muted-foreground mt-0.5">{setting.description}</p>
+        <p id={descriptionId} className="text-sm text-muted-foreground mt-0.5">{setting.description}</p>
+        {consequence && (
+          <p id={consequenceId} className={cn('mt-1 text-sm', chrome?.text)}>
+            {consequence}
+          </p>
+        )}
       </div>
       <div className="shrink-0 w-72">
-        <SettingInput setting={setting} value={value} onChange={onChange} disabled={disabled} />
+        <SettingInput
+          setting={setting}
+          value={value}
+          onChange={onChange}
+          disabled={disabled}
+          id={inputId}
+          describedBy={consequence ? `${descriptionId} ${consequenceId}` : descriptionId}
+        />
       </div>
     </div>
   );

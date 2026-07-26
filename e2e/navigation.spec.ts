@@ -15,17 +15,19 @@ test.describe('Sidebar Navigation', () => {
 
   test('navigates to major pages via sidebar links', async ({ page }) => {
     const routes = [
-      { label: /workload explorer/i, urlPattern: /\/workloads/ },
+      { label: /workloads/i, urlPattern: /\/workloads/ },
       { label: /health & monitoring/i, urlPattern: /\/health/ },
       { label: /metrics dashboard/i, urlPattern: /\/metrics/ },
       { label: /settings/i, urlPattern: /\/settings/ },
     ];
 
     for (const route of routes) {
-      // Sidebar nav items render as <button> (client-side navigate), not <a>.
+      // Sidebar destinations are real <a href> anchors so that middle-click and
+      // cmd-click open a new tab (#design-critique). They must expose the link
+      // role, not button.
       await page
         .locator('[data-testid="sidebar"]')
-        .getByRole('button', { name: route.label })
+        .getByRole('link', { name: route.label })
         .click();
 
       // Verify URL updated
@@ -40,18 +42,20 @@ test.describe('Sidebar Navigation', () => {
     // Navigate to a nested page
     await page
       .locator('[data-testid="sidebar"]')
-      .getByRole('button', { name: /workload explorer/i })
+      .getByRole('link', { name: /workloads/i })
       .click();
 
     await expect(page).toHaveURL(/\/workloads/);
 
-    // Breadcrumb should show Dashboard / Workload Explorer
+    // Breadcrumb reads "Home / Workloads": the root crumb matches the sidebar
+    // label and the h1 rather than inventing a third name ("Dashboard"), and
+    // every crumb label comes from the single navigation manifest.
     const breadcrumb = page.locator(
       '[data-testid="header"] nav[aria-label="Breadcrumb"]',
     );
     await expect(breadcrumb).toBeVisible();
-    await expect(breadcrumb).toContainText('Dashboard');
-    await expect(breadcrumb).toContainText('Workload Explorer');
+    await expect(breadcrumb).toContainText('Home');
+    await expect(breadcrumb).toContainText('Workloads');
   });
 
   test('direct URL access loads the correct page', async ({ page }) => {
@@ -71,10 +75,24 @@ test.describe('Sidebar Navigation', () => {
     await expect(page).toHaveURL(/\/health/);
   });
 
-  test('unknown routes redirect to home', async ({ page }) => {
-    // The router has a catch-all `*` that redirects to `/`
+  test('unknown routes render a 404 instead of silently landing on Home', async ({
+    page,
+  }) => {
+    // Previously the catch-all `*` redirected to `/` with `replace`, so a stale
+    // bookmark or typo'd deep link dropped the operator on Home believing it
+    // was the page they asked for — and Back could not return them.
     await page.goto('/this-route-does-not-exist');
 
-    await expect(page).toHaveURL(/\/(home)?$/);
+    await expect(page).toHaveURL(/\/this-route-does-not-exist/);
+    await expect(
+      page.getByText('/this-route-does-not-exist', { exact: false }),
+    ).toBeVisible();
+  });
+
+  test('explicit legacy redirects still work', async ({ page }) => {
+    // The six deliberate aliases must keep redirecting; only *unknown* paths
+    // get the 404.
+    await page.goto('/fleet');
+    await expect(page).toHaveURL(/\/infrastructure/);
   });
 });

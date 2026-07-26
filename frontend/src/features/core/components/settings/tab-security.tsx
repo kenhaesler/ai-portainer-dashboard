@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, lazy, Suspense } from 'react';
-import { Info, Loader2, Shield } from 'lucide-react';
+import { Globe, Info, Loader2, Shield } from 'lucide-react';
 import { useSecurityIgnoreList, useUpdateSecurityIgnoreList } from '@/features/security/hooks/use-security-audit';
 import { useOIDCEffectiveRedirectUri } from '@/features/core/hooks/use-oidc';
 import { useAuth } from '@/providers/auth-provider';
@@ -77,6 +77,22 @@ export function SecurityTab({ editedValues, originalValues, onChange, isSaving }
           discoveredGroups={discoveredGroups}
         />
       )}
+
+      {/* Public Status Page — unauthenticated external exposure, so it belongs
+          with the other decisions about who can reach this dashboard rather
+          than filed under third-party integrations. */}
+      <SettingsSection
+        title="Public Status Page"
+        icon={<Globe className="h-5 w-5" />}
+        category="statusPage"
+        settings={DEFAULT_SETTINGS.statusPage}
+        values={editedValues}
+        originalValues={originalValues}
+        onChange={onChange}
+        disabled={isSaving}
+        status={editedValues['status.page.enabled'] === 'true' ? 'configured' : 'not-configured'}
+        statusLabel={editedValues['status.page.enabled'] === 'true' ? 'Public' : 'Not published'}
+      />
 
       {/* Security Audit Ignore List */}
       <SecurityAuditSettingsSection />

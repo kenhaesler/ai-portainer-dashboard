@@ -1,10 +1,13 @@
 import { useState } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
-import { AlertTriangle, ArrowLeft, Info, ScrollText, Activity, Clock, Wifi, PhoneCall } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Info, ScrollText, Activity, Clock, Wifi, GitBranch } from 'lucide-react';
 import * as Tabs from '@radix-ui/react-tabs';
 import { useContainerDetail } from '@/features/containers/hooks/use-container-detail';
 import { SkeletonChart } from '@/shared/components/feedback/skeleton';
-import { RefreshButton } from '@/shared/components/ui/refresh-button';
+import { PageHeader } from '@/shared/components/layout/page-header';
+import { RefreshControls } from '@/shared/components/ui/refresh-controls';
+import { DataFreshness } from '@/shared/components/feedback/data-freshness';
+import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
 import { useForceRefresh } from '@/shared/hooks/use-force-refresh';
 import { FavoriteButton } from '@/shared/components/ui/favorite-button';
 import { ContainerOverview } from '@/features/containers/components/container/container-overview';
@@ -30,7 +33,10 @@ export default function ContainerDetailPage() {
 
   // Parse URL params
   const parsedEndpointId = endpointId ? Number(endpointId) : undefined;
-  const activeTab = searchParams.get('tab') || 'overview';
+  const requestedTab = searchParams.get('tab') || 'overview';
+  // `calls` was this tab's original value; the tab is now labelled Traces to
+  // match the rest of the product, so old bookmarks keep resolving.
+  const activeTab = requestedTab === 'calls' ? 'traces' : requestedTab;
 
   // Fetch container details
   const {
@@ -39,9 +45,18 @@ export default function ContainerDetailPage() {
     isError,
     error,
     refetch,
-    isFetching
+    isFetching,
+    dataUpdatedAt,
   } = useContainerDetail(parsedEndpointId!, containerId!);
   const { forceRefresh, isForceRefreshing } = useForceRefresh('containers', refetch);
+
+  // This was the only page in the drill-down cluster with no auto-refresh — the
+  // one screen you sit on while watching a container recover. Its own storage
+  // key so the cadence here is not inherited from whatever a list page last set.
+  const { interval, setRefreshInterval } = useAutoRefresh(30, {
+    onTick: () => refetch(),
+    storageKey: 'container-detail',
+  });
 
   // Look up endpoint for Edge staleness banner
   const { data: endpoints } = useEndpoints();
@@ -54,16 +69,30 @@ export default function ContainerDetailPage() {
     setSearchParams({ tab: value });
   };
 
+  /*
+   * The identity header below is bespoke on purpose (h1 = container name, back
+   * arrow and favourite star inline with it, subline = short id · endpoint) and
+   * `PageHeader` has no leading-element slot, so the loaded branch keeps it.
+   * The pre-load branches had no identity to show and hand-rolled the same
+   * generic title three times; they share one `PageHeader` instead. The subtitle
+   * carries the ids we already know from the URL rather than restating the title.
+   */
+  const fallbackHeader = (
+    <PageHeader
+      title="Container Details"
+      subtitle={
+        containerId && parsedEndpointId
+          ? `${containerId.slice(0, 12)} • endpoint ${parsedEndpointId}`
+          : undefined
+      }
+    />
+  );
+
   // Error state - invalid params
   if (!parsedEndpointId || !containerId) {
     return (
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Container Details</h1>
-          <p className="text-muted-foreground">
-            View detailed information about a container
-          </p>
-        </div>
+        {fallbackHeader}
         <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-8 text-center">
           <AlertTriangle className="mx-auto h-10 w-10 text-destructive" />
           <p className="mt-4 font-medium text-destructive">Invalid URL parameters</p>
@@ -79,12 +108,7 @@ export default function ContainerDetailPage() {
   if (isLoading) {
     return (
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Container Details</h1>
-          <p className="text-muted-foreground">
-            View detailed information about a container
-          </p>
-        </div>
+        {fallbackHeader}
         <SkeletonChart size="lg" className="h-[600px]" />
       </div>
     );
@@ -94,12 +118,7 @@ export default function ContainerDetailPage() {
   if (isError || !container) {
     return (
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Container Details</h1>
-          <p className="text-muted-foreground">
-            View detailed information about a container
-          </p>
-        </div>
+        {fallbackHeader}
         <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-8 text-center">
           <AlertTriangle className="mx-auto h-10 w-10 text-destructive" />
           <p className="mt-4 font-medium text-destructive">Container not found</p>
@@ -120,26 +139,26 @@ export default function ContainerDetailPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-4">
           <button
             onClick={() => navigate('/workloads')}
-            className="flex h-8 w-8 items-center justify-center rounded-md border border-input bg-background hover:bg-accent"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-input bg-background hover:bg-accent"
             title="Back to Workload Explorer"
           >
             <ArrowLeft className="h-4 w-4" />
           </button>
-          <div>
+          <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <h1 className="text-3xl font-bold tracking-tight">{container.name}</h1>
+              <h1 className="truncate text-xl font-bold tracking-tight sm:text-3xl">{container.name}</h1>
               <FavoriteButton endpointId={parsedEndpointId} containerId={containerId} />
             </div>
-            <p className="text-muted-foreground">
+            <p className="truncate text-sm text-muted-foreground">
               {container.id.slice(0, 12)} • {container.endpointName}
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2" data-testid="metrics-header-controls">
+        <div className="flex flex-wrap items-center gap-2" data-testid="metrics-header-controls">
           {activeTab === 'metrics' && container.state === 'running' && (
             <div className="flex items-center gap-2" data-testid="metrics-time-range-control">
               <Clock className="h-4 w-4 text-muted-foreground" />
@@ -161,7 +180,14 @@ export default function ContainerDetailPage() {
               </div>
             </div>
           )}
-          <RefreshButton onClick={() => refetch()} onForceRefresh={forceRefresh} isLoading={isFetching || isForceRefreshing} />
+          <DataFreshness lastUpdated={dataUpdatedAt ?? null} onRefresh={() => refetch()} />
+          <RefreshControls
+            interval={interval}
+            onIntervalChange={setRefreshInterval}
+            onRefresh={() => refetch()}
+            onForceRefresh={forceRefresh}
+            isLoading={isFetching || isForceRefreshing}
+          />
         </div>
       </div>
 
@@ -225,11 +251,11 @@ export default function ContainerDetailPage() {
             Metrics
           </Tabs.Trigger>
           <Tabs.Trigger
-            value="calls"
+            value="traces"
             className="flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors hover:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-primary"
           >
-            <PhoneCall className="h-4 w-4" />
-            Calls
+            <GitBranch className="h-4 w-4" />
+            Traces
           </Tabs.Trigger>
         </Tabs.List>
 
@@ -245,7 +271,7 @@ export default function ContainerDetailPage() {
           />
         </Tabs.Content>
 
-        <Tabs.Content value="calls" className="focus:outline-none">
+        <Tabs.Content value="traces" className="focus:outline-none">
           <ContainerTracesTab
             containerName={container.name}
             endpointId={container.endpointId}

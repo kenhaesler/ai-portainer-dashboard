@@ -89,12 +89,55 @@ describe('WorkloadSmartSearch', () => {
     expect(screen.getByPlaceholderText('Custom placeholder')).toBeInTheDocument();
   });
 
-  it('shows filter chips and AI chips when input empty', () => {
+  it('derives every suggested chip from the loaded containers', () => {
     renderComponent();
-    expect(screen.getByRole('button', { name: /state:running/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /image:nginx/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /stopped containers using high memory/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /all nginx containers on prod/i })).toBeInTheDocument();
+    const group = screen.getByRole('group', { name: 'Suggested filters' });
+    const labels = Array.from(group.querySelectorAll('button')).map((b) => b.textContent);
+    expect(labels.length).toBeGreaterThan(0);
+    // 2 running / 1 exited — the rarest state is the one worth suggesting.
+    expect(labels).toContain('state:exited');
+    // Fixture images are nginx / postgres / redis, so `image:nginx` is real here.
+    expect(labels).toContain('image:nginx');
+    // The literals that used to ship: none of them exist in this fixture.
+    expect(labels).not.toContain('stack:traefik');
+    expect(labels).not.toContain('endpoint:prod');
+  });
+
+  it('every suggested chip returns rows — none empties the table', () => {
+    const { onFiltered } = renderComponent();
+    const group = screen.getByRole('group', { name: 'Suggested filters' });
+    const buttons = Array.from(group.querySelectorAll('button'));
+
+    for (const button of buttons) {
+      fireEvent.click(button);
+      const last = onFiltered.mock.calls[onFiltered.mock.calls.length - 1][0] as Container[];
+      expect(last.length).toBeGreaterThan(0);
+      expect(last.length).toBeLessThan(containers.length);
+    }
+  });
+
+  it('shows no chips for an empty fleet', () => {
+    renderComponent({ containers: [], totalCount: 0 });
+    expect(screen.queryByRole('group', { name: 'Suggested filters' })).not.toBeInTheDocument();
+  });
+
+  it('no suggested chip spends an LLM call', () => {
+    renderComponent();
+    const group = screen.getByRole('group', { name: 'Suggested filters' });
+    for (const button of Array.from(group.querySelectorAll('button'))) {
+      fireEvent.click(button);
+    }
+    expect(mockMutate).not.toHaveBeenCalled();
+  });
+
+  it('names every supported field prefix, including label:, in the syntax hint', () => {
+    renderComponent();
+    const hint = screen.getByText(/prefix a term to target one field/i);
+    for (const field of ['name', 'image', 'state', 'status', 'stack', 'endpoint', 'port', 'label']) {
+      expect(hint.textContent).toContain(field);
+    }
+    // The AI path is stated in visible copy, not only in the placeholder.
+    expect(hint.textContent).toMatch(/press\s*Enter\s*for AI search/i);
   });
 
   it('does not render the redundant container-count label (issue #1309)', () => {
@@ -135,28 +178,38 @@ describe('WorkloadSmartSearch', () => {
   it('hides chips when input has value', () => {
     renderComponent();
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'nginx' } });
-    expect(screen.queryByRole('button', { name: /state:running/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Suggested filters' })).not.toBeInTheDocument();
   });
 
-  it('keeps the in-field example chips mounted while the empty field is focused (keyboard reachability)', () => {
+  it('keeps the chips mounted while the empty field is focused (keyboard reachability)', () => {
     renderComponent();
     const input = screen.getByRole('textbox');
-    expect(screen.getByRole('button', { name: 'state:running' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Suggested filters' })).toBeInTheDocument();
 
-    // Focusing the input must NOT unmount the chips — a keyboard user needs to
-    // be able to Tab from the input onto them.
     fireEvent.focus(input);
-    expect(screen.getByRole('button', { name: 'state:running' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Suggested filters' })).toBeInTheDocument();
   });
 
-  it('clicking the empty example strip focuses the input', () => {
+  it('never hides the placeholder behind the chips', () => {
     renderComponent();
     const input = screen.getByRole('textbox');
-    const strip = screen.getByRole('group', { name: 'Example searches' });
+    // `placeholder:text-transparent` used to blank the only instruction the
+    // empty field carried, precisely when the field was empty.
+    expect(input.className).not.toContain('placeholder:text-transparent');
+  });
 
-    expect(document.activeElement).not.toBe(input);
-    fireEvent.click(strip);
-    expect(document.activeElement).toBe(input);
+  it('renders the chips below the field, not overlaid inside it', () => {
+    renderComponent();
+    const input = screen.getByRole('textbox');
+    const group = screen.getByRole('group', { name: 'Suggested filters' });
+    // Overlaying meant absolute positioning inside the input's wrapper; on a
+    // phone the chips then consumed the whole field.
+    expect(group.className).not.toContain('absolute');
+    expect(group.className).toContain('flex-wrap');
+    expect(input.parentElement?.contains(group)).toBe(false);
+    expect(
+      input.compareDocumentPosition(group) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it('pressing Enter calls mutate (AI mode) and shows AI badge', async () => {
@@ -234,27 +287,13 @@ describe('WorkloadSmartSearch', () => {
     expect(document.activeElement).not.toBe(input);
   });
 
-  it('right-aligns the example chips via ml-auto on the first chip', () => {
-    renderComponent();
-    // ml-auto on the leading chip pushes the row to the right when it fits and
-    // collapses to a left-aligned scrollable row when the chips overflow.
-    expect(screen.getByRole('button', { name: 'state:running' })).toHaveClass('ml-auto');
-  });
-
   it('clicking a filter chip sets query and filters', () => {
     const { onFiltered } = renderComponent();
-    fireEvent.click(screen.getByRole('button', { name: 'state:running' }));
+    fireEvent.click(screen.getByRole('button', { name: 'state:exited' }));
 
-    expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('state:running');
+    expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('state:exited');
     const lastCall = onFiltered.mock.calls[onFiltered.mock.calls.length - 1][0] as Container[];
-    expect(lastCall).toHaveLength(2); // c1 and c3 are running
-  });
-
-  it('clicking an AI chip triggers mutate', () => {
-    renderComponent();
-    fireEvent.click(screen.getByRole('button', { name: /stopped containers using high memory/i }));
-
-    expect(mockMutate).toHaveBeenCalledWith('stopped containers using high memory', expect.any(Object));
+    expect(lastCall).toHaveLength(1); // only c2 is exited
   });
 
   it('shows answer result card after AI search', async () => {

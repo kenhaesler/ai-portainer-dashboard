@@ -4,6 +4,14 @@ export const ContainerPortSchema = z.object({
   private: z.number().optional(),
   public: z.number().optional(),
   type: z.string().optional(),
+  /**
+   * Docker's host-side bind address for the mapping (`0.0.0.0`, `127.0.0.1`,
+   * `::`, …). Required in the response contract: this schema is used as a
+   * Fastify serializer, so an absent field here is silently stripped from the
+   * payload — which is how the UI ended up hardcoding `0.0.0.0`. Undefined when
+   * Docker reported no bind address (exposed but unpublished).
+   */
+  ip: z.string().optional(),
 });
 
 export const NormalizedContainerSchema = z.object({

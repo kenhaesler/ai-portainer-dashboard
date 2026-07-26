@@ -17,4 +17,17 @@ describe('ImageSunburst', () => {
     render(<ImageSunburst data={data} />);
     expect(screen.queryByText('No image data')).not.toBeInTheDocument();
   });
+
+  it('does not render a legend that repeats the in-place slice labels', () => {
+    const data = [
+      { name: 'nginx', size: 100_000_000, registry: 'docker.io' },
+      { name: 'app', size: 40_000_000, registry: 'ghcr.io' },
+      { name: 'scanner', size: 10_000_000, registry: 'dhi.io' },
+    ];
+
+    const { container } = render(<ImageSunburst data={data} />);
+
+    expect(container.querySelector('.recharts-legend-wrapper')).toBeNull();
+    expect(container.querySelector('.recharts-default-legend')).toBeNull();
+  });
 });

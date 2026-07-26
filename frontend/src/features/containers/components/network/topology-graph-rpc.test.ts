@@ -3,6 +3,8 @@ import {
   getRpcEdgeColor,
   getRpcEdgeWidth,
   capAndSortRpcEdges,
+  matchRpcEdgesToContainers,
+  formatEdgeRateLabel,
   type RpcEdgeInput,
 } from './topology-graph';
 
@@ -84,5 +86,97 @@ describe('capAndSortRpcEdges', () => {
     expect(result).toHaveLength(1);
     expect(result[0].source).toBe('a');
     expect(result[0].target).toBe('b');
+  });
+});
+
+describe('matchRpcEdgesToContainers', () => {
+  const make = (source: string, target: string, callCount: number): RpcEdgeInput => ({
+    source,
+    target,
+    callCount,
+  });
+  const containers = [
+    { name: 'container-insights-backend' },
+    { name: 'container-insights-redis' },
+  ];
+
+  it('matches edges whose endpoints both name a container on canvas', () => {
+    const result = matchRpcEdgesToContainers(
+      [make('container-insights-backend', 'container-insights-redis', 42)],
+      containers,
+    );
+    expect(result.matched).toHaveLength(1);
+    expect(result.unmatched).toHaveLength(0);
+    expect(result.unmatchedServices).toEqual([]);
+  });
+
+  // The shipped bug: Beyla reports `api-gateway`, no container is called that,
+  // every edge hit `continue`, and the graph was dimmed for a layer that drew
+  // nothing while the checkbox still read "Observed traffic (3)".
+  it('reports the misses instead of silently dropping them', () => {
+    const result = matchRpcEdgesToContainers(
+      [
+        make('api-gateway', 'api-gateway-db', 100),
+        make('api-gateway', 'container-insights-redis', 50),
+      ],
+      containers,
+    );
+    expect(result.matched).toEqual([]);
+    expect(result.unmatched).toHaveLength(2);
+    expect(result.unmatchedServices).toEqual(['api-gateway', 'api-gateway-db']);
+  });
+
+  it('splits a mixed set and keeps the matched half drawable', () => {
+    const result = matchRpcEdgesToContainers(
+      [
+        make('container-insights-backend', 'container-insights-redis', 10),
+        make('api-gateway', 'container-insights-redis', 99),
+      ],
+      containers,
+    );
+    expect(result.matched.map((e) => e.source)).toEqual(['container-insights-backend']);
+    expect(result.unmatched.map((e) => e.source)).toEqual(['api-gateway']);
+    expect(result.unmatchedServices).toEqual(['api-gateway']);
+  });
+
+  it('drops self-edges and honours the cap, like the raw sorter', () => {
+    const result = matchRpcEdgesToContainers(
+      [make('container-insights-redis', 'container-insights-redis', 1000)],
+      containers,
+    );
+    expect(result.matched).toEqual([]);
+    expect(result.unmatched).toEqual([]);
+  });
+
+  it('returns an empty result for no observed edges', () => {
+    const result = matchRpcEdgesToContainers([], containers);
+    expect(result.matched).toEqual([]);
+    expect(result.unmatched).toEqual([]);
+    expect(result.unmatchedServices).toEqual([]);
+  });
+});
+
+describe('formatEdgeRateLabel', () => {
+  // Thirteen edges all labelled `↓0B/s ↑0B/s` were the highest-contrast
+  // repeated element on the canvas and carried no information.
+  it('emits nothing when both directions are idle', () => {
+    expect(formatEdgeRateLabel({ rxBytesPerSec: 0, txBytesPerSec: 0 })).toBeUndefined();
+  });
+
+  it('emits nothing when there is no rate at all', () => {
+    expect(formatEdgeRateLabel(undefined)).toBeUndefined();
+  });
+
+  it('labels an edge as soon as either direction carries traffic', () => {
+    expect(formatEdgeRateLabel({ rxBytesPerSec: 2048, txBytesPerSec: 0 })).toBe(
+      '↓2.0KB/s ↑0B/s',
+    );
+    expect(formatEdgeRateLabel({ rxBytesPerSec: 0, txBytesPerSec: 1 })).toBe(
+      '↓0B/s ↑1B/s',
+    );
+  });
+
+  it('ignores a nonsensical negative sum', () => {
+    expect(formatEdgeRateLabel({ rxBytesPerSec: -5, txBytesPerSec: 5 })).toBeUndefined();
   });
 });

@@ -13,6 +13,17 @@ export function formatBytes(bytes: number, decimals = 1): string {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(decimals))} ${sizes[i]}`;
 }
 
+/**
+ * Placeholder rendered when a timestamp cannot be formatted.
+ *
+ * An em dash, not English prose: a formatter's failure mode is shown in a table
+ * cell next to real values, so it must read as "no value" rather than as a
+ * sentence addressed to the operator. `formatDate` used to return the literal
+ * string `Invalid date`, which surfaced ~20 times on a single page when an
+ * upstream field arrived in a shape `new Date()` rejects.
+ */
+export const INVALID_DATE_PLACEHOLDER = '—';
+
 export function formatDate(date: string | Date | null | undefined): string {
   if (!date) return 'N/A';
 
@@ -21,7 +32,7 @@ export function formatDate(date: string | Date | null | undefined): string {
   const dateObj = new Date(dateStr);
 
   // Check if date is valid
-  if (isNaN(dateObj.getTime())) return 'Invalid date';
+  if (isNaN(dateObj.getTime())) return INVALID_DATE_PLACEHOLDER;
 
   return new Intl.DateTimeFormat('en-US', {
     month: 'short',

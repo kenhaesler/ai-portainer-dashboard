@@ -175,16 +175,18 @@ Hope this helps!`;
       expect(result.root_cause).toBe('Test');
     });
 
-    it('should fall back to raw text with low confidence', () => {
+    it('should fall back to raw text and report no confidence at all', () => {
       const response = 'The container is experiencing high CPU due to a runaway process.';
 
       const result = parseInvestigationResponse(response);
 
       expect(result.root_cause).toBe(response);
       expect(result.contributing_factors).toEqual([]);
+      // 'unknown' says what it is; a number would not.
       expect(result.severity_assessment).toBe('unknown');
       expect(result.recommended_actions).toEqual([]);
-      expect(result.confidence_score).toBe(0.3);
+      // Was 0.3 — a value nothing measured, rendered as a measurement.
+      expect(result.confidence_score).toBeNull();
     });
 
     it('should handle missing fields gracefully', () => {
@@ -198,7 +200,29 @@ Hope this helps!`;
       expect(result.contributing_factors).toEqual([]);
       expect(result.severity_assessment).toBe('unknown');
       expect(result.recommended_actions).toEqual([]);
-      expect(result.confidence_score).toBe(0.5);
+      // Was 0.5, which the UI printed as an authoritative "Confidence: 50%".
+      expect(result.confidence_score).toBeNull();
+    });
+
+    it('keeps a model-supplied 0.5 distinguishable from an absent score', () => {
+      const supplied = parseInvestigationResponse(
+        JSON.stringify({ root_cause: 'x', confidence_score: 0.5 }),
+      );
+      const absent = parseInvestigationResponse(JSON.stringify({ root_cause: 'x' }));
+
+      expect(supplied.confidence_score).toBe(0.5);
+      expect(absent.confidence_score).toBeNull();
+    });
+
+    it('reports a non-numeric or non-finite confidence as null', () => {
+      // The old `typeof === 'number'` check let NaN through as a confidence.
+      expect(
+        parseInvestigationResponse(JSON.stringify({ root_cause: 'x', confidence_score: 'high' }))
+          .confidence_score,
+      ).toBeNull();
+      expect(
+        parseInvestigationResponse('{"root_cause":"x","confidence_score":null}').confidence_score,
+      ).toBeNull();
     });
 
     it('should clamp confidence_score to [0, 1]', () => {
@@ -538,6 +562,32 @@ Hope this helps!`;
           container_name: 'web-app',
         }),
       );
+    });
+
+    it('records no confidence when it aborts for want of evidence', async () => {
+      // With neither logs nor metrics no analysis runs at all, so there is
+      // nothing for a confidence to be the confidence *of*. This path used to
+      // persist 0.1, which the UI rendered as "Confidence: 10%" beside prose
+      // saying the investigation had been aborted.
+      mockGetRecentInvestigationForContainer.mockReturnValue(undefined);
+      mockIsLlmAvailable.mockResolvedValue(true);
+      mockGetContainerLogs.mockResolvedValue('');
+      mockGetMovingAverage.mockReturnValue(undefined);
+      mockGetMetrics.mockReturnValue([]);
+      mockGetContainers.mockResolvedValue([]);
+      mockGetInvestigation.mockReturnValue({ id: 'inv-1', status: 'complete' });
+
+      const insight = makeInsight({ container_id: 'no-evidence-1' });
+      await triggerInvestigation(insight);
+      await new Promise((r) => setTimeout(r, 50));
+
+      const abort = mockUpdateInvestigationStatus.mock.calls.find(
+        ([, , updates]) => updates?.root_cause === 'Insufficient evidence to determine root cause',
+      );
+      expect(abort).toBeDefined();
+      expect(abort![2].confidence_score).toBeNull();
+      // The model was never consulted, so nothing could have supplied a score.
+      expect(mockChatStream).not.toHaveBeenCalled();
     });
 
     it('should skip when insight severity is below INVESTIGATION_MIN_SEVERITY (#697)', async () => {

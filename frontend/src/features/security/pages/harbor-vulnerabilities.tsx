@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { type ColumnDef } from '@tanstack/react-table';
 import {
-  Shield, ShieldAlert, ShieldCheck, Search, RefreshCw,
+  Shield, ShieldAlert, ShieldCheck, Search, RefreshCw, ArrowRight,
   ExternalLink, AlertTriangle, CheckCircle2, Package, Bug,
 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import { formatRelativeTime } from '@/shared/lib/format-relative-time';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { DataTable } from '@/shared/components/tables/data-table';
+import { PageHeader } from '@/shared/components/layout/page-header';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 import {
   useHarborStatus,
@@ -207,20 +209,41 @@ export default function HarborVulnerabilitiesPage() {
   if (status && !status.configured) {
     return (
       <div className="space-y-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Vulnerability Management</h1>
-          <p className="text-muted-foreground">Harbor Registry integration for image vulnerability tracking.</p>
-        </div>
+        <PageHeader
+          title="Vulnerabilities"
+          subtitle="Harbor is not connected, so no image CVEs are being tracked."
+        />
         <SpotlightCard>
-        <div className="rounded-lg border bg-card p-6 shadow-sm text-center">
-          <ShieldAlert className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-          <h2 className="text-xl font-semibold mb-2">Harbor Not Configured</h2>
-          <p className="text-muted-foreground max-w-md mx-auto">
-            Set <code className="text-xs bg-muted px-1 py-0.5 rounded">HARBOR_API_URL</code>,{' '}
-            <code className="text-xs bg-muted px-1 py-0.5 rounded">HARBOR_ROBOT_NAME</code>, and{' '}
-            <code className="text-xs bg-muted px-1 py-0.5 rounded">HARBOR_ROBOT_SECRET</code> environment
-            variables to connect to your Harbor registry.
-          </p>
+        <div
+          className="rounded-lg border bg-card p-6 shadow-sm"
+          data-testid="harbor-not-configured"
+        >
+          <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                <ShieldAlert className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold">Harbor Not Configured</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Without a registry connection this page has no CVEs to prioritise against your
+                  running containers. Connect Harbor in Settings → Integrations, or set{' '}
+                  <code className="rounded bg-muted px-1 py-0.5 text-xs">HARBOR_API_URL</code>,{' '}
+                  <code className="rounded bg-muted px-1 py-0.5 text-xs">HARBOR_ROBOT_NAME</code>{' '}
+                  and{' '}
+                  <code className="rounded bg-muted px-1 py-0.5 text-xs">HARBOR_ROBOT_SECRET</code>{' '}
+                  in the environment. Settings take precedence over the environment variables.
+                </p>
+              </div>
+            </div>
+            <Link
+              to="/settings?tab=integrations"
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-ring"
+            >
+              Configure Harbor
+              <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
         </div>
         </SpotlightCard>
       </div>
@@ -229,28 +252,31 @@ export default function HarborVulnerabilitiesPage() {
 
   return (
     <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Vulnerability Management</h1>
-          <p className="text-muted-foreground">
-            Harbor Registry vulnerabilities prioritized by running workloads.
+      <PageHeader
+        title="Vulnerabilities"
+        subtitle={(
+          <>
+            {summary
+              ? `${summary.in_use_critical} critical CVEs in running images · ${summary.total.toLocaleString()} tracked`
+              : 'Harbor CVEs, prioritised by what is actually running.'}
             {status?.lastSync?.completed_at && (
-              <span className="ml-2 text-xs">
-                Last sync: {formatTimeAgo(status.lastSync.completed_at)}
+              <span className="ml-2">
+                Last sync {formatTimeAgo(status.lastSync.completed_at)}
               </span>
             )}
-          </p>
-        </div>
-        <button
-          onClick={() => triggerSync.mutate()}
-          disabled={triggerSync.isPending}
-          className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-        >
-          <RefreshCw className={cn('h-4 w-4', triggerSync.isPending && 'animate-spin')} />
-          {triggerSync.isPending ? 'Syncing...' : 'Sync Now'}
-        </button>
-      </div>
+          </>
+        )}
+        actions={(
+          <button
+            onClick={() => triggerSync.mutate()}
+            disabled={triggerSync.isPending}
+            className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+          >
+            <RefreshCw className={cn('h-4 w-4', triggerSync.isPending && 'animate-spin')} />
+            {triggerSync.isPending ? 'Syncing...' : 'Sync Now'}
+          </button>
+        )}
+      />
 
       {/* Summary cards */}
       {summary && (

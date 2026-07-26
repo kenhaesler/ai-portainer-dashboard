@@ -52,12 +52,68 @@ export function calculateHealthStats(containers: Container[]): HealthStats {
 }
 
 /**
- * Score = healthy / (healthy + unhealthy). Containers without a healthcheck
- * are excluded so the operator's choice not to configure one doesn't drag
- * the score down. Returns null when no container reports a health signal.
+ * Healthcheck pass rate = healthy / (healthy + unhealthy). Containers without a
+ * healthcheck are excluded so the operator's choice not to configure one doesn't
+ * drag the number down. Returns null when no container reports a health signal.
+ *
+ * It was previously called `calculateHealthScore` and rendered as "Overall
+ * Health Score" — a name that promised a verdict on the fleet while measuring
+ * only Docker healthcheck exit status. It is blind to every anomaly insight, so
+ * the page could read "100.0%" in green beside "14 Critical". The formula is
+ * unchanged and correct; only the claim it makes about itself is narrower now.
+ * Render it with its exclusion stated inline (see `HealthScoreCard`).
  */
-export function calculateHealthScore(stats: HealthStats): number | null {
+export function calculateHealthcheckPassRate(stats: HealthStats): number | null {
   const reporting = stats.healthy + stats.unhealthy;
   if (reporting === 0) return null;
   return (stats.healthy / reporting) * 100;
+}
+
+/**
+ * Unacknowledged insight counts feeding the "Needs attention" number. Supplied
+ * by pages that load the insight feed (Health & Monitoring); omitted by pages
+ * that don't (Home), in which case only container state contributes.
+ */
+export interface InsightAttentionCounts {
+  /** Unacknowledged insights at `critical` severity. */
+  critical: number;
+  /** Unacknowledged insights at `warning` severity. */
+  warning: number;
+}
+
+/**
+ * The hero number and the two registers it is summed from. Kept as a breakdown
+ * rather than a bare total so the card can state its own basis — a count of
+ * "items across two lists" is only honest if it names both lists.
+ */
+export interface AttentionBreakdown {
+  /** Containers that are unhealthy or stopped. */
+  containers: number;
+  /** Unacknowledged critical + warning insights. `0` when none were supplied. */
+  insights: number;
+  /** `containers + insights` — what the operator has to look at. */
+  total: number;
+}
+
+/**
+ * How many things need an operator's attention right now.
+ *
+ * A count, not a percentage: "3 need attention" is something you can act on,
+ * where a pass rate is not — and a pass rate of a subset of containers even
+ * less so. Derived from `stats` (and, when the caller has them, unacknowledged
+ * insight counts) rather than accepted as a number, for the same reason
+ * `HealthScoreCard` derives the pass rate internally: two surfaces must not be
+ * able to disagree about what the fleet's headline number means.
+ */
+export function calculateNeedsAttention(
+  stats: HealthStats,
+  insights?: InsightAttentionCounts,
+): AttentionBreakdown {
+  const containers = stats.unhealthy + stats.stopped;
+  const insightCount = insights ? insights.critical + insights.warning : 0;
+  return {
+    containers,
+    insights: insightCount,
+    total: containers + insightCount,
+  };
 }

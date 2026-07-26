@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render as rtlRender, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
+import type { ReactElement } from 'react';
 import HarborVulnerabilitiesPage from './harbor-vulnerabilities';
+
+// The page links into Settings, so it needs a router in scope.
+function render(ui: ReactElement) {
+  return rtlRender(<MemoryRouter>{ui}</MemoryRouter>);
+}
 
 vi.mock('@/features/security/hooks/use-harbor-vulnerabilities', () => ({
   useHarborStatus: vi.fn(() => ({
@@ -90,9 +97,10 @@ vi.mock('@/features/security/hooks/use-harbor-vulnerabilities', () => ({
 }));
 
 describe('HarborVulnerabilitiesPage', () => {
-  it('renders the page title', () => {
+  it('titles the page the way the nav names it', () => {
     render(<HarborVulnerabilitiesPage />);
-    expect(screen.getByText('Vulnerability Management')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Vulnerabilities' })).toBeInTheDocument();
+    expect(screen.queryByText('Vulnerability Management')).not.toBeInTheDocument();
   });
 
   it('renders summary cards', () => {
@@ -270,5 +278,26 @@ describe('HarborVulnerabilitiesPage (not configured)', () => {
 
     render(<HarborVulnerabilitiesPage />);
     expect(screen.getByText('Harbor Not Configured')).toBeInTheDocument();
+  });
+
+  it('states the consequence and ships a CTA to the page that fixes it', async () => {
+    const mod = await import('@/features/security/hooks/use-harbor-vulnerabilities');
+    vi.mocked(mod.useHarborStatus).mockReturnValueOnce({
+      data: { configured: false, connected: false, lastSync: null },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as ReturnType<typeof mod.useHarborStatus>);
+
+    render(<HarborVulnerabilitiesPage />);
+
+    // Fact, consequence, next action — the NoTraceDataCallout shape.
+    expect(screen.getByText(/no CVEs to prioritise against your running containers/)).toBeInTheDocument();
+    expect(screen.getByText(/Settings take precedence over the environment variables/)).toBeInTheDocument();
+    const cta = screen.getByRole('link', { name: /Configure Harbor/ });
+    expect(cta).toHaveAttribute('href', '/settings?tab=integrations');
+    // The env vars are still named — the previous copy named only them.
+    expect(screen.getByText('HARBOR_API_URL')).toBeInTheDocument();
   });
 });

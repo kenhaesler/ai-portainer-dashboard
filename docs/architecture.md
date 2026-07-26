@@ -81,3 +81,147 @@ A second batch extended coverage across `packages/observability/src/routes/trace
 - The Network Topology graph (`frontend/src/features/containers/components/network/`) renders containers grouped into Docker Compose stacks with `@xyflow/react`, laid out by `elkjs`: the root packs the (mostly disconnected) stack boxes into a compact, deterministic grid via `rectpacking` + `SEPARATE_CHILDREN`, while each stack lays out its interior with `stress`. The canvas is **static** — pan / zoom / click-to-select only, no node dragging and no force simulation — so the layout is fully reproducible from elkjs. The viewport uses a low `minZoom` (0.1) with a capped `fitView` and `onlyRenderVisibleElements` so a large fleet (~200 containers) stays readable in one zoomed-out overview. Layout/viewport constants live in `topology-graph.tsx` (`ROOT_LAYOUT_OPTIONS`, `GROUP_LAYOUT_OPTIONS`, `FIT_VIEW_OPTIONS`); see the design spec under `docs/superpowers/specs/2026-05-30-topology-overview-scale-design.md`. elkjs runs in a **Web Worker** (`use-elk-layout.ts` uses `elkjs/lib/elk-api` + a `?worker` factory in `elk-worker-factory.ts`, #1508): the ~1.4MB GWT engine is a separate lazily-fetched asset and layout solves never block the main thread.
 - **Page-level error isolation:** `AppLayout` (`frontend/src/features/core/components/layout/app-layout.tsx`) wraps the router `<Outlet>` in an `ErrorBoundary` (`PageBoundary`). A render error in one page degrades to an inline error card while the sidebar and header stay mounted, instead of bubbling to the `/` route's `errorElement` and replacing the whole shell. The boundary renders inside the route-keyed wrapper, so it resets on navigation. This also kept the CI E2E suite's authenticated shell alive on Portainer-backed routes when Portainer was unreachable. See #1420.
 - Frontend bundle strategy (#1507): route pages are lazy (`router.tsx`), vendor chunking uses Rolldown's `output.codeSplitting` groups in `frontend/vite.config.ts` (react-vendor, query-vendor only — recharts and framer-motion are deliberately ungrouped so chart code stays out of the eager graph and the LazyMotion feature bundle can split). All animated components import `m` from framer-motion; the `domMax` featureset loads asynchronously via `frontend/src/lib/motion-features.ts` (regression-guarded by `frontend/src/lazy-motion-features.test.ts`). jsPDF loads via dynamic import on Export PDF click (`management-pdf-export.ts`); the Metrics Dashboard chat panel and its react-markdown/highlight.js payload load on first open. React Compiler is enabled through `@rolldown/plugin-babel` + `reactCompilerPreset` (#1524). `frontend/scripts/check-bundle-size.ts` fails if recharts code ever re-enters the entry's static-import closure.
+
+## Design-critique remediation (2026-07-26)
+
+A whole-application design review produced 173 findings; the fixes are grouped below by the
+structural cause rather than by page, because most of them shared one.
+
+**One navigation manifest.** `frontend/src/features/core/lib/navigation-manifest.ts` is the single
+source of truth for every destination (path, label, short label, group, icon, palette-only and
+feature-gate flags) and for the `g`-chord assignments (`NAV_CHORDS`). The sidebar, the breadcrumb,
+the command palette, the mobile bottom nav and the keyboard-shortcuts overlay all derive from it.
+Before this there were **six** independently hand-maintained copies of the route list, and they had
+drifted far enough to be user-visible: the breadcrumb fell through to a literal `'Dashboard'` on 7
+of 20 routes (rendering "Dashboard / Dashboard"), the palette was missing 5 destinations including
+Log Viewer and Packet Capture, and the shortcuts overlay still advertised labels the nav had
+renamed. `navigation-manifest.test.ts` fails if a destination lacks a breadcrumb label or a palette
+entry, so the drift cannot silently return.
+
+Note the chords live in the manifest rather than in `app-layout.tsx`: the shortcuts overlay needs
+them to label itself and `app-layout` renders that overlay, so declaring them there created an
+import cycle in which `NAV_CHORDS` read as `undefined` at module-init time whenever the graph was
+entered through the router.
+
+**`useAutoRefresh` owns its timer.** The hook used to own only interval state and schedule nothing,
+so every consumer had to remember its own `window.setInterval` effect. One page did (with a comment
+naming the trap); six did not — and `refresh-controls.tsx` renders a pulsing "live" dot whenever
+`interval > 0`, so those pages showed a live indicator over a dropdown that scheduled no fetch. The
+hook now takes `{ onTick, storageKey }` and runs the timer itself. `storageKey` exists because a
+single shared localStorage key meant a page requesting `useAutoRefresh(0)` could open *displaying*
+an interval another page had stored. The returned setter is `setRefreshInterval`; `setInterval` is
+kept as a deprecated alias because destructuring it shadows `window.setInterval` in the consuming
+module, which is exactly what made hand-wiring the timer error-prone.
+
+The hook also does **not** write to localStorage on mount. Persisting on mount recorded a default the
+user never chose, and on the shared key that was not merely cosmetic: Image Footprint asks for 60s
+while the dashboards ask for 30s, so opening that one page wrote 60 to the fleet-wide key and quietly
+slowed every dashboard query elsewhere in the app. The mount-skip compares the state object by
+*identity* against the value the hook mounted with, not by value — `setRefreshInterval` and `toggle`
+always build a fresh object, so re-selecting the cadence already displayed still persists, and a ref
+survives StrictMode's mount/cleanup/mount whereas a boolean first-run flag is spent on the first
+invocation and lets the second write the default anyway.
+
+A shared `DataFreshness` ("Updated Ns ago") component now sits beside the refresh control on the
+polling pages, so a stalled poll is visible rather than inferred.
+
+**Attributing LLM narratives to the thing they describe.** `parseInsightsResponse`
+(`packages/ai-intelligence/src/routes/correlations.ts`) matches model narratives to container pairs
+by list index, then by container names appearing in a block, then — weakest — positionally.
+
+A block is used at most once, and a block that *overlaps* one already used counts as used. Exact
+string matching is not enough: `paragraphs` entries are space-joins of the same lines held
+individually in `lineBlocks`, so an equality test let one pair be handed a paragraph containing
+another pair's sentence, putting overlapping claims about different containers on two cards while
+reporting `ok`.
+
+Positional attribution is accepted **only within an explicitly bulleted list** of exactly one item
+per pair. Position is evidence only where the model asserted an order; a run of bare prose asserts
+none, and reading it positionally is a guess dressed as an answer. An intermediate version did keep
+prose and tried to screen out headings by testing for a trailing full stop — that was worse than the
+problem it addressed, because it also deleted a bolded or unpunctuated narrative from the *middle* of
+the list and silently shifted every later sentence onto the wrong pair, reporting `ok` where the
+unfiltered code had correctly returned nothing. Prose that genuinely explains a pair almost always
+names its containers, which the content pass already attributes on real evidence.
+
+Under-attributing is the intended direction of failure: a null narrative costs the operator a
+sentence, a misattributed one tells them something untrue about a container. `narrativeStatus`
+reports which happened, once, rather than per row.
+
+**Capped lists carry their real count.** `recommendationSummary` in `packages/observability/src/routes/reports.ts`
+caps `container_names` at `RULE_CONTAINER_NAMES_CAP` (mirroring `ALL_NAMES_CAP` in
+`incident-store.ts`) and sets `names_truncated`, but `container_count` stays uncapped and is what the
+UI counts with. Counting the truncated array would report "500 containers" for a fleet of 525 — an
+under-count presented as fact, on precisely the large fleet the cap exists for.
+
+**Real anchors.** `DataTable` takes optional `rowHref` / `rowLabel`; when supplied, the first
+non-selection cell renders inside a react-router `<Link>`, and `rowLabel` names that anchor. Sidebar
+destinations are `<Link>` too. Nothing in the product was previously an anchor, so cmd-click,
+middle-click, copy-link and open-in-background did not exist anywhere, and assistive tech announced
+a focusable row rather than a link to a container. Note an `<a>` may not contain a `<button>`, which
+is why the Workload Explorer's favourite star moved to its own column.
+
+The `<tr>` itself carries **no** `role`. It briefly carried `role="link"`, which was a regression in
+the behaviour this change set out to improve: an explicit role replaces the row's implicit `row`
+role, which each `<td>`'s `cell` role requires as its ancestor and which the virtual scroll
+container's `role="grid"` assumes — so screen-reader table navigation broke on exactly the fleet
+tables that most need it. It also nested a link inside a link with the same accessible name, an axe
+`nested-interactive` violation that announced the destination twice, while the row-level role
+carried no `href` and so could not be middle-clicked anyway. The anchor is what makes a row a link.
+
+**Port bind addresses.** Docker's host-side bind address is the most security-relevant fact about a
+published port, and the only thing distinguishing the IPv4 and IPv6 bindings it emits for the same
+mapping. `frontend/src/features/containers/lib/port-bindings.ts` holds the shared reading of it —
+`UNSPECIFIED_BIND_ADDRESSES`, `isLoopbackBind`, `isPubliclyBound`, `formatPortMapping` — used by both
+surfaces that render ports: the container detail table (which had hardcoded `0.0.0.0` for every row)
+and the network-topology side panel (which omitted the address entirely, so a dual-stack publish
+printed the same line twice and a loopback-only publish looked world-facing). `Container['ports']`
+in `use-containers.ts` now declares `ip` itself, retiring the local intersection type that
+`container-overview.tsx` had been carrying.
+
+**`PageHeader`.** `frontend/src/shared/components/layout/page-header.tsx` renders the single `<h1>`,
+an optional subtitle and an actions slot. It is deliberately without a gradient, icon-tile or
+size-override prop: 20 pages previously hand-rolled the block, 11 of them writing the title string
+twice (loading branch and loaded branch), and that absence is why one page's `<h1>` had drifted into
+a blue-purple gradient while its 19 siblings were plain.
+
+**Honest labelling of computed values.** Several surfaces described deterministic rules as
+inference. `identifyPattern` (`packages/observability`) now returns a structured `MetricPatternMatch`
+— pattern id, the triggering metrics and their z-scores, and the threshold crossed
+(`PATTERN_Z_SCORE_THRESHOLD`) — instead of one of three fixed English sentences, so the UI can print
+the rule that fired. `clampConfidenceScore` and `parseSeverity` return `null` rather than the
+constants `0.5` / `'warning'`, so "the model did not supply this" is representable and the badge can
+be omitted instead of showing a default dressed as a measurement.
+
+Those two helpers live in `packages/core/src/utils/model-confidence.ts`. They started out beside the
+remediation analyser, which meant the fix reached one of the three services that had the defect: the
+investigation analyser (`packages/ai-intelligence`) still substituted `0.5` for a missing score,
+`0.3` for unstructured output and `0.1` on the "insufficient evidence" abort — a confidence for an
+analysis that never ran — and the PCAP analyser (`packages/security`) substituted `0.5` and `0.3`.
+Those packages may not import one another, so a shared home in `core` is what makes the rule one rule
+rather than three copies, two of which had already drifted. Renderers must guard on null: `null * 100`
+is `0`, so an unguarded badge reads "Confidence: 0%" — a more confident claim than the default it
+replaced. `investigation-detail.tsx` shows `N/A`, `insight-card.tsx` and the PCAP analysis panel omit
+the badge entirely. `severity_assessment` deliberately keeps its `'unknown'` string: unlike a number,
+it is honest about itself. Remediation payloads carry
+`rationaleSource` ('pattern-match' | 'llm-analysis') so rule-derived seed text is distinguishable
+from real LLM output, which previously shared identical chrome. **The underlying maths was always
+sound and is unchanged** — z-scores, the RMS composite and the seasonal baselines are legitimate;
+only the framing overclaimed.
+
+The fleet health number is now `calculateHealthcheckPassRate` and states its exclusion inline. It
+measures Docker healthcheck status and cannot see insights, so it used to render "100.0%" in green
+beside "14 Critical" on the same card. The hero slot belongs to a "needs attention" count derived
+from unhealthy/stopped containers plus unacknowledged critical and warning insights. Both are
+derived internally from stats so no caller can pass a number that disagrees with them.
+
+**Timestamps.** `getIncidentGroups` rendered its timestamps with `::text`, which drops the
+`timestamptz` OID and so bypasses the global `pg.types` parser — the same class of pg-driver gotcha
+documented above for `COUNT(*)` and `AVG()`. That is why `/health` rendered "Invalid date" ~20
+times. `formatDate` also now falls back to an em dash rather than user-facing English prose.
+
+**One product name.** `frontend/src/shared/lib/product.ts` exports `PRODUCT_NAME`. The product
+answered to four names depending on the surface: `Docker Insights` (login and sidebar wordmarks),
+`Docker Insight` (its own Settings → System Information), `Container Insights` (`PRODUCT.md`) and
+`container-insights` (the compose project it displayed back to the operator in its own Workloads
+table). `Container Insights` is canonical.

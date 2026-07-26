@@ -1,7 +1,12 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
+import { PageHeader } from '@/shared/components/layout/page-header';
 import { useMonitoring } from '@/features/ai-intelligence/hooks/use-monitoring';
-import { useInvestigations } from '@/features/ai-intelligence/hooks/use-investigations';
-import { useCorrelatedAnomalies, type CorrelatedAnomaly } from '@/features/observability/hooks/use-correlated-anomalies';
+import { useInvestigations, type Investigation } from '@/features/ai-intelligence/hooks/use-investigations';
+import {
+  useCorrelatedAnomalies,
+  type CorrelatedAnomaly,
+  type MetricPatternMatch,
+} from '@/features/observability/hooks/use-correlated-anomalies';
 import {
   useMarkFalsePositive,
   useAnomalyFeedbackRates,
@@ -10,7 +15,7 @@ import {
 import { useContainers } from '@/features/containers/hooks/use-containers';
 import { FleetHealthSummary, calculateHealthStats } from '@/features/ai-intelligence/components/fleet-health-summary';
 import { IncidentGroupsView } from '@/features/ai-intelligence/components/incident-groups-view';
-import { InsightCard } from '@/features/ai-intelligence/components/insight-card';
+import { InsightCard, SeverityBadge, ZScoreBar } from '@/features/ai-intelligence/components/insight-card';
 import { SensitivityControl } from '@/features/ai-intelligence/components/sensitivity-control';
 import type { Severity } from '@/features/ai-intelligence/components/insight-card';
 import { useForceRefresh } from '@/shared/hooks/use-force-refresh';
@@ -19,7 +24,7 @@ import { RefreshControls } from '@/shared/components/ui/refresh-controls';
 import { EmptyState } from '@/shared/components/feedback/empty-state';
 import { SkeletonChart, SkeletonList } from '@/shared/components/feedback/skeleton';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
-import { cn } from '@/shared/lib/utils';
+import { cn, formatDate } from '@/shared/lib/utils';
 import {
   AlertTriangle,
   Info,
@@ -29,13 +34,30 @@ import {
   Filter,
   Search,
   XCircle,
-  Clock,
-  Brain,
-  Layers,
-  Zap,
+  Sigma,
   ThumbsDown,
 } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
+
+/**
+ * Map the correlated-anomaly ladder onto the product's insight severity
+ * vocabulary.
+ *
+ * This screen used to speak two severity languages at once: these cards said
+ * Critical / High / Medium / Low while the filter chips, the KPI tiles and the
+ * insight feed said Critical / Warning / Info — with no way to tell whether a
+ * card's "High" outranked the feed's "Warning". Nothing is lost collapsing
+ * high and medium into Warning: both already rendered in the same
+ * orange-on-cream badge, and the finer ordering is carried numerically by the
+ * composite score printed on the same card.
+ */
+export function correlationSeverityToInsightSeverity(
+  severity: 'low' | 'medium' | 'high' | 'critical',
+): Severity {
+  if (severity === 'critical') return 'critical';
+  if (severity === 'high' || severity === 'medium') return 'warning';
+  return 'info';
+}
 
 function CorrelatedAnomalyCard({
   anomaly,
@@ -46,13 +68,19 @@ function CorrelatedAnomalyCard({
   onMarkFalsePositive: (anomaly: CorrelatedAnomaly) => void;
   isPending: boolean;
 }) {
-  const patternDescription = anomaly.pattern?.includes(':')
-    ? anomaly.pattern.split(':').slice(1).join(':').trim()
-    : null;
+  // `patternMatch.summary` restates the rule that fired and the z-scores it
+  // fired on. It replaced a hardcoded sentence per rule branch, which rendered
+  // byte-identically on every card hitting the same branch and read as a
+  // diagnosis nothing had made. `pattern` is kept as a fallback so a stale
+  // server build degrades to the old string rather than to a blank card.
+  const ruleSummary = anomaly.patternMatch?.summary ?? anomaly.pattern ?? null;
 
   return (
     <SpotlightCard className="h-full">
-      <div className="h-full rounded-lg border bg-card p-6 shadow-sm transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 hover:border-primary/20">
+      <div
+        className="h-full rounded-lg border bg-card p-6 shadow-sm transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 hover:border-primary/20"
+        data-testid="correlated-anomaly-card"
+      >
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="flex items-center gap-2 min-w-0">
             <Box className="h-4 w-4 text-muted-foreground flex-shrink-0" />
@@ -64,36 +92,21 @@ function CorrelatedAnomalyCard({
         </div>
 
         <div className="flex items-center gap-2 flex-wrap mb-3">
-          <CorrelationSeverityBadge severity={anomaly.severity} />
-          {anomaly.pattern && <PatternBadge pattern={anomaly.pattern} />}
+          <SeverityBadge severity={correlationSeverityToInsightSeverity(anomaly.severity)} />
+          {anomaly.patternMatch && <PatternBadge patternMatch={anomaly.patternMatch} />}
         </div>
 
-        {/* Per-metric z-score bars */}
+        {/* Per-metric z-score bars, signed from a centre line. */}
         <div className="space-y-1.5" data-testid="zscore-bars">
-          {anomaly.metrics.map((m) => {
-            const absZ = Math.abs(m.zScore);
-            const widthPct = Math.min((absZ / 5) * 100, 100);
-            const barColor = absZ >= 3 ? 'bg-red-500' : absZ >= 2 ? 'bg-amber-500' : 'bg-blue-500';
-
-            return (
-              <div key={m.type} className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground w-20 truncate font-mono">{m.type}</span>
-                <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
-                  <div
-                    className={cn('h-full rounded-full transition-all', barColor)}
-                    style={{ width: `${widthPct}%` }}
-                  />
-                </div>
-                <span className="text-xs tabular-nums text-muted-foreground w-10 text-right">
-                  {m.zScore.toFixed(1)}
-                </span>
-              </div>
-            );
-          })}
+          {anomaly.metrics.map((m) => (
+            <ZScoreBar key={m.type} label={m.type} zScore={m.zScore} />
+          ))}
         </div>
 
-        {patternDescription && (
-          <p className="mt-2 text-xs text-muted-foreground">{patternDescription}</p>
+        {ruleSummary && (
+          <p className="mt-2 text-xs text-muted-foreground" data-testid="pattern-rule-summary">
+            {ruleSummary}
+          </p>
         )}
 
         {/* False-positive feedback affordance (#1298). Optimistic dismissal
@@ -166,122 +179,125 @@ function HealthIssueCard({ container }: { container: { id: string; name: string;
   );
 }
 
-function CorrelationTypeBadge({ type }: { type: string }) {
-  const config: Record<string, { icon: typeof Clock; label: string; className: string }> = {
-    temporal: {
-      icon: Clock,
-      label: 'Temporal',
-      className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-    },
-    cascade: {
-      icon: Layers,
-      label: 'Cascade',
-      className: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
-    },
-    dedup: {
-      icon: Filter,
-      label: 'Dedup',
-      className: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
-    },
-    semantic: {
-      icon: Brain,
-      label: 'Semantic',
-      className: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400',
-    },
-  };
-
-  const entry = config[type] ?? config.temporal;
-  const Icon = entry.icon;
-
+/**
+ * Which deviation rule fired, as a neutral classificatory chip.
+ *
+ * Deliberately uncoloured. The `SeverityBadge` beside it already
+ * encodes urgency from the composite score; colouring this one too would put
+ * two competing severity signals on one row for the same anomaly. It is also
+ * deliberately not purple — DESIGN.md reserves purple for AI insight, and this
+ * chip reports a deterministic z-score threshold rule, not an inference. The
+ * previous version keyed its colours off English pattern names and fell back to
+ * purple whenever it did not recognise one, which is what made every unmatched
+ * rule look like an AI finding.
+ */
+function PatternBadge({ patternMatch }: { patternMatch: MetricPatternMatch }) {
   return (
     <span
-      className={cn(
-        'inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium',
-        entry.className,
-      )}
+      className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground"
+      title={`Rule: metrics with z-score above ${patternMatch.zScoreThreshold}`}
+      data-testid="pattern-badge"
+      data-pattern-id={patternMatch.id}
     >
-      <Icon className="h-3 w-3" />
-      {entry.label}
+      {patternMatch.label}
     </span>
   );
 }
 
-function ConfidenceBadge({ confidence }: { confidence: 'high' | 'medium' | 'low' }) {
-  const config = {
-    high: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
-    medium: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
-    low: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
-  }[confidence];
+type FeedInsight = React.ComponentProps<typeof InsightCard>['insight'];
 
-  return (
-    <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize', config)}>
-      {confidence} confidence
-    </span>
-  );
+/**
+ * Group consecutive re-emissions of the same fact for the same container.
+ *
+ * Twelve of twenty "Info" insights on a real fleet were two facts restated
+ * hourly — `Container "lcm-web" has no health check configured` at 03:40,
+ * 04:43, 05:47, … each carrying the same 40-word remediation paragraph. A
+ * missing HEALTHCHECK is a configuration state, not an event.
+ *
+ * Deliberately a display-time grouping and not a filter: every occurrence is
+ * still in the feed behind a disclosure, so acknowledging stays per-insight and
+ * the "20 Info" tile still reconciles against what is on screen (the group
+ * header prints its own occurrence count).
+ */
+export function groupRepeatedInsights<T extends FeedInsight>(insights: T[]): T[][] {
+  const byKey = new Map<string, T[]>();
+  const order: string[] = [];
+  for (const insight of insights) {
+    const key = `${insight.severity}|${insight.container_id ?? ''}|${insight.title}`;
+    const existing = byKey.get(key);
+    if (existing) {
+      existing.push(insight);
+    } else {
+      byKey.set(key, [insight]);
+      order.push(key);
+    }
+  }
+  return order.map((key) => byKey.get(key)!);
 }
 
-function CorrelationSeverityBadge({ severity }: { severity: 'low' | 'medium' | 'high' | 'critical' }) {
-  const config = {
-    critical: {
-      icon: AlertTriangle,
-      label: 'Critical',
-      className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-    },
-    high: {
-      icon: AlertCircle,
-      label: 'High',
-      className: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
-    },
-    medium: {
-      icon: AlertCircle,
-      label: 'Medium',
-      className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
-    },
-    low: {
-      icon: Info,
-      label: 'Low',
-      className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-    },
-  }[severity];
-
-  const Icon = config.icon;
+function RepeatedInsightGroup({
+  insights,
+  getInvestigationForInsight,
+  onAcknowledge,
+  acknowledgingInsightId,
+  acknowledgeErrorMessage,
+}: {
+  insights: FeedInsight[];
+  getInvestigationForInsight: (id: string) => Investigation | undefined;
+  onAcknowledge: (insightId: string) => void;
+  acknowledgingInsightId: string | null;
+  acknowledgeErrorMessage?: string;
+}) {
+  const [showEarlier, setShowEarlier] = useState(false);
+  const [latest, ...earlier] = insights;
+  const oldest = insights[insights.length - 1];
 
   return (
-    <span
-      className={cn(
-        'inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium',
-        config.className,
+    <div className="space-y-2" data-testid="insight-group">
+      <InsightCard
+        insight={latest}
+        investigation={getInvestigationForInsight(latest.id)}
+        onAcknowledge={onAcknowledge}
+        isAcknowledging={acknowledgingInsightId === latest.id}
+        acknowledgeErrorMessage={acknowledgeErrorMessage}
+      />
+      {earlier.length > 0 && (
+        <>
+          <button
+            type="button"
+            onClick={() => setShowEarlier((v) => !v)}
+            aria-expanded={showEarlier}
+            data-testid="insight-group-toggle"
+            className="ml-4 text-xs text-muted-foreground underline decoration-dotted hover:text-foreground"
+          >
+            {showEarlier ? 'Hide' : 'Show'} {earlier.length} earlier occurrence
+            {earlier.length === 1 ? '' : 's'} · first seen {formatDate(oldest.created_at)}
+          </button>
+          {showEarlier && (
+            <div className="ml-4 space-y-2 border-l pl-3">
+              {earlier.map((insight) => (
+                <InsightCard
+                  key={insight.id}
+                  insight={insight}
+                  investigation={getInvestigationForInsight(insight.id)}
+                  onAcknowledge={onAcknowledge}
+                  isAcknowledging={acknowledgingInsightId === insight.id}
+                  acknowledgeErrorMessage={acknowledgeErrorMessage}
+                />
+              ))}
+            </div>
+          )}
+        </>
       )}
-    >
-      <Icon className="h-3 w-3" />
-      {config.label}
-    </span>
+    </div>
   );
 }
 
-function PatternBadge({ pattern }: { pattern: string }) {
-  const shortLabel = pattern.includes(':') ? pattern.split(':')[0].trim() : pattern;
-
-  const colorMap: Record<string, string> = {
-    'Resource Exhaustion': 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-    'Memory Leak Suspected': 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
-    'CPU Spike': 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
-  };
-
-  const colorClass = colorMap[shortLabel] ?? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400';
-
-  return (
-    <span className={cn('inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium', colorClass)}>
-      <Zap className="h-3 w-3" />
-      {shortLabel}
-    </span>
-  );
-}
+const PAGE_TITLE = 'Health & Monitoring';
 
 export default function AiMonitorPage() {
   const [severityFilter, setSeverityFilter] = useState<'all' | Severity>('all');
   const [acknowledgementFilter, setAcknowledgementFilter] = useState<'all' | 'unacknowledged'>('all');
-  const { interval, setInterval } = useAutoRefresh(30);
 
   // URL-synced controls so reloads, deep links, and back-navigation preserve
   // the operator's filter context. Trade-off: each control change invalidates
@@ -380,21 +396,16 @@ export default function AiMonitorPage() {
   const { data: containers, isLoading: containersLoading, refetch: containerRefetch, isFetching: containersFetching } = useContainers();
   const { forceRefresh, isForceRefreshing } = useForceRefresh('containers', containerRefetch);
 
-  // Wire the auto-refresh dropdown to actual refetches. The hook only owns
-  // the interval state; without this effect, switching the dropdown to "30s"
-  // would advertise a behaviour that never happens. We refetch the page's
+  // The hook owns the timer now, so this is one argument instead of a
+  // hand-rolled `window.setInterval` effect per page. We refetch the page's
   // two operator-controlled queries (insights + containers); incidents and
   // correlated anomalies have their own internal refetch cadences set in
   // their respective hooks.
-  useEffect(() => {
-    if (interval <= 0) return;
-    const tick = () => {
-      refetch();
-      containerRefetch();
-    };
-    const id = window.setInterval(tick, interval * 1000);
-    return () => window.clearInterval(id);
-  }, [interval, refetch, containerRefetch]);
+  const handleTick = useCallback(() => {
+    refetch();
+    containerRefetch();
+  }, [refetch, containerRefetch]);
+  const { interval, setRefreshInterval } = useAutoRefresh(30, { onTick: handleTick });
 
   const healthStats = useMemo(() => {
     if (!containers) return null;
@@ -458,28 +469,49 @@ export default function AiMonitorPage() {
     return healthIssues.filter((c) => matchesSearch([c.name, c.image, c.healthStatus]));
   }, [healthIssues, searchLower]);
 
-  // Stats
+  // Stats. The unacknowledged critical/warning split feeds the hero's
+  // "Needs attention" count — the number an operator still has to act on,
+  // which is not the same as the total the tiles show.
   const stats = useMemo(() => {
-    const result = { total: 0, critical: 0, warning: 0, info: 0 };
+    const result = {
+      total: 0,
+      critical: 0,
+      warning: 0,
+      info: 0,
+      unacknowledgedCritical: 0,
+      unacknowledgedWarning: 0,
+    };
     for (const i of insights) {
       result.total++;
-      if (i.severity === 'critical') result.critical++;
-      else if (i.severity === 'warning') result.warning++;
-      else if (i.severity === 'info') result.info++;
+      if (i.severity === 'critical') {
+        result.critical++;
+        if (!i.is_acknowledged) result.unacknowledgedCritical++;
+      } else if (i.severity === 'warning') {
+        result.warning++;
+        if (!i.is_acknowledged) result.unacknowledgedWarning++;
+      } else if (i.severity === 'info') {
+        result.info++;
+      }
     }
     return result;
   }, [insights]);
+
+  const repeatedInsightGroups = useMemo(
+    () => groupRepeatedInsights(filteredInsights),
+    [filteredInsights],
+  );
+
+  // Live state, not a restatement of the title. The old subtitle promised
+  // "real-time AI-powered insights" over a feed whose largest population is a
+  // deterministic missing-healthcheck check.
+  const subtitle = `${stats.total} insight${stats.total === 1 ? '' : 's'} · ` +
+    `${stats.unacknowledgedCritical + stats.unacknowledgedWarning} unacknowledged`;
 
   // Error state
   if (error) {
     return (
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Health & Monitoring</h1>
-          <p className="text-muted-foreground">
-            Fleet health analysis and real-time AI-powered insights
-          </p>
-        </div>
+        <PageHeader title={PAGE_TITLE} />
         <EmptyState
           variant="error"
           icon={AlertTriangle}
@@ -498,24 +530,19 @@ export default function AiMonitorPage() {
 
   return (
     <div className="space-y-6 pb-12">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Health & Monitoring</h1>
-          <p className="text-muted-foreground">
-            Fleet health analysis and real-time AI-powered insights
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+      <PageHeader
+        title={PAGE_TITLE}
+        subtitle={subtitle}
+        actions={
           <RefreshControls
             interval={interval}
-            onIntervalChange={setInterval}
+            onIntervalChange={setRefreshInterval}
             onRefresh={() => { refetch(); containerRefetch(); }}
             onForceRefresh={forceRefresh}
             isLoading={containersFetching || isForceRefreshing}
           />
-        </div>
-      </div>
+        }
+      />
 
       {/* Per-detector false-positive rate badges (#1298). Rendered in
           the Health & Monitoring header (location decision: header
@@ -568,13 +595,16 @@ export default function AiMonitorPage() {
         </div>
       )}
 
-      {/* Fleet Health Summary — includes insight counts (Total / Critical /
-          Warning / Info) as a second row of stat tiles inside the same hero. */}
+      {/* Fleet Vitals — the same shared component Home renders, asked for a
+          different emphasis: insight counts lead, container status collapses to
+          one line. Home carries that strip in full, and navigating Home →
+          Health used to leave the top ~180px of the viewport unchanged. */}
       <SpotlightCard>
         <FleetHealthSummary
           stats={healthStats}
           isLoading={containersLoading}
           insightStats={stats}
+          layout="insights-first"
         />
       </SpotlightCard>
 
@@ -697,13 +727,18 @@ export default function AiMonitorPage() {
         </div>
       </SpotlightCard>
 
-      {/* ML-Detected Anomalies */}
+      {/* Correlated metric deviations. Renamed from "ML-Detected Anomalies":
+          the composite score is a root-mean-square of per-metric z-scores and
+          the pattern is a z-score threshold rule — real multivariate
+          statistics, but not inference, so it gets neither the Brain glyph nor
+          the AI purple that DESIGN.md reserves for model output. The maths
+          below is unchanged. */}
       {(correlatedLoading || (filteredCorrelatedAnomalies && filteredCorrelatedAnomalies.length > 0)) && (
         <div className="space-y-3">
           <div className="flex items-center gap-2">
-            <Brain className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+            <Sigma className="h-5 w-5 text-muted-foreground" />
             <h2 className="text-lg font-semibold">
-              ML-Detected Anomalies
+              Correlated metric deviations
               {!correlatedLoading && (
                 <span className="ml-2 text-sm font-normal text-muted-foreground">
                   ({filteredCorrelatedAnomalies?.length ?? 0})
@@ -790,13 +825,13 @@ export default function AiMonitorPage() {
           />
         ) : (
           <div className="space-y-3">
-            {filteredInsights.map((insight) => (
-              <InsightCard
-                key={insight.id}
-                insight={insight}
-                investigation={getInvestigationForInsight(insight.id)}
+            {repeatedInsightGroups.map((group) => (
+              <RepeatedInsightGroup
+                key={group[0].id}
+                insights={group}
+                getInvestigationForInsight={getInvestigationForInsight}
                 onAcknowledge={acknowledgeInsight}
-                isAcknowledging={acknowledgingInsightId === insight.id}
+                acknowledgingInsightId={acknowledgingInsightId}
                 acknowledgeErrorMessage={acknowledgeError instanceof Error ? acknowledgeError.message : undefined}
               />
             ))}

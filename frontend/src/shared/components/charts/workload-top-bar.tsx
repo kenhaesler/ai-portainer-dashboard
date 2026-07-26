@@ -1,14 +1,25 @@
 import { memo, useMemo } from 'react';
-import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
 import { useNavigate } from 'react-router-dom';
 
+/**
+ * A stacked running/stopped bar per series row.
+ *
+ * The prop used to be called `endpoints` while its only caller passed *stacks*,
+ * and the bar click navigated to `/endpoints/:id` — a route that does not exist
+ * in `router.tsx`, so on the one population that carried an id the click landed
+ * on the 404. The series is now generic and each row carries its own `href`;
+ * rows without one are not clickable and do not claim to be with a pointer
+ * cursor.
+ */
 export interface WorkloadTopBarProps {
-  endpoints: Array<{
-    id?: number;
+  series: Array<{
     name: string;
     running: number;
     stopped: number;
     total: number;
+    /** Where this bar drills to. Omit and the bar is not interactive. */
+    href?: string;
   }>;
   isLoading?: boolean;
 }
@@ -17,20 +28,20 @@ interface ChartRow {
   label: string;
   running: number;
   stopped: number;
-  endpointId?: number;
+  href?: string;
 }
 
-function buildChartData(endpoints: WorkloadTopBarProps['endpoints']): ChartRow[] {
-  if (!endpoints || endpoints.length === 0) return [];
-  const sorted = [...endpoints].sort((a, b) => b.total - a.total);
+function buildChartData(series: WorkloadTopBarProps['series']): ChartRow[] {
+  if (!series || series.length === 0) return [];
+  const sorted = [...series].sort((a, b) => b.total - a.total);
   const top = sorted.slice(0, 8);
   const rest = sorted.slice(8);
 
-  const rows: ChartRow[] = top.map((ep) => ({
-    label: ep.name,
-    running: ep.running,
-    stopped: ep.stopped,
-    endpointId: ep.id, // May be undefined for stacks
+  const rows: ChartRow[] = top.map((item) => ({
+    label: item.name,
+    running: item.running,
+    stopped: item.stopped,
+    href: item.href,
   }));
 
   if (rest.length > 0) {
@@ -99,11 +110,11 @@ const CustomXAxisTick = ({ x, y, payload }: any) => {
 };
 
 export const WorkloadTopBar = memo(function WorkloadTopBar({
-  endpoints,
+  series,
   isLoading,
 }: WorkloadTopBarProps) {
   const navigate = useNavigate();
-  const chartData = useMemo(() => buildChartData(endpoints), [endpoints]);
+  const chartData = useMemo(() => buildChartData(series), [series]);
 
   if (isLoading) {
     return (
@@ -113,10 +124,10 @@ export const WorkloadTopBar = memo(function WorkloadTopBar({
     );
   }
 
-  if (endpoints.length === 0) {
+  if (series.length === 0) {
     return (
       <div className="flex h-full items-center justify-center text-muted-foreground">
-        No workload data
+        No data
       </div>
     );
   }
@@ -124,11 +135,12 @@ export const WorkloadTopBar = memo(function WorkloadTopBar({
   const rowHeight = 32;
   const chartHeight = Math.max(120, chartData.length * rowHeight + 24);
 
+  const isNavigable = chartData.some((row) => !!row.href);
+
   const handleBarClick = (data: any) => {
-    if (data?.endpointId != null && typeof data.endpointId === 'number') {
-      navigate(`/endpoints/${data.endpointId}`);
+    if (typeof data?.href === 'string' && data.href) {
+      navigate(data.href);
     }
-    // For stacks without endpoint ID, clicking does nothing
   };
 
   return (
@@ -176,7 +188,7 @@ export const WorkloadTopBar = memo(function WorkloadTopBar({
             radius={[0, 0, 0, 0]}
             barSize={14}
             onClick={handleBarClick}
-            className="cursor-pointer"
+            className={isNavigable ? 'cursor-pointer' : undefined}
           />
           <Bar
             dataKey="stopped"
@@ -186,7 +198,7 @@ export const WorkloadTopBar = memo(function WorkloadTopBar({
             radius={[0, 4, 4, 0]}
             barSize={14}
             onClick={handleBarClick}
-            className="cursor-pointer"
+            className={isNavigable ? 'cursor-pointer' : undefined}
           />
         </BarChart>
       </ResponsiveContainer>

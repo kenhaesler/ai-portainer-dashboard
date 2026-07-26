@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vites
 import Fastify from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { reportsRoutes, clearReportCache, getReportCacheSize, setCachedReport, REPORT_CACHE_MAX_ENTRIES } from '../routes/reports.js';
+import { reportsRoutes, clearReportCache, getReportCacheSize, setCachedReport, REPORT_CACHE_MAX_ENTRIES, evaluateRightSizingRules, RULE_CONTAINER_NAMES_CAP } from '../routes/reports.js';
 
 // The implementation acquires a pool client per request via pool.connect(),
 // sets statement_timeout, then queries via client.query(). We mirror that here.
@@ -61,6 +61,43 @@ const mockGetRunningIds = vi.fn().mockResolvedValue(null);
 vi.mock('../services/container-lifecycle-store.js', () => ({
   getRunningContainerIds: (...a: unknown[]) => mockGetRunningIds(...a),
 }));
+
+describe('evaluateRightSizingRules', () => {
+  it('returns nothing when every aggregate sits inside the thresholds', () => {
+    expect(evaluateRightSizingRules({ cpu: { avg: 40, p95: 60 }, memory: { avg: 50, p95: 70 } })).toEqual([]);
+  });
+
+  it('carries the rule id, threshold and measured value so identical advice can be grouped', () => {
+    const findings = evaluateRightSizingRules({ cpu: { avg: 2, p95: 4 }, memory: { avg: 50, p95: 70 } });
+    expect(findings).toHaveLength(1);
+    expect(findings[0].id).toBe('cpu-underutilized');
+    expect(findings[0].statistic).toBe('p95');
+    expect(findings[0].comparison).toBe('below');
+    expect(findings[0].threshold).toBe(10);
+    expect(findings[0].unit).toBe('percent');
+    // The measured value is the only thing that differs between two containers
+    // carrying the same recommendation.
+    expect(findings[0].measured).toBe(4);
+  });
+
+  it('keeps the historical one-line string so existing consumers do not break', () => {
+    const findings = evaluateRightSizingRules({ cpu: { avg: 2, p95: 4 }, memory: { avg: 90, p95: 95 } });
+    const issues = findings.map((f) => f.issue);
+    expect(issues).toContain('CPU under-utilized (p95 < 10%) — consider reducing CPU limits');
+    expect(issues).toContain('Memory over-utilized (avg > 85%) — consider increasing memory limits');
+  });
+
+  it('fires all four rules independently', () => {
+    expect(evaluateRightSizingRules({ cpu: { avg: 90, p95: 95 }, memory: { avg: 90, p95: 95 } }).map(f => f.id))
+      .toEqual(['cpu-overutilized', 'memory-overutilized']);
+    expect(evaluateRightSizingRules({ cpu: { avg: 1, p95: 2 }, memory: { avg: 1, p95: 2 } }).map(f => f.id))
+      .toEqual(['cpu-underutilized', 'memory-underutilized']);
+  });
+
+  it('does not fire exactly at a threshold', () => {
+    expect(evaluateRightSizingRules({ cpu: { avg: 80, p95: 10 }, memory: { avg: 85, p95: 20 } })).toEqual([]);
+  });
+});
 
 /** Highest $N referenced anywhere in a SQL string (0 when there are none). */
 function maxPlaceholder(sql: string): number {
@@ -164,6 +201,85 @@ describe('Reports routes', () => {
       expect(body.containers[0].cpu).toBeTruthy();
       expect(body.containers[0].memory).toBeTruthy();
       expect(body.fleetSummary.totalContainers).toBe(1);
+    });
+
+    it('groups identical right-sizing advice with a container count', async () => {
+      // Two containers, both idle: the same recommendation, which the UI used
+      // to print once per container.
+      const agg = (id: string, name: string, metric: string, avg: number) => ({
+        container_id: id, container_name: name, endpoint_id: 1,
+        metric_type: metric, avg_value: avg, min_value: avg, max_value: avg, sample_count: 10,
+      });
+      mockClientQuery
+        .mockResolvedValueOnce({ rows: [] }) // SET statement_timeout
+        .mockResolvedValueOnce({
+          rows: [
+            agg('c1', 'web', 'cpu', 2), agg('c1', 'web', 'memory', 5),
+            agg('c2', 'api', 'cpu', 3), agg('c2', 'api', 'memory', 6),
+          ],
+        })
+        // one percentile query per (container, metric) row, in order
+        .mockResolvedValueOnce({ rows: [{ p50: 2, p95: 4, p99: 5 }] })   // c1 cpu
+        .mockResolvedValueOnce({ rows: [{ p50: 5, p95: 8, p99: 9 }] })   // c1 memory
+        .mockResolvedValueOnce({ rows: [{ p50: 3, p95: 6, p99: 7 }] })   // c2 cpu
+        .mockResolvedValueOnce({ rows: [{ p50: 6, p95: 9, p99: 10 }] }); // c2 memory
+
+      const res = await app.inject({ method: 'GET', url: '/api/reports/utilization?timeRange=24h' });
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.payload);
+
+      // Per-container data is preserved...
+      expect(body.recommendations).toHaveLength(2);
+      expect(body.recommendations[0].findings[0].measured).toBe(4);
+      expect(body.recommendations[1].findings[0].measured).toBe(6);
+
+      // ...and the same advice is stated once, with a count.
+      const cpuRule = body.recommendationSummary.find((r: { id: string }) => r.id === 'cpu-underutilized');
+      expect(cpuRule.container_count).toBe(2);
+      expect(cpuRule.container_names.sort()).toEqual(['api', 'web']);
+      expect(cpuRule.threshold).toBe(10);
+      expect(body.recommendationSummary.every((r: { container_count: number }) => r.container_count > 0)).toBe(true);
+      // A fleet under the cap is not truncated.
+      expect(cpuRule.names_truncated).toBe(false);
+    });
+
+    it('caps the name list on a large fleet while still reporting the true count', async () => {
+      // Four rules each carrying every matching name, in a payload cached for
+      // five minutes across up to REPORT_CACHE_MAX_ENTRIES entries. The cap
+      // bounds the sample; container_count must stay the real total, or the UI
+      // silently under-reports exactly the fleet the cap exists for.
+      const total = RULE_CONTAINER_NAMES_CAP + 25;
+      const aggRows = Array.from({ length: total }, (_, i) => [
+        { container_id: `c${i}`, container_name: `svc-${i}`, endpoint_id: 1,
+          metric_type: 'cpu', avg_value: 2, min_value: 2, max_value: 2, sample_count: 10 },
+        { container_id: `c${i}`, container_name: `svc-${i}`, endpoint_id: 1,
+          metric_type: 'memory', avg_value: 5, min_value: 5, max_value: 5, sample_count: 10 },
+      ]).flat();
+
+      // Chained mockResolvedValueOnce cannot express 1000+ percentile calls;
+      // dispatch on the SQL text instead.
+      let seenAgg = false;
+      mockClientQuery.mockImplementation(async (sql: string) => {
+        if (typeof sql === 'string' && sql.includes('percentile_cont')) {
+          return { rows: [{ p50: 2, p95: 4, p99: 5 }] };
+        }
+        if (!seenAgg && typeof sql === 'string' && sql.includes('avg_value')) {
+          seenAgg = true;
+          return { rows: aggRows };
+        }
+        return { rows: [] };
+      });
+
+      const res = await app.inject({ method: 'GET', url: '/api/reports/utilization?timeRange=24h' });
+      expect(res.statusCode).toBe(200);
+      const cpuRule = JSON.parse(res.payload).recommendationSummary
+        .find((r: { id: string }) => r.id === 'cpu-underutilized');
+
+      expect(cpuRule.container_count).toBe(total);
+      expect(cpuRule.container_names).toHaveLength(RULE_CONTAINER_NAMES_CAP);
+      expect(cpuRule.names_truncated).toBe(true);
+      // The count is the truth, not the array length.
+      expect(cpuRule.container_count).toBeGreaterThan(cpuRule.container_names.length);
     });
 
     it('accepts optional endpointId filter', async () => {

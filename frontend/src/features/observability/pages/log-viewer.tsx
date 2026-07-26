@@ -2,11 +2,24 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { useSearchParams } from 'react-router-dom';
 import { useQueries } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Search, Download, WrapText, Activity, ArrowDown, Radio, Link2, X } from 'lucide-react';
+import {
+  Search,
+  Download,
+  WrapText,
+  Activity,
+  ArrowDown,
+  Radio,
+  Link2,
+  X,
+  SlidersHorizontal,
+  ChevronDown,
+} from 'lucide-react';
 import { useEndpoints } from '@/features/containers/hooks/use-endpoints';
 import { useContainers } from '@/features/containers/hooks/use-containers';
 import { api } from '@/shared/lib/api';
 import { cn } from '@/shared/lib/utils';
+import { PageHeader } from '@/shared/components/layout/page-header';
+import { findDestination } from '@/features/core/lib/navigation-manifest';
 import { ContainerMultiSelect } from '@/shared/components/forms/container-multi-select';
 import { buildSearchMatcher, filterLines, parseLogs, sortByTimestamp, toLocalTimestamp, type LogLevel, type ParsedLogEntry } from '@/features/observability/lib/log-viewer';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
@@ -26,8 +39,65 @@ const LEVEL_OPTIONS: Array<{ value: LogLevel | 'all'; label: string }> = [
 ];
 const CONTAINER_COLORS = ['text-cyan-300', 'text-emerald-300', 'text-yellow-300', 'text-fuchsia-300', 'text-blue-300'];
 
+const PAGE_TITLE = findDestination('/logs')?.label ?? 'Log Viewer';
+
 interface LogsResponse {
   logs: string;
+}
+
+/**
+ * A real switch, with a label that does not change when you press it.
+ *
+ * These were buttons reading `Live Tail ON` / `Wrap ON` — the state written
+ * into the label of the control that changes it, so the label named what you
+ * were looking at *and* what pressing it would do, ambiguously. They also drew
+ * `text-emerald-300` on `bg-emerald-500/15`: about 1.6:1 on the eight light
+ * themes, the palest text on the page. `emerald-700` in light / `emerald-300`
+ * in dark clears AA in both.
+ */
+function ToggleSwitch({
+  label,
+  icon,
+  checked,
+  disabled,
+  title,
+  onToggle,
+}: {
+  label: string;
+  icon: ReactNode;
+  checked: boolean;
+  disabled?: boolean;
+  title?: string;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      disabled={disabled}
+      title={title}
+      onClick={onToggle}
+      className={cn(
+        'inline-flex items-center gap-1.5 rounded-md border px-2 py-1 transition-colors',
+        checked
+          ? 'log-toggle-on border-emerald-600/60 bg-emerald-500/15 text-emerald-700 dark:border-emerald-500/70 dark:text-emerald-300'
+          : 'border-input text-muted-foreground hover:bg-accent',
+        disabled && 'cursor-not-allowed opacity-60 hover:bg-transparent',
+      )}
+    >
+      {icon}
+      <span>{label}</span>
+      <span
+        aria-hidden="true"
+        className={cn(
+          'h-1.5 w-1.5 rounded-full',
+          checked ? 'bg-emerald-600 dark:bg-emerald-400' : 'bg-muted-foreground/40',
+        )}
+      />
+    </button>
+  );
 }
 
 function highlightLine(line: string, needle: string | null): ReactNode {
@@ -224,6 +294,9 @@ export default function LogViewerPage() {
   const [lineWrap, setLineWrap] = useState(true);
   const [autoScroll, setAutoScroll] = useState(true);
   const [liveTail, setLiveTail] = useState(!potatoMode);
+  // Trace ID, Level and Buffer are refinements, not the first step. They cost
+  // two full rows above the console; a deep-linked trace opens them for you.
+  const [filtersOpen, setFiltersOpen] = useState(Boolean(initialTrace));
 
   const disableTraceFilter = useCallback(() => {
     setTraceFilter('');
@@ -277,13 +350,18 @@ export default function LogViewerPage() {
     })),
     [selectedContainerModels],
   );
+  // A live tail of nothing is not live. The toggle used to read "ON" with no
+  // container selected, asserting a stream that could not exist.
+  const hasSelection = selectedContainerModels.length > 0;
+  const liveTailActive = liveTail && hasSelection;
+
   const { streamedEntries, isStreaming, isFallback } = useLogStream({
     containers: streamContainers,
-    enabled: liveTail && isPageVisible,
+    enabled: liveTailActive && isPageVisible,
   });
 
   // Use polling only for: initial fetch, or when live tail is off, or SSE fallback
-  const usePollingForLiveTail = liveTail && isPageVisible && isFallback;
+  const usePollingForLiveTail = liveTailActive && isPageVisible && isFallback;
   const containerQueries = useQueries({
     queries: selectedContainerModels.map((container) => ({
       queryKey: ['log-viewer', container.endpointId, container.id, bufferSize],
@@ -365,13 +443,19 @@ export default function LogViewerPage() {
   };
 
   const isLoading = containerQueries.some((q) => q.isLoading);
+  // Both exports used to be permanently clickable, so the obvious thing to do
+  // with an empty console was download an empty file.
+  const hasLines = filteredEntries.length > 0;
+  // How many of the collapsed refinements are actually narrowing the view.
+  const activeRefinementCount =
+    (level !== 'all' ? 1 : 0) + (traceFilter ? 1 : 0) + (bufferSize !== 1000 ? 1 : 0);
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Log Viewer</h1>
-        <p className="text-muted-foreground">Live tail, search, level filtering, and multi-container aggregation.</p>
-      </div>
+      <PageHeader
+        title={PAGE_TITLE}
+        subtitle="Live tail aggregated across containers, from Docker's own stdout"
+      />
 
       {traceFilter && (
         <div
@@ -398,7 +482,8 @@ export default function LogViewerPage() {
 
       <SpotlightCard>
       <section className="relative z-20 rounded-lg border bg-card p-6 shadow-sm">
-        <div className="grid gap-3 lg:grid-cols-4">
+        {/* Container selection is the required first step, so it leads. */}
+        <div className="relative z-20 grid gap-3 lg:grid-cols-4">
           <label className="text-sm">
             <span className="mb-1 block text-muted-foreground">Endpoint</span>
             <ThemedSelect
@@ -412,101 +497,147 @@ export default function LogViewerPage() {
             />
           </label>
 
-          <label className="text-sm lg:col-span-2">
+          <div className="relative z-20 text-sm lg:col-span-3">
+            <span className="mb-1 block text-muted-foreground">Containers</span>
+            <ContainerMultiSelect
+              containers={containers}
+              selected={selectedContainers}
+              onChange={setSelectedContainers}
+            />
+          </div>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-end gap-3">
+          <label className="min-w-[240px] flex-1 text-sm">
             <span className="mb-1 block text-muted-foreground">Search</span>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <input
                 ref={searchInputRef}
                 className="w-full rounded-md border border-input bg-background pl-10 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                placeholder="error"
+                placeholder='Filter lines… (e.g. "connection refused")'
                 value={searchPattern}
                 onChange={(e) => setSearchPattern(e.target.value)}
               />
             </div>
           </label>
 
-          <label className="text-sm">
-            <span className="mb-1 block text-muted-foreground">Level</span>
-            <ThemedSelect
-              className="h-9 w-full"
-              value={level}
-              onValueChange={(val) => setLevel(val as LogLevel | 'all')}
-              options={LEVEL_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
+          <button
+            type="button"
+            onClick={() => setFiltersOpen((v) => !v)}
+            aria-expanded={filtersOpen}
+            aria-controls="log-viewer-advanced-filters"
+            className="inline-flex h-[38px] items-center gap-1.5 rounded-md border border-input px-3 text-sm text-muted-foreground transition-colors hover:bg-accent"
+          >
+            <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
+            Filters
+            {activeRefinementCount > 0 && (
+              <span className="rounded-full bg-primary/10 px-1.5 text-xs font-medium text-primary">
+                {activeRefinementCount}
+              </span>
+            )}
+            <ChevronDown
+              aria-hidden="true"
+              className={cn('h-4 w-4 transition-transform', filtersOpen && 'rotate-180')}
             />
-          </label>
+          </button>
         </div>
 
-        <div className="mt-3">
-          <label className="text-sm">
-            <span className="mb-1 block text-muted-foreground">Trace ID</span>
-            <input
-              type="text"
-              aria-label="Trace ID filter"
-              className="w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-ring"
-              placeholder="paste a trace id to filter lines"
-              value={traceFilter}
-              onChange={(e) => setTraceFilter(e.target.value)}
-            />
-          </label>
-        </div>
+        {filtersOpen && (
+          <div
+            id="log-viewer-advanced-filters"
+            className="mt-3 grid gap-3 rounded-md border border-border bg-muted/30 p-3 sm:grid-cols-2 lg:grid-cols-4"
+          >
+            <label className="text-sm">
+              <span className="mb-1 block text-muted-foreground">Level</span>
+              <ThemedSelect
+                className="h-9 w-full"
+                value={level}
+                onValueChange={(val) => setLevel(val as LogLevel | 'all')}
+                options={LEVEL_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
+              />
+            </label>
 
-        <div className="relative z-20 mt-3">
-          <span className="mb-1 block text-sm text-muted-foreground">Containers</span>
-          <ContainerMultiSelect
-            containers={containers}
-            selected={selectedContainers}
-            onChange={setSelectedContainers}
-          />
-        </div>
+            <label className="text-sm sm:col-span-2">
+              <span className="mb-1 block text-muted-foreground">Trace ID</span>
+              <input
+                type="text"
+                aria-label="Trace ID filter"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-ring"
+                placeholder="paste a trace id to filter lines"
+                value={traceFilter}
+                onChange={(e) => setTraceFilter(e.target.value)}
+              />
+            </label>
+
+            <label className="text-sm">
+              <span className="mb-1 block text-muted-foreground">Buffer</span>
+              <ThemedSelect
+                className="h-9 w-full"
+                value={String(bufferSize)}
+                onValueChange={(val) => setBufferSize(Number(val))}
+                options={BUFFER_OPTIONS.map((size) => ({ value: String(size), label: String(size) }))}
+              />
+            </label>
+          </div>
+        )}
 
         <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
-          <button
-            onClick={() => setLiveTail((v) => !v)}
-            className={cn(
-              'rounded-md border px-2 py-1 transition-colors',
-              liveTail && 'log-toggle-on border-emerald-500/70 bg-emerald-500/15 text-emerald-300',
-            )}
-          >
-            <Activity className="mr-1 inline h-4 w-4" />
-            Live Tail {liveTail ? 'ON' : 'OFF'}
-          </button>
-          {liveTail && isStreaming && (
-            <span className="inline-flex items-center gap-1 text-xs text-emerald-400">
-              <Radio className="h-3 w-3 animate-pulse" />
+          <ToggleSwitch
+            label="Live tail"
+            icon={<Activity className="h-4 w-4" aria-hidden="true" />}
+            checked={liveTailActive}
+            disabled={!hasSelection}
+            title={hasSelection ? undefined : 'Select a container to start a live tail'}
+            onToggle={() => setLiveTail((v) => !v)}
+          />
+          {liveTailActive && isStreaming && (
+            <span className="inline-flex items-center gap-1 text-xs text-emerald-700 dark:text-emerald-400">
+              <Radio className="h-3 w-3 animate-pulse" aria-hidden="true" />
               SSE
             </span>
           )}
-          {liveTail && isFallback && (
-            <span className="text-xs text-amber-400">Polling (SSE unavailable)</span>
+          {liveTailActive && isFallback && (
+            <span className="text-xs text-amber-700 dark:text-amber-400">
+              Polling (SSE unavailable)
+            </span>
           )}
+          <ToggleSwitch
+            label="Wrap lines"
+            icon={<WrapText className="h-4 w-4" aria-hidden="true" />}
+            checked={lineWrap}
+            onToggle={() => setLineWrap((v) => !v)}
+          />
           <button
-            onClick={() => setLineWrap((v) => !v)}
+            type="button"
+            onClick={() => exportLogs('log')}
+            disabled={!hasLines}
+            title={hasLines ? undefined : 'Nothing to export yet'}
             className={cn(
               'rounded-md border px-2 py-1 transition-colors',
-              lineWrap && 'log-toggle-on border-emerald-500/70 bg-emerald-500/15 text-emerald-300',
+              hasLines
+                ? 'border-input hover:bg-accent'
+                : 'cursor-not-allowed border-border bg-muted/50 text-muted-foreground',
             )}
           >
-            <WrapText className="mr-1 inline h-4 w-4" />
-            Wrap {lineWrap ? 'ON' : 'OFF'}
-          </button>
-          <button onClick={() => exportLogs('log')} className="rounded-md border px-2 py-1">
-            <Download className="mr-1 inline h-4 w-4" />
+            <Download className="mr-1 inline h-4 w-4" aria-hidden="true" />
             Export .log
           </button>
-          <button onClick={() => exportLogs('json')} className="rounded-md border px-2 py-1">
-            <Download className="mr-1 inline h-4 w-4" />
+          <button
+            type="button"
+            onClick={() => exportLogs('json')}
+            disabled={!hasLines}
+            title={hasLines ? undefined : 'Nothing to export yet'}
+            className={cn(
+              'rounded-md border px-2 py-1 transition-colors',
+              hasLines
+                ? 'border-input hover:bg-accent'
+                : 'cursor-not-allowed border-border bg-muted/50 text-muted-foreground',
+            )}
+          >
+            <Download className="mr-1 inline h-4 w-4" aria-hidden="true" />
             Export .json
           </button>
-          <label className="ml-auto inline-flex items-center text-sm">
-            <span className="mr-2 text-muted-foreground">Buffer</span>
-            <ThemedSelect
-              className="h-9"
-              value={String(bufferSize)}
-              onValueChange={(val) => setBufferSize(Number(val))}
-              options={BUFFER_OPTIONS.map((size) => ({ value: String(size), label: String(size) }))}
-            />
-          </label>
         </div>
 
         <div className="mt-2 text-xs text-muted-foreground">

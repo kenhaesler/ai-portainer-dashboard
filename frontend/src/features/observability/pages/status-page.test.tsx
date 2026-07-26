@@ -20,6 +20,21 @@ vi.mock('framer-motion', () => ({
 import { useReducedMotion } from 'framer-motion';
 const mockUseReducedMotion = vi.mocked(useReducedMotion);
 
+// `/status` is public but lives inside AuthProvider, so it can tell an admin
+// (who can act on a disabled status page) from an anonymous visitor (who cannot).
+const mockUseAuth = vi.fn();
+vi.mock('@/features/core/hooks/use-auth', () => ({
+  useAuth: () => mockUseAuth(),
+}));
+
+function asAnonymousVisitor() {
+  mockUseAuth.mockReturnValue({ isAuthenticated: false, role: 'viewer' });
+}
+
+function asAdmin() {
+  mockUseAuth.mockReturnValue({ isAuthenticated: true, role: 'admin' });
+}
+
 function stubMatchMedia(reduce: boolean) {
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
@@ -94,6 +109,7 @@ describe('StatusPage', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     stubMatchMedia(false);
     mockUseReducedMotion.mockReturnValue(false);
+    asAnonymousVisitor();
   });
 
   afterEach(() => {
@@ -252,7 +268,8 @@ describe('StatusPage', () => {
     expect(screen.queryByText('Recent Incidents')).not.toBeInTheDocument();
   });
 
-  it('shows disabled message on 404', async () => {
+  /** Render the page against a `/api/status` that answers 404 (setting is off). */
+  async function renderNotPublished() {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: false,
       status: 404,
@@ -267,8 +284,94 @@ describe('StatusPage', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText(/not enabled/i)).toBeInTheDocument();
+      expect(screen.getByText('Status page is off')).toBeInTheDocument();
     });
+  }
+
+  it('renders the disabled state through the shared not-configured empty state', async () => {
+    await renderNotPublished();
+
+    expect(screen.getByTestId('empty-state-card')).toBeInTheDocument();
+    expect(screen.getByText('Status page is off')).toBeInTheDocument();
+  });
+
+  /**
+   * The old copy read "An administrator needs to enable it in Settings" and was
+   * shown to a session logged in *as* the administrator, with no link.
+   */
+  it('tells an admin how to turn it on, and links to the tab that holds the setting', async () => {
+    asAdmin();
+    await renderNotPublished();
+
+    expect(screen.getByText(/Turn it on under Settings → Security/)).toBeInTheDocument();
+    const link = screen.getByRole('link', { name: /Open Settings → Security/ });
+    expect(link).toHaveAttribute('href', '/settings?tab=security');
+    expect(screen.queryByText(/An administrator/)).not.toBeInTheDocument();
+  });
+
+  it('keeps the third-person wording for a visitor who cannot reach Settings', async () => {
+    asAnonymousVisitor();
+    await renderNotPublished();
+
+    expect(screen.getByText(/An administrator can turn it on/)).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Open Settings/ })).not.toBeInTheDocument();
+  });
+
+  it('shows the disabled state inside the same page chrome as the live page', async () => {
+    await renderNotPublished();
+
+    // Same shell: gradient mesh + the page container, not a bare centred sentence.
+    expect(screen.getByTestId('status-gradient')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Status');
+  });
+
+  /**
+   * `HTTP 500` and "the admin has not switched this on" used to render the same
+   * grey sentence, so a backend outage was indistinguishable from a setting.
+   */
+  it('separates an unreachable backend from a status page that is switched off', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: () => Promise.resolve({}),
+    } as Response);
+
+    const mod = await import('./status-page');
+    const StatusPage = mod.default;
+
+    await act(async () => {
+      render(<MemoryRouter><StatusPage /></MemoryRouter>);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Could not reach /api/status')).toBeInTheDocument();
+    });
+
+    expect(screen.getByText(/HTTP 500/)).toBeInTheDocument();
+    expect(screen.queryByText('Status page is off')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Retry/ })).toBeInTheDocument();
+  });
+
+  it('retries the fetch from the unreachable state', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Failed to fetch'));
+
+    const mod = await import('./status-page');
+    const StatusPage = mod.default;
+
+    await act(async () => {
+      render(<MemoryRouter><StatusPage /></MemoryRouter>);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Could not reach /api/status')).toBeInTheDocument();
+    });
+
+    const callsBefore = fetchSpy.mock.calls.length;
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Retry/ }));
+    });
+
+    expect(fetchSpy.mock.calls.length).toBeGreaterThan(callsBefore);
   });
 
   it('shows refresh button', async () => {
