@@ -81,15 +81,152 @@ describe('LogViewerPage', () => {
       selector({ potatoMode: false }),
     );
     mockUsePageVisibility.mockReturnValue(true);
+    // `clearAllMocks` does not drop implementations set with `mockReturnValue`,
+    // so restore the stream defaults explicitly — otherwise one test's streamed
+    // entries leak into every test that follows it.
+    mockUseLogStream.mockReturnValue({
+      streamedEntries: [],
+      isStreaming: false,
+      isFallback: false,
+      reset: vi.fn(),
+    });
     mockUrlSearch = new URLSearchParams();
   });
 
   it('renders page shell and controls', () => {
     render(<LogViewerPage />);
-    expect(screen.getByText('Log Viewer')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Log Viewer');
     expect(screen.getByText('Search')).toBeInTheDocument();
-    expect(screen.getByText('Live Tail ON')).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: 'Live tail' })).toBeInTheDocument();
     expect(screen.getByText('Select one or more containers to view aggregated logs.')).toBeInTheDocument();
+  });
+
+  it('renders exactly one h1, matching the navigation label', () => {
+    render(<LogViewerPage />);
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+  });
+
+  describe('toggles are switches with static labels', () => {
+    it('keeps the label fixed and puts the state in aria-checked', () => {
+      render(<LogViewerPage />);
+
+      const wrap = screen.getByRole('switch', { name: 'Wrap lines' });
+      expect(wrap).toHaveAttribute('aria-checked', 'true');
+
+      fireEvent.click(wrap);
+
+      // Same accessible name after toggling — the state lives in aria-checked,
+      // not in the label of the control that changes it.
+      expect(screen.getByRole('switch', { name: 'Wrap lines' })).toHaveAttribute(
+        'aria-checked',
+        'false',
+      );
+      expect(screen.queryByText(/Wrap (ON|OFF)/)).not.toBeInTheDocument();
+    });
+
+    it('uses a light-theme-safe green for the on state, not text-emerald-300 alone', () => {
+      render(<LogViewerPage />);
+      const wrap = screen.getByRole('switch', { name: 'Wrap lines' });
+      expect(wrap.className).toContain('text-emerald-700');
+      expect(wrap.className).toContain('dark:text-emerald-300');
+    });
+  });
+
+  describe('live tail requires a container', () => {
+    it('is off and disabled with nothing selected', () => {
+      render(<LogViewerPage />);
+
+      const liveTail = screen.getByRole('switch', { name: 'Live tail' });
+      expect(liveTail).toBeDisabled();
+      expect(liveTail).toHaveAttribute('aria-checked', 'false');
+      expect(liveTail).toHaveAttribute('title', 'Select a container to start a live tail');
+    });
+
+    it('turns on once a container is selected', async () => {
+      render(<LogViewerPage />);
+      fireEvent.click(screen.getByRole('button', { name: 'Select Container' }));
+
+      await waitFor(() => {
+        const liveTail = screen.getByRole('switch', { name: 'Live tail' });
+        expect(liveTail).toBeEnabled();
+        expect(liveTail).toHaveAttribute('aria-checked', 'true');
+      });
+    });
+
+    it('does not open a stream while nothing is selected', () => {
+      render(<LogViewerPage />);
+      const lastCall = mockUseLogStream.mock.calls.at(-1)?.[0] as
+        | { enabled: boolean }
+        | undefined;
+      expect(lastCall?.enabled).toBe(false);
+    });
+  });
+
+  describe('exports', () => {
+    it('disables both export buttons while the console is empty', () => {
+      render(<LogViewerPage />);
+
+      expect(screen.getByRole('button', { name: /Export \.log/ })).toBeDisabled();
+      expect(screen.getByRole('button', { name: /Export \.json/ })).toBeDisabled();
+      expect(screen.getByText('0 lines | 0 search matches')).toBeInTheDocument();
+    });
+
+    it('enables them once lines exist', async () => {
+      mockUseLogStream.mockReturnValue({
+        streamedEntries: [
+          {
+            id: 'e1',
+            containerId: 'c1',
+            containerName: 'api',
+            timestamp: '2026-05-05T10:00:00.000Z',
+            level: 'error' as const,
+            message: 'connection refused',
+            raw: '2026-05-05T10:00:00.000Z connection refused',
+          },
+        ],
+        isStreaming: true,
+        isFallback: false,
+        reset: vi.fn(),
+      });
+
+      render(<LogViewerPage />);
+      fireEvent.click(screen.getByRole('button', { name: 'Select Container' }));
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Export \.log/ })).toBeEnabled();
+      });
+      expect(screen.getByRole('button', { name: /Export \.json/ })).toBeEnabled();
+    });
+  });
+
+  describe('advanced filter disclosure', () => {
+    it('hides Level, Trace ID and Buffer until Filters is opened', () => {
+      render(<LogViewerPage />);
+
+      expect(screen.queryByLabelText('Trace ID filter')).not.toBeInTheDocument();
+      expect(screen.queryByText('Level')).not.toBeInTheDocument();
+      expect(screen.queryByText('Buffer')).not.toBeInTheDocument();
+
+      const disclosure = screen.getByRole('button', { name: /Filters/ });
+      expect(disclosure).toHaveAttribute('aria-expanded', 'false');
+      fireEvent.click(disclosure);
+
+      expect(screen.getByLabelText('Trace ID filter')).toBeInTheDocument();
+      expect(screen.getByText('Level')).toBeInTheDocument();
+      expect(screen.getByText('Buffer')).toBeInTheDocument();
+      expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+    });
+
+    it('opens itself when a trace deep-link arrives', () => {
+      mockUrlSearch = new URLSearchParams({ trace: 'abcdef1234567890' });
+      render(<LogViewerPage />);
+
+      expect(screen.getByRole('button', { name: /Filters/ })).toHaveAttribute(
+        'aria-expanded',
+        'true',
+      );
+      expect(screen.getByLabelText('Trace ID filter')).toBeInTheDocument();
+    });
   });
 
   it('filter section has higher z-index than log output area (#404)', () => {
@@ -114,7 +251,10 @@ describe('LogViewerPage', () => {
 
     render(<LogViewerPage />);
 
-    expect(screen.getByText('Live Tail OFF')).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: 'Live tail' })).toHaveAttribute(
+      'aria-checked',
+      'false',
+    );
   });
 
   it('uses 5s fallback polling interval when SSE is unavailable (#519)', async () => {

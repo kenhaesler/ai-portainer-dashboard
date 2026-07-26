@@ -13,8 +13,12 @@ import { RefreshControls } from '@/shared/components/ui/refresh-controls';
 import { SkeletonChart } from '@/shared/components/feedback/skeleton';
 import { EmptyState } from '@/shared/components/feedback/empty-state';
 import { StatusBadge } from '@/shared/components/feedback/status-badge';
+import { PageHeader } from '@/shared/components/layout/page-header';
+import { findDestination } from '@/features/core/lib/navigation-manifest';
 import { formatDate } from '@/shared/lib/utils';
 import { useUiStore } from '@/stores/ui-store';
+
+const PAGE_TITLE = findDestination('/topology')?.label ?? 'Topology';
 
 // Memoised 24h window — recomputed at most once per render. Stable across
 // renders within the same minute so React Query can dedupe.
@@ -54,7 +58,6 @@ export default function NetworkTopologyPage() {
   const { data: containers, isLoading: containersLoading, isPending: containersPending, isError: containersError, refetch: refetchContainers, isFetching: containersFetching } = useContainers(selectedEndpoint !== undefined ? { endpointId: selectedEndpoint } : undefined);
   const { data: networks, isLoading: networksLoading, isPending: networksPending, isError: networksError, refetch: refetchNetworks, isFetching: networksFetching } = useNetworks(selectedEndpoint);
   const { data: networkRatesData } = useNetworkRates(selectedEndpoint);
-  const { interval, setInterval } = useAutoRefresh(30);
 
   // RPC overlay (#1233): fetch last-24h service map, default-on if there's
   // anything to show, user can toggle from the header.
@@ -118,11 +121,25 @@ export default function NetworkTopologyPage() {
     refetchNetworks();
   };
 
+  // The hook owns the timer — the dropdown used to schedule nothing at all.
+  const { interval, setRefreshInterval } = useAutoRefresh(30, {
+    storageKey: 'topology',
+    onTick: handleRefresh,
+  });
+
   // Treat both isLoading and isPending-without-data as "loading" to avoid
   // rendering a blank page during SPA navigation before data arrives.
   const isLoading = containersLoading || networksLoading || (containersPending && !containers) || (networksPending && !networks);
   const isError = containersError || networksError;
   const isFetching = containersFetching || networksFetching;
+
+  // The subtitle used to read "Interactive network graph visualization" —
+  // three synonyms for "graph", none of which the operator cannot already see.
+  // The counts are the fact worth carrying.
+  const fleetSummary =
+    containers && networks
+      ? `${containers.length} container${containers.length !== 1 ? 's' : ''} across ${networks.length} network${networks.length !== 1 ? 's' : ''}`
+      : undefined;
 
   const handleNodeClick = (nodeId: string) => {
     // Determine if it's a container or network node
@@ -143,39 +160,43 @@ export default function NetworkTopologyPage() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-8rem)]">
-      {/* Header */}
-      <div className="flex items-center justify-between shrink-0">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Network Topology</h1>
-          <p className="text-muted-foreground">
-            Interactive network graph visualization
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={showObservedTraffic}
-              onChange={(e) => {
-                setOverlayUserToggled(true);
-                setShowObservedTraffic(e.target.checked);
-              }}
-              disabled={!hasObservedTraffic}
-              aria-label="Toggle observed traffic overlay"
-              className="h-4 w-4 rounded border-input"
+      <PageHeader
+        className="shrink-0"
+        title={PAGE_TITLE}
+        subtitle={fleetSummary}
+        hideSubtitleOnMobile={false}
+        actions={
+          <>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={showObservedTraffic}
+                onChange={(e) => {
+                  setOverlayUserToggled(true);
+                  setShowObservedTraffic(e.target.checked);
+                }}
+                disabled={!hasObservedTraffic}
+                aria-label="Toggle observed traffic overlay"
+                className="h-4 w-4 rounded border-input"
+              />
+              <span className={hasObservedTraffic ? '' : 'text-muted-foreground'}>
+                Observed traffic
+                {hasObservedTraffic && (
+                  <span className="ml-1 text-xs text-muted-foreground">
+                    ({observedEdges.length})
+                  </span>
+                )}
+              </span>
+            </label>
+            <RefreshControls
+              interval={interval}
+              onIntervalChange={setRefreshInterval}
+              onRefresh={handleRefresh}
+              isLoading={isFetching}
             />
-            <span className={hasObservedTraffic ? '' : 'text-muted-foreground'}>
-              Observed traffic
-              {hasObservedTraffic && (
-                <span className="ml-1 text-xs text-muted-foreground">
-                  ({observedEdges.length})
-                </span>
-              )}
-            </span>
-          </label>
-          <RefreshControls interval={interval} onIntervalChange={setInterval} onRefresh={handleRefresh} isLoading={isFetching} />
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {/* Endpoint Filter */}
       <div className="flex items-center gap-4 flex-wrap shrink-0 mt-4">
@@ -197,11 +218,6 @@ export default function NetworkTopologyPage() {
           />
         </div>
 
-        {containers && networks && (
-          <span className="text-sm text-muted-foreground">
-            {containers.length} container{containers.length !== 1 ? 's' : ''} · {networks.length} network{networks.length !== 1 ? 's' : ''}
-          </span>
-        )}
       </div>
 
       {/* Graph Container — fills remaining height */}
@@ -254,7 +270,7 @@ export default function NetworkTopologyPage() {
                 {selectedNode.type === 'container' ? (
                   <ContainerDetails container={selectedNode.data} />
                 ) : (
-                  <NetworkDetails network={selectedNode.data} />
+                  <NetworkDetails network={selectedNode.data} containers={containers ?? []} />
                 )}
               </div>
             )}
@@ -345,7 +361,35 @@ function ContainerDetails({ container }: { container: Container }) {
   );
 }
 
-function NetworkDetails({ network }: { network: Network }) {
+/**
+ * Resolve a network's member container IDs to names.
+ *
+ * The panel listed raw 12-character hex IDs while the rest of the app names
+ * containers — and the page already holds the full `containers` array. An ID
+ * with no match (a container on another endpoint, or one removed since the
+ * network was read) keeps its short ID rather than inventing a name.
+ */
+export function resolveNetworkMembers(
+  containerIds: string[],
+  containers: Pick<Container, 'id' | 'name'>[],
+): { id: string; shortId: string; name: string | null }[] {
+  const nameById = new Map(containers.map((c) => [c.id, c.name]));
+  return containerIds.map((id) => ({
+    id,
+    shortId: id.slice(0, 12),
+    name: nameById.get(id) ?? null,
+  }));
+}
+
+function NetworkDetails({
+  network,
+  containers,
+}: {
+  network: Network;
+  containers: Pick<Container, 'id' | 'name'>[];
+}) {
+  const members = resolveNetworkMembers(network.containers, containers);
+
   return (
     <div className="space-y-4">
       <div>
@@ -389,11 +433,18 @@ function NetworkDetails({ network }: { network: Network }) {
       <div>
         <label className="text-xs font-medium text-muted-foreground">Connected Containers</label>
         <div className="mt-1">
-          {network.containers.length > 0 ? (
+          {members.length > 0 ? (
             <div className="space-y-1">
-              {network.containers.map((containerId) => (
-                <div key={containerId} className="text-sm px-2 py-1 rounded bg-muted font-mono">
-                  {containerId.slice(0, 12)}
+              {members.map((member) => (
+                <div key={member.id} className="text-sm px-2 py-1 rounded bg-muted">
+                  <span className={member.name ? '' : 'font-mono'}>
+                    {member.name ?? member.shortId}
+                  </span>
+                  {member.name && (
+                    <span className="ml-1.5 font-mono text-xs text-muted-foreground">
+                      {member.shortId}
+                    </span>
+                  )}
                 </div>
               ))}
             </div>

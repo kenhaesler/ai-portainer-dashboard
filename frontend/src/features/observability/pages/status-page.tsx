@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { CSSProperties } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import {
   CheckCircle2,
   AlertTriangle,
@@ -9,10 +10,13 @@ import {
   Server,
   Container,
   Activity,
+  Globe,
 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import { formatRelativeTime } from '@/shared/lib/format-relative-time';
 import { MotionStagger, MotionReveal } from '@/shared/components/layout/motion-page';
+import { EmptyState } from '@/shared/components/feedback/empty-state';
+import { useAuth } from '@/features/core/hooks/use-auth';
 
 interface UptimeBucket {
   date: string;
@@ -47,6 +51,15 @@ interface StatusData {
   recentIncidents?: Incident[];
   autoRefreshSeconds: number;
 }
+
+/**
+ * The two failures used to share one branch, so `HTTP 500` and "the admin has
+ * not switched this on" rendered as the same grey sentence. They are different
+ * problems with different next actions, so they are different states.
+ */
+type StatusFailure =
+  | { kind: 'not-published' }
+  | { kind: 'unreachable'; detail: string };
 
 const PARTICLES = [
   { left: '8%', delay: '0s', duration: '12s', size: '7px' },
@@ -171,6 +184,60 @@ function UptimeTimeline({ buckets, reducedMotion }: { buckets: UptimeBucket[]; r
   );
 }
 
+/**
+ * The page chrome, shared by every state.
+ *
+ * "Off", "unreachable" and "live" used to be three different-looking screens —
+ * the off state in particular was a full-viewport gradient behind a single
+ * sentence, with none of the card chrome the live page uses. One shell keeps
+ * them recognisably the same page.
+ */
+function StatusShell({
+  reducedMotion,
+  children,
+}: {
+  reducedMotion: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className="relative min-h-screen bg-background overflow-hidden"
+      data-reduced-motion={reducedMotion}
+    >
+      {/* Gradient mesh background */}
+      <div
+        className={`login-gradient-mesh ${reducedMotion ? '' : 'login-gradient-mesh-animate'}`}
+        aria-hidden="true"
+        data-testid="status-gradient"
+      />
+
+      {/* Floating particles */}
+      {!reducedMotion && (
+        <div className="pointer-events-none absolute inset-0 z-0" aria-hidden="true">
+          {PARTICLES.map((particle) => (
+            <span
+              key={`${particle.left}-${particle.delay}`}
+              className="login-particle"
+              style={
+                {
+                  left: particle.left,
+                  width: particle.size,
+                  height: particle.size,
+                  animationDelay: particle.delay,
+                  animationDuration: particle.duration,
+                } as CSSProperties
+              }
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Content */}
+      <div className="relative z-10 max-w-3xl mx-auto px-4 py-8">{children}</div>
+    </div>
+  );
+}
+
 function IncidentItem({ incident }: { incident: Incident }) {
   const isResolved = incident.status === 'resolved';
 
@@ -216,26 +283,33 @@ function IncidentItem({ incident }: { incident: Incident }) {
 
 export default function StatusPage() {
   const [data, setData] = useState<StatusData | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [failure, setFailure] = useState<StatusFailure | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
   const reducedMotion = usePrefersReducedMotion();
+  // `/status` is public, but it is also the page an admin lands on right after
+  // flipping the setting — so the copy has to know which of the two is reading.
+  const { isAuthenticated, role } = useAuth();
+  const canReachSettings = isAuthenticated && role === 'admin';
 
   const fetchStatus = useCallback(async () => {
     try {
       const res = await fetch('/api/status');
       if (res.status === 404) {
-        setError('Status page is not enabled. An administrator needs to enable it in Settings.');
+        setFailure({ kind: 'not-published' });
         setData(null);
         return;
       }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       setData(json);
-      setError(null);
+      setFailure(null);
       setLastRefresh(new Date());
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load status');
+      setFailure({
+        kind: 'unreachable',
+        detail: err instanceof Error ? err.message : 'an unknown error',
+      });
     } finally {
       setLoading(false);
     }
@@ -253,28 +327,71 @@ export default function StatusPage() {
 
   if (loading) {
     return (
-      <div className="relative min-h-screen bg-background flex items-center justify-center overflow-hidden">
-        <div
-          className={`login-gradient-mesh ${reducedMotion ? '' : 'login-gradient-mesh-animate'}`}
-          aria-hidden="true"
-        />
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-foreground z-10" />
-      </div>
+      <StatusShell reducedMotion={reducedMotion}>
+        <div className="flex min-h-[50vh] items-center justify-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-foreground" />
+        </div>
+      </StatusShell>
     );
   }
 
-  if (error) {
+  if (failure?.kind === 'not-published') {
     return (
-      <div className="relative min-h-screen bg-background flex items-center justify-center overflow-hidden">
-        <div
-          className={`login-gradient-mesh ${reducedMotion ? '' : 'login-gradient-mesh-animate'}`}
-          aria-hidden="true"
-        />
-        <div className="text-center z-10">
-          <XCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-          <p className="text-muted-foreground">{error}</p>
+      <StatusShell reducedMotion={reducedMotion}>
+        <div className="space-y-6">
+          <div className="text-center mb-2">
+            <h1 className="text-2xl font-bold text-foreground">Status</h1>
+          </div>
+          <EmptyState
+            variant="not-configured"
+            icon={Globe}
+            title="Status page is off"
+            description={
+              canReachSettings
+                ? 'Turn it on under Settings → Security → Public Status Page. It publishes uptime and incident history at this URL to anyone who can reach this host, with no sign-in.'
+                : 'This dashboard does not publish a status page. An administrator can turn it on under Settings → Security → Public Status Page.'
+            }
+          />
+          {canReachSettings && (
+            <div className="flex justify-center">
+              <Link
+                to="/settings?tab=security"
+                className="inline-flex h-10 items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                Open Settings → Security
+              </Link>
+            </div>
+          )}
         </div>
-      </div>
+      </StatusShell>
+    );
+  }
+
+  if (failure?.kind === 'unreachable') {
+    return (
+      <StatusShell reducedMotion={reducedMotion}>
+        <div className="space-y-6">
+          <div className="text-center mb-2">
+            <h1 className="text-2xl font-bold text-foreground">Status</h1>
+          </div>
+          <EmptyState
+            variant="error"
+            icon={XCircle}
+            title="Could not reach /api/status"
+            description={`The request failed with ${failure.detail}. That is not the 404 the server returns when the status page is switched off, so check the dashboard backend rather than the setting.`}
+          />
+          <div className="flex justify-center">
+            <button
+              type="button"
+              onClick={fetchStatus}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <RefreshCw className="h-4 w-4" aria-hidden="true" />
+              Retry
+            </button>
+          </div>
+        </div>
+      </StatusShell>
     );
   }
 
@@ -284,183 +401,149 @@ export default function StatusPage() {
   const StatusIcon = statusConf.icon;
 
   return (
-    <div
-      className="relative min-h-screen bg-background overflow-hidden"
-      data-reduced-motion={reducedMotion}
-    >
-      {/* Gradient mesh background */}
-      <div
-        className={`login-gradient-mesh ${reducedMotion ? '' : 'login-gradient-mesh-animate'}`}
-        aria-hidden="true"
-        data-testid="status-gradient"
-      />
+    <StatusShell reducedMotion={reducedMotion}>
+      <MotionStagger className="space-y-6">
+        {/* Header */}
+        <MotionReveal>
+          <div className="text-center mb-2">
+            <h1 className="text-2xl font-bold text-foreground">{data.title}</h1>
+            {data.description && (
+              <p className="text-muted-foreground mt-1">{data.description}</p>
+            )}
+          </div>
+        </MotionReveal>
 
-      {/* Floating particles */}
-      {!reducedMotion && (
-        <div className="pointer-events-none absolute inset-0 z-0" aria-hidden="true">
-          {PARTICLES.map((particle) => (
-            <span
-              key={`${particle.left}-${particle.delay}`}
-              className="login-particle"
-              style={
-                {
-                  left: particle.left,
-                  width: particle.size,
-                  height: particle.size,
-                  animationDelay: particle.delay,
-                  animationDuration: particle.duration,
-                } as CSSProperties
-              }
-            />
-          ))}
-        </div>
-      )}
-
-      {/* Content */}
-      <div className="relative z-10 max-w-3xl mx-auto px-4 py-8">
-        <MotionStagger className="space-y-6">
-          {/* Header */}
-          <MotionReveal>
-            <div className="text-center mb-2">
-              <h1 className="text-2xl font-bold text-foreground">{data.title}</h1>
-              {data.description && (
-                <p className="text-muted-foreground mt-1">{data.description}</p>
-              )}
+        {/* Overall Status Banner */}
+        <MotionReveal>
+          <div
+            className={cn(
+              'rounded-lg border p-6 text-center shadow-sm',
+              statusConf.bg,
+            )}
+            data-testid="status-banner"
+          >
+            <div className={cn('inline-flex items-center justify-center w-14 h-14 rounded-full mb-3', statusConf.iconBg)}>
+              <StatusIcon className={cn('h-8 w-8', statusConf.color)} />
             </div>
-          </MotionReveal>
+            <h2 className={cn('text-lg font-semibold', statusConf.color)}>
+              {statusConf.label}
+            </h2>
+          </div>
+        </MotionReveal>
 
-          {/* Overall Status Banner */}
+        {/* Uptime Summary — 3 side-by-side glass cards */}
+        <MotionReveal>
+          <div>
+            <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-3">
+              Uptime
+            </h3>
+            <div className="grid grid-cols-3 gap-3">
+              {(['24h', '7d', '30d'] as const).map((period) => (
+                <div key={period} className={cn(GLASS_CARD, 'p-4 text-center')}>
+                  <div className={cn('text-2xl font-bold', uptimeTextColor(data.uptime[period]))}>
+                    {data.uptime[period]}%
+                  </div>
+                  <div className="text-xs text-muted-foreground uppercase mt-1">{period}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </MotionReveal>
+
+        {/* Current Snapshot */}
+        {data.snapshot && (
           <MotionReveal>
-            <div
-              className={cn(
-                'rounded-lg border p-6 text-center shadow-sm',
-                statusConf.bg,
-              )}
-              data-testid="status-banner"
-            >
-              <div className={cn('inline-flex items-center justify-center w-14 h-14 rounded-full mb-3', statusConf.iconBg)}>
-                <StatusIcon className={cn('h-8 w-8', statusConf.color)} />
+            <div className={cn(GLASS_CARD, 'p-6')}>
+              <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-4">
+                Current Status
+              </h3>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-emerald-500/15">
+                    <Container className="h-4 w-4 text-emerald-500" />
+                  </div>
+                  <div>
+                    <div className="text-lg font-semibold text-foreground">{data.snapshot.containersRunning}</div>
+                    <div className="text-xs text-muted-foreground">Running</div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-muted/50">
+                    <Container className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  <div>
+                    <div className="text-lg font-semibold text-foreground">{data.snapshot.containersStopped}</div>
+                    <div className="text-xs text-muted-foreground">Stopped</div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-yellow-500/15">
+                    <Activity className="h-4 w-4 text-yellow-500" />
+                  </div>
+                  <div>
+                    <div className="text-lg font-semibold text-foreground">{data.snapshot.containersUnhealthy}</div>
+                    <div className="text-xs text-muted-foreground">Unhealthy</div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-500/15">
+                    <Server className="h-4 w-4 text-blue-500" />
+                  </div>
+                  <div>
+                    <div className="text-lg font-semibold text-foreground">{data.snapshot.endpointsUp}</div>
+                    <div className="text-xs text-muted-foreground">Endpoints Up</div>
+                  </div>
+                </div>
               </div>
-              <h2 className={cn('text-lg font-semibold', statusConf.color)}>
-                {statusConf.label}
-              </h2>
             </div>
           </MotionReveal>
+        )}
 
-          {/* Uptime Summary — 3 side-by-side glass cards */}
+        {/* 90-day Uptime Timeline */}
+        {data.uptimeTimeline.length > 0 && (
+          <MotionReveal>
+            <div className={cn(GLASS_CARD, 'p-6')}>
+              <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-4">
+                Uptime History (90 days)
+              </h3>
+              <UptimeTimeline buckets={data.uptimeTimeline} reducedMotion={reducedMotion} />
+            </div>
+          </MotionReveal>
+        )}
+
+        {/* Recent Incidents */}
+        {data.recentIncidents && data.recentIncidents.length > 0 && (
           <MotionReveal>
             <div>
               <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-3">
-                Uptime
+                Recent Incidents
               </h3>
-              <div className="grid grid-cols-3 gap-3">
-                {(['24h', '7d', '30d'] as const).map((period) => (
-                  <div key={period} className={cn(GLASS_CARD, 'p-4 text-center')}>
-                    <div className={cn('text-2xl font-bold', uptimeTextColor(data.uptime[period]))}>
-                      {data.uptime[period]}%
-                    </div>
-                    <div className="text-xs text-muted-foreground uppercase mt-1">{period}</div>
-                  </div>
+              <div className="space-y-3">
+                {data.recentIncidents.map((incident) => (
+                  <IncidentItem key={incident.id} incident={incident} />
                 ))}
               </div>
             </div>
           </MotionReveal>
+        )}
 
-          {/* Current Snapshot */}
-          {data.snapshot && (
-            <MotionReveal>
-              <div className={cn(GLASS_CARD, 'p-6')}>
-                <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-4">
-                  Current Status
-                </h3>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                  <div className="flex items-center gap-3">
-                    <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-emerald-500/15">
-                      <Container className="h-4 w-4 text-emerald-500" />
-                    </div>
-                    <div>
-                      <div className="text-lg font-semibold text-foreground">{data.snapshot.containersRunning}</div>
-                      <div className="text-xs text-muted-foreground">Running</div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-muted/50">
-                      <Container className="h-4 w-4 text-muted-foreground" />
-                    </div>
-                    <div>
-                      <div className="text-lg font-semibold text-foreground">{data.snapshot.containersStopped}</div>
-                      <div className="text-xs text-muted-foreground">Stopped</div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-yellow-500/15">
-                      <Activity className="h-4 w-4 text-yellow-500" />
-                    </div>
-                    <div>
-                      <div className="text-lg font-semibold text-foreground">{data.snapshot.containersUnhealthy}</div>
-                      <div className="text-xs text-muted-foreground">Unhealthy</div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-500/15">
-                      <Server className="h-4 w-4 text-blue-500" />
-                    </div>
-                    <div>
-                      <div className="text-lg font-semibold text-foreground">{data.snapshot.endpointsUp}</div>
-                      <div className="text-xs text-muted-foreground">Endpoints Up</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </MotionReveal>
-          )}
-
-          {/* 90-day Uptime Timeline */}
-          {data.uptimeTimeline.length > 0 && (
-            <MotionReveal>
-              <div className={cn(GLASS_CARD, 'p-6')}>
-                <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-4">
-                  Uptime History (90 days)
-                </h3>
-                <UptimeTimeline buckets={data.uptimeTimeline} reducedMotion={reducedMotion} />
-              </div>
-            </MotionReveal>
-          )}
-
-          {/* Recent Incidents */}
-          {data.recentIncidents && data.recentIncidents.length > 0 && (
-            <MotionReveal>
-              <div>
-                <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-3">
-                  Recent Incidents
-                </h3>
-                <div className="space-y-3">
-                  {data.recentIncidents.map((incident) => (
-                    <IncidentItem key={incident.id} incident={incident} />
-                  ))}
-                </div>
-              </div>
-            </MotionReveal>
-          )}
-
-          {/* Footer */}
-          <MotionReveal>
-            <div className="flex items-center justify-between text-xs text-muted-foreground mt-4 pb-4">
-              <div className="flex items-center gap-1">
-                <Clock className="h-3 w-3" />
-                <span>Last updated: {formatTime(lastRefresh.toISOString())}</span>
-              </div>
-              <button
-                onClick={fetchStatus}
-                className="flex items-center gap-1 hover:text-foreground transition-colors"
-              >
-                <RefreshCw className="h-3 w-3" />
-                <span>Refresh</span>
-              </button>
+        {/* Footer */}
+        <MotionReveal>
+          <div className="flex items-center justify-between text-xs text-muted-foreground mt-4 pb-4">
+            <div className="flex items-center gap-1">
+              <Clock className="h-3 w-3" />
+              <span>Last updated: {formatTime(lastRefresh.toISOString())}</span>
             </div>
-          </MotionReveal>
-        </MotionStagger>
-      </div>
-    </div>
+            <button
+              onClick={fetchStatus}
+              className="flex items-center gap-1 hover:text-foreground transition-colors"
+            >
+              <RefreshCw className="h-3 w-3" />
+              <span>Refresh</span>
+            </button>
+          </div>
+        </MotionReveal>
+      </MotionStagger>
+    </StatusShell>
   );
 }

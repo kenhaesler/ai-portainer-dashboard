@@ -176,4 +176,37 @@ describe('AuthCallbackPage', () => {
       });
     });
   });
+
+  describe('failure affordances', () => {
+    it('announces the failure via role="alert", matching the sign-in form', async () => {
+      mockApiPost.mockRejectedValue(new Error('OIDC exchange failed'));
+
+      renderPage('?code=c&state=s');
+
+      const alert = await screen.findByRole('alert');
+      expect(alert).toHaveTextContent('OIDC exchange failed');
+      expect(alert).toBe(screen.getByTestId('auth-callback-error'));
+    });
+
+    /** Nobody should have to sit out a three-second timer to get back to a form. */
+    it('offers an immediate way back to sign-in instead of only the 3s bounce', async () => {
+      renderPage('?error=access_denied&error_description=User%20cancelled');
+
+      const link = screen.getByRole('link', { name: 'Back to sign-in' });
+      expect(link).toHaveAttribute('href', '/login');
+      expect(screen.getByText(/Redirecting to login/i)).toBeInTheDocument();
+    });
+
+    it('cancels the pending redirect when the page unmounts', async () => {
+      vi.useFakeTimers();
+      const { unmount } = renderPage('?state=only-state');
+
+      expect(screen.getByText(/Missing authorization code or state/i)).toBeInTheDocument();
+
+      unmount();
+      vi.advanceTimersByTime(3000);
+
+      expect(mockNavigate).not.toHaveBeenCalled();
+    });
+  });
 });

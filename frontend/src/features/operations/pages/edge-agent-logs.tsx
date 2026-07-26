@@ -6,7 +6,6 @@ import {
   Info,
   FileText,
   Server,
-  RefreshCw,
   Download,
   Filter,
   ChevronDown,
@@ -16,19 +15,31 @@ import {
   Loader2,
   XCircle,
   AlertCircle,
-  CheckCircle2,
   Terminal,
+  Bug,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/shared/lib/api';
+import { ApiError } from '@/shared/lib/api-error';
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
 import { RefreshControls } from '@/shared/components/ui/refresh-controls';
+import { DataFreshness } from '@/shared/components/feedback/data-freshness';
 import { SkeletonText } from '@/shared/components/feedback/skeleton';
+import { PageHeader } from '@/shared/components/layout/page-header';
+import { findDestination } from '@/features/core/lib/navigation-manifest';
 import { cn, formatDate } from '@/shared/lib/utils';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
-import { TiltCard } from '@/shared/components/data-display/tilt-card';
-import { KpiCard } from '@/shared/components/data-display/kpi-card';
+
+/**
+ * One name for the dependency. This page used to call it four things at once —
+ * "Edge Agent" in the sidebar, "via Elasticsearch" in the subtitle,
+ * "Elasticsearch or Kibana" in the setup panel, and `KIBANA_ENDPOINT` in the
+ * error — so an operator searching Settings for "Kibana" found nothing.
+ * Elasticsearch is the product; Kibana survives only as the legacy env-var name.
+ */
+const PAGE_TITLE = findDestination('/edge-logs')?.label ?? 'Edge Logs';
+const PAGE_SUBTITLE = 'Agent logs indexed in Elasticsearch';
 
 // Log levels with colors
 const LOG_LEVELS = [
@@ -91,7 +102,9 @@ function getLevelIcon(level: string) {
     case 'info':
       return <Info className="h-4 w-4 text-blue-500" />;
     case 'debug':
-      return <CheckCircle2 className="h-4 w-4 text-emerald-500" />;
+      // Neutral, deliberately. A green check made debug lines read as passing
+      // checks — debug is verbosity, not a health signal.
+      return <Bug className="h-4 w-4 text-muted-foreground" />;
     default:
       return <FileText className="h-4 w-4 text-muted-foreground" />;
   }
@@ -107,10 +120,82 @@ function getLevelColor(level: string) {
     case 'info':
       return 'text-blue-500 bg-blue-500/10';
     case 'debug':
-      return 'text-emerald-500 bg-emerald-500/10';
+      return 'text-muted-foreground bg-muted';
     default:
       return 'text-muted-foreground bg-muted';
   }
+}
+
+/** Level bands, in severity order. Drives both the summary line and the bar. */
+const LEVEL_BANDS = [
+  { key: 'error', label: 'error', text: 'text-red-500', bar: 'bg-red-500' },
+  { key: 'warn', label: 'warn', text: 'text-amber-500', bar: 'bg-amber-500' },
+  { key: 'info', label: 'info', text: 'text-blue-500', bar: 'bg-blue-500' },
+  { key: 'debug', label: 'debug', text: 'text-muted-foreground', bar: 'bg-muted-foreground/40' },
+] as const;
+
+interface LogLevelSummaryProps {
+  /** Lines returned for this search. */
+  shown: number;
+  /** Total matches Elasticsearch reports, which may exceed `shown`. */
+  total: number;
+  byLevel: Record<string, number>;
+}
+
+/**
+ * One line plus one bar, replacing five KPI cards.
+ *
+ * Total / Errors / Warnings / Info / Debug is a single distribution, and it was
+ * exploded into five glass tiles across a full row — five headings to read
+ * before the counts, and a fake `trend` arrow on Errors that compared nothing.
+ * A distribution is a bar.
+ */
+function LogLevelSummary({ shown, total, byLevel }: LogLevelSummaryProps) {
+  const counts = LEVEL_BANDS.map((band) => ({
+    ...band,
+    count:
+      band.key === 'warn'
+        ? (byLevel.warn || 0) + (byLevel.warning || 0)
+        : byLevel[band.key] || 0,
+  }));
+  const classified = counts.reduce((sum, band) => sum + band.count, 0);
+  const present = counts.filter((band) => band.count > 0);
+
+  return (
+    <div>
+      <p className="text-sm">
+        <span className="font-medium">
+          {shown.toLocaleString()}
+          {total > shown ? ` of ${total.toLocaleString()}` : ''} lines
+        </span>
+        {present.map((band) => (
+          <span key={band.key}>
+            <span className="text-muted-foreground"> · </span>
+            <span className={band.text}>
+              {band.count.toLocaleString()} {band.label}
+            </span>
+          </span>
+        ))}
+      </p>
+      {classified > 0 && (
+        <div
+          className="mt-2 flex h-2 overflow-hidden rounded-full bg-muted"
+          role="img"
+          aria-label={present
+            .map((band) => `${band.count} ${band.label}`)
+            .join(', ')}
+        >
+          {present.map((band) => (
+            <div
+              key={band.key}
+              className={band.bar}
+              style={{ width: `${(band.count / classified) * 100}%` }}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 interface LogRowProps {
@@ -177,9 +262,10 @@ function NotConfiguredState() {
         <div className="rounded-full bg-amber-500/10 p-4 mb-4">
           <Settings className="h-8 w-8 text-amber-500" />
         </div>
-        <h2 className="text-xl font-semibold mb-2">Elasticsearch Not Configured</h2>
+        <h2 className="text-xl font-semibold mb-2">Elasticsearch not configured</h2>
         <p className="text-muted-foreground mb-6">
-          Edge Agent Logs require an Elasticsearch or Kibana connection to search and display logs.
+          Edge agents ship their logs to an Elasticsearch cluster. Nothing can be searched
+          here until one is connected.
         </p>
 
         <div className="w-full rounded-lg bg-muted/50 p-4 text-left mb-6">
@@ -190,7 +276,7 @@ function NotConfiguredState() {
           <ol className="space-y-3 text-sm text-muted-foreground">
             <li className="flex gap-2">
               <span className="font-medium text-foreground">1.</span>
-              <span>Go to Settings and scroll to the "Elasticsearch / Kibana" section.</span>
+              <span>Open Settings and select the Integrations tab.</span>
             </li>
             <li className="flex gap-2">
               <span className="font-medium text-foreground">2.</span>
@@ -201,10 +287,15 @@ function NotConfiguredState() {
               <span>Save and return to this page to start searching logs.</span>
             </li>
           </ol>
+          <p className="mt-3 text-xs text-muted-foreground">
+            Self-hosted deployments can instead set the{' '}
+            <code className="bg-muted px-1 rounded">KIBANA_ENDPOINT</code> environment
+            variable — the legacy name for the same Elasticsearch URL.
+          </p>
         </div>
 
         <a
-          href="/settings"
+          href="/settings?tab=integrations"
           className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
         >
           <Settings className="h-4 w-4" />
@@ -233,7 +324,6 @@ export default function EdgeAgentLogsPage() {
   const [levelFilter, setLevelFilter] = useState('');
   const [hostnameFilter, setHostnameFilter] = useState('');
   const [expandedLogs, setExpandedLogs] = useState<Set<string>>(new Set());
-  const { interval, setInterval } = useAutoRefresh(0);
   const [refreshKey, setRefreshKey] = useState(0);
 
   // Calculate time range
@@ -248,6 +338,7 @@ export default function EdgeAgentLogsPage() {
     error,
     refetch,
     isFetching,
+    dataUpdatedAt,
   } = useQuery<LogsResponse>({
     queryKey: ['edge-agent-logs', searchQuery, from, to, levelFilter, hostnameFilter, refreshKey],
     queryFn: async () => {
@@ -269,8 +360,32 @@ export default function EdgeAgentLogsPage() {
   // rendering a blank page during SPA navigation before data arrives.
   const isLoading = logsLoading || (logsPending && !logsData);
 
-  // Check if not configured (503 error)
-  const isNotConfigured = isError && (error as Error)?.message?.includes('503');
+  // Not configured, i.e. the server answered 503.
+  //
+  // This used to sniff `error.message` for the substring "503". `ApiError.message`
+  // carries the *server's* body message — "Configure Elasticsearch in Settings or
+  // set KIBANA_ENDPOINT environment variable" — which contains no "503", so this
+  // was permanently false: the whole `NotConfiguredState` below was dead code and
+  // every operator who had simply never turned Elasticsearch on got a red
+  // "Failed to fetch logs" alarm with a Retry button that could not succeed.
+  // `ApiError` carries a typed status; use it.
+  const isNotConfigured = isError && error instanceof ApiError && error.status === 503;
+
+  // Handle refresh
+  const handleRefresh = () => {
+    setRefreshKey((k) => k + 1);
+    refetch();
+  };
+
+  // The hook owns the timer. Gated on `isNotConfigured` so a 503 stops the
+  // poller instead of re-failing every N seconds against a cluster that was
+  // never configured.
+  const { interval, setRefreshInterval } = useAutoRefresh(0, {
+    storageKey: 'edge-logs',
+    onTick: () => {
+      if (!isNotConfigured) handleRefresh();
+    },
+  });
 
   // Handle search
   const handleSearch = (e: React.FormEvent) => {
@@ -289,12 +404,6 @@ export default function EdgeAgentLogsPage() {
       }
       return next;
     });
-  };
-
-  // Handle refresh
-  const handleRefresh = () => {
-    setRefreshKey((k) => k + 1);
-    refetch();
   };
 
   // Export logs
@@ -354,12 +463,7 @@ export default function EdgeAgentLogsPage() {
   if (isNotConfigured) {
     return (
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Edge Agent Logs</h1>
-          <p className="text-muted-foreground">
-            Search and analyze logs from edge agents via Elasticsearch
-          </p>
-        </div>
+        <PageHeader title={PAGE_TITLE} subtitle={PAGE_SUBTITLE} />
         <NotConfiguredState />
       </div>
     );
@@ -367,18 +471,21 @@ export default function EdgeAgentLogsPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Edge Agent Logs</h1>
-          <p className="text-muted-foreground">
-            Search and analyze logs from edge agents via Elasticsearch
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <RefreshControls interval={interval} onIntervalChange={setInterval} onRefresh={handleRefresh} isLoading={isFetching} />
-        </div>
-      </div>
+      <PageHeader
+        title={PAGE_TITLE}
+        subtitle={PAGE_SUBTITLE}
+        actions={
+          <>
+            <DataFreshness lastUpdated={dataUpdatedAt || null} onRefresh={handleRefresh} />
+            <RefreshControls
+              interval={interval}
+              onIntervalChange={setRefreshInterval}
+              onRefresh={handleRefresh}
+              isLoading={isFetching}
+            />
+          </>
+        }
+      />
 
       {/* Search and Filters */}
       <SpotlightCard>
@@ -460,42 +567,17 @@ export default function EdgeAgentLogsPage() {
       </div>
       </SpotlightCard>
 
-      {/* Stats Cards */}
+      {/* Level distribution — one line and one bar, not five tiles */}
       {logs.length > 0 && (
-        <div className="grid gap-4 md:grid-cols-5">
-          <TiltCard>
-            <KpiCard label="Total Logs" value={logsData?.total || logs.length} />
-          </TiltCard>
-          <TiltCard>
-            <KpiCard
-              label="Errors"
-              value={stats.error || 0}
-              icon={<XCircle className="h-5 w-5 text-red-500" />}
-              trend={(stats.error || 0) > 0 ? 'down' : 'neutral'}
+        <SpotlightCard>
+          <div className="rounded-lg border bg-card p-4 shadow-sm">
+            <LogLevelSummary
+              shown={logs.length}
+              total={logsData?.total || logs.length}
+              byLevel={stats}
             />
-          </TiltCard>
-          <TiltCard>
-            <KpiCard
-              label="Warnings"
-              value={(stats.warn || 0) + (stats.warning || 0)}
-              icon={<AlertCircle className="h-5 w-5 text-amber-500" />}
-            />
-          </TiltCard>
-          <TiltCard>
-            <KpiCard
-              label="Info"
-              value={stats.info || 0}
-              icon={<Info className="h-5 w-5 text-blue-500" />}
-            />
-          </TiltCard>
-          <TiltCard>
-            <KpiCard
-              label="Debug"
-              value={stats.debug || 0}
-              icon={<CheckCircle2 className="h-5 w-5 text-emerald-500" />}
-            />
-          </TiltCard>
-        </div>
+          </div>
+        </SpotlightCard>
       )}
 
       {/* Loading State */}

@@ -21,14 +21,39 @@ describe('TopologyLegend', () => {
     expect(wrapper.className).not.toContain('bottom-14');
   });
 
-  it('hides legend entries by default', () => {
+  // The legend used to open closed, so the only thing it documented — Edge
+  // Load — was invisible unless you went looking, and every edge on an idle
+  // fleet reads 0 B/s anyway.
+  it('is open by default', () => {
     render(<TopologyLegend />);
-    expect(screen.queryByText('Edge Load')).toBeNull();
+    expect(screen.getByText('Edge Load')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /legend/i })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
   });
 
-  it('shows all 5 color tiers when opened', () => {
+  it('documents node shape and container state before edge load', () => {
+    const { container } = render(<TopologyLegend />);
+
+    const headings = Array.from(container.querySelectorAll('p.font-semibold')).map(
+      (el) => el.textContent,
+    );
+    expect(headings).toEqual(['Node', 'Container State', 'Edge Load']);
+
+    // Circle vs diamond — never explained before, and the first thing a
+    // first-time viewer needs.
+    expect(screen.getByText('Container')).toBeTruthy();
+    expect(screen.getByText('Network')).toBeTruthy();
+    // Node state colours.
+    expect(screen.getByText('Running')).toBeTruthy();
+    expect(screen.getByText('Stopped')).toBeTruthy();
+    expect(screen.getByText('Paused')).toBeTruthy();
+    expect(screen.getByText('Unknown')).toBeTruthy();
+  });
+
+  it('shows all 5 edge-load color tiers', () => {
     render(<TopologyLegend />);
-    fireEvent.click(screen.getByRole('button', { name: /legend/i }));
 
     expect(screen.getByText('Edge Load')).toBeTruthy();
     expect(screen.getByText('No data / Idle')).toBeTruthy();
@@ -42,10 +67,13 @@ describe('TopologyLegend', () => {
     render(<TopologyLegend />);
     const btn = screen.getByRole('button', { name: /legend/i });
 
-    fireEvent.click(btn); // open
     expect(screen.getByText('Edge Load')).toBeTruthy();
 
     fireEvent.click(btn); // close
     expect(screen.queryByText('Edge Load')).toBeNull();
+    expect(btn).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(btn); // re-open
+    expect(screen.getByText('Edge Load')).toBeTruthy();
   });
 });

@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState, type CSSProperties, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { createPortal } from "react-dom";
 import { useQueryClient } from "@tanstack/react-query";
+import { Eye, EyeOff } from "lucide-react";
 import { useAuth } from "@/features/core/hooks/use-auth";
 import { useOIDCStatus } from "@/features/core/hooks/use-oidc";
 import { LoginLogo } from "@/shared/components/icons/login-logo";
@@ -9,19 +10,21 @@ import { useUiStore } from "@/stores/ui-store";
 import { PostLoginLoading } from "@/shared/components/layout/post-login-loading";
 import { AnimatePresence } from "framer-motion";
 import { api } from "@/shared/lib/api";
+import { PRODUCT_NAME } from "@/shared/lib/product";
 
-const PARTICLES = [
-  { left: "8%", delay: "0s", duration: "12s", size: "7px" },
-  { left: "18%", delay: "0.8s", duration: "15s", size: "9px" },
-  { left: "28%", delay: "0.4s", duration: "13s", size: "6px" },
-  { left: "39%", delay: "1.2s", duration: "14s", size: "8px" },
-  { left: "48%", delay: "0.2s", duration: "16s", size: "7px" },
-  { left: "57%", delay: "1.5s", duration: "12s", size: "8px" },
-  { left: "66%", delay: "0.6s", duration: "17s", size: "9px" },
-  { left: "75%", delay: "1.1s", duration: "11s", size: "6px" },
-  { left: "84%", delay: "0.9s", duration: "15s", size: "8px" },
-  { left: "92%", delay: "0.3s", duration: "13s", size: "7px" },
-];
+/**
+ * How long the prefetch may run before the loading screen appears.
+ *
+ * The screen used to be shown immediately and held for a **one-second minimum**
+ * even when the prefetch had already resolved, so a correct password during an
+ * incident cost the operator a second of animation. It is now a slow-path
+ * affordance only: under this threshold the sign-in feels instant and the
+ * screen never mounts.
+ */
+const LOADING_SCREEN_DELAY_MS = 300;
+
+/** Hard cap on the post-login prefetch so a slow network cannot trap the user. */
+const PREFETCH_MAX_WAIT_MS = 3000;
 
 function usePrefersReducedMotion(): boolean {
   const [reducedMotion, setReducedMotion] = useState(false);
@@ -47,15 +50,25 @@ export default function LoginPage() {
   const reducedMotion = prefersReducedMotion || potatoMode;
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitState, setSubmitState] = useState<"idle" | "loading" | "success">("idle");
   const [showPostLoginLoading, setShowPostLoginLoading] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const slowPathTimerRef = useRef<number | null>(null);
 
   const stagedClass = useMemo(
     () => (reducedMotion ? "" : "login-stage-in"),
     [reducedMotion],
   );
+
+  useEffect(() => {
+    return () => {
+      if (slowPathTimerRef.current !== null) {
+        window.clearTimeout(slowPathTimerRef.current);
+      }
+    };
+  }, []);
 
   if (isAuthenticated && !isLoggingIn) {
     return <Navigate to="/" replace />;
@@ -70,7 +83,7 @@ export default function LoginPage() {
     try {
       const { defaultLandingPage } = await login(username, password);
       setSubmitState("success");
-      
+
       // Always prefetch dashboard data after login, regardless of motion preference
       const prefetchPromise = queryClient.prefetchQuery({
         queryKey: ['dashboard', 'full', 8],
@@ -78,34 +91,27 @@ export default function LoginPage() {
         staleTime: 2 * 60 * 1000,
       });
 
-      if (reducedMotion) {
-        // Wait for data (up to 3s) then navigate — no animation but data is ready
-        const maxTimer = new Promise<void>((resolve) =>
-          window.setTimeout(resolve, 3000),
-        );
-        Promise.race([prefetchPromise, maxTimer]).then(() =>
-          navigate(defaultLandingPage || "/", { replace: true }),
-        );
-      } else {
-        // Show the high-quality loading screen immediately
-        setShowPostLoginLoading(true);
-
-        // Prefetch was already started above — reuse the promise.
-        // Show the loading screen for at least 1s, at most 5s.
-        const minTimer = new Promise<void>((resolve) =>
-          window.setTimeout(resolve, 1000),
-        );
-        // Cap total wait at 5 s so slow networks don't trap users on the screen.
-        const maxTimer = new Promise<void>((resolve) =>
-          window.setTimeout(resolve, 5000),
-        );
-
-        // Navigate when the minimum animation has played AND either the data is
-        // ready or the max timeout fires, whichever comes first.
-        Promise.all([minTimer, Promise.race([prefetchPromise, maxTimer])]).then(
-          () => navigate(defaultLandingPage || "/", { replace: true }),
+      // Slow path only: if the prefetch is still in flight after 300ms, cover
+      // the wait. A fast prefetch navigates before this ever fires, so there is
+      // no floor on how quickly a correct password gets you to the dashboard.
+      if (!reducedMotion) {
+        slowPathTimerRef.current = window.setTimeout(
+          () => setShowPostLoginLoading(true),
+          LOADING_SCREEN_DELAY_MS,
         );
       }
+
+      const maxTimer = new Promise<void>((resolve) =>
+        window.setTimeout(resolve, PREFETCH_MAX_WAIT_MS),
+      );
+
+      Promise.race([prefetchPromise, maxTimer]).then(() => {
+        if (slowPathTimerRef.current !== null) {
+          window.clearTimeout(slowPathTimerRef.current);
+          slowPathTimerRef.current = null;
+        }
+        navigate(defaultLandingPage || "/", { replace: true });
+      });
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Invalid username or password"
@@ -140,35 +146,17 @@ export default function LoginPage() {
         data-testid="login-gradient"
       />
 
-      {!reducedMotion && (
-        <div className="pointer-events-none absolute inset-0 z-0" aria-hidden="true">
-          {PARTICLES.map((particle) => (
-            <span
-              key={`${particle.left}-${particle.delay}`}
-              className="login-particle"
-              style={
-                {
-                  left: particle.left,
-                  width: particle.size,
-                  height: particle.size,
-                  animationDelay: particle.delay,
-                  animationDuration: particle.duration,
-                } as CSSProperties
-              }
-            />
-          ))}
-        </div>
-      )}
-
-      <div className={`login-card z-10 w-full max-w-sm rounded-2xl border bg-card/85 p-8 shadow-2xl ${stagedClass}`}>
+      {/*
+        The card is deliberately opaque. At `bg-card/85` the page background bled
+        through, dropping the muted-foreground token to 4.31:1 — below AA — while
+        the same token measures 4.62:1 on an opaque card.
+      */}
+      <div className={`login-card z-10 w-full max-w-sm rounded-2xl border bg-card p-8 shadow-2xl ${stagedClass}`}>
         <div className="mb-6 text-center">
           <div className={`mx-auto mb-3 grid place-items-center ${reducedMotion ? "" : "login-logo-shell"}`}>
             <LoginLogo reducedMotion={reducedMotion} />
           </div>
-          <h1 className="text-2xl font-bold tracking-tight">Docker Insights</h1>
-          <p className={`mt-1 text-xs uppercase tracking-[0.24em] text-muted-foreground ${reducedMotion ? "" : "login-typewriter"}`}>
-            powered by AI
-          </p>
+          <h1 className="text-2xl font-bold tracking-tight">{PRODUCT_NAME}</h1>
           <p
             className={`mt-3 text-sm text-muted-foreground ${stagedClass}`}
             style={getStagedStyle(120)}
@@ -236,16 +224,36 @@ export default function LoginPage() {
             >
               Password
             </label>
-            <input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Enter your password"
-              required
-              autoComplete="current-password"
-              className="login-input flex h-10 w-full rounded-md border border-input bg-background/85 px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none"
-            />
+            {/*
+              The password here is usually a long generated string pasted from a
+              vault, so a reveal toggle is the difference between one attempt and
+              a retry loop.
+            */}
+            <div className="relative">
+              <input
+                id="password"
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Enter your password"
+                required
+                autoComplete="current-password"
+                className="login-input flex h-10 w-full rounded-md border border-input bg-background/85 py-2 pl-3 pr-11 text-sm placeholder:text-muted-foreground focus-visible:outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((visible) => !visible)}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                aria-pressed={showPassword}
+                className="absolute inset-y-0 right-0 inline-flex w-11 items-center justify-center rounded-r-md text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {showPassword ? (
+                  <EyeOff className="h-4 w-4" aria-hidden="true" />
+                ) : (
+                  <Eye className="h-4 w-4" aria-hidden="true" />
+                )}
+              </button>
+            </div>
           </div>
 
           <button
@@ -266,14 +274,6 @@ export default function LoginPage() {
             {submitState === "success" && (
               <span className="absolute inset-0 inline-flex items-center justify-center">
                 Signed in
-              </span>
-            )}
-            {submitState === "success" && !reducedMotion && (
-              <span className="pointer-events-none absolute inset-0" aria-hidden="true">
-                <span className="login-burst login-burst-1" />
-                <span className="login-burst login-burst-2" />
-                <span className="login-burst login-burst-3" />
-                <span className="login-burst login-burst-4" />
               </span>
             )}
           </button>

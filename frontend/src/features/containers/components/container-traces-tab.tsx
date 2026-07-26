@@ -18,6 +18,20 @@ interface ContainerTracesTabProps {
   endpointId: number;
 }
 
+/**
+ * The latency/error series, as theme tokens.
+ *
+ * These were hardcoded hex (`#3b82f6`, `#8b5cf6`, `#ef4444`), which assumes one
+ * background; the app ships 16 themes, 8 of them light. Purple is reserved for
+ * AI insight, so p95 takes a chart colour rather than violet, and only the
+ * error series keeps a status colour.
+ */
+export const LATENCY_SERIES = [
+  { dataKey: 'p50', yAxisId: 'left', stroke: 'var(--color-chart-1)' },
+  { dataKey: 'p95', yAxisId: 'left', stroke: 'var(--color-chart-2)' },
+  { dataKey: 'errorRate', yAxisId: 'right', stroke: 'var(--color-destructive)' },
+] as const;
+
 // Rounds a Date down to the start of its current minute, then forward
 // `offsetMs` — used to keep RED window edges stable across renders for the
 // React Query cache key.
@@ -30,11 +44,16 @@ function flooredNow(): Date {
 /**
  * Container Detail → "Calls" tab (#1235).
  *
- * Renders four panels for a single container:
+ * Renders three panels for a single container:
  *   1. RED summary (last 1h, bucket=1h, filters.container=name)
- *   2. Top outgoing calls (client kind) — link out to Trace Explorer
- *   3. Top incoming calls (server kind)
- *   4. Latency p50/p95 timeline + error rate (1m bucket, last 60m)
+ *   2. Slowest calls — link out to Trace Explorer
+ *   3. Latency p50/p95 timeline + error rate (1m bucket, last 60m)
+ *
+ * There used to be two call panels, "Top outgoing calls" and "Top incoming
+ * calls", issued as two identical `useTraces` queries — same container, same
+ * window, same limit, no span-kind filter — so they rendered byte-identical
+ * lists under two headings that promised opposite directions. Splitting them
+ * again needs a span `kind` filter on the traces hook and API.
  *
  * Empty state for every panel is the shared NoTraceDataCallout.
  */
@@ -64,18 +83,9 @@ export function ContainerTracesTab({ containerName }: ContainerTracesTabProps) {
     container: containerName,
   });
 
-  // (2) Outgoing (client kind)
-  const { data: outgoing } = useTraces({
-    containerName,
-    from: hourFrom.toISOString(),
-    to: hourTo.toISOString(),
-    limit: 10,
-  });
-  // (3) Incoming (server kind) — use the same /api/traces endpoint without
-  // a kind filter at the hook level since the hook doesn't model it; the
-  // trace explorer page already does best-effort filtering, and this panel
-  // is mostly for navigation, not precise RED counts.
-  const { data: incoming } = useTraces({
+  // (2) Calls touching this container in the window. The traces hook models no
+  // span `kind`, so this is every call, not a direction.
+  const { data: calls } = useTraces({
     containerName,
     from: hourFrom.toISOString(),
     to: hourTo.toISOString(),
@@ -101,8 +111,7 @@ export function ContainerTracesTab({ containerName }: ContainerTracesTabProps) {
 
   const summaryRow = redSummary?.buckets[0]?.rows[0];
   const hasAnyData = (redSummary?.buckets.length ?? 0) > 0
-    || (outgoing?.length ?? 0) > 0
-    || (incoming?.length ?? 0) > 0;
+    || (calls?.length ?? 0) > 0;
 
   if (!hasAnyData) {
     return (
@@ -145,19 +154,13 @@ export function ContainerTracesTab({ containerName }: ContainerTracesTabProps) {
         )}
       </section>
 
-      {/* (2) & (3) Top calls */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <section className="rounded-lg border bg-card p-6 shadow-sm">
-          <h3 className="text-lg font-semibold">Top outgoing calls</h3>
-          <TraceList traces={sortByDuration(outgoing)} emptyText="No outgoing calls observed." />
-        </section>
-        <section className="rounded-lg border bg-card p-6 shadow-sm">
-          <h3 className="text-lg font-semibold">Top incoming calls</h3>
-          <TraceList traces={sortByDuration(incoming)} emptyText="No incoming calls observed." />
-        </section>
-      </div>
+      {/* (2) Slowest calls */}
+      <section className="rounded-lg border bg-card p-6 shadow-sm">
+        <h3 className="text-lg font-semibold">Slowest calls (last 1h)</h3>
+        <TraceList traces={sortByDuration(calls)} emptyText="No calls observed in the last hour." />
+      </section>
 
-      {/* (4) Latency + error timeline */}
+      {/* (3) Latency + error timeline */}
       <section className="rounded-lg border bg-card p-6 shadow-sm">
         <h3 className="text-lg font-semibold">Latency p50/p95 + error rate over time</h3>
         {sparklineData.length === 0 ? (
@@ -171,9 +174,16 @@ export function ContainerTracesTab({ containerName }: ContainerTracesTabProps) {
                 <YAxis yAxisId="left" fontSize={11} label={{ value: 'ms', angle: -90, position: 'insideLeft', fontSize: 11 }} />
                 <YAxis yAxisId="right" orientation="right" fontSize={11} label={{ value: 'err %', angle: 90, position: 'insideRight', fontSize: 11 }} />
                 <Tooltip />
-                <Line yAxisId="left" type="monotone" dataKey="p50" stroke="#3b82f6" dot={false} />
-                <Line yAxisId="left" type="monotone" dataKey="p95" stroke="#8b5cf6" dot={false} />
-                <Line yAxisId="right" type="monotone" dataKey="errorRate" stroke="#ef4444" dot={false} />
+                {LATENCY_SERIES.map((series) => (
+                  <Line
+                    key={series.dataKey}
+                    yAxisId={series.yAxisId}
+                    type="monotone"
+                    dataKey={series.dataKey}
+                    stroke={series.stroke}
+                    dot={false}
+                  />
+                ))}
               </LineChart>
             </ResponsiveContainer>
           </div>

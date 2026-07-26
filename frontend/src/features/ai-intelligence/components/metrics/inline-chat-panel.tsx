@@ -156,8 +156,8 @@ export const InlineChatPanel = memo(function InlineChatPanel({ open, onClose, co
         {/* Header */}
         <div className="flex items-center justify-between border-b px-4 py-3">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-purple-600">
-              <Bot className="h-4 w-4 text-white" />
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-primary/10">
+              <Bot className="h-4 w-4 text-primary" />
             </div>
             <div className="min-w-0">
               <p className="text-sm font-semibold truncate">Ask AI</p>
@@ -180,14 +180,14 @@ export const InlineChatPanel = memo(function InlineChatPanel({ open, onClose, co
           {/* Empty state with suggestions */}
           {messages.length === 0 && !isStreaming && !isSending && (
             <div className="flex flex-col items-center text-center pt-8">
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500/10 to-purple-500/10 border border-blue-500/20">
-                <Bot className="h-7 w-7 text-blue-500" />
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-primary/20 bg-primary/10">
+                <Bot className="h-7 w-7 text-primary" />
               </div>
               <p className="mt-4 text-sm font-medium">
                 Ask anything about {context.containerName}
               </p>
               <p className="mt-1 text-xs text-muted-foreground max-w-[280px]">
-                I have access to metrics, logs, anomalies, and traces for this container.
+                Reads metrics, logs, anomalies and traces for this container. It cannot change anything.
               </p>
               <div className="mt-5 flex flex-col gap-2 w-full">
                 {SUGGESTED_QUESTIONS.map((q) => (
@@ -268,7 +268,7 @@ export const InlineChatPanel = memo(function InlineChatPanel({ open, onClose, co
             <button
               type="submit"
               disabled={!input.trim() || isStreaming || isSending}
-              className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-blue-600 to-purple-600 p-2 text-white shadow-sm transition-all hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
+              className="inline-flex items-center justify-center rounded-lg bg-primary p-2 text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
               aria-label="Send message"
             >
               <Send className="h-4 w-4" />
@@ -282,8 +282,8 @@ export const InlineChatPanel = memo(function InlineChatPanel({ open, onClose, co
 
 function BotAvatar() {
   return (
-    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-purple-600">
-      <Bot className="h-3.5 w-3.5 text-white" />
+    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-primary/10">
+      <Bot className="h-3.5 w-3.5 text-primary" />
     </div>
   );
 }
@@ -291,9 +291,9 @@ function BotAvatar() {
 function LoadingDots() {
   return (
     <div className="flex gap-1">
-      <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-bounce [animation-delay:-0.3s]" />
-      <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-bounce [animation-delay:-0.15s]" />
-      <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-bounce" />
+      <span className="h-1.5 w-1.5 rounded-full bg-primary animate-bounce [animation-delay:-0.3s]" />
+      <span className="h-1.5 w-1.5 rounded-full bg-primary animate-bounce [animation-delay:-0.15s]" />
+      <span className="h-1.5 w-1.5 rounded-full bg-primary animate-bounce" />
     </div>
   );
 }
@@ -311,7 +311,7 @@ function CompactThinkingIndicator({ statusMessage }: { statusMessage: string | n
       <BotAvatar />
       <div className="rounded-xl bg-muted/50 p-3 border border-border/50">
         <div className="flex items-center gap-2">
-          <Loader2 className="h-3.5 w-3.5 text-blue-500 animate-spin" />
+          <Loader2 className="h-3.5 w-3.5 text-primary animate-spin" />
           <span className="text-xs text-muted-foreground">{statusMessage || 'Thinking...'}</span>
           <span className="text-[10px] text-muted-foreground/60 tabular-nums">{elapsed}s</span>
         </div>
@@ -358,8 +358,8 @@ const CompactMessage = memo(function CompactMessage({ message, userQuery }: Comp
     <div className={cn('flex gap-3', isUser && 'flex-row-reverse')}>
       <div className="shrink-0">
         {isUser ? (
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600">
-            <User className="h-3.5 w-3.5 text-white" />
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg border border-border bg-muted">
+            <User className="h-3.5 w-3.5 text-muted-foreground" />
           </div>
         ) : (
           <BotAvatar />
@@ -383,7 +383,7 @@ const CompactMessage = memo(function CompactMessage({ message, userQuery }: Comp
           className={cn(
             'rounded-xl p-3 text-[13px]',
             isUser
-              ? 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white ml-auto border border-emerald-400/20'
+              ? 'bg-muted/60 text-foreground ml-auto border border-border'
               : 'bg-muted/50 border border-border/50',
           )}
         >

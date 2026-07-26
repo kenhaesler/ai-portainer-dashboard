@@ -1,5 +1,6 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   Search,
   GitBranch,
@@ -12,6 +13,7 @@ import {
   Layers,
   Timer,
   ScrollText,
+  HelpCircle,
 } from 'lucide-react';
 import { useTraces, useTrace, useServiceMap, useTraceSummary } from '@/features/observability/hooks/use-traces';
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
@@ -19,11 +21,11 @@ import { ServiceMap } from '@/shared/components/charts/service-map';
 import { RefreshControls } from '@/shared/components/ui/refresh-controls';
 import { StatusBadge } from '@/shared/components/feedback/status-badge';
 import { EmptyState } from '@/shared/components/feedback/empty-state';
+import { DataFreshness } from '@/shared/components/feedback/data-freshness';
 import { SkeletonChart, SkeletonList } from '@/shared/components/feedback/skeleton';
 import { cn, formatDate } from '@/shared/lib/utils';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
-import { KpiCard } from '@/shared/components/data-display/kpi-card';
-import { TiltCard } from '@/shared/components/data-display/tilt-card';
+import { PageHeader } from '@/shared/components/layout/page-header';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 
 function formatDuration(ms: number): string {
@@ -31,6 +33,74 @@ function formatDuration(ms: number): string {
   if (ms < 1000) return `${Math.round(ms)}ms`;
   if (ms < 60000) return `${(ms / 1000).toFixed(2)}s`;
   return `${(ms / 60000).toFixed(2)}m`;
+}
+
+/**
+ * The z-score at which a trace is called out as anomalous.
+ *
+ * The backend trace detector flags a service whose latency `p95` deviates by
+ * `TRACES_ANOMALY_P95_ZSCORE` (default 3.0) standard deviations from its
+ * baseline. This page used to show `Avg Duration` and never mentioned p95 or a
+ * z-score at all, so an operator could not tell which traces the detector was
+ * reasoning about. The same threshold is applied here — to trace duration
+ * within the loaded window — so the two agree on what "unusual" means.
+ */
+export const ANOMALY_Z_THRESHOLD = 3;
+
+export interface DurationStats {
+  count: number;
+  p50: number;
+  p95: number;
+  mean: number;
+  stdDev: number;
+}
+
+/** Nearest-rank percentile over an ascending-sorted array. */
+export function percentile(sortedAsc: number[], p: number): number {
+  if (sortedAsc.length === 0) return 0;
+  const rank = Math.ceil((p / 100) * sortedAsc.length);
+  const index = Math.min(sortedAsc.length - 1, Math.max(0, rank - 1));
+  return sortedAsc[index];
+}
+
+/** p50/p95 plus the mean and population stddev the z-score filter uses. */
+export function computeDurationStats(durations: number[]): DurationStats {
+  const count = durations.length;
+  if (count === 0) return { count: 0, p50: 0, p95: 0, mean: 0, stdDev: 0 };
+  const sorted = [...durations].sort((a, b) => a - b);
+  const mean = durations.reduce((sum, d) => sum + d, 0) / count;
+  const variance = durations.reduce((sum, d) => sum + (d - mean) ** 2, 0) / count;
+  return {
+    count,
+    p50: percentile(sorted, 50),
+    p95: percentile(sorted, 95),
+    mean,
+    stdDev: Math.sqrt(variance),
+  };
+}
+
+/** Deviation of one duration from the loaded window, or null when flat. */
+export function durationZScore(duration: number, stats: DurationStats): number | null {
+  if (stats.count < 2 || stats.stdDev <= 0) return null;
+  return (duration - stats.mean) / stats.stdDev;
+}
+
+/**
+ * CORS preflights. On the captured fleet 83 of 193 traces were `OPTIONS *` —
+ * they carry no diagnostic signal and crowd out the traces that do.
+ */
+export function isPreflightOperation(operationName: string): boolean {
+  return /^options\b/i.test(operationName.trim());
+}
+
+/** Fallback row height for the virtualizer before a card is measured. */
+const TRACE_ROW_ESTIMATED_HEIGHT = 128;
+
+/** The one value shared by every row, or null when it varies (or N < 2). */
+export function constantValue(values: string[]): string | null {
+  if (values.length < 2) return null;
+  const first = values[0];
+  return values.every((v) => v === first) ? first : null;
 }
 
 function getDurationColor(ms: number): string {
@@ -72,6 +142,23 @@ function parseAttributes(attributes: unknown): Record<string, unknown> {
 
 type TraceSource = 'ebpf' | 'http' | 'scheduler' | 'unknown';
 
+/**
+ * One label per source value.
+ *
+ * The page previously spoke three dialects at once for the same three-valued
+ * enum: counter chips said "eBPF / HTTP / Scheduler", the dropdown said
+ * "eBPF (Apps) / HTTP Requests / Background Jobs", and the badges said
+ * "source: ebpf / source: http / source: scheduler" — all visible together.
+ */
+const SOURCE_LABELS: Record<TraceSource, string> = {
+  ebpf: 'eBPF',
+  http: 'HTTP',
+  scheduler: 'Scheduler',
+  unknown: 'Unknown',
+};
+
+const FILTERABLE_SOURCES: TraceSource[] = ['ebpf', 'http', 'scheduler'];
+
 function normalizeSource(source: string | undefined): TraceSource {
   if (!source) return 'unknown';
   const normalized = source.toLowerCase();
@@ -104,8 +191,44 @@ function SourceBadge({ source }: { source: string | undefined }) {
       className={cn('rounded border px-1.5 py-0.5', getSourceBadgeClass(source))}
       title={getSourceDescription(source)}
     >
-      source: {normalized}
+      source: {SOURCE_LABELS[normalized]}
     </span>
+  );
+}
+
+/**
+ * The source filter. These chips used to be decorative `<span>`s sitting under
+ * copy that told the operator to click them, while the actual control was a
+ * separate dropdown with different wording. Now they are the control.
+ */
+function SourceFilterChip({
+  source,
+  count,
+  active,
+  onSelect,
+}: {
+  source: TraceSource | 'all';
+  count?: number;
+  active: boolean;
+  onSelect: () => void;
+}) {
+  const label = source === 'all' ? 'All sources' : SOURCE_LABELS[source];
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-pressed={active}
+      title={source === 'all' ? 'Every ingestion path' : getSourceDescription(source)}
+      className={cn(
+        'rounded border px-2 py-1 text-xs font-medium transition-colors',
+        source === 'all' || !active ? 'border-input bg-background hover:bg-muted' : getSourceBadgeClass(source),
+        active && 'ring-1 ring-primary',
+        active && source === 'all' && 'bg-primary text-primary-foreground hover:bg-primary/90'
+      )}
+    >
+      {label}
+      {count !== undefined && <span className="ml-1 tabular-nums opacity-80">{count}</span>}
+    </button>
   );
 }
 
@@ -271,50 +394,42 @@ function SpanBar({ span, traceStartTime, traceDuration, depth, isSelected, onCli
   );
 }
 
-interface TraceListItemProps {
-  trace: {
-    trace_id?: string;
-    traceId?: string;
-    root_span?: string;
-    rootSpan?: { serviceName?: string; operationName?: string };
-    duration_ms?: number;
-    duration?: number;
-    span_count?: number;
-    spans?: unknown[];
-    services?: string[];
-    service_name?: string;
-    serviceName?: string;
-    start_time?: string;
-    startTime?: string;
-    status: string;
-  trace_source?: string;
-  container_name?: string;
-  containerName?: string;
-  k8s_container_name?: string;
-  k8sContainerName?: string;
-};
-  isSelected: boolean;
-  onClick: () => void;
-  sourceLabel: string;
-  endpointLabel: string;
-  containerLabel: string;
+/** One row of the trace list, already flattened out of the API's two casings. */
+interface TraceRow {
+  id: string;
+  status: string;
+  duration: number;
+  operation: string;
+  service: string;
+  source: string;
+  endpoint: string;
+  container: string;
+  spanCount: number;
+  serviceCount: number;
+  startTime: string;
+  isPreflight: boolean;
+  zScore: number | null;
 }
 
-function TraceListItem({
-  trace,
-  isSelected,
-  onClick,
-  sourceLabel,
-  endpointLabel,
-  containerLabel,
-}: TraceListItemProps) {
-  const traceId = trace.traceId || trace.trace_id || '';
-  const serviceName = trace.serviceName || trace.service_name || trace.rootSpan?.serviceName || 'Unknown';
-  const operationName = trace.root_span || trace.rootSpan?.operationName || 'Unknown operation';
-  const duration = trace.duration ?? trace.duration_ms ?? 0;
-  const spanCount = trace.span_count ?? trace.spans?.length ?? 0;
-  const serviceCount = trace.services?.length ?? 1;
-  const startTime = trace.startTime || trace.start_time || '';
+/** Which of the repeated fields are identical on every loaded row. */
+interface ConstantFields {
+  service: string | null;
+  source: string | null;
+  endpoint: string | null;
+  container: string | null;
+  serviceCount: string | null;
+}
+
+interface TraceListItemProps {
+  row: TraceRow;
+  isSelected: boolean;
+  onClick: () => void;
+  /** Fields whose value is the same on every row — rendered once above the list. */
+  constants: ConstantFields;
+}
+
+function TraceListItem({ row, isSelected, onClick, constants }: TraceListItemProps) {
+  const isAnomalous = row.zScore !== null && row.zScore >= ANOMALY_Z_THRESHOLD;
 
   return (
     <button
@@ -326,37 +441,55 @@ function TraceListItem({
           : 'border-border bg-card hover:border-primary/50'
       )}
     >
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <GitBranch className="h-4 w-4 text-primary" />
-          <span className="font-mono text-xs">{traceId.slice(0, 16)}</span>
-        </div>
-        <StatusBadge status={trace.status} showDot={false} />
+      {/* Duration and status lead: they are the two fields that actually vary. */}
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex items-center gap-1.5 text-base font-semibold tabular-nums">
+          <Timer className="h-4 w-4 text-muted-foreground" />
+          {formatDuration(row.duration)}
+        </span>
+        <span className="flex items-center gap-2">
+          {isAnomalous && (
+            <span
+              className="rounded border border-primary/40 bg-primary/10 px-1.5 py-0.5 text-[11px] font-medium text-primary"
+              title={`Duration is ${row.zScore?.toFixed(1)} standard deviations above the mean of the loaded window.`}
+            >
+              z={row.zScore?.toFixed(1)}
+            </span>
+          )}
+          <StatusBadge status={row.status} showDot={false} />
+        </span>
       </div>
-      <div className="mt-2">
-        <p className="font-medium">{serviceName}</p>
-        <p className="truncate text-sm text-muted-foreground">{operationName}</p>
-      </div>
-      <div className="mt-2 flex items-center gap-4 text-xs text-muted-foreground">
-        <span className="flex items-center gap-1">
-          <Timer className="h-3 w-3" />
-          {formatDuration(duration)}
+      <p className="mt-2 truncate text-sm font-medium">{row.operation}</p>
+      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+        <span className="flex items-center gap-1 font-mono">
+          <GitBranch className="h-3 w-3" />
+          {row.id.slice(0, 12)}
         </span>
         <span className="flex items-center gap-1">
           <Layers className="h-3 w-3" />
-          {spanCount} spans
+          {row.spanCount} spans
         </span>
-        <span className="flex items-center gap-1">
-          <Server className="h-3 w-3" />
-          {serviceCount} services
-        </span>
+        {constants.service === null && (
+          <span className="flex items-center gap-1">
+            <Server className="h-3 w-3" />
+            {row.service}
+          </span>
+        )}
+        {/* "1 services" was on all 193 rows; it earns its place only when it varies. */}
+        {constants.serviceCount === null && <span>{row.serviceCount} services</span>}
+        <span>{formatDate(row.startTime)}</span>
       </div>
-      <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
-        <SourceBadge source={sourceLabel} />
-        <span className="rounded border bg-muted/40 px-1.5 py-0.5">endpoint: {endpointLabel}</span>
-        <span className="rounded border bg-muted/40 px-1.5 py-0.5">container: {containerLabel}</span>
-      </div>
-      <div className="mt-2 text-xs text-muted-foreground">{formatDate(startTime)}</div>
+      {(constants.source === null || constants.endpoint === null || constants.container === null) && (
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
+          {constants.source === null && <SourceBadge source={row.source} />}
+          {constants.endpoint === null && (
+            <span className="rounded border bg-muted/40 px-1.5 py-0.5">endpoint: {row.endpoint}</span>
+          )}
+          {constants.container === null && (
+            <span className="rounded border bg-muted/40 px-1.5 py-0.5">container: {row.container}</span>
+          )}
+        </div>
+      )}
     </button>
   );
 }
@@ -369,9 +502,9 @@ export default function TraceExplorerPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [serviceFilter, setServiceFilter] = useState(() => searchParams.get('service') ?? '');
   const [sourceFilter, setSourceFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'ok' | 'error'>(() => {
+  const [statusFilter, setStatusFilter] = useState<'all' | 'ok' | 'error' | 'anomalous'>(() => {
     const s = searchParams.get('status');
-    return s === 'ok' || s === 'error' ? s : 'all';
+    return s === 'ok' || s === 'error' || s === 'anomalous' ? s : 'all';
   });
   const [timeRange, setTimeRange] = useState<'15m' | '1h' | '6h' | '24h' | '7d' | 'all'>('24h');
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(() => searchParams.get('trace'));
@@ -384,13 +517,20 @@ export default function TraceExplorerPage() {
     const s = searchParams.get('service');
     if (s !== null) setServiceFilter(s);
     const status = searchParams.get('status');
-    if (status === 'ok' || status === 'error' || status === 'all') setStatusFilter(status);
+    if (status === 'ok' || status === 'error' || status === 'all' || status === 'anomalous') {
+      setStatusFilter(status);
+    }
     const trace = searchParams.get('trace');
     if (trace !== null) setSelectedTraceId(trace);
   }, [searchParams]);
   const [selectedSpanId, setSelectedSpanId] = useState<string | null>(null);
   const [showServiceMap, setShowServiceMap] = useState(false);
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  /** The 25 OTEL attribute filters no operator reaches for, behind a second click. */
+  const [showAllAttributeFilters, setShowAllAttributeFilters] = useState(false);
+  const [showSourceGuide, setShowSourceGuide] = useState(false);
+  const [showPreflights, setShowPreflights] = useState(false);
+  const listScrollRef = useRef<HTMLDivElement>(null);
   const [textFilterMode, setTextFilterMode] = useState<'exact' | 'contains'>('exact');
   const [httpMethodFilter, setHttpMethodFilter] = useState('');
   const [httpRouteFilter, setHttpRouteFilter] = useState('');
@@ -424,14 +564,15 @@ export default function TraceExplorerPage() {
   const [telemetrySdkVersionFilter, setTelemetrySdkVersionFilter] = useState('');
   const [otelScopeNameFilter, setOtelScopeNameFilter] = useState('');
   const [otelScopeVersionFilter, setOtelScopeVersionFilter] = useState('');
-  const { interval, setInterval } = useAutoRefresh(0);
 
   const fromTime = useMemo(() => getFromIso(timeRange), [timeRange]);
 
   const traceQuery = useMemo(() => ({
     serviceName: serviceFilter || undefined,
     source: sourceFilter || undefined,
-    status: statusFilter === 'all' ? undefined : statusFilter,
+    // `anomalous` is a client-side z-score cut over the loaded window, not a
+    // status the API knows about.
+    status: statusFilter === 'ok' || statusFilter === 'error' ? statusFilter : undefined,
     from: fromTime,
     limit: 200,
     httpMethod: httpMethodFilter || undefined,
@@ -515,10 +656,17 @@ export default function TraceExplorerPage() {
     otelScopeVersionFilter,
   ]);
 
-  const { data: tracesData, isLoading: tracesLoading, isPending: tracesPending, isError, error, refetch, isFetching } = useTraces(traceQuery);
+  const { data: tracesData, isLoading: tracesLoading, isPending: tracesPending, isError, error, refetch, isFetching, dataUpdatedAt } = useTraces(traceQuery);
   const { data: selectedTraceData } = useTrace(selectedTraceId || undefined);
   const { data: serviceMapData } = useServiceMap(traceQuery);
   const { data: summary } = useTraceSummary(traceQuery);
+
+  // The hook owns the timer. Without `onTick` the interval dropdown rendered a
+  // live indicator over a schedule that fetched nothing.
+  const { interval, setRefreshInterval } = useAutoRefresh(0, {
+    onTick: () => { void refetch(); },
+    storageKey: 'traces',
+  });
 
   // Treat both isLoading and isPending-without-data as "loading" to avoid
   // rendering a blank page during SPA navigation before data arrives.
@@ -667,20 +815,85 @@ export default function TraceExplorerPage() {
     };
   }, [selectedTraceData]);
 
-  const filteredTraces = useMemo(() => {
-    if (!traces || traces.length === 0) return [];
-    return traces.filter((trace) => {
-      if (statusFilter !== 'all' && trace.status !== statusFilter) return false;
+  // p50/p95 and the z-score baseline are measured over the whole loaded
+  // window, not the current status cut — otherwise selecting "Anomalous"
+  // would redefine the population it is measured against.
+  const durationStats = useMemo(
+    () => computeDurationStats(traces.map((t) => t.duration ?? t.duration_ms ?? 0)),
+    [traces],
+  );
+
+  const traceRows = useMemo<TraceRow[]>(() => {
+    return traces.map((trace) => {
+      const duration = trace.duration ?? trace.duration_ms ?? 0;
+      const operation = trace.root_span || trace.rootSpan?.operationName || 'Unknown operation';
+      return {
+        id: trace.traceId || trace.trace_id || '',
+        status: trace.status,
+        duration,
+        operation,
+        service: trace.serviceName || trace.service_name || trace.rootSpan?.serviceName || 'Unknown',
+        source: trace.trace_source || 'unknown',
+        endpoint: getTraceEndpointLabel(trace as Record<string, unknown>),
+        container: getTraceContainerLabel(trace as Record<string, unknown>),
+        spanCount: trace.span_count ?? trace.spans?.length ?? 0,
+        serviceCount: trace.services?.length ?? 1,
+        startTime: trace.startTime || trace.start_time || '',
+        isPreflight: isPreflightOperation(operation),
+        zScore: durationZScore(duration, durationStats),
+      };
+    });
+  }, [traces, durationStats]);
+
+  const filteredRows = useMemo(() => {
+    return traceRows.filter((row) => {
+      if (statusFilter === 'anomalous') {
+        if (row.zScore === null || row.zScore < ANOMALY_Z_THRESHOLD) return false;
+      } else if (statusFilter !== 'all' && row.status !== statusFilter) {
+        return false;
+      }
       if (!searchQuery) return true;
 
       const q = searchQuery.toLowerCase();
-      const traceId = (trace.traceId || trace.trace_id || '').toLowerCase();
-      const serviceName = (trace.serviceName || trace.service_name || trace.rootSpan?.serviceName || '').toLowerCase();
-      const operationName = (trace.root_span || trace.rootSpan?.operationName || '').toLowerCase();
-
-      return traceId.includes(q) || serviceName.includes(q) || operationName.includes(q);
+      return (
+        row.id.toLowerCase().includes(q)
+        || row.service.toLowerCase().includes(q)
+        || row.operation.toLowerCase().includes(q)
+      );
     });
-  }, [traces, searchQuery, statusFilter]);
+  }, [traceRows, searchQuery, statusFilter]);
+
+  const anomalousCount = useMemo(
+    () => traceRows.filter((r) => r.zScore !== null && r.zScore >= ANOMALY_Z_THRESHOLD).length,
+    [traceRows],
+  );
+
+  const preflightRows = useMemo(() => filteredRows.filter((r) => r.isPreflight), [filteredRows]);
+
+  /** CORS preflights collapse into one aggregated row unless asked for. */
+  const visibleRows = useMemo(
+    () => (showPreflights ? filteredRows : filteredRows.filter((r) => !r.isPreflight)),
+    [filteredRows, showPreflights],
+  );
+
+  // A field that reads the same on every row is 100% ink for 0 bits. Render it
+  // once above the list instead of once per card.
+  const constantFields = useMemo<ConstantFields>(() => ({
+    service: constantValue(filteredRows.map((r) => r.service)),
+    source: constantValue(filteredRows.map((r) => r.source)),
+    endpoint: constantValue(filteredRows.map((r) => r.endpoint)),
+    container: constantValue(filteredRows.map((r) => r.container)),
+    serviceCount: constantValue(filteredRows.map((r) => String(r.serviceCount))),
+  }), [filteredRows]);
+
+  // Virtualized like the Log Viewer. The list is capped at 200 today but
+  // unbounded in shape, and it renders ~11 nodes per card.
+  const rowVirtualizer = useVirtualizer({
+    count: visibleRows.length,
+    getScrollElement: () => listScrollRef.current,
+    estimateSize: () => TRACE_ROW_ESTIMATED_HEIGHT,
+    overscan: 8,
+  });
 
   const services = useMemo(() => {
     if (!traces || traces.length === 0) return [];
@@ -775,20 +988,29 @@ export default function TraceExplorerPage() {
     || otelScopeVersionFilter
     || textFilterMode !== 'exact'
   );
-  const sourceHint = useMemo(() => {
-    if (sourceFilter === 'ebpf') return 'Showing runtime traces from Beyla/eBPF instrumentation.';
-    if (sourceFilter === 'http') return 'Showing API gateway request traces.';
-    if (sourceFilter === 'scheduler') return 'Showing background scheduler traces.';
-    return 'Showing all trace sources. Use a source filter to focus on a single ingestion path.';
-  }, [sourceFilter]);
+
+  /**
+   * The one stat line. This was four KPI tiles, and the headline number was
+   * `Avg Duration` — the statistic the anomaly detector does not use.
+   */
+  const statLine = summary ? (
+    <span className="flex flex-wrap items-center gap-x-2 gap-y-1 tabular-nums">
+      <span>{summary.totalTraces} traces</span>
+      <span aria-hidden="true">·</span>
+      <span>{summary.services} {summary.services === 1 ? 'service' : 'services'}</span>
+      <span aria-hidden="true">·</span>
+      <span>{(summary.errorRate * 100).toFixed(1)}% errors</span>
+      <span aria-hidden="true">·</span>
+      <span title={`p95 and p50 over the ${durationStats.count} traces loaded into the list.`}>
+        p95 {formatDuration(durationStats.p95)} · p50 {formatDuration(durationStats.p50)}
+      </span>
+    </span>
+  ) : undefined;
 
   if (isError) {
     return (
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Trace Explorer</h1>
-          <p className="text-muted-foreground">Distributed trace visualization with service map</p>
-        </div>
+        <PageHeader title="Traces" />
         <EmptyState
           variant="error"
           icon={AlertTriangle}
@@ -807,41 +1029,45 @@ export default function TraceExplorerPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Trace Explorer</h1>
-          <p className="text-muted-foreground">Distributed trace visualization with service map</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <RefreshControls interval={interval} onIntervalChange={setInterval} onRefresh={() => refetch()} isLoading={isFetching} />
-        </div>
-      </div>
+      <PageHeader
+        title="Traces"
+        subtitle={statLine}
+        hideSubtitleOnMobile={false}
+        actions={
+          <>
+            <DataFreshness lastUpdated={dataUpdatedAt || null} onRefresh={() => refetch()} />
+            <button
+              type="button"
+              onClick={() => setShowSourceGuide((prev) => !prev)}
+              aria-expanded={showSourceGuide}
+              aria-controls="trace-source-guide"
+              className="rounded-md border border-input bg-background p-2 hover:bg-muted"
+              data-testid="source-guide-toggle"
+            >
+              <HelpCircle className="h-4 w-4" aria-hidden="true" />
+              <span className="sr-only">Trace sources and percentiles</span>
+            </button>
+            <RefreshControls interval={interval} onIntervalChange={setRefreshInterval} onRefresh={() => refetch()} isLoading={isFetching} />
+          </>
+        }
+      />
 
-      {summary && (
-        <>
-          <div className="grid gap-4 md:grid-cols-4">
-            <TiltCard>
-              <KpiCard label="Total Traces" value={summary.totalTraces} />
-            </TiltCard>
-            <TiltCard>
-              <KpiCard label="Avg Duration" value={formatDuration(summary.avgDuration)} />
-            </TiltCard>
-            <TiltCard>
-              <KpiCard label="Error Rate" value={`${(summary.errorRate * 100).toFixed(1)}%`} />
-            </TiltCard>
-            <TiltCard>
-              <KpiCard label="Services" value={summary.services} />
-            </TiltCard>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card p-3 text-xs">
-            <span className="font-medium text-muted-foreground">Source counters:</span>
-            <span className="rounded border border-amber-500/40 bg-amber-500/15 px-2 py-1">eBPF: {sourceCounts.ebpf}</span>
-            <span className="rounded border border-sky-500/40 bg-sky-500/15 px-2 py-1">HTTP: {sourceCounts.http}</span>
-            <span className="rounded border border-violet-500/40 bg-violet-500/15 px-2 py-1">Scheduler: {sourceCounts.scheduler}</span>
-            <span className="rounded border bg-muted/40 px-2 py-1">Unknown: {sourceCounts.unknown}</span>
-            <span className="text-muted-foreground">Tip: select a source below to focus this list.</span>
-          </div>
-        </>
+      {showSourceGuide && (
+        <div
+          id="trace-source-guide"
+          className="space-y-2 rounded-lg border bg-card p-4 text-xs text-muted-foreground"
+        >
+          <p className="font-medium text-foreground">eBPF Quick Guide</p>
+          <p>
+            `source: ebpf` means Beyla captured runtime network spans. `kind=server` is inbound traffic, `kind=client` is outbound calls, and `kind=internal` is in-process work. If endpoint/container is `unknown`, instrumentation still works but metadata enrichment is missing.
+          </p>
+          <p>
+            Ingested in this window: {SOURCE_LABELS.ebpf} {sourceCounts.ebpf} · {SOURCE_LABELS.http} {sourceCounts.http} · {SOURCE_LABELS.scheduler} {sourceCounts.scheduler} · {SOURCE_LABELS.unknown} {sourceCounts.unknown}.
+          </p>
+          <p>
+            p95 and p50 are computed from the {durationStats.count} traces loaded into the list (up to 200), not from the full result set. Anomalous selects traces at least {ANOMALY_Z_THRESHOLD} standard deviations above that window&apos;s mean duration — the threshold the trace detector applies to latency p95 (`TRACES_ANOMALY_P95_ZSCORE`, default {ANOMALY_Z_THRESHOLD.toFixed(1)}).
+          </p>
+        </div>
       )}
 
       <SpotlightCard>
@@ -871,31 +1097,23 @@ export default function TraceExplorerPage() {
             />
           </div>
 
-          <div className="flex items-center gap-2">
-            <Layers className="h-4 w-4 text-muted-foreground" />
-            <ThemedSelect
-              value={sourceFilter || '__all__'}
-              onValueChange={(val) => setSourceFilter(val === '__all__' ? '' : val)}
-              options={[
-                { value: '__all__', label: 'All sources' },
-                { value: 'http', label: 'HTTP Requests' },
-                { value: 'scheduler', label: 'Background Jobs' },
-                { value: 'ebpf', label: 'eBPF (Apps)' },
-              ]}
-              className="text-sm"
+          <div className="flex flex-wrap items-center gap-2" data-testid="source-filter">
+            <Layers className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+            <SourceFilterChip
+              source="all"
+              active={sourceFilter === ''}
+              onSelect={() => setSourceFilter('')}
             />
+            {FILTERABLE_SOURCES.map((source) => (
+              <SourceFilterChip
+                key={source}
+                source={source}
+                count={sourceCounts[source]}
+                active={sourceFilter === source}
+                onSelect={() => setSourceFilter(sourceFilter === source ? '' : source)}
+              />
+            ))}
           </div>
-
-          <p className="text-xs text-muted-foreground" title="Trace source legend and context">
-            {sourceHint}
-          </p>
-          {!sourceFilter && (
-            <div className="flex flex-wrap items-center gap-2 text-[11px]">
-              <SourceBadge source="ebpf" />
-              <SourceBadge source="http" />
-              <SourceBadge source="scheduler" />
-            </div>
-          )}
 
           <div className="flex items-center gap-2">
             <Timer className="h-4 w-4 text-muted-foreground" />
@@ -917,10 +1135,16 @@ export default function TraceExplorerPage() {
           <div className="flex items-center gap-2">
             <Filter className="h-4 w-4 text-muted-foreground" />
             <div className="flex overflow-hidden rounded-md border border-input">
-              {(['all', 'ok', 'error'] as const).map((status) => (
+              {(['all', 'ok', 'error', 'anomalous'] as const).map((status) => (
                 <button
                   key={status}
                   onClick={() => setStatusFilter(status)}
+                  aria-pressed={statusFilter === status}
+                  title={
+                    status === 'anomalous'
+                      ? `Duration at least ${ANOMALY_Z_THRESHOLD} standard deviations above the mean of the ${durationStats.count} loaded traces — the z-score threshold the trace detector applies to latency p95 (TRACES_ANOMALY_P95_ZSCORE, default ${ANOMALY_Z_THRESHOLD.toFixed(1)}).`
+                      : undefined
+                  }
                   className={cn(
                     'px-3 py-1.5 text-sm font-medium transition-colors',
                     statusFilter === status
@@ -928,7 +1152,7 @@ export default function TraceExplorerPage() {
                       : 'bg-background hover:bg-muted'
                   )}
                 >
-                  {status === 'all' ? 'All' : status === 'ok' ? 'Success' : 'Error'}
+                  {status === 'all' ? 'All' : status === 'ok' ? 'Success' : status === 'error' ? 'Error' : `Anomalous (${anomalousCount})`}
                 </button>
               ))}
             </div>
@@ -957,9 +1181,6 @@ export default function TraceExplorerPage() {
             >
               {showAdvancedFilters ? 'Hide advanced filters' : 'Show advanced filters'}
             </button>
-            <p className="text-xs text-muted-foreground">
-              Need precision? Filter by HTTP route/status or service and container namespaces.
-            </p>
           </div>
           {hasAdvancedFiltersApplied && (
             <button
@@ -1005,15 +1226,10 @@ export default function TraceExplorerPage() {
             </button>
           )}
         </div>
-        <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-xs text-muted-foreground">
-          <p className="font-medium text-foreground">eBPF Quick Guide</p>
-          <p className="mt-1">
-            `source: ebpf` means Beyla captured runtime network spans. `kind=server` is inbound traffic, `kind=client` is outbound calls, and `kind=internal` is in-process work. If endpoint/container is `unknown`, instrumentation still works but metadata enrichment is missing.
-          </p>
-        </div>
 
         {showAdvancedFilters && (
-          <div className="grid gap-3 rounded-md border bg-background/60 p-3 md:grid-cols-2 xl:grid-cols-3">
+          <div className="space-y-3 rounded-md border bg-background/60 p-3">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             <div>
               <p className="mb-1 text-xs text-muted-foreground">Text Match Mode</p>
               <ThemedSelect
@@ -1067,6 +1283,43 @@ export default function TraceExplorerPage() {
             </label>
 
             <label className="text-xs text-muted-foreground">
+              Container Name
+              <input
+                type="text"
+                value={containerNameFilter}
+                onChange={(e) => setContainerNameFilter(e.target.value)}
+                placeholder="api-container"
+                className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+              />
+            </label>
+
+            <label className="text-xs text-muted-foreground">
+              Host Name
+              <input
+                type="text"
+                value={hostNameFilter}
+                onChange={(e) => setHostNameFilter(e.target.value)}
+                placeholder="srv-edge-01"
+                className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+              />
+            </label>
+          </div>
+
+          {/* The remaining OTEL semantic-convention attributes. They were all
+              rendered at once — 31 form fields, most with a single possible
+              value on a one-service fleet. */}
+          <button
+            type="button"
+            onClick={() => setShowAllAttributeFilters((prev) => !prev)}
+            className="text-xs font-medium text-primary hover:underline"
+            data-testid="toggle-attribute-filters"
+          >
+            {showAllAttributeFilters ? 'Hide OTEL attribute filters' : 'Show OTEL attribute filters (26)'}
+          </button>
+
+          {showAllAttributeFilters && (
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <label className="text-xs text-muted-foreground">
               Service Namespace
               <input
                 type="text"
@@ -1117,17 +1370,6 @@ export default function TraceExplorerPage() {
                 value={containerIdFilter}
                 onChange={(e) => setContainerIdFilter(e.target.value)}
                 placeholder="f6b71bc8bca2"
-                className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
-              />
-            </label>
-
-            <label className="text-xs text-muted-foreground">
-              Container Name
-              <input
-                type="text"
-                value={containerNameFilter}
-                onChange={(e) => setContainerNameFilter(e.target.value)}
-                placeholder="api-container"
                 className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
               />
             </label>
@@ -1276,17 +1518,6 @@ export default function TraceExplorerPage() {
             </label>
 
             <label className="text-xs text-muted-foreground">
-              Host Name
-              <input
-                type="text"
-                value={hostNameFilter}
-                onChange={(e) => setHostNameFilter(e.target.value)}
-                placeholder="srv-edge-01"
-                className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
-              />
-            </label>
-
-            <label className="text-xs text-muted-foreground">
               OS Type
               <input
                 type="text"
@@ -1385,6 +1616,8 @@ export default function TraceExplorerPage() {
               />
             </label>
           </div>
+          )}
+          </div>
         )}
       </div>
       </SpotlightCard>
@@ -1405,39 +1638,89 @@ export default function TraceExplorerPage() {
             <SkeletonChart size="lg" className="h-[600px]" />
           </div>
         </div>
-      ) : filteredTraces.length === 0 ? (
+      ) : filteredRows.length === 0 ? (
         <EmptyState
           icon={GitBranch}
           title="No traces found"
           description={
-            searchQuery || serviceFilter || sourceFilter || hasAdvancedFiltersApplied
+            searchQuery || serviceFilter || sourceFilter || statusFilter !== 'all' || hasAdvancedFiltersApplied
               ? 'Try adjusting your search or filter criteria.'
               : 'No distributed traces have been collected yet.'
           }
         />
       ) : (
         <div className="grid gap-6 lg:grid-cols-3">
-          <div className="max-h-[600px] space-y-3 overflow-y-auto pr-2">
-            {filteredTraces.map((trace) => {
-              const id = trace.traceId || trace.trace_id || '';
-              const sourceLabel = trace.trace_source || 'unknown';
-              const endpointLabel = getTraceEndpointLabel(trace as Record<string, unknown>);
-              const containerLabel = getTraceContainerLabel(trace as Record<string, unknown>);
-              return (
-                <TraceListItem
-                  key={id}
-                  trace={trace}
-                  isSelected={selectedTraceId === id}
-                  sourceLabel={sourceLabel}
-                  endpointLabel={endpointLabel}
-                  containerLabel={containerLabel}
-                  onClick={() => {
-                    setSelectedTraceId(id);
-                    setSelectedSpanId(null);
-                  }}
-                />
-              );
-            })}
+          <div className="space-y-2">
+            {/* Fields identical on every row are stated once here instead of
+                being reprinted on each card. */}
+            {(constantFields.service
+              || constantFields.source
+              || constantFields.endpoint
+              || constantFields.container) && (
+              <p className="text-xs text-muted-foreground" data-testid="constant-fields">
+                All {filteredRows.length} traces:{' '}
+                {[
+                  constantFields.service,
+                  constantFields.source && `source: ${SOURCE_LABELS[normalizeSource(constantFields.source)]}`,
+                  constantFields.endpoint && `endpoint: ${constantFields.endpoint}`,
+                  constantFields.container && `container: ${constantFields.container}`,
+                ].filter(Boolean).join(' · ')}
+              </p>
+            )}
+
+            {preflightRows.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowPreflights((prev) => !prev)}
+                aria-expanded={showPreflights}
+                className="flex w-full items-center justify-between gap-2 rounded-lg border border-dashed border-border bg-muted/30 px-3 py-2 text-left text-xs text-muted-foreground hover:bg-muted/60"
+                data-testid="preflight-summary"
+              >
+                <span>
+                  {preflightRows.length} CORS preflight {preflightRows.length === 1 ? 'trace' : 'traces'} (OPTIONS) · p95{' '}
+                  {formatDuration(computeDurationStats(preflightRows.map((r) => r.duration)).p95)}
+                </span>
+                <span className="font-medium text-primary">{showPreflights ? 'Hide' : 'Show'}</span>
+              </button>
+            )}
+
+            <div
+              ref={listScrollRef}
+              className="h-[calc(100vh-22rem)] min-h-[420px] overflow-y-auto pr-2"
+              data-testid="trace-list"
+            >
+              <div style={{ height: rowVirtualizer.getTotalSize(), position: 'relative' }}>
+                {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                  const row = visibleRows[virtualRow.index];
+                  if (!row) return null;
+                  return (
+                    <div
+                      key={virtualRow.key}
+                      data-index={virtualRow.index}
+                      ref={rowVirtualizer.measureElement}
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        transform: `translateY(${virtualRow.start}px)`,
+                      }}
+                      className="pb-3"
+                    >
+                      <TraceListItem
+                        row={row}
+                        constants={constantFields}
+                        isSelected={selectedTraceId === row.id}
+                        onClick={() => {
+                          setSelectedTraceId(row.id);
+                          setSelectedSpanId(null);
+                        }}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
 
           <div className="lg:col-span-2">
@@ -1662,7 +1945,7 @@ export default function TraceExplorerPage() {
                                 (selectedSpan.endTime ? new Date(selectedSpan.endTime).getTime() : new Date(selectedSpan.startTime).getTime() + selectedSpan.duration) + 2000,
                               ).toISOString(),
                             }).toString()}`}
-                            className="inline-flex items-center gap-1.5 rounded-md border border-blue-500/40 bg-blue-500/10 px-3 py-1.5 text-xs font-medium text-blue-200 hover:bg-blue-500/20"
+                            className="inline-flex items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/20"
                             data-testid="view-logs-link"
                           >
                             <ScrollText className="h-3.5 w-3.5" aria-hidden="true" />

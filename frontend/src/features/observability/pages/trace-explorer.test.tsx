@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import type { ReactElement } from 'react';
 
@@ -7,8 +7,26 @@ function renderWithRouter(ui: ReactElement, route: string = '/traces') {
   return render(<MemoryRouter initialEntries={[route]}>{ui}</MemoryRouter>);
 }
 
+const mockUseAutoRefresh = vi.fn(() => ({ interval: 0, setRefreshInterval: vi.fn(), setInterval: vi.fn() }));
 vi.mock('@/shared/hooks/use-auto-refresh', () => ({
-  useAutoRefresh: () => ({ interval: 0, setInterval: vi.fn() }),
+  useAutoRefresh: (...args: unknown[]) => mockUseAutoRefresh(...(args as [])),
+}));
+
+// jsdom reports every element as 0px tall, so a real virtualizer would render
+// nothing. Same shape as the log viewer / data-table tests.
+vi.mock('@tanstack/react-virtual', () => ({
+  useVirtualizer: vi.fn(({ count }: { count: number }) => ({
+    getVirtualItems: () =>
+      Array.from({ length: count }, (_, i) => ({
+        index: i,
+        start: i * 128,
+        end: (i + 1) * 128,
+        size: 128,
+        key: i,
+      })),
+    getTotalSize: () => count * 128,
+    measureElement: vi.fn(),
+  })),
 }));
 
 vi.mock('@/shared/components/charts/service-map', () => ({
@@ -42,44 +60,134 @@ vi.mock('@/features/observability/hooks/use-traces', () => ({
   useTraceSummary: (...args: unknown[]) => mockUseTraceSummary(...args),
 }));
 
-import TraceExplorerPage from './trace-explorer';
+import TraceExplorerPage, {
+  ANOMALY_Z_THRESHOLD,
+  computeDurationStats,
+  constantValue,
+  durationZScore,
+  isPreflightOperation,
+  percentile,
+} from './trace-explorer';
+
+interface TraceFixture {
+  trace_id: string;
+  root_span: string;
+  duration_ms: number;
+  status: string;
+  service_name: string;
+  start_time: string;
+  trace_source: string;
+  span_count: number;
+  http_route: string;
+  container_name?: string;
+}
+
+/** 11 fast GETs, one 5s outlier (z ≈ 3.3) and three CORS preflights. */
+function buildTraces(): TraceFixture[] {
+  const fast: TraceFixture[] = Array.from({ length: 11 }, (_, i) => ({
+    trace_id: `fast-${i}`,
+    root_span: `GET /health/${i}`,
+    duration_ms: 10,
+    status: 'ok',
+    service_name: 'api-gateway',
+    start_time: '2026-02-12T10:00:00.000Z',
+    trace_source: 'http',
+    span_count: 1,
+    http_route: `/health/${i}`,
+  }));
+  const slow: TraceFixture = {
+    trace_id: 'slow-1',
+    root_span: 'GET /reports/export',
+    duration_ms: 5000,
+    status: 'ok',
+    service_name: 'api-gateway',
+    start_time: '2026-02-12T10:00:00.000Z',
+    trace_source: 'http',
+    span_count: 1,
+    http_route: '/reports/export',
+  };
+  const preflights: TraceFixture[] = Array.from({ length: 3 }, (_, i) => ({
+    trace_id: `preflight-${i}`,
+    root_span: 'OPTIONS *',
+    duration_ms: 4,
+    status: 'ok',
+    service_name: 'api-gateway',
+    start_time: '2026-02-12T10:00:00.000Z',
+    trace_source: 'http',
+    span_count: 1,
+    http_route: '*',
+  }));
+  return [...fast, slow, ...preflights];
+}
+
+describe('trace duration statistics', () => {
+  it('takes the nearest-rank percentile', () => {
+    const sorted = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    expect(percentile(sorted, 50)).toBe(5);
+    expect(percentile(sorted, 95)).toBe(10);
+    expect(percentile([], 95)).toBe(0);
+  });
+
+  it('computes p50/p95 plus the mean and stddev the z-score uses', () => {
+    const stats = computeDurationStats([10, 10, 10, 10, 50]);
+    expect(stats.count).toBe(5);
+    expect(stats.p50).toBe(10);
+    expect(stats.p95).toBe(50);
+    expect(stats.mean).toBe(18);
+    expect(stats.stdDev).toBeCloseTo(16, 5);
+  });
+
+  it('returns no z-score for a flat or single-sample window', () => {
+    expect(durationZScore(10, computeDurationStats([10, 10, 10]))).toBeNull();
+    expect(durationZScore(10, computeDurationStats([10]))).toBeNull();
+  });
+
+  it('flags the outlier at the detector threshold', () => {
+    const durations = [...Array.from({ length: 11 }, () => 10), 5000];
+    const stats = computeDurationStats(durations);
+    expect(durationZScore(5000, stats)).toBeGreaterThanOrEqual(ANOMALY_Z_THRESHOLD);
+    expect(durationZScore(10, stats)).toBeLessThan(ANOMALY_Z_THRESHOLD);
+  });
+
+  it('recognises CORS preflights by operation name', () => {
+    expect(isPreflightOperation('OPTIONS *')).toBe(true);
+    expect(isPreflightOperation('  options /api/x ')).toBe(true);
+    expect(isPreflightOperation('GET /options-page')).toBe(false);
+  });
+
+  it('reports a constant only when at least two rows agree', () => {
+    expect(constantValue(['a', 'a', 'a'])).toBe('a');
+    expect(constantValue(['a', 'b'])).toBeNull();
+    expect(constantValue(['a'])).toBeNull();
+    expect(constantValue([])).toBeNull();
+  });
+});
 
 describe('TraceExplorerPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockUseAutoRefresh.mockReturnValue({ interval: 0, setRefreshInterval: vi.fn(), setInterval: vi.fn() });
 
     // useTraces unwraps the { traces } envelope, so it resolves to a bare array.
     mockUseTraces.mockReturnValue({
-      data: [
-        {
-          trace_id: 'trace-1',
-          root_span: 'GET /health',
-          duration_ms: 120,
-          status: 'ok',
-          service_name: 'api',
-          start_time: '2026-02-12T10:00:00.000Z',
-          trace_source: 'ebpf',
-          span_count: 1,
-          http_route: '/health',
-          container_name: 'api-container',
-        },
-      ],
+      data: buildTraces(),
       isLoading: false,
       isError: false,
       error: null,
       refetch: vi.fn(),
       isFetching: false,
+      dataUpdatedAt: Date.now(),
     });
 
     mockUseTrace.mockReturnValue({
       data: {
-        traceId: 'trace-1',
+        traceId: 'fast-0',
         spans: [
           {
             span_id: 'span-1',
             parent_span_id: null,
-            name: 'GET /health',
-            service_name: 'api',
+            name: 'GET /health/0',
+            service_name: 'api-gateway',
             start_time: '2026-02-12T10:00:00.000Z',
             duration_ms: 120,
             status: 'ok',
@@ -87,34 +195,16 @@ describe('TraceExplorerPage', () => {
             attributes: JSON.stringify({
               endpoint: 'api-gateway',
               'container.name': 'api-container',
+              'container.id': 'container-abc',
               'service.namespace': 'production',
               'service.instance.id': 'instance-a',
               'service.version': '1.8.2',
               'deployment.environment': 'prod',
-              'container.id': 'container-abc',
-              'k8s.namespace.name': 'payments',
-              'k8s.pod.name': 'payments-api-9d7cc',
-              'k8s.container.name': 'api',
-              'server.address': '10.0.0.24',
-              'server.port': 443,
-              'client.address': '10.0.0.12',
               'url.full': 'http://api-gateway/health',
-              'url.scheme': 'http',
               'network.transport': 'tcp',
-              'network.protocol.name': 'http',
-              'network.protocol.version': '1.1',
-              'net.peer.name': 'api-gateway.internal',
-              'net.peer.port': 8080,
-              'host.name': 'srv-edge-01',
-              'os.type': 'linux',
               'process.pid': 4711,
-              'process.executable.name': 'http-echo',
               'process.command_line': '/bin/http-echo --port=8080',
               'telemetry.sdk.name': 'beyla',
-              'telemetry.sdk.language': 'go',
-              'telemetry.sdk.version': '2.8.5',
-              'otel.scope.name': 'github.com/grafana/beyla',
-              'otel.scope.version': 'v2.8.5',
             }),
           },
         ],
@@ -124,58 +214,130 @@ describe('TraceExplorerPage', () => {
     mockUseServiceMap.mockReturnValue({ data: { nodes: [], edges: [] } });
     mockUseTraceSummary.mockReturnValue({
       data: {
-        totalTraces: 12,
+        totalTraces: 15,
         avgDuration: 85,
         errorRate: 0.2,
-        services: 4,
-        sourceCounts: {
-          http: 3,
-          ebpf: 7,
-          scheduler: 2,
-          unknown: 0,
-        },
+        services: 1,
+        sourceCounts: { http: 15, ebpf: 0, scheduler: 0, unknown: 0 },
       },
     });
   });
 
-  it('renders source-scoped counters from summary', () => {
+  it('renders the manifest short label as the single page h1', () => {
     renderWithRouter(<TraceExplorerPage />);
 
-    expect(screen.getByText('Source counters:')).toBeInTheDocument();
-    expect(screen.getByText('eBPF: 7')).toBeInTheDocument();
-    expect(screen.getByText('HTTP: 3')).toBeInTheDocument();
-    expect(screen.getByText('Scheduler: 2')).toBeInTheDocument();
-    expect(screen.getByText('Tip: select a source below to focus this list.')).toBeInTheDocument();
-    expect(screen.getByText('Need precision? Filter by HTTP route/status or service and container namespaces.')).toBeInTheDocument();
+    const headings = screen.getAllByRole('heading', { level: 1 });
+    expect(headings).toHaveLength(1);
+    expect(headings[0]).toHaveTextContent('Traces');
   });
 
-  it('restores trace source context and span metadata details', () => {
+  it('leads with p95/p50 instead of an average the detector does not use', () => {
     renderWithRouter(<TraceExplorerPage />);
 
-    expect(screen.getByText('Tip: select a source below to focus this list.')).toBeInTheDocument();
-    expect(screen.getByText('Showing all trace sources. Use a source filter to focus on a single ingestion path.')).toBeInTheDocument();
+    const subtitle = screen.getByTestId('page-header-subtitle');
+    expect(subtitle).toHaveTextContent('15 traces');
+    expect(subtitle).toHaveTextContent('1 service');
+    // 11×10ms, 3×4ms, 1×5000ms → p95 is the 5s outlier, p50 is 10ms.
+    expect(subtitle).toHaveTextContent('p95 5.00s');
+    expect(subtitle).toHaveTextContent('p50 10ms');
+    expect(screen.queryByText(/Avg Duration/)).toBeNull();
+  });
+
+  it('drops the three "you can filter" sentences', () => {
+    renderWithRouter(<TraceExplorerPage />);
+
+    expect(screen.queryByText(/Tip: select a source below/)).toBeNull();
+    expect(screen.queryByText(/Showing all trace sources/)).toBeNull();
+    expect(screen.queryByText(/Need precision\?/)).toBeNull();
+  });
+
+  it('makes the source chips the filter and drops the parallel dropdown', () => {
+    renderWithRouter(<TraceExplorerPage />);
+
+    const sourceFilter = screen.getByTestId('source-filter');
+    const ebpfChip = within(sourceFilter).getByRole('button', { name: /eBPF/ });
+    expect(ebpfChip).toHaveAttribute('aria-pressed', 'false');
+    // The dropdown that used to duplicate this control, with its third vocabulary.
+    expect(screen.queryByText('eBPF (Apps)')).toBeNull();
+    expect(screen.queryByText('HTTP Requests')).toBeNull();
+    expect(screen.queryByText('Background Jobs')).toBeNull();
+
+    fireEvent.click(ebpfChip);
+
+    expect(mockUseTraces.mock.calls.at(-1)?.[0]).toMatchObject({ source: 'ebpf' });
+    expect(within(sourceFilter).getByRole('button', { name: /eBPF/ })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('filters to the traces the detector threshold would flag', () => {
+    renderWithRouter(<TraceExplorerPage />);
+
+    const anomalous = screen.getByRole('button', { name: /Anomalous \(1\)/ });
+    expect(anomalous).toHaveAttribute(
+      'title',
+      expect.stringContaining('TRACES_ANOMALY_P95_ZSCORE'),
+    );
+
+    fireEvent.click(anomalous);
+
+    const list = screen.getByTestId('trace-list');
+    expect(within(list).getByText('GET /reports/export')).toBeInTheDocument();
+    expect(within(list).queryByText('GET /health/0')).toBeNull();
+    // The anomaly cut is client-side; the API never sees an unknown status.
+    expect(mockUseTraces.mock.calls.at(-1)?.[0]).toMatchObject({ status: undefined });
+  });
+
+  it('states fields constant across the result set once, not on every card', () => {
+    renderWithRouter(<TraceExplorerPage />);
+
+    const constants = screen.getByTestId('constant-fields');
+    expect(constants).toHaveTextContent('api-gateway');
+    expect(constants).toHaveTextContent('source: HTTP');
+
+    // Not repeated inside the cards.
+    const list = screen.getByTestId('trace-list');
+    expect(within(list).queryByText('source: HTTP')).toBeNull();
+    expect(within(list).queryByText('api-gateway')).toBeNull();
+    // "1 services" was on every row too.
+    expect(within(list).queryByText('1 services')).toBeNull();
+  });
+
+  it('collapses CORS preflights into one aggregated row', () => {
+    renderWithRouter(<TraceExplorerPage />);
+
+    const summary = screen.getByTestId('preflight-summary');
+    expect(summary).toHaveTextContent('3 CORS preflight traces (OPTIONS)');
+    expect(summary).toHaveTextContent('p95 4ms');
+
+    const list = screen.getByTestId('trace-list');
+    expect(within(list).queryByText('OPTIONS *')).toBeNull();
+
+    fireEvent.click(summary);
+    expect(within(screen.getByTestId('trace-list')).getAllByText('OPTIONS *')).toHaveLength(3);
+  });
+
+  it('keeps the eBPF quick guide, behind the header help toggle', () => {
+    renderWithRouter(<TraceExplorerPage />);
+
+    expect(screen.queryByText('eBPF Quick Guide')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('source-guide-toggle'));
+
     expect(screen.getByText('eBPF Quick Guide')).toBeInTheDocument();
+    expect(screen.getByText(/Beyla captured runtime network spans/)).toBeInTheDocument();
+    // The source counters moved here rather than costing a strip above the list.
+    expect(screen.getByText(/Ingested in this window/)).toBeInTheDocument();
+  });
 
-    fireEvent.click(screen.getByRole('button', { name: /GET \/health/i }));
+  it('gives the auto-refresh hook a tick to run', () => {
+    renderWithRouter(<TraceExplorerPage />);
 
-    expect(screen.getAllByText('endpoint: api-gateway').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('container: api-container').length).toBeGreaterThan(0);
-    expect(screen.getByText('Service Namespace')).toBeInTheDocument();
-    expect(screen.getAllByText('production').length).toBeGreaterThan(0);
-    expect(screen.getByText('Service Instance')).toBeInTheDocument();
-    expect(screen.getAllByText('instance-a').length).toBeGreaterThan(0);
-    expect(screen.getByText('Service Version')).toBeInTheDocument();
-    expect(screen.getAllByText('1.8.2').length).toBeGreaterThan(0);
-    expect(screen.getByText('Deployment Environment')).toBeInTheDocument();
-    expect(screen.getAllByText('prod').length).toBeGreaterThan(0);
-    expect(screen.getByText('URL Full')).toBeInTheDocument();
-    expect(screen.getAllByText('http://api-gateway/health').length).toBeGreaterThan(0);
-    expect(screen.getByText('Network Transport')).toBeInTheDocument();
-    expect(screen.getAllByText('tcp').length).toBeGreaterThan(0);
-    expect(screen.getByText('Process PID')).toBeInTheDocument();
-    expect(screen.getAllByText('4711').length).toBeGreaterThan(0);
-    expect(screen.getByText('Telemetry SDK Name')).toBeInTheDocument();
-    expect(screen.getAllByText('beyla').length).toBeGreaterThan(0);
+    const opts = mockUseAutoRefresh.mock.calls.at(-1) as unknown as [number, { onTick?: () => void }];
+    expect(typeof opts[1].onTick).toBe('function');
+  });
+
+  it('shows how old the loaded traces are', () => {
+    renderWithRouter(<TraceExplorerPage />);
+    expect(screen.getByText(/^Updated /)).toBeInTheDocument();
   });
 
   it('applies advanced filters through trace query state', () => {
@@ -183,87 +345,59 @@ describe('TraceExplorerPage', () => {
 
     fireEvent.click(screen.getByText('Show advanced filters'));
     fireEvent.change(screen.getByDisplayValue('Exact match'), { target: { value: 'contains' } });
-    fireEvent.change(screen.getByPlaceholderText('/api/users/:id'), { target: { value: '/health' } });
-    fireEvent.change(screen.getByPlaceholderText('500'), { target: { value: '200' } });
+    fireEvent.change(screen.getByLabelText('HTTP Route'), { target: { value: '/health' } });
+    fireEvent.change(screen.getByLabelText('HTTP Status Code'), { target: { value: '200' } });
+    fireEvent.change(screen.getByLabelText('Container Name'), { target: { value: 'api-container' } });
+
+    // The 26 OTEL attribute fields are one further click away.
+    expect(screen.queryByLabelText('Telemetry SDK Version')).toBeNull();
+    fireEvent.click(screen.getByTestId('toggle-attribute-filters'));
     fireEvent.change(screen.getByLabelText('Service Instance ID'), { target: { value: 'instance-a' } });
     fireEvent.change(screen.getByLabelText('Server Port'), { target: { value: '8443' } });
-    fireEvent.change(screen.getByPlaceholderText('http://service:8080/path'), { target: { value: 'http://api-gateway/health' } });
-    fireEvent.change(screen.getByPlaceholderText('tcp'), { target: { value: 'tcp' } });
-    fireEvent.change(screen.getByPlaceholderText('/bin/http-echo --port 8080'), { target: { value: '/bin/http-echo --port=8080' } });
-    fireEvent.change(screen.getByPlaceholderText('beyla'), { target: { value: 'beyla' } });
+    fireEvent.change(screen.getByLabelText('Telemetry SDK Name'), { target: { value: 'beyla' } });
 
     const lastCall = mockUseTraces.mock.calls.at(-1)?.[0] as Record<string, unknown>;
     expect(lastCall.httpRoute).toBe('/health');
     expect(lastCall.httpRouteMatch).toBe('contains');
     expect(lastCall.httpStatusCode).toBe(200);
+    expect(lastCall.containerName).toBe('api-container');
     expect(lastCall.serviceInstanceId).toBe('instance-a');
     expect(lastCall.serverPort).toBe(8443);
-    expect(lastCall.urlFull).toBe('http://api-gateway/health');
-    expect(lastCall.networkTransport).toBe('tcp');
-    expect(lastCall.processCommand).toBe('/bin/http-echo --port=8080');
     expect(lastCall.telemetrySdkName).toBe('beyla');
   });
 
-  it('shows container name alongside source on each trace card', () => {
+  it('keeps span metadata in the detail pane', () => {
     renderWithRouter(<TraceExplorerPage />);
 
-    expect(screen.getByText('container: api-container')).toBeInTheDocument();
+    fireEvent.click(within(screen.getByTestId('trace-list')).getByText('GET /health/0'));
+
+    expect(screen.getByText('Service Namespace')).toBeInTheDocument();
+    expect(screen.getAllByText('production').length).toBeGreaterThan(0);
+    expect(screen.getByText('Service Instance')).toBeInTheDocument();
+    expect(screen.getAllByText('instance-a').length).toBeGreaterThan(0);
+    expect(screen.getByText('Process PID')).toBeInTheDocument();
+    expect(screen.getAllByText('4711').length).toBeGreaterThan(0);
   });
 
-  it('prefers typed span columns when attributes are sparse', () => {
-    mockUseTrace.mockReturnValue({
-      data: {
-        traceId: 'trace-1',
-        spans: [
-          {
-            span_id: 'span-typed-1',
-            parent_span_id: null,
-            name: 'GET /typed',
-            service_name: 'api',
-            start_time: '2026-02-12T10:00:00.000Z',
-            duration_ms: 80,
-            status: 'ok',
-            trace_source: 'ebpf',
-            http_route: '/typed-route',
-            container_name: 'typed-container',
-            service_namespace: 'typed-namespace',
-            service_instance_id: 'typed-instance',
-            service_version: '9.9.9',
-            deployment_environment: 'staging',
-            server_address: 'typed-host.internal',
-            attributes: '{}',
-          },
-        ],
-      },
-    });
-
+  it('links a span to its logs with theme tokens, not a dark-only blue', () => {
     renderWithRouter(<TraceExplorerPage />);
 
-    fireEvent.click(screen.getByRole('button', { name: /GET \/health/i }));
+    fireEvent.click(within(screen.getByTestId('trace-list')).getByText('GET /health/0'));
 
-    expect(screen.getAllByText('endpoint: /typed-route').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('container: typed-container').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('typed-namespace').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('typed-instance').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('9.9.9').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('staging').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('typed-host.internal').length).toBeGreaterThan(0);
+    const link = screen.getByTestId('view-logs-link');
+    expect(link.className).toContain('text-primary');
+    expect(link.className).not.toContain('text-blue-200');
   });
 
   it('pre-applies service / status / trace from URL query params', () => {
     renderWithRouter(
       <TraceExplorerPage />,
-      '/traces?service=payments-api&status=error&trace=trace-1',
+      '/traces?service=payments-api&status=error&trace=fast-0',
     );
 
-    // useTraces is called with the deep-link service + error status applied.
-    const lastCall = mockUseTraces.mock.calls.at(-1);
-    expect(lastCall).toBeDefined();
-    const opts = lastCall![0];
+    const opts = mockUseTraces.mock.calls.at(-1)?.[0] as Record<string, unknown>;
     expect(opts.serviceName).toBe('payments-api');
     expect(opts.status).toBe('error');
-    // ?trace=trace-1 selects the trace immediately, so useTrace is called with it.
-    const traceCall = mockUseTrace.mock.calls.at(-1);
-    expect(traceCall?.[0]).toBe('trace-1');
+    expect(mockUseTrace.mock.calls.at(-1)?.[0]).toBe('fast-0');
   });
 });

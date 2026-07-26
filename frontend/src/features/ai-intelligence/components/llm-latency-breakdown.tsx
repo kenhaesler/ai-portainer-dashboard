@@ -49,9 +49,22 @@ interface BreakdownRow {
 interface LlmLatencyBreakdownProps {
   /** LLM provider hostnames to query (one /api/traces call per peer). */
   peers?: string[];
-  /** Override the lookback window. Default = last 1 hour. */
+  /**
+   * Lookback window in hours. Drives both the query and every string that
+   * names a window, so the panel cannot claim "last hour" while the page's
+   * range selector reads 24h — which is exactly what it used to do.
+   */
+  hours?: number;
+  /** Explicit window override; wins over `hours` when supplied. */
   fromIso?: string;
   toIso?: string;
+}
+
+/** "last 1h" / "last 24h" / "last 7d" — never a hardcoded window. */
+export function formatWindowLabel(hours: number): string {
+  if (!Number.isFinite(hours) || hours <= 0) return 'last 1h';
+  if (hours < 48) return `last ${Math.round(hours)}h`;
+  return `last ${Math.round(hours / 24)}d`;
 }
 
 function percentile(values: number[], p: number): number {
@@ -78,15 +91,19 @@ function durationOf(span: PeerSpan): number {
  * When no correlation is available we fall back to showing total duration
  * as a single "network + model" bar so the panel stays informative.
  */
-export function LlmLatencyBreakdown({ peers, fromIso, toIso }: LlmLatencyBreakdownProps) {
+export function LlmLatencyBreakdown({ peers, hours = 1, fromIso, toIso }: LlmLatencyBreakdownProps) {
   const peerList = peers && peers.length > 0 ? peers : DEFAULT_LLM_PEER_HOSTNAMES;
 
-  // Stable window per render — 1h lookback by default.
+  // Stable window per render — 1h lookback by default. Memoised on the inputs
+  // (not recomputed per render) so the query key does not change on every
+  // paint and re-trigger the fan-out.
   const window = useMemo(() => {
     const to = toIso ?? new Date().toISOString();
-    const from = fromIso ?? new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const from = fromIso ?? new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
     return { from, to };
-  }, [fromIso, toIso]);
+  }, [fromIso, toIso, hours]);
+
+  const windowLabel = formatWindowLabel(hours);
 
   const queries = useQueries({
     queries: peerList.map((peer) => ({
@@ -183,44 +200,55 @@ export function LlmLatencyBreakdown({ peers, fromIso, toIso }: LlmLatencyBreakdo
     },
   ], []);
 
-  if (!isLoading && allSpans.length === 0) {
-    return (
-      <NoTraceDataCallout
-        description="No outbound LLM spans seen in the last hour. Deploy Beyla on the host running the dashboard to capture HTTPS calls to your provider."
-      />
-    );
-  }
+  const isEmpty = !isLoading && allSpans.length === 0;
 
   return (
     <section data-testid="llm-latency-breakdown">
+      {/* The heading renders in the empty branch too. Previously the empty
+          branch returned a bare callout, so this was the one card on
+          /llm-observability with no heading — bracketed by "Model Breakdown"
+          and "Recent Traces" with nothing saying what it was. */}
       <h3 className="text-base font-semibold tracking-tight">LLM latency breakdown</h3>
       <p className="text-sm text-muted-foreground">
-        Network roundtrip vs estimated model latency per upstream provider, last 1h.
+        Network roundtrip vs estimated model latency per upstream provider, {windowLabel}.
       </p>
 
-      <div className="mt-4 h-72">
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={chartData} margin={{ top: 10, right: 12, left: 4, bottom: 24 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
-            <XAxis dataKey="peer" fontSize={11} angle={-15} dy={10} />
-            <YAxis fontSize={11} label={{ value: 'ms', angle: -90, position: 'insideLeft', fontSize: 11 }} />
-            <Tooltip />
-            <Legend />
-            <Bar dataKey="network" stackId="latency" fill="#60a5fa" name="Network roundtrip (avg ms)" />
-            <Bar dataKey="model" stackId="latency" fill="#a78bfa" name="Model latency (avg ms)" />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
-
-      <div className="mt-4">
-        <DataTable
-          columns={columns}
-          data={chartData}
-          hideSearch
-          pageSize={100}
-          getRowId={(row) => row.peer}
+      {isEmpty ? (
+        <NoTraceDataCallout
+          className="mt-4"
+          description={`No outbound LLM spans seen in the ${windowLabel}. Deploy Beyla on the host running the dashboard to capture HTTPS calls to your provider.`}
         />
-      </div>
+      ) : (
+        <>
+          {/* Explicit pixel height, not height="100%": a percentage height on
+              ResponsiveContainer resolves to -1 on first paint here and made
+              this the only component in the app logging a Recharts console
+              warning. Matches metrics-line-chart / workload-top-bar. */}
+          <div className="mt-4">
+            <ResponsiveContainer width="100%" height={288}>
+              <BarChart data={chartData} margin={{ top: 10, right: 12, left: 4, bottom: 24 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+                <XAxis dataKey="peer" fontSize={11} angle={-15} dy={10} />
+                <YAxis fontSize={11} label={{ value: 'ms', angle: -90, position: 'insideLeft', fontSize: 11 }} />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="network" stackId="latency" fill="var(--color-chart-1)" name="Network roundtrip (avg ms)" />
+                <Bar dataKey="model" stackId="latency" fill="var(--color-chart-2)" name="Model latency (avg ms)" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div className="mt-4">
+            <DataTable
+              columns={columns}
+              data={chartData}
+              hideSearch
+              pageSize={100}
+              getRowId={(row) => row.peer}
+            />
+          </div>
+        </>
+      )}
     </section>
   );
 }

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
-import NetworkTopologyPage from './network-topology';
+import NetworkTopologyPage, { resolveNetworkMembers } from './network-topology';
 import { useUiStore } from '@/stores/ui-store';
 
 // Mock data hooks at the boundary
@@ -26,8 +26,12 @@ vi.mock('@/features/observability/hooks/use-service-map', () => ({
   useServiceMap: vi.fn(),
 }));
 
+const autoRefreshCalls: Array<[number, { onTick?: () => void } | undefined]> = [];
 vi.mock('@/shared/hooks/use-auto-refresh', () => ({
-  useAutoRefresh: () => ({ interval: 30, setInterval: vi.fn() }),
+  useAutoRefresh: (defaultInterval: number, opts?: { onTick?: () => void }) => {
+    autoRefreshCalls.push([defaultInterval, opts]);
+    return { interval: 30, setRefreshInterval: vi.fn(), setInterval: vi.fn() };
+  },
 }));
 
 // Stub TopologyGraph — it depends on @xyflow/react which is heavy in jsdom and
@@ -167,17 +171,22 @@ describe('NetworkTopologyPage', () => {
     mockUseServiceMap.mockReturnValue({ data: undefined } as any);
   });
 
-  it('renders the page heading and description', () => {
+  it('renders one h1 matching the navigation label, with the fleet fact as subtitle', () => {
     setHooks({ containers: [makeContainer()], networks: [makeNetwork()] });
 
     renderPage();
 
+    const headings = screen.getAllByRole('heading', { level: 1 });
+    expect(headings).toHaveLength(1);
+    expect(headings[0]).toHaveTextContent('Topology');
+
+    // The old subtitle was three synonyms for "graph"; the counts are the fact.
     expect(
-      screen.getByRole('heading', { name: 'Network Topology' }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText('Interactive network graph visualization'),
-    ).toBeInTheDocument();
+      screen.queryByText('Interactive network graph visualization'),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId('page-header-subtitle')).toHaveTextContent(
+      '1 container across 1 network',
+    );
   });
 
   it('renders the topology graph with container and network counts', () => {
@@ -206,6 +215,18 @@ describe('NetworkTopologyPage', () => {
 
     expect(screen.getByText(/2 containers/)).toBeInTheDocument();
     expect(screen.getByText(/2 networks/)).toBeInTheDocument();
+    // ...and only once — it used to sit in the filter row as well.
+    expect(screen.getAllByText(/2 containers across 2 networks/)).toHaveLength(1);
+  });
+
+  it('wires the refresh interval to an actual tick', () => {
+    setHooks({ containers: [makeContainer()], networks: [makeNetwork()] });
+
+    renderPage();
+
+    // The hook owns the timer; the page must hand it something to call.
+    const opts = autoRefreshCalls.at(-1)?.[1];
+    expect(typeof opts?.onTick).toBe('function');
   });
 
   it('shows the loading skeleton while data is loading', () => {
@@ -321,5 +342,34 @@ describe('NetworkTopologyPage', () => {
       renderPage();
       expect(screen.getByTestId('topology-observed-count')).toHaveTextContent('2');
     });
+  });
+});
+
+describe('resolveNetworkMembers', () => {
+  const fleet = [
+    { id: 'aaaaaaaaaaaa1111', name: 'container-insights-backend' },
+    { id: 'bbbbbbbbbbbb2222', name: 'container-insights-redis' },
+  ];
+
+  it('names each connected container instead of showing a raw hex id', () => {
+    expect(resolveNetworkMembers(['aaaaaaaaaaaa1111'], fleet)).toEqual([
+      {
+        id: 'aaaaaaaaaaaa1111',
+        shortId: 'aaaaaaaaaaaa',
+        name: 'container-insights-backend',
+      },
+    ]);
+  });
+
+  it('keeps the short id and invents no name when the container is not in scope', () => {
+    const [member] = resolveNetworkMembers(['ffffffffffff9999'], fleet);
+    expect(member.name).toBeNull();
+    expect(member.shortId).toBe('ffffffffffff');
+  });
+
+  it('preserves order and handles an empty fleet', () => {
+    const members = resolveNetworkMembers(['bbbbbbbbbbbb2222', 'aaaaaaaaaaaa1111'], []);
+    expect(members.map((m) => m.shortId)).toEqual(['bbbbbbbbbbbb', 'aaaaaaaaaaaa']);
+    expect(members.every((m) => m.name === null)).toBe(true);
   });
 });

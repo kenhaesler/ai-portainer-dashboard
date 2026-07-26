@@ -236,3 +236,85 @@ describe('InlineChatPanel', () => {
     expect(mockCancelGeneration).toHaveBeenCalledOnce();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Design-critique fixes: the panel opted out of the theme system alongside the
+// full-page assistant, and spoke in the first person about capabilities it
+// does not have.
+// ---------------------------------------------------------------------------
+
+describe('InlineChatPanel presentation', () => {
+  // `vi.clearAllMocks()` clears calls but keeps implementations, and the
+  // preceding block leaves `useLlmChat` returning a streaming session — so the
+  // empty state would never render here without an explicit reset.
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    const { useLlmChat } = await import('@/features/ai-intelligence/hooks/use-llm-chat');
+    vi.mocked(useLlmChat).mockReturnValue({
+      messages: [],
+      isStreaming: false,
+      currentResponse: '',
+      activeToolCalls: [],
+      sendMessage: mockSendMessage,
+      cancelGeneration: mockCancelGeneration,
+      clearHistory: mockClearHistory,
+    } as unknown as ReturnType<typeof useLlmChat>);
+  });
+
+  it('states what it reads instead of claiming access in the first person', () => {
+    render(
+      <InlineChatPanel open={true} onClose={vi.fn()} context={defaultContext} />,
+      { wrapper: createWrapper() },
+    );
+    expect(screen.queryByText(/I have access to/)).toBeNull();
+    expect(
+      screen.getByText(/Reads metrics, logs, anomalies and traces for this container/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/cannot change anything/)).toBeInTheDocument();
+  });
+
+  it('uses theme tokens for its chrome rather than blue/purple gradients', () => {
+    const { container } = render(
+      <InlineChatPanel open={true} onClose={vi.fn()} context={defaultContext} />,
+      { wrapper: createWrapper() },
+    );
+    const html = container.innerHTML;
+    expect(html).not.toMatch(/from-blue-\d+/);
+    expect(html).not.toMatch(/to-purple-\d+/);
+    expect(html).not.toMatch(/from-emerald-\d+/);
+  });
+
+  it('gives the send button the primary token, not a gradient', () => {
+    render(
+      <InlineChatPanel open={true} onClose={vi.fn()} context={defaultContext} />,
+      { wrapper: createWrapper() },
+    );
+    const send = screen.getByRole('button', { name: 'Send message' });
+    expect(send.className).toContain('bg-primary');
+    expect(send.className).not.toContain('gradient');
+  });
+
+  // Green means healthy in this palette; the operator's own message is the one
+  // thing on screen they already know, so it gets the quietest treatment.
+  it('renders the user message on a muted surface, not in status green', async () => {
+    const { useLlmChat } = await import('@/features/ai-intelligence/hooks/use-llm-chat');
+    vi.mocked(useLlmChat).mockReturnValue({
+      messages: [{ id: '1', role: 'user', content: 'Why is CPU spiking?', timestamp: '' }],
+      isStreaming: false,
+      currentResponse: '',
+      activeToolCalls: [],
+      sendMessage: mockSendMessage,
+      cancelGeneration: mockCancelGeneration,
+      clearHistory: mockClearHistory,
+    } as unknown as ReturnType<typeof useLlmChat>);
+
+    render(
+      <InlineChatPanel open={true} onClose={vi.fn()} context={defaultContext} />,
+      { wrapper: createWrapper() },
+    );
+
+    const bubble = screen.getByText('Why is CPU spiking?').closest('div');
+    expect(bubble?.className).toContain('bg-muted');
+    expect(bubble?.className).not.toContain('emerald');
+  });
+});
