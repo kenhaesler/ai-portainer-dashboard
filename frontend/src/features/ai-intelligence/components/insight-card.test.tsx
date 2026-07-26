@@ -75,9 +75,11 @@ describe('InsightCard — dimensions breakdown (#1296)', () => {
     // One row per dimension, each labelled with its `type`.
     expect(screen.getByTestId('insight-dimension-latency_p95')).toBeInTheDocument();
     expect(screen.getByTestId('insight-dimension-error_rate')).toBeInTheDocument();
-    // Z-score labels reflect the underlying values to one decimal place.
-    expect(within(bars).getByText('4.8')).toBeInTheDocument();
-    expect(within(bars).getByText('2.3')).toBeInTheDocument();
+    // Z-score labels reflect the underlying values to one decimal place, and
+    // carry their sign — the bar is drawn as an offset from a centre line, so
+    // a -2.8 no longer renders identically to a +2.8.
+    expect(within(bars).getByText('+4.8')).toBeInTheDocument();
+    expect(within(bars).getByText('+2.3')).toBeInTheDocument();
 
     // Value + baseline detail block surfaces both signals.
     expect(screen.getByText(/baseline 20\.00/)).toBeInTheDocument();

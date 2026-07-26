@@ -1,18 +1,22 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
 import {
   Activity,
   AlertTriangle,
   Bot,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   HardDriveDownload,
   Info,
   Loader2,
   Palette,
   Plug,
+  Search,
   Settings2,
   Shield,
 } from 'lucide-react';
+import { PageHeader } from '@/shared/components/layout/page-header';
 import { useSettings, useUpdateSetting } from '@/features/core/hooks/use-settings';
 import { useAuth } from '@/providers/auth-provider';
 import { useThemeStore } from '@/stores/theme-store';
@@ -20,7 +24,19 @@ import { SkeletonText } from '@/shared/components/feedback/skeleton';
 import { toast } from 'sonner';
 import { useSearchParams } from 'react-router-dom';
 
-import { DEFAULT_SETTINGS, SETTING_CATEGORY_BY_KEY } from '@/features/core/components/settings/shared';
+import {
+  DEFAULT_SETTINGS,
+  SETTING_BY_KEY,
+  SETTING_CATEGORY_BY_KEY,
+  SettingsSavedKeysProvider,
+  isGuardedSetting,
+  searchSettings,
+  settingConsequence,
+  settingDomId,
+  settingRisk,
+  shrinksRetentionWindow,
+  type SettingCategory,
+} from '@/features/core/components/settings/shared';
 import { GeneralTab, getRedisSystemInfo } from '@/features/core/components/settings/tab-general';
 import { SecurityTab } from '@/features/core/components/settings/tab-security';
 import { AiLlmTab, LlmSettingsSection, LLM_SETTING_KEYS } from '@/features/core/components/settings/tab-ai-llm';
@@ -42,6 +58,15 @@ type SettingsTab = 'general' | 'security' | 'ai' | 'monitoring' | 'integrations'
 
 const VALID_TABS: SettingsTab[] = ['general', 'security', 'ai', 'monitoring', 'integrations', 'infrastructure', 'appearance'];
 
+/**
+ * The tab an admin lands on with no `?tab=`.
+ *
+ * It used to be `general`, which contains no settings at all — version strings,
+ * cache counters, and a page of Redis key hashes. Someone opening Settings has
+ * come to change something, so land them on a tab that can be changed.
+ */
+export const DEFAULT_SETTINGS_TAB: SettingsTab = 'monitoring';
+
 /** Map old bookmark/deep-link tab names to their new equivalents. */
 const TAB_ALIASES: Record<string, SettingsTab> = {
   users: 'security',
@@ -51,24 +76,221 @@ const TAB_ALIASES: Record<string, SettingsTab> = {
   'portainer-backup': 'infrastructure',
 };
 
-function resolveTab(raw: string | null): SettingsTab {
-  if (!raw) return 'general';
+export function resolveTab(raw: string | null): SettingsTab {
+  if (!raw) return DEFAULT_SETTINGS_TAB;
   if (VALID_TABS.includes(raw as SettingsTab)) return raw as SettingsTab;
-  return TAB_ALIASES[raw] ?? 'general';
+  return TAB_ALIASES[raw] ?? DEFAULT_SETTINGS_TAB;
 }
 
 const TAB_META: { value: SettingsTab; label: string; icon: React.ReactNode; adminOnly?: boolean }[] = [
-  { value: 'general', label: 'General', icon: <Settings2 className="h-4 w-4" /> },
+  { value: 'monitoring', label: 'Monitoring', icon: <Activity className="h-4 w-4" /> },
   { value: 'security', label: 'Security', icon: <Shield className="h-4 w-4" /> },
   { value: 'ai', label: 'AI & LLM', icon: <Bot className="h-4 w-4" />, adminOnly: true },
-  { value: 'monitoring', label: 'Monitoring', icon: <Activity className="h-4 w-4" /> },
   { value: 'integrations', label: 'Integrations', icon: <Plug className="h-4 w-4" /> },
   { value: 'infrastructure', label: 'Infrastructure', icon: <HardDriveDownload className="h-4 w-4" /> },
   { value: 'appearance', label: 'Appearance', icon: <Palette className="h-4 w-4" /> },
+  // Last, and named for what it holds: read-only version and cache information.
+  { value: 'general', label: 'About', icon: <Settings2 className="h-4 w-4" /> },
 ];
 
 const TAB_TRIGGER_CLASS =
-  'flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors hover:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-primary';
+  'flex min-h-11 shrink-0 items-center gap-2 whitespace-nowrap px-4 py-2 text-sm font-medium transition-colors hover:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-primary';
+
+const SETTINGS_SUBTITLE = 'Environment, backup, monitoring, and cache configuration';
+
+/** Which tab renders each settings category — the target of a search result. */
+const TAB_BY_CATEGORY: Record<SettingCategory, SettingsTab> = {
+  monitoring: 'monitoring',
+  anomaly: 'monitoring',
+  notifications: 'monitoring',
+  authentication: 'security',
+  statusPage: 'security',
+  llm: 'ai',
+  mcp: 'ai',
+  aiTuning: 'ai',
+  webhooks: 'integrations',
+  elasticsearch: 'integrations',
+  harbor: 'integrations',
+  cache: 'infrastructure',
+  portainerBackup: 'infrastructure',
+  metricsRetention: 'infrastructure',
+  edgeAgent: 'infrastructure',
+};
+
+// ─── Tab strip ───────────────────────────────────────────────────────
+
+/**
+ * Horizontally scrollable tab row with an honest overflow affordance.
+ *
+ * Seven tabs do not fit at tablet width. The row scrolled, but nothing said so —
+ * no fade, no arrow, no cut-off glyph — so 2½ tabs were simply invisible. The
+ * arrows appear only when there is something to scroll to, which in a
+ * zero-layout environment (jsdom) means never.
+ */
+function TabStrip({ children }: { children: React.ReactNode }) {
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const [overflow, setOverflow] = useState({ left: false, right: false });
+
+  const measure = useCallback(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    setOverflow({
+      left: el.scrollLeft > 4,
+      right: el.scrollLeft + el.clientWidth < el.scrollWidth - 4,
+    });
+  }, []);
+
+  useEffect(() => {
+    measure();
+    const el = scrollerRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [measure]);
+
+  const scrollBy = (direction: -1 | 1) => {
+    scrollerRef.current?.scrollBy({ left: direction * 200, behavior: 'smooth' });
+  };
+
+  return (
+    <div className="relative border-b">
+      <div
+        ref={scrollerRef}
+        onScroll={measure}
+        className="flex items-center overflow-x-auto scrollbar-themed"
+      >
+        {children}
+      </div>
+      {overflow.left && (
+        <>
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-background to-transparent"
+          />
+          <button
+            type="button"
+            aria-label="Scroll tabs left"
+            onClick={() => scrollBy(-1)}
+            className="absolute left-0 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-input bg-background text-muted-foreground hover:text-foreground"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+        </>
+      )}
+      {overflow.right && (
+        <>
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-background to-transparent"
+          />
+          <button
+            type="button"
+            aria-label="Scroll tabs right"
+            onClick={() => scrollBy(1)}
+            className="absolute right-0 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-input bg-background text-muted-foreground hover:text-foreground"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ─── Guarded-change review bar ───────────────────────────────────────
+
+interface GuardedChangesBarProps {
+  keys: string[];
+  editedValues: Record<string, string>;
+  originalValues: Record<string, string>;
+  isSaving: boolean;
+  onSave: () => void;
+  onDiscard: () => void;
+}
+
+/**
+ * Explicit save for the settings that auto-save must never touch.
+ *
+ * It is pinned to the viewport rather than the page header because the field
+ * being edited can sit 2000px below it, and a confirmation the operator has to
+ * scroll to find is not a confirmation. Secrets are reported as "new value
+ * entered" — the review must not print a client secret back onto the screen.
+ */
+function GuardedChangesBar({
+  keys,
+  editedValues,
+  originalValues,
+  isSaving,
+  onSave,
+  onDiscard,
+}: GuardedChangesBarProps) {
+  if (keys.length === 0) return null;
+
+  return (
+    <div
+      data-testid="guarded-changes-bar"
+      role="region"
+      aria-label="Settings awaiting review"
+      className="fixed inset-x-4 bottom-24 z-40 mx-auto max-w-3xl rounded-lg border border-amber-500/50 bg-card p-4 shadow-lg sm:bottom-6"
+    >
+      <div className="flex items-start gap-3">
+        <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
+        <div className="min-w-0 flex-1">
+          <h2 className="font-medium">
+            {keys.length === 1 ? '1 change needs review' : `${keys.length} changes need review`}
+          </h2>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            These are not saved automatically. Nothing is applied until you save.
+          </p>
+          <ul className="mt-3 max-h-52 space-y-2 overflow-y-auto scrollbar-themed pr-1">
+            {keys.map((key) => {
+              const setting = SETTING_BY_KEY[key];
+              const isSecret = setting?.type === 'password';
+              const before = originalValues[key] ?? '';
+              const after = editedValues[key] ?? '';
+              const shrinking = shrinksRetentionWindow(key, after, before);
+              const consequence = settingConsequence(setting);
+              const showConsequence = consequence && (shrinking || settingRisk(setting) === 'security');
+              return (
+                <li key={key} data-testid={`guarded-change-${key}`} className="text-sm">
+                  <span className="font-medium">{setting?.label ?? key}</span>
+                  <span className="text-muted-foreground">
+                    {isSecret
+                      ? ' — new value entered'
+                      : ` — ${before === '' ? 'empty' : before} → ${after === '' ? 'empty' : after}`}
+                  </span>
+                  {showConsequence && (
+                    <p className="mt-0.5 text-xs text-amber-600 dark:text-amber-400">{consequence}</p>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      </div>
+      <div className="mt-4 flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={onDiscard}
+          disabled={isSaving}
+          className="rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
+        >
+          Discard
+        </button>
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={isSaving}
+          className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+        >
+          {isSaving && <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" />}
+          {keys.length === 1 ? 'Save 1 change' : `Save ${keys.length} changes`}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 // ─── Page component ──────────────────────────────────────────────────
 
@@ -86,6 +308,10 @@ export default function SettingsPage() {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [restartPending, setRestartPending] = useState(false);
+  // Keys committed in the last few seconds, so each row can confirm at the row
+  // instead of only in the page header the operator has scrolled away from.
+  const [savedKeys, setSavedKeys] = useState<ReadonlySet<string>>(() => new Set<string>());
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Active tab (URL-driven)
   const initialTab = resolveTab(searchParams.get('tab'));
@@ -123,8 +349,16 @@ export default function SettingsPage() {
       setSaveSuccess(false);
       setSaveError(null);
       setRestartPending(false);
+      setSavedKeys(new Set<string>());
     }
   }, [settingsData]);
+
+  // The row-level "Saved" pill is a confirmation, not a status — it fades.
+  useEffect(() => {
+    if (savedKeys.size === 0) return;
+    const timeout = window.setTimeout(() => setSavedKeys(new Set<string>()), 4000);
+    return () => { window.clearTimeout(timeout); };
+  }, [savedKeys]);
 
   // ── Change detection ─────────────────────────────────────────────
 
@@ -218,6 +452,7 @@ export default function SettingsPage() {
     if (Object.keys(appliedValues).length > 0) {
       setOriginalValues((prev) => ({ ...prev, ...appliedValues }));
       setSaveSuccess(true);
+      setSavedKeys(new Set(Object.keys(appliedValues)));
       if (appliedRestartSetting) {
         setRestartPending(true);
       }
@@ -231,26 +466,60 @@ export default function SettingsPage() {
     setIsSaving(false);
   }, [restartKeys, updateSetting]);
 
-  // ── Auto-save (excluding LLM keys) ──────────────────────────────
+  // ── Auto-save ───────────────────────────────────────────────────
+  //
+  // Auto-save is for cosmetics and tuning knobs, where the cost of a wrong value
+  // is a cache miss. It deliberately excludes two classes: LLM keys (explicit
+  // Save in the AI tab) and *guarded* keys — anything that changes who can sign
+  // in or deletes stored history. A paused keystroke must not be able to publish
+  // an unauthenticated status page or drop 83 days of metrics.
+
+  const isAutoSaveKey = useCallback(
+    (key: string) => !(LLM_SETTING_KEYS as readonly string[]).includes(key) && !isGuardedSetting(key),
+    [],
+  );
 
   useEffect(() => {
-    // Only auto-save non-LLM keys
-    const nonLlmChanged = Object.keys(editedValues).some(
-      (key) => editedValues[key] !== originalValues[key] && !(LLM_SETTING_KEYS as readonly string[]).includes(key),
+    const autoSaveChanged = Object.keys(editedValues).some(
+      (key) => editedValues[key] !== originalValues[key] && isAutoSaveKey(key),
     );
-    if (isSaving || !nonLlmChanged) return;
+    if (isSaving || !autoSaveChanged) return;
 
     const editedSnapshot = { ...editedValues };
     const originalSnapshot = { ...originalValues };
-    // Build the filter list: every key *except* LLM keys
-    const nonLlmKeys = Object.keys(editedSnapshot).filter((k) => !(LLM_SETTING_KEYS as readonly string[]).includes(k));
+    const autoSaveKeys = Object.keys(editedSnapshot).filter(isAutoSaveKey);
 
     const timeout = window.setTimeout(() => {
-      void saveChangedSettings(editedSnapshot, originalSnapshot, nonLlmKeys);
+      void saveChangedSettings(editedSnapshot, originalSnapshot, autoSaveKeys);
     }, 700);
 
     return () => { window.clearTimeout(timeout); };
-  }, [editedValues, isSaving, originalValues, saveChangedSettings]);
+  }, [editedValues, isAutoSaveKey, isSaving, originalValues, saveChangedSettings]);
+
+  // ── Guarded settings: explicit, reviewed save ───────────────────
+
+  const guardedPendingKeys = useMemo(
+    () =>
+      Object.keys(editedValues)
+        .filter((key) => editedValues[key] !== originalValues[key] && isGuardedSetting(key))
+        .sort(),
+    [editedValues, originalValues],
+  );
+
+  const saveGuardedSettings = useCallback(async () => {
+    if (guardedPendingKeys.length === 0) return;
+    await saveChangedSettings({ ...editedValues }, { ...originalValues }, guardedPendingKeys);
+  }, [editedValues, guardedPendingKeys, originalValues, saveChangedSettings]);
+
+  const discardGuardedChanges = useCallback(() => {
+    setEditedValues((prev) => {
+      const next = { ...prev };
+      for (const key of guardedPendingKeys) {
+        next[key] = originalValues[key];
+      }
+      return next;
+    });
+  }, [guardedPendingKeys, originalValues]);
 
   // ── LLM explicit save helpers (passed to AiLlmTab) ──────────────
 
@@ -287,7 +556,7 @@ export default function SettingsPage() {
     setActiveTab(resolved);
     setSearchParams((previous) => {
       const next = new URLSearchParams(previous);
-      if (resolved === 'general') {
+      if (resolved === DEFAULT_SETTINGS_TAB) {
         next.delete('tab');
       } else {
         next.set('tab', resolved);
@@ -296,15 +565,28 @@ export default function SettingsPage() {
     }, { replace: true });
   };
 
+  // ── Search across every key ─────────────────────────────────────
+
+  const searchMatches = useMemo(() => searchSettings(searchQuery), [searchQuery]);
+
+  const goToSetting = (key: string) => {
+    const tab = TAB_BY_CATEGORY[SETTING_CATEGORY_BY_KEY[key]];
+    if (tab) handleTabChange(tab);
+    setSearchQuery('');
+    // The tab content mounts with that state update; wait a frame for the row.
+    window.requestAnimationFrame(() => {
+      const element = document.getElementById(settingDomId(key));
+      element?.scrollIntoView({ block: 'center' });
+      element?.focus?.();
+    });
+  };
+
   // ── Loading / Error states ───────────────────────────────────────
 
   if (isLoading) {
     return (
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
-          <p className="text-muted-foreground">Loading settings...</p>
-        </div>
+        <PageHeader title="Settings" subtitle={SETTINGS_SUBTITLE} />
         <div className="grid gap-6">
           {[0, 1, 2].map((i) => (
             <div key={i} className="rounded-lg border bg-card p-6 shadow-sm">
@@ -319,12 +601,7 @@ export default function SettingsPage() {
   if (isError) {
     return (
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
-          <p className="text-muted-foreground">
-            Environment, backup, monitoring, and cache configuration
-          </p>
-        </div>
+        <PageHeader title="Settings" subtitle={SETTINGS_SUBTITLE} />
         <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-6">
           <div className="flex items-center gap-2 text-destructive">
             <AlertTriangle className="h-5 w-5" />
@@ -357,15 +634,22 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
-          <p className="text-muted-foreground">
-            Environment, backup, monitoring, and cache configuration
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+      <PageHeader
+        title="Settings"
+        subtitle={SETTINGS_SUBTITLE}
+        actions={
+        <>
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search settings"
+              aria-label="Search settings"
+              className="h-9 w-48 rounded-md border border-input bg-background pl-8 pr-3 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring sm:w-56"
+            />
+          </div>
           {isSaving && (
             <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -381,17 +665,51 @@ export default function SettingsPage() {
               All changes saved
             </div>
           )}
-          {hasChanges && (
-            <button
-              onClick={handleReset}
-              disabled={isSaving}
-              className="rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
-            >
-              Reset
-            </button>
+          {/* Mounted for the life of the tab. It used to render only while
+              `hasChanges`, which a successful auto-save clears — so the undo
+              control disappeared the moment a value committed. */}
+          <button
+            onClick={handleReset}
+            disabled={isSaving || !hasChanges}
+            className="rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
+          >
+            Reset
+          </button>
+        </>
+        }
+      />
+
+      {/* Search results — 107 keys across 7 tabs is not a list you scan. */}
+      {searchQuery.trim().length >= 2 && (
+        <div data-testid="settings-search-results" className="rounded-lg border bg-card">
+          {searchMatches.length === 0 ? (
+            <p className="p-4 text-sm text-muted-foreground">
+              No setting matches “{searchQuery.trim()}”. Try a word from the setting’s label, such as
+              “retention”, “OIDC” or “webhook”.
+            </p>
+          ) : (
+            <ul className="divide-y divide-border">
+              {searchMatches.map((match) => (
+                <li key={match.key}>
+                  <button
+                    type="button"
+                    onClick={() => goToSetting(match.key)}
+                    className="flex w-full flex-col items-start gap-0.5 px-4 py-3 text-left hover:bg-accent"
+                  >
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium">{match.label}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {TAB_META.find((t) => t.value === TAB_BY_CATEGORY[match.category])?.label}
+                      </span>
+                    </span>
+                    <span className="text-sm text-muted-foreground">{match.description}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
           )}
         </div>
-      </div>
+      )}
 
       {/* Restart Warning */}
       {(changesRequireRestart || restartPending) && (
@@ -400,8 +718,8 @@ export default function SettingsPage() {
           <div>
             <h3 className="font-medium text-amber-500">Restart Required</h3>
             <p className="text-sm text-muted-foreground mt-1">
-              Some settings changes require a backend restart to take effect.
-              Changes are auto-saved; restart the backend service to apply them.
+              Some of these settings are read once at boot. Restart the backend
+              service to apply them.
             </p>
           </div>
         </div>
@@ -409,51 +727,64 @@ export default function SettingsPage() {
 
       {/* Tabs */}
       <Tabs.Root value={activeTab} onValueChange={handleTabChange} className="space-y-6">
-        <Tabs.List className="flex items-center gap-1 border-b overflow-x-auto">
-          {TAB_META.filter((t) => !t.adminOnly || role === 'admin').map((t) => (
-            <Tabs.Trigger key={t.value} value={t.value} className={TAB_TRIGGER_CLASS}>
-              {t.icon}
-              {t.label}
-            </Tabs.Trigger>
-          ))}
-        </Tabs.List>
+        <TabStrip>
+          <Tabs.List className="flex w-max items-center gap-1">
+            {TAB_META.filter((t) => !t.adminOnly || role === 'admin').map((t) => (
+              <Tabs.Trigger key={t.value} value={t.value} className={TAB_TRIGGER_CLASS}>
+                {t.icon}
+                {t.label}
+              </Tabs.Trigger>
+            ))}
+          </Tabs.List>
+        </TabStrip>
 
-        <Tabs.Content value="general" className="space-y-6 focus:outline-none">
-          <GeneralTab theme={theme} />
-        </Tabs.Content>
-
-        <Tabs.Content value="security" className="space-y-6 focus:outline-none">
-          <SecurityTab {...tabProps} />
-        </Tabs.Content>
-
-        {role === 'admin' && (
-          <Tabs.Content value="ai" className="space-y-6 focus:outline-none">
-            <AiLlmTab
-              {...tabProps}
-              role={role}
-              saveLlmSettings={saveLlmSettings}
-              hasLlmChanges={hasLlmChanges}
-              resetLlmValues={resetLlmValues}
-            />
+        <SettingsSavedKeysProvider savedKeys={savedKeys}>
+          <Tabs.Content value="general" className="space-y-6 focus:outline-none">
+            <GeneralTab theme={theme} />
           </Tabs.Content>
-        )}
 
-        <Tabs.Content value="monitoring" className="space-y-6 focus:outline-none">
-          <MonitoringTab {...tabProps} />
-        </Tabs.Content>
+          <Tabs.Content value="security" className="space-y-6 focus:outline-none">
+            <SecurityTab {...tabProps} />
+          </Tabs.Content>
 
-        <Tabs.Content value="integrations" className="space-y-6 focus:outline-none">
-          <IntegrationsTab {...tabProps} />
-        </Tabs.Content>
+          {role === 'admin' && (
+            <Tabs.Content value="ai" className="space-y-6 focus:outline-none">
+              <AiLlmTab
+                {...tabProps}
+                role={role}
+                saveLlmSettings={saveLlmSettings}
+                hasLlmChanges={hasLlmChanges}
+                resetLlmValues={resetLlmValues}
+              />
+            </Tabs.Content>
+          )}
 
-        <Tabs.Content value="infrastructure" className="space-y-6 focus:outline-none">
-          <InfrastructureTab {...tabProps} />
-        </Tabs.Content>
+          <Tabs.Content value="monitoring" className="space-y-6 focus:outline-none">
+            <MonitoringTab {...tabProps} />
+          </Tabs.Content>
 
-        <Tabs.Content value="appearance" className="space-y-6 focus:outline-none">
-          <AppearanceTab />
-        </Tabs.Content>
+          <Tabs.Content value="integrations" className="space-y-6 focus:outline-none">
+            <IntegrationsTab {...tabProps} />
+          </Tabs.Content>
+
+          <Tabs.Content value="infrastructure" className="space-y-6 focus:outline-none">
+            <InfrastructureTab {...tabProps} />
+          </Tabs.Content>
+
+          <Tabs.Content value="appearance" className="space-y-6 focus:outline-none">
+            <AppearanceTab />
+          </Tabs.Content>
+        </SettingsSavedKeysProvider>
       </Tabs.Root>
+
+      <GuardedChangesBar
+        keys={guardedPendingKeys}
+        editedValues={editedValues}
+        originalValues={originalValues}
+        isSaving={isSaving}
+        onSave={() => { void saveGuardedSettings(); }}
+        onDiscard={discardGuardedChanges}
+      />
     </div>
   );
 }

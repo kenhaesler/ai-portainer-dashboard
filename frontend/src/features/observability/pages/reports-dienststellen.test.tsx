@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { DienststellenOverview, parseStackName } from './reports';
+import { StackTaxonomyOverview, parseStackName } from './reports';
 import type { Container } from '@/features/containers/hooks/use-containers';
 
 function makeContainer(overrides: Partial<Container> = {}): Container {
@@ -101,20 +101,20 @@ describe('parseStackName', () => {
 });
 
 // ---------------------------------------------------------------------------
-// DienststellenOverview component tests
+// StackTaxonomyOverview component tests
 // ---------------------------------------------------------------------------
 
-describe('DienststellenOverview', () => {
+describe('StackTaxonomyOverview', () => {
   it('renders nothing when containers is undefined', () => {
     const { container } = render(
-      <DienststellenOverview containers={undefined} />,
+      <StackTaxonomyOverview containers={undefined} />,
     );
     expect(container.innerHTML).toBe('');
   });
 
   it('renders nothing when containers array is empty', () => {
     const { container } = render(
-      <DienststellenOverview containers={[]} />,
+      <StackTaxonomyOverview containers={[]} />,
     );
     expect(container.innerHTML).toBe('');
   });
@@ -135,13 +135,30 @@ describe('DienststellenOverview', () => {
       }),
     ];
 
-    render(<DienststellenOverview containers={containers} />);
+    render(<StackTaxonomyOverview containers={containers} />);
 
     expect(screen.getByText('Berlin')).toBeInTheDocument();
     expect(screen.getByText('Munich')).toBeInTheDocument();
   });
 
-  it('shows total Dienststellen count (excluding Standalone)', () => {
+  it('renders nothing when no stack follows the convention', () => {
+    // The whole block used to render `Total Dienststellen 0` on every fleet
+    // that does not use this customer's naming scheme.
+    const { container } = render(
+      <StackTaxonomyOverview
+        containers={[
+          makeContainer({ id: 'c1', name: 'orphan-1', labels: {} }),
+          makeContainer({
+            id: 'c2', name: 'orphan-2',
+            labels: { 'com.docker.compose.project': 'mystack' },
+          }),
+        ]}
+      />,
+    );
+    expect(container.innerHTML).toBe('');
+  });
+
+  it('counts offices, departments and containers in one header line', () => {
     const containers = [
       makeContainer({
         id: 'c1', name: 'web',
@@ -149,16 +166,33 @@ describe('DienststellenOverview', () => {
       }),
       makeContainer({
         id: 'c2', name: 'api',
-        labels: { 'com.docker.compose.project': 'IT_Munich_api' },
+        labels: { 'com.docker.compose.project': 'HR_Munich_api' },
       }),
       makeContainer({ id: 'c3', name: 'orphan', labels: {} }),
     ];
 
-    render(<DienststellenOverview containers={containers} />);
+    render(<StackTaxonomyOverview containers={containers} />);
 
-    expect(screen.getByText('Total Dienststellen')).toBeInTheDocument();
-    // 2 Dienststellen (Berlin + Munich), Standalone not counted
-    expect(screen.getByText('2')).toBeInTheDocument();
+    // Berlin + Munich; Standalone is not an office.
+    expect(
+      screen.getByText('2 offices · 2 departments · 3 containers'),
+    ).toBeInTheDocument();
+  });
+
+  it('renders no untranslated German label', () => {
+    render(
+      <StackTaxonomyOverview
+        containers={[
+          makeContainer({
+            id: 'c1', name: 'web',
+            labels: { 'com.docker.compose.project': 'IT_Berlin_web' },
+          }),
+        ]}
+      />,
+    );
+
+    expect(document.body.textContent).not.toMatch(/Dienststelle/i);
+    expect(screen.getByText('Containers by office')).toBeInTheDocument();
   });
 
   it('shows department badges', () => {
@@ -169,27 +203,11 @@ describe('DienststellenOverview', () => {
       }),
     ];
 
-    render(<DienststellenOverview containers={containers} />);
+    render(<StackTaxonomyOverview containers={containers} />);
 
     expect(screen.getByText('IT')).toBeInTheDocument();
   });
 
-  it('shows departments KPI', () => {
-    const containers = [
-      makeContainer({
-        id: 'c1', name: 'web',
-        labels: { 'com.docker.compose.project': 'IT_Berlin_web' },
-      }),
-      makeContainer({
-        id: 'c2', name: 'api',
-        labels: { 'com.docker.compose.project': 'HR_Munich_api' },
-      }),
-    ];
-
-    render(<DienststellenOverview containers={containers} />);
-
-    expect(screen.getByText('Departments')).toBeInTheDocument();
-  });
 
   it('shows prod/test environment badges on the group row', () => {
     const containers = [
@@ -203,7 +221,7 @@ describe('DienststellenOverview', () => {
       }),
     ];
 
-    render(<DienststellenOverview containers={containers} />);
+    render(<StackTaxonomyOverview containers={containers} />);
 
     expect(screen.getByText('prod')).toBeInTheDocument();
     expect(screen.getByText('test')).toBeInTheDocument();
@@ -218,7 +236,7 @@ describe('DienststellenOverview', () => {
       }),
     ];
 
-    render(<DienststellenOverview containers={containers} />);
+    render(<StackTaxonomyOverview containers={containers} />);
 
     // Click to expand
     fireEvent.click(screen.getByText('Berlin'));
@@ -236,7 +254,7 @@ describe('DienststellenOverview', () => {
       }),
     ];
 
-    render(<DienststellenOverview containers={containers} />);
+    render(<StackTaxonomyOverview containers={containers} />);
 
     fireEvent.click(screen.getByText('Berlin'));
     expect(screen.getByText('my-app')).toBeInTheDocument();
@@ -261,20 +279,24 @@ describe('DienststellenOverview', () => {
       }),
     ];
 
-    render(<DienststellenOverview containers={containers} />);
+    render(<StackTaxonomyOverview containers={containers} />);
 
     expect(screen.getByText('2 running')).toBeInTheDocument();
     expect(screen.getByText('1 stopped')).toBeInTheDocument();
     expect(screen.getByText('3 total')).toBeInTheDocument();
   });
 
-  it('puts standalone containers (no stack label) in Standalone group', () => {
+  it('puts containers with no parsable stack label in the Standalone group', () => {
     const containers = [
+      makeContainer({
+        id: 'c0', name: 'classified',
+        labels: { 'com.docker.compose.project': 'IT_Berlin_web' },
+      }),
       makeContainer({ id: 'c1', name: 'orphan-1', labels: {} }),
       makeContainer({ id: 'c2', name: 'orphan-2', labels: {} }),
     ];
 
-    render(<DienststellenOverview containers={containers} />);
+    render(<StackTaxonomyOverview containers={containers} />);
 
     expect(screen.getByText('Standalone')).toBeInTheDocument();
     expect(screen.getByText('2 total')).toBeInTheDocument();
@@ -293,7 +315,7 @@ describe('DienststellenOverview', () => {
       makeContainer({ id: 'c3', name: 'orphan', labels: {} }),
     ];
 
-    render(<DienststellenOverview containers={containers} />);
+    render(<StackTaxonomyOverview containers={containers} />);
 
     const buttons = screen.getAllByRole('button');
     const names = buttons.map((b) => b.textContent);
@@ -308,12 +330,16 @@ describe('DienststellenOverview', () => {
   it('handles non-convention stack names as Standalone', () => {
     const containers = [
       makeContainer({
+        id: 'c0', name: 'classified',
+        labels: { 'com.docker.compose.project': 'IT_Berlin_web' },
+      }),
+      makeContainer({
         id: 'c1', name: 'app',
         labels: { 'com.docker.compose.project': 'mystack' },
       }),
     ];
 
-    render(<DienststellenOverview containers={containers} />);
+    render(<StackTaxonomyOverview containers={containers} />);
 
     expect(screen.getByText('Standalone')).toBeInTheDocument();
   });

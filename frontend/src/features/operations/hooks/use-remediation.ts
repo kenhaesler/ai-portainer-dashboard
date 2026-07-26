@@ -15,6 +15,8 @@ interface RemediationAction {
   createdAt: string;
   updatedAt: string;
   approvedBy?: string;
+  rejectedBy?: string;
+  rejectionReason?: string;
   result?: string;
 }
 
@@ -37,17 +39,35 @@ export function useRemediationActions(status?: string) {
   });
 }
 
+/**
+ * What a mutation needs to identify an action *and* to name it back to the
+ * operator. `label` is the human sentence the toast quotes — "Restart Container
+ * on api-service". The UUID stays in the URL where it belongs: an operator
+ * cannot check a toast that reads
+ * "Remediation action 3f2b8c1e-… has been approved" against anything they can
+ * see on screen.
+ */
+export interface RemediationActionRef {
+  actionId: string;
+  label: string;
+}
+
+/** Reject additionally carries the operator's reason, stored as `rejection_reason`. */
+export interface RemediationRejectRef extends RemediationActionRef {
+  reason?: string;
+}
+
 export function useApproveAction() {
   const queryClient = useQueryClient();
 
-  return useMutation<void, Error, string>({
-    mutationFn: async (actionId) => {
+  return useMutation<void, Error, RemediationActionRef>({
+    mutationFn: async ({ actionId }) => {
       await api.post(`/api/remediation/actions/${actionId}/approve`, {});
     },
-    onSuccess: (_data, actionId) => {
+    onSuccess: (_data, { label }) => {
       queryClient.invalidateQueries({ queryKey: ['remediation', 'actions'] });
       toast.success('Action approved', {
-        description: `Remediation action ${actionId} has been approved.`,
+        description: `${label} is approved. Nothing runs until you press Execute.`,
       });
     },
     onError: (error) => {
@@ -68,14 +88,21 @@ export function useApproveAction() {
 export function useRejectAction() {
   const queryClient = useQueryClient();
 
-  return useMutation<void, Error, string>({
-    mutationFn: async (actionId) => {
-      await api.post(`/api/remediation/actions/${actionId}/reject`, {});
+  return useMutation<void, Error, RemediationRejectRef>({
+    mutationFn: async ({ actionId, reason }) => {
+      const trimmed = reason?.trim();
+      await api.post(
+        `/api/remediation/actions/${actionId}/reject`,
+        trimmed ? { reason: trimmed } : {},
+      );
     },
-    onSuccess: (_data, actionId) => {
+    onSuccess: (_data, { label, reason }) => {
       queryClient.invalidateQueries({ queryKey: ['remediation', 'actions'] });
+      const trimmed = reason?.trim();
       toast.success('Action rejected', {
-        description: `Remediation action ${actionId} has been rejected.`,
+        description: trimmed
+          ? `${label} was rejected: ${trimmed}`
+          : `${label} was rejected.`,
       });
     },
     onError: (error) => {
@@ -96,14 +123,14 @@ export function useRejectAction() {
 export function useExecuteAction() {
   const queryClient = useQueryClient();
 
-  return useMutation<void, Error, string>({
-    mutationFn: async (actionId) => {
+  return useMutation<void, Error, RemediationActionRef>({
+    mutationFn: async ({ actionId }) => {
       await api.post(`/api/remediation/actions/${actionId}/execute`, {});
     },
-    onSuccess: (_data, actionId) => {
+    onSuccess: (_data, { label }) => {
       queryClient.invalidateQueries({ queryKey: ['remediation', 'actions'] });
       toast.success('Action executed', {
-        description: `Remediation action ${actionId} has been executed.`,
+        description: `${label} has run. The row shows the result.`,
       });
     },
     onError: (error) => {

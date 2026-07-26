@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import type { Container } from '@/features/containers/hooks/use-containers';
-import { calculateHealthScore, calculateHealthStats } from './health-score';
+import {
+  calculateHealthcheckPassRate,
+  calculateHealthStats,
+  calculateNeedsAttention,
+} from './health-score';
 
 function makeContainer(overrides: Partial<Container> = {}): Container {
   return {
@@ -220,7 +224,7 @@ describe('calculateHealthStats', () => {
     ];
 
     const stats = calculateHealthStats(containers);
-    const score = calculateHealthScore(stats);
+    const score = calculateHealthcheckPassRate(stats);
 
     expect(stats.total).toBe(4);
     expect(stats.healthy).toBe(2);
@@ -237,7 +241,7 @@ describe('calculateHealthStats', () => {
     ];
 
     const stats = calculateHealthStats(containers);
-    const score = calculateHealthScore(stats);
+    const score = calculateHealthcheckPassRate(stats);
 
     expect(stats.healthy).toBe(1);
     expect(stats.unhealthy).toBe(1);
@@ -254,7 +258,7 @@ describe('calculateHealthStats', () => {
     ];
 
     const stats = calculateHealthStats(containers);
-    const score = calculateHealthScore(stats);
+    const score = calculateHealthcheckPassRate(stats);
 
     expect(stats.healthy).toBe(0);
     expect(stats.unhealthy).toBe(0);
@@ -264,7 +268,7 @@ describe('calculateHealthStats', () => {
 
   it('score: empty fleet returns null (no division-by-zero)', () => {
     const stats = calculateHealthStats([]);
-    const score = calculateHealthScore(stats);
+    const score = calculateHealthcheckPassRate(stats);
 
     expect(score).toBeNull();
   });
@@ -276,7 +280,7 @@ describe('calculateHealthStats', () => {
     ];
 
     const stats = calculateHealthStats(containers);
-    const score = calculateHealthScore(stats);
+    const score = calculateHealthcheckPassRate(stats);
 
     expect(score).toBe(100);
   });
@@ -287,7 +291,7 @@ describe('calculateHealthStats', () => {
     ];
 
     const stats = calculateHealthStats(containers);
-    const score = calculateHealthScore(stats);
+    const score = calculateHealthcheckPassRate(stats);
 
     expect(score).toBe(0);
   });
@@ -418,5 +422,67 @@ describe('calculateHealthStats', () => {
     const second = calculateHealthStats(containers);
 
     expect(first).toEqual(second);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// calculateNeedsAttention — the hero number. A pass rate of 100% next to "14
+// Critical" is what this replaces: the count has to be able to see both
+// registers, and it has to say which one each item came from.
+// ---------------------------------------------------------------------------
+
+describe('calculateNeedsAttention', () => {
+  const emptyStats = calculateHealthStats([]);
+
+  it('counts unhealthy and stopped containers when no insights are supplied', () => {
+    const stats = calculateHealthStats([
+      makeContainer({ id: '1', state: 'running', healthStatus: 'healthy' }),
+      makeContainer({ id: '2', state: 'running', healthStatus: 'unhealthy' }),
+      makeContainer({ id: '3', state: 'exited', healthStatus: undefined }),
+    ]);
+
+    expect(calculateNeedsAttention(stats)).toEqual({
+      containers: 2,
+      insights: 0,
+      total: 2,
+    });
+  });
+
+  it('adds unacknowledged critical + warning insights to the container count', () => {
+    const stats = calculateHealthStats([
+      makeContainer({ id: '1', state: 'running', healthStatus: 'unhealthy' }),
+    ]);
+
+    expect(calculateNeedsAttention(stats, { critical: 14, warning: 3 })).toEqual({
+      containers: 1,
+      insights: 17,
+      total: 18,
+    });
+  });
+
+  it('is zero on a fleet with nothing wrong, so the clear state is reachable', () => {
+    const stats = calculateHealthStats([
+      makeContainer({ id: '1', state: 'running', healthStatus: 'healthy' }),
+      makeContainer({ id: '2', state: 'running', healthStatus: undefined }),
+    ]);
+
+    // A running container without a healthcheck is not an issue — it is
+    // excluded from the pass rate for the same reason.
+    expect(calculateNeedsAttention(stats, { critical: 0, warning: 0 }).total).toBe(0);
+  });
+
+  it('ignores info-severity insights (the caller passes only critical + warning)', () => {
+    // 20 Info insights that are the same two facts restated hourly must not
+    // inflate the number an operator is asked to act on.
+    expect(calculateNeedsAttention(emptyStats, { critical: 0, warning: 0 }).total).toBe(0);
+  });
+
+  it('does not read the pass rate — a 100% pass rate can still need attention', () => {
+    const stats = calculateHealthStats([
+      makeContainer({ id: '1', state: 'running', healthStatus: 'healthy' }),
+    ]);
+
+    expect(calculateHealthcheckPassRate(stats)).toBe(100);
+    expect(calculateNeedsAttention(stats, { critical: 14, warning: 0 }).total).toBe(14);
   });
 });

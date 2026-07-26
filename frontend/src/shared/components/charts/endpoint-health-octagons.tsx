@@ -1,5 +1,5 @@
 import { memo, useCallback, useMemo, useRef, useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { m, useReducedMotion } from 'framer-motion';
 import { cn } from '@/shared/lib/utils';
 import { duration, easing } from '@/shared/lib/motion-tokens';
@@ -35,6 +35,41 @@ const HEALTH_COLORS = {
 } as const;
 
 type HealthLevel = keyof typeof HEALTH_COLORS;
+
+/**
+ * Legend copy, keyed by level so the legend can be derived from what is
+ * actually on screen. It used to be a hardcoded six-item row; on a one-endpoint
+ * fleet that meant a 300px pane holding a single hexagon and five captions for
+ * states nothing was in — including three near-identical greys.
+ *
+ * The three ratio bands say "running", not "healthy": `getHealthLevel` buckets
+ * `running / total`, and this pane has no healthcheck data at all.
+ */
+const LEVEL_LEGEND: Record<HealthLevel, string> = {
+  good: '>80% running',
+  warning: '50-80% running',
+  critical: '<50% running',
+  offline: 'Offline',
+  unavailable: 'Data unavailable',
+  empty: 'Awaiting snapshot',
+};
+
+/** Status dot colour per level — shared by the legend and the inline rows. */
+const LEVEL_DOT: Record<HealthLevel, string> = {
+  good: 'bg-emerald-500',
+  warning: 'bg-amber-500',
+  critical: 'bg-red-500',
+  offline: 'bg-slate-500',
+  unavailable: 'bg-stone-500',
+  empty: 'bg-slate-400',
+};
+
+/**
+ * Below this many endpoints the honeycomb is dropped for one row per endpoint.
+ * The hex grid earns its space at fleet scale; at one or two hosts it is a
+ * fleet map rendering a single tile.
+ */
+const HEX_GRID_MIN_ENDPOINTS = 4;
 
 /**
  * Map endpoint state to a hexagon color level.
@@ -375,6 +410,37 @@ export const EndpointHealthOctagons = memo(function EndpointHealthOctagons({
     );
   }
 
+  // Small fleet: one row per endpoint, no honeycomb and no legend — the row
+  // states its own status in words, so nothing needs decoding.
+  if (items.length < HEX_GRID_MIN_ENDPOINTS) {
+    return (
+      <div className="flex flex-col gap-2" data-testid="endpoint-rows">
+        {items.map((ep) => (
+          <Link
+            key={ep.id}
+            to="/infrastructure"
+            data-testid={`endpoint-row-${ep.name}`}
+            title={getCardTitle(ep.name, ep.level, ep.running, ep.total, ep.snapshotSource, ep.snapshotFetchedAt)}
+            className="flex items-center justify-between gap-3 rounded-md border bg-background/40 px-3 py-2 transition-colors hover:bg-muted/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <span className="flex min-w-0 items-center gap-2">
+              <span className={cn('h-2.5 w-2.5 shrink-0 rounded-full', LEVEL_DOT[ep.level])} aria-hidden />
+              <span className="truncate text-sm font-medium">{ep.name}</span>
+            </span>
+            <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+              {getStatusLabel(ep.level, ep.running, ep.total)}
+            </span>
+          </Link>
+        ))}
+      </div>
+    );
+  }
+
+  // Only the levels actually on screen get a legend entry.
+  const presentLevels = (Object.keys(LEVEL_LEGEND) as HealthLevel[]).filter((level) =>
+    items.some((ep) => ep.level === level),
+  );
+
   return (
     <div className="flex flex-col">
       {/* Hexagon honeycomb grid */}
@@ -417,32 +483,14 @@ export const EndpointHealthOctagons = memo(function EndpointHealthOctagons({
         </m.div>
       </div>
 
-      {/* Legend */}
-      <div className="flex justify-center gap-5 pt-3 shrink-0 flex-wrap">
-        <div className="flex items-center gap-1.5">
-          <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-          <span className="text-xs text-muted-foreground">&gt;80% healthy</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <div className="w-2.5 h-2.5 rounded-full bg-amber-500" />
-          <span className="text-xs text-muted-foreground">50-80%</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <div className="w-2.5 h-2.5 rounded-full bg-red-500" />
-          <span className="text-xs text-muted-foreground">&lt;50%</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <div className="w-2.5 h-2.5 rounded-full bg-slate-500" />
-          <span className="text-xs text-muted-foreground">Offline</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <div className="w-2.5 h-2.5 rounded-full bg-stone-500" />
-          <span className="text-xs text-muted-foreground">Unavailable</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <div className="w-2.5 h-2.5 rounded-full bg-slate-400" />
-          <span className="text-xs text-muted-foreground">No data</span>
-        </div>
+      {/* Legend — only the levels present in this fleet */}
+      <div className="flex justify-center gap-5 pt-3 shrink-0 flex-wrap" data-testid="octagon-legend">
+        {presentLevels.map((level) => (
+          <div key={level} className="flex items-center gap-1.5">
+            <div className={cn('w-2.5 h-2.5 rounded-full', LEVEL_DOT[level])} />
+            <span className="text-xs text-muted-foreground">{LEVEL_LEGEND[level]}</span>
+          </div>
+        ))}
       </div>
     </div>
   );

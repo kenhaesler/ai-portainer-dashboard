@@ -15,8 +15,6 @@ import {
   Building2,
   ChevronDown,
   ChevronRight,
-  Box,
-  Tag,
 } from 'lucide-react';
 import {
   useUtilizationReport,
@@ -30,11 +28,10 @@ import { MetricsLineChart } from '@/shared/components/charts/metrics-line-chart'
 import { DataTable } from '@/shared/components/tables/data-table';
 import { SkeletonKpi } from '@/shared/components/feedback/skeleton';
 import { EmptyState } from '@/shared/components/feedback/empty-state';
+import { PageHeader } from '@/shared/components/layout/page-header';
 import { cn } from '@/shared/lib/utils';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
-import { TiltCard } from '@/shared/components/data-display/tilt-card';
-import { KpiCard } from '@/shared/components/data-display/kpi-card';
 import { exportToCsv } from '@/shared/lib/csv-export';
 // Only the lightweight theme metadata is imported statically; the jsPDF-backed
 // export module is loaded via dynamic import() inside handleExportPdf (#1507)
@@ -50,6 +47,43 @@ const TIME_RANGES = [
   { value: '30d', label: '30 Days' },
 ];
 const DEFAULT_PDF_TIME_RANGE = '7d';
+/**
+ * CPU% here follows Docker's `docker stats` convention — 100% is one core — so
+ * a bare "Avg CPU 0.5 %" is ambiguous without it. `/metrics` was given the same
+ * denominator treatment for exactly this reason (#1429); it can name the core
+ * count because it queries per-container metadata, which a fleet-wide roll-up
+ * has no single answer for.
+ */
+const CPU_DENOMINATOR_LABEL = '100% = one core';
+/** How many container names to spell out under a right-sizing rule before "and N more". */
+const RULE_CONTAINER_PREVIEW = 6;
+
+/**
+ * `recommendationSummary` from `GET /api/reports/utilization` — the per-rule
+ * rollup that lets this page state a rule once instead of repeating byte-
+ * identical advice per container.
+ *
+ * Declared here rather than in `use-reports.ts` only because that hook is owned
+ * by another workstream this pass; it belongs on `UtilizationReport`.
+ */
+interface RightSizingRuleSummary {
+  id: string;
+  metric: string;
+  statistic: string;
+  comparison: string;
+  threshold: number;
+  unit: string;
+  recommendation: string;
+  container_count: number;
+  container_names: string[];
+}
+
+/** One rendered line: the rule, and every container it matched. */
+interface RightSizingGroup {
+  id: string;
+  statement: string;
+  containerNames: string[];
+}
 const PDF_BRANDING_STORAGE_KEY = 'reports-management-pdf-branding-v1';
 const PDF_BRAND_PROFILES = [
   { value: 'management', label: 'Management (Recommended)', theme: 'ocean', reportTitle: 'Management Resource Report' },
@@ -65,12 +99,22 @@ function StatCard({
   unit,
   icon: Icon,
   trend,
+  decimals,
+  sublabel,
 }: {
   label: string;
   value: number;
   unit: string;
   icon: React.ComponentType<{ className?: string }>;
   trend?: 'up' | 'down' | 'neutral';
+  /**
+   * Digits after the decimal point. Every stat used to go through the same
+   * `toFixed(1)`, which is why a COUNT of containers rendered as "13.0".
+   * Defaults to 1 for measured percentages; pass 0 for counts.
+   */
+  decimals?: number;
+  /** The denominator, where the number alone is ambiguous (see CPU). */
+  sublabel?: string;
 }) {
   return (
     <SpotlightCard className="h-full">
@@ -80,9 +124,10 @@ function StatCard({
           <Icon className="h-5 w-5 text-muted-foreground" />
         </div>
         <div className="mt-2 flex items-baseline gap-1">
-          <p className="text-3xl font-bold tracking-tight">{value.toFixed(1)}</p>
+          <p className="text-3xl font-bold tracking-tight">{value.toFixed(decimals ?? 1)}</p>
           <span className="text-sm text-muted-foreground">{unit}</span>
         </div>
+        {sublabel && <p className="mt-1 text-xs text-muted-foreground">{sublabel}</p>}
         {trend && trend !== 'neutral' && (
           <div className={cn('mt-1 flex items-center gap-1 text-xs', trend === 'up' ? 'text-red-500' : 'text-green-500')}>
             {trend === 'up' ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
@@ -186,7 +231,19 @@ function groupContainersByDienststelle(
     });
 }
 
-export function DienststellenOverview({
+/**
+ * Grouped view of the customer stack-naming convention
+ * `<department>_<office>_<stackname>-<prod|test>`.
+ *
+ * It renders **only when at least one stack actually parses**. Before that gate
+ * existed this block owned the whole fold on every fleet that does not use the
+ * convention, and showed three permanent zeroes as the first thing an operator
+ * saw. The parser's field names keep the original German (`dienststelle`) —
+ * they are the data contract, including the CSV column — but nothing on screen
+ * does: an English UI does not get to render one untranslated label beside an
+ * English one for the same concept.
+ */
+export function StackTaxonomyOverview({
   containers,
 }: {
   containers: Container[] | undefined;
@@ -269,7 +326,7 @@ export function DienststellenOverview({
     },
   ], []);
 
-  const totalDienststellen = groups.filter((g) => g.dienststelle !== 'Standalone').length;
+  const totalOffices = groups.filter((g) => g.dienststelle !== 'Standalone').length;
   const totalContainers = groups.reduce((sum, g) => sum + g.containers.length, 0);
   const uniqueDepartments = new Set(groups.flatMap((g) => g.departments));
 
@@ -283,39 +340,30 @@ export function DienststellenOverview({
   };
 
   if (!containers || containers.length === 0) return null;
+  // Nothing parsed: the convention is not in use here, so this whole block is
+  // noise. Do not render zeroes for a taxonomy this fleet does not have.
+  if (totalOffices === 0) return null;
 
   return (
     <div className="space-y-4">
-      {/* Dienststellen KPIs */}
-      <div className="grid gap-4 md:grid-cols-4">
-        <TiltCard>
-          <KpiCard label="Total Dienststellen" value={totalDienststellen} icon={<Building2 className="h-5 w-5" />} />
-        </TiltCard>
-        <TiltCard>
-          <KpiCard label="Total Containers" value={totalContainers} icon={<Box className="h-5 w-5" />} />
-        </TiltCard>
-        <TiltCard>
-          <KpiCard label="Departments" value={uniqueDepartments.size} icon={<Tag className="h-5 w-5" />} />
-        </TiltCard>
-        <TiltCard>
-          <KpiCard
-            label="Avg Containers / Dienststelle"
-            value={totalDienststellen > 0 ? (totalContainers / totalDienststellen).toFixed(1) : '0'}
-            icon={<Server className="h-5 w-5" />}
-          />
-        </TiltCard>
-      </div>
-
-      {/* Grouped table */}
+      {/*
+        The four KPI tiles that stood here restated the counts now carried in
+        this panel's own header line, and one of them ("Total Containers 13")
+        duplicated the fleet KPI row 400px below.
+      */}
       <SpotlightCard>
       <div className="rounded-lg border bg-card shadow-sm">
-        <div className="flex items-center justify-between p-4 border-b">
+        <div className="flex flex-wrap items-center justify-between gap-2 p-4 border-b">
           <div className="flex items-center gap-2">
             <Building2 className="h-5 w-5" />
-            <h3 className="text-lg font-semibold">Containers per Dienststelle</h3>
+            <h3 className="text-lg font-semibold">Containers by office</h3>
           </div>
           <span className="text-sm text-muted-foreground">
-            {totalDienststellen} Dienststelle{totalDienststellen !== 1 ? 'n' : ''}
+            {totalOffices} office{totalOffices !== 1 ? 's' : ''}
+            {' · '}
+            {uniqueDepartments.size} department{uniqueDepartments.size !== 1 ? 's' : ''}
+            {' · '}
+            {totalContainers} container{totalContainers !== 1 ? 's' : ''}
           </span>
         </div>
         <div className="divide-y">
@@ -380,7 +428,7 @@ export function DienststellenOverview({
                 )}
                 {isExpanded && grpContainers.length === 0 && (
                   <div className="border-t bg-muted/10 px-4 py-3 pl-12 text-sm text-muted-foreground italic">
-                    No containers on this Dienststelle
+                    No containers in this office
                   </div>
                 )}
               </div>
@@ -397,7 +445,11 @@ export default function ReportsPage() {
   const [timeRange, setTimeRange] = useState('24h');
   const [excludeInfrastructure, setExcludeInfrastructure] = useState(true);
   const [pdfTimeRange, setPdfTimeRange] = useState(DEFAULT_PDF_TIME_RANGE);
-  const [pdfIncludeInfrastructure, setPdfIncludeInfrastructure] = useState(false);
+  // Same polarity and same words as the page filter above. The panel used to
+  // say **Include** infrastructure services 40px from a page filter that said
+  // **Exclude** them, so checking both produced the opposite of what an
+  // operator expected in the PDF.
+  const [pdfExcludeInfrastructure, setPdfExcludeInfrastructure] = useState(true);
   const [pdfBrandProfile, setPdfBrandProfile] = useState<PdfBrandProfile>('management');
   const [pdfTheme, setPdfTheme] = useState<ManagementPdfTheme>('ocean');
   const [pdfReportTitle, setPdfReportTitle] = useState('Management Resource Report');
@@ -424,11 +476,11 @@ export default function ReportsPage() {
   const {
     data: pdfReport,
     isLoading: pdfReportLoading,
-  } = useUtilizationReport(pdfTimeRange, selectedEndpoint, undefined, !pdfIncludeInfrastructure);
+  } = useUtilizationReport(pdfTimeRange, selectedEndpoint, undefined, pdfExcludeInfrastructure);
   const {
     data: pdfTrends,
     isLoading: pdfTrendsLoading,
-  } = useTrendsReport(pdfTimeRange, selectedEndpoint, undefined, !pdfIncludeInfrastructure);
+  } = useTrendsReport(pdfTimeRange, selectedEndpoint, undefined, pdfExcludeInfrastructure);
 
   // Sort containers
   const sortedContainers = useMemo(() => {
@@ -465,6 +517,39 @@ export default function ReportsPage() {
     }));
   }, [trends]);
 
+  /**
+   * "Right-Sizing Recommendations 15" used to list 15 containers, 14 of them
+   * carrying byte-identical advice from four fixed thresholds — one fact
+   * rendered fifteen times over ~1000px of scroll. Prefer the backend rollup;
+   * fall back to grouping the legacy per-container `issues` strings so the
+   * collapse still holds against an older backend.
+   */
+  const rightSizingGroups = useMemo<RightSizingGroup[]>(() => {
+    const supplied = (report as (typeof report & { recommendationSummary?: RightSizingRuleSummary[] }) | undefined)
+      ?.recommendationSummary;
+    if (supplied?.length) {
+      return supplied.map((rule) => ({
+        id: rule.id,
+        statement: `${rule.metric.toUpperCase()} ${rule.statistic} ${rule.comparison} ${rule.threshold}${rule.unit === 'percent' ? '%' : ''} — ${rule.recommendation}`,
+        containerNames: rule.container_names,
+      }));
+    }
+
+    const byIssue = new Map<string, string[]>();
+    for (const rec of report?.recommendations ?? []) {
+      for (const issue of rec.issues) {
+        const names = byIssue.get(issue) ?? [];
+        names.push(rec.container_name);
+        byIssue.set(issue, names);
+      }
+    }
+    return Array.from(byIssue.entries()).map(([issue, containerNames]) => ({
+      id: issue,
+      statement: issue,
+      containerNames,
+    }));
+  }, [report]);
+
   const allContainersById = useMemo(() => {
     const byId = new Map<string, Container>();
     for (const container of allContainers ?? []) {
@@ -493,7 +578,7 @@ export default function ReportsPage() {
   }, [allContainersById, report?.containers]);
 
   const reusePrimaryReportForPdf = pdfTimeRange === timeRange
-    && (!pdfIncludeInfrastructure === excludeInfrastructure);
+    && (pdfExcludeInfrastructure === excludeInfrastructure);
   const effectivePdfReport = reusePrimaryReportForPdf ? report : pdfReport;
   const effectivePdfTrends = reusePrimaryReportForPdf ? trends : pdfTrends;
 
@@ -516,9 +601,12 @@ export default function ReportsPage() {
     exportToCsv(exportRows, `resource-report-${timeRange}-${scope}-${date}.csv`);
   };
 
+  // The panel opens on the filter the operator is already looking at, then lets
+  // them override it for the PDF alone. Its subtitle claimed scope was
+  // inherited while time range and infrastructure silently reset.
   const handleOpenPdfOptions = () => {
-    setPdfTimeRange(DEFAULT_PDF_TIME_RANGE);
-    setPdfIncludeInfrastructure(false);
+    setPdfTimeRange(timeRange);
+    setPdfExcludeInfrastructure(excludeInfrastructure);
     setPdfExportError(null);
     setPdfExportSuccess(null);
     setShowPdfOptions(true);
@@ -540,7 +628,7 @@ export default function ReportsPage() {
         generatedAt: date,
         timeRange: pdfTimeRange,
         scopeLabel,
-        includeInfrastructure: pdfIncludeInfrastructure,
+        includeInfrastructure: !pdfExcludeInfrastructure,
         containers: effectivePdfReport ? filteredPdfContainers : [],
         recommendations: effectivePdfReport ? filteredPdfRecommendations : [],
         trends: effectivePdfTrends?.trends,
@@ -790,32 +878,31 @@ export default function ReportsPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Resource Reports</h1>
-          <p className="text-muted-foreground">
-            Utilization analysis, trends, and right-sizing recommendations
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleOpenPdfOptions}
-            className="flex items-center gap-2 rounded-md border bg-card px-4 py-2 text-sm font-medium hover:bg-muted"
-          >
-            <FileText className="h-4 w-4" />
-            Export Management PDF
-          </button>
-          <button
-            onClick={handleExportCsv}
-            disabled={!exportRows.length}
-            className="flex items-center gap-2 rounded-md border bg-card px-4 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50"
-          >
-            <Download className="h-4 w-4" />
-            Export CSV
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title="Reports"
+        subtitle={report
+          ? `${report.fleetSummary.totalContainers} containers over the last ${TIME_RANGES.find((r) => r.value === timeRange)?.label.toLowerCase() ?? timeRange}`
+          : undefined}
+        actions={(
+          <>
+            <button
+              onClick={handleOpenPdfOptions}
+              className="flex items-center gap-2 rounded-md border bg-card px-4 py-2 text-sm font-medium hover:bg-muted"
+            >
+              <FileText className="h-4 w-4" />
+              Export PDF report
+            </button>
+            <button
+              onClick={handleExportCsv}
+              disabled={!exportRows.length}
+              className="flex items-center gap-2 rounded-md border bg-card px-4 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50"
+            >
+              <Download className="h-4 w-4" />
+              Export CSV
+            </button>
+          </>
+        )}
+      />
 
       {/* Controls */}
       <SpotlightCard>
@@ -871,7 +958,8 @@ export default function ReportsPage() {
             <div>
               <h2 className="text-base font-semibold">Management PDF Export</h2>
               <p className="text-sm text-muted-foreground">
-                Default range is 7 days. Endpoint scope follows the current report filter.
+                Starts from the filters on this page — endpoint scope, time range and
+                infrastructure. Change them here to affect the PDF only.
               </p>
             </div>
           </div>
@@ -899,10 +987,10 @@ export default function ReportsPage() {
             <label className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
-                checked={pdfIncludeInfrastructure}
-                onChange={(event) => setPdfIncludeInfrastructure(event.target.checked)}
+                checked={pdfExcludeInfrastructure}
+                onChange={(event) => setPdfExcludeInfrastructure(event.target.checked)}
               />
-              Include infrastructure services
+              Exclude infrastructure services
             </label>
           </div>
           <div className="grid gap-4 md:grid-cols-2">
@@ -1006,8 +1094,8 @@ export default function ReportsPage() {
         </SpotlightCard>
       )}
 
-      {/* Dienststellen Overview */}
-      <DienststellenOverview containers={allContainers} />
+      {/* Stack taxonomy (renders only when the naming convention is in use) */}
+      <StackTaxonomyOverview containers={allContainers} />
 
       {isLoading && (
         <div className="grid gap-4 md:grid-cols-4">
@@ -1026,6 +1114,7 @@ export default function ReportsPage() {
             label="Containers"
             value={report.fleetSummary.totalContainers}
             unit=""
+            decimals={0}
             icon={FileBarChart}
           />
           <StatCard
@@ -1033,12 +1122,14 @@ export default function ReportsPage() {
             value={report.fleetSummary.avgCpu}
             unit="%"
             icon={Cpu}
+            sublabel={CPU_DENOMINATOR_LABEL}
           />
           <StatCard
             label="Max CPU"
             value={report.fleetSummary.maxCpu}
             unit="%"
             icon={Cpu}
+            sublabel={CPU_DENOMINATOR_LABEL}
             trend={report.fleetSummary.maxCpu > 90 ? 'up' : 'neutral'}
           />
           <StatCard
@@ -1108,29 +1199,43 @@ export default function ReportsPage() {
         </div>
       )}
 
-      {/* Recommendations */}
-      {report && report.recommendations.length > 0 && (
+      {/* Right-sizing rules */}
+      {rightSizingGroups.length > 0 && (
         <SpotlightCard>
         <div className="rounded-lg border bg-card p-6 shadow-sm">
-          <div className="flex items-center gap-2 mb-4">
+          <div className="flex flex-wrap items-center gap-2 mb-1">
             <Lightbulb className="h-5 w-5 text-amber-500" />
-            <h3 className="text-lg font-semibold">Right-Sizing Recommendations</h3>
+            <h3 className="text-lg font-semibold">Right-sizing rules</h3>
             <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900 dark:text-amber-200">
-              {report.recommendations.length}
+              {rightSizingGroups.length}
             </span>
           </div>
+          <p className="mb-4 text-sm text-muted-foreground">
+            Fixed utilization thresholds, evaluated per container. One line per rule that fired —
+            every container a rule matched gets the same advice, so it is stated once.
+          </p>
           <div className="space-y-3">
-            {report.recommendations.map((rec) => (
-              <div key={rec.container_id} className="rounded-md border p-3">
-                <p className="font-medium text-sm">{rec.container_name}</p>
-                <ul className="mt-1 space-y-1">
-                  {rec.issues.map((issue, i) => (
-                    <li key={i} className="flex items-start gap-2 text-sm text-muted-foreground">
-                      <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0 text-amber-500" />
-                      {issue}
-                    </li>
-                  ))}
-                </ul>
+            {rightSizingGroups.map((group) => (
+              <div key={group.id} className="rounded-md border p-3" data-testid="right-sizing-rule">
+                <div className="flex items-start gap-2 text-sm">
+                  <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0 text-amber-500" />
+                  <p>
+                    <span className="font-medium">
+                      {group.containerNames.length} container
+                      {group.containerNames.length !== 1 ? 's' : ''}
+                    </span>
+                    {': '}
+                    {group.statement}
+                  </p>
+                </div>
+                <p
+                  className="mt-1 pl-5 text-xs text-muted-foreground break-words"
+                  title={group.containerNames.join(', ')}
+                >
+                  {group.containerNames.slice(0, RULE_CONTAINER_PREVIEW).join(', ')}
+                  {group.containerNames.length > RULE_CONTAINER_PREVIEW
+                    && ` and ${group.containerNames.length - RULE_CONTAINER_PREVIEW} more`}
+                </p>
               </div>
             ))}
           </div>

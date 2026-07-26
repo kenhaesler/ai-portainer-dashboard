@@ -1,67 +1,112 @@
-import { AlertCircle, AlertTriangle, CheckCircle2, HelpCircle, XCircle } from 'lucide-react';
-import { calculateHealthScore, type HealthStats } from '@/shared/lib/health-score';
+import { AlertCircle, CheckCircle2, XCircle } from 'lucide-react';
+import {
+  calculateHealthcheckPassRate,
+  calculateNeedsAttention,
+  type HealthStats,
+  type InsightAttentionCounts,
+} from '@/shared/lib/health-score';
 
 /**
- * Presentational tile that surfaces the Overall Health Score. Extracted from
- * `fleet-health-summary.tsx` so the Home page and the Health & Monitoring page
- * stay in sync — both render through this component and reuse the shared
- * `calculateHealthStats` / `calculateHealthScore` helpers for the formula and
- * color-band thresholds (≥80% green, ≥50% amber, <50% red, null = gray).
+ * The hero tile of the Fleet Vitals pane, shared by Home and Health &
+ * Monitoring so the two pages can never disagree about the fleet's headline
+ * number.
  *
- * The score is derived internally from `stats` via `calculateHealthScore` so
- * callers can't accidentally pass a score that disagrees with the stats.
+ * It used to lead with "Overall Health Score 100.0%" — the Docker healthcheck
+ * pass rate under a name that claimed to summarise the fleet. On Health &
+ * Monitoring that green 100.0% rendered two inches from "14 Critical", because
+ * the rate is structurally blind to insights. The rate is still here and still
+ * correct; it is now named for what it measures, states its own exclusion
+ * inline, and is secondary to a count the operator can act on.
+ *
+ * Both numbers are derived internally from `stats` (+ the caller's
+ * unacknowledged insight counts) rather than accepted as props, so no caller
+ * can pass a number that disagrees with the data beside it.
+ *
+ * There is deliberately no ring around the icon. The old one was
+ * `border-8 border-primary/20` — a static full circle that read as a radial
+ * progress meter and rendered identically at 100% and at 12%.
  */
 export interface HealthScoreCardProps {
   /** Aggregated container health stats from `calculateHealthStats`. */
   stats: HealthStats;
+  /**
+   * Unacknowledged critical / warning insight counts. Pages that don't load
+   * the insight feed (Home) omit this; the count then covers container state
+   * only and the breakdown line says so rather than implying zero insights.
+   */
+  insightCounts?: InsightAttentionCounts;
 }
 
-export function HealthScoreCard({ stats }: HealthScoreCardProps) {
-  const score = calculateHealthScore(stats);
+function plural(n: number, singular: string, plural_: string): string {
+  return `${n} ${n === 1 ? singular : plural_}`;
+}
+
+export function HealthScoreCard({ stats, insightCounts }: HealthScoreCardProps) {
+  const passRate = calculateHealthcheckPassRate(stats);
   const reporting = stats.healthy + stats.unhealthy;
-  const issueCount = stats.unhealthy + stats.stopped;
+  const attention = calculateNeedsAttention(stats, insightCounts);
+
+  const isClear = attention.total === 0;
+  const isCritical = stats.unhealthy > 0 || (insightCounts?.critical ?? 0) > 0;
+
+  const breakdownParts: string[] = [];
+  if (attention.containers > 0) {
+    breakdownParts.push(plural(attention.containers, 'container', 'containers'));
+  }
+  if (attention.insights > 0) {
+    breakdownParts.push(
+      `${plural(attention.insights, 'unacknowledged insight', 'unacknowledged insights')}`,
+    );
+  }
+  const breakdown = isClear
+    ? insightCounts
+      ? 'No unhealthy or stopped containers, no unacknowledged critical or warning insights.'
+      : 'No unhealthy or stopped containers.'
+    : breakdownParts.join(' · ');
 
   return (
     <div className="flex items-center gap-5 min-w-0" data-testid="health-score-card">
-      <div className="flex h-24 w-24 flex-shrink-0 items-center justify-center rounded-full border-8 border-primary/20 bg-muted/30">
-        {score === null ? (
-          <HelpCircle className="h-12 w-12 text-muted-foreground" />
-        ) : score >= 80 ? (
-          <CheckCircle2 className="h-12 w-12 text-emerald-500" data-testid="health-score-icon-green" />
-        ) : score >= 50 ? (
-          <AlertCircle className="h-12 w-12 text-amber-500" data-testid="health-score-icon-amber" />
+      <div className="flex h-20 w-20 flex-shrink-0 items-center justify-center rounded-full bg-muted/40">
+        {isClear ? (
+          <CheckCircle2 className="h-10 w-10 text-emerald-500" data-testid="attention-icon-clear" />
+        ) : isCritical ? (
+          <XCircle className="h-10 w-10 text-red-500" data-testid="attention-icon-critical" />
         ) : (
-          <XCircle className="h-12 w-12 text-red-500" data-testid="health-score-icon-red" />
+          <AlertCircle className="h-10 w-10 text-amber-500" data-testid="attention-icon-warning" />
         )}
       </div>
       <div className="min-w-0">
-        <p className="text-sm font-medium text-muted-foreground">Overall Health Score</p>
-        {score === null ? (
-          <>
-            <p className="text-2xl font-semibold text-muted-foreground" data-testid="health-score-na">
-              No healthchecks configured
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">
-              {stats.total} containers tracked. Configure Docker healthchecks to enable scoring.
-            </p>
-          </>
-        ) : (
-          <>
-            <p className="text-4xl font-bold tabular-nums leading-none mt-1" data-testid="health-score">
-              {score.toFixed(1)}%
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">
-              {stats.healthy} of {reporting} reporting healthy
-              {stats.noHealthcheck > 0 && ` · ${stats.noHealthcheck} without healthcheck`}
-            </p>
-          </>
-        )}
-        {issueCount > 0 && (
-          <p className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-red-700 dark:text-red-400">
-            <AlertTriangle className="h-4 w-4" />
-            {issueCount} container{issueCount === 1 ? '' : 's'} need{issueCount === 1 ? 's' : ''} attention
-          </p>
-        )}
+        <p className="text-sm font-medium text-muted-foreground">Needs attention</p>
+        <p
+          className="text-4xl font-bold tabular-nums leading-none mt-1"
+          data-testid="needs-attention-count"
+        >
+          {attention.total}
+        </p>
+        <p className="text-xs text-muted-foreground mt-1" data-testid="needs-attention-breakdown">
+          {breakdown}
+        </p>
+        {/* Secondary, and named for what it measures. Whole percent only: on a
+            fleet of 11 reporting containers the tenths digit is noise — one
+            container moves the number 9.1 points, and the exact fraction is
+            spelled out on the same line anyway. */}
+        <p className="mt-3 border-t pt-2 text-xs text-muted-foreground" data-testid="healthcheck-pass-rate">
+          {passRate === null ? (
+            <>
+              Healthcheck pass rate unavailable — none of the {stats.total} containers has a Docker
+              healthcheck configured.
+            </>
+          ) : (
+            <>
+              Healthcheck pass rate{' '}
+              <span className="font-medium text-foreground tabular-nums">
+                {Math.round(passRate)}%
+              </span>{' '}
+              — {stats.healthy} of {reporting} containers with a healthcheck
+              {stats.noHealthcheck > 0 && ` · ${stats.noHealthcheck} without one, excluded`}
+            </>
+          )}
+        </p>
       </div>
     </div>
   );

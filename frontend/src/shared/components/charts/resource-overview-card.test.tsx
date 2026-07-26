@@ -98,4 +98,19 @@ describe('ResourceOverviewCard', () => {
       expect(container.firstChild).toBeNull();
     });
   });
+
+  describe('theming', () => {
+    it('draws both gauges from the theme accent, not raw palette hues', () => {
+      const { container } = render(
+        <ResourceOverviewCard cpuPercent={45.5} memoryPercent={62.3} />,
+      );
+      const bars = screen.getAllByRole('progressbar');
+      // Purple/violet is reserved for AI insight and a memory series is not
+      // one; cyan/blue gradients also ignore the 16 shipped themes.
+      expect(bars[0].className).toContain('bg-primary');
+      expect(bars[1].className).toContain('bg-primary/60');
+      expect(container.querySelector('.from-violet-300')).toBeNull();
+      expect(container.querySelector('.from-cyan-300')).toBeNull();
+    });
+  });
 });

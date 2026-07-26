@@ -76,52 +76,55 @@ describe('GeneralTab — system component versions', () => {
   });
 });
 
-describe('GeneralTab — cached entry keys table (DataTable migration)', () => {
-  it('renders the cache entries inside a DataTable', () => {
-    cacheStatsRef.data = {
-      size: 2,
-      l1Size: 1,
-      l2Size: 1,
-      hits: 10,
-      misses: 2,
-      hitRate: '83%',
-      backend: 'multi-layer',
-      entries: [
-        { key: 'portainer:containers', expiresIn: 30 },
-        { key: 'portainer:images', expiresIn: 60 },
-      ],
-    };
+describe('GeneralTab — raw cache keys are not product surface', () => {
+  const populatedStats = {
+    size: 2,
+    l1Size: 1,
+    l2Size: 1,
+    hits: 10,
+    misses: 2,
+    hitRate: '83%',
+    backend: 'multi-layer',
+    entries: [
+      { key: 'stats:3:eff28011ff7bd189089e1d192b14b09c95b42aed', expiresIn: 30 },
+      { key: 'portainer:images', expiresIn: 60 },
+    ],
+  };
 
-    renderTab();
-
-    const table = screen.getByTestId('data-table');
-    expect(table).toBeInTheDocument();
-
-    // Headers preserved from the original hand-rolled table
-    expect(within(table).getByText('Key')).toBeInTheDocument();
-    expect(within(table).getByText('Expires In (TTL)')).toBeInTheDocument();
-
-    // Cell rendering preserved (key + TTL with the "s" suffix)
-    expect(within(table).getByText('portainer:containers')).toBeInTheDocument();
-    expect(within(table).getByText('portainer:images')).toBeInTheDocument();
-    expect(within(table).getByText('30s')).toBeInTheDocument();
-    expect(within(table).getByText('60s')).toBeInTheDocument();
-  });
-
-  it('does not render the cache entries table when there are no entries', () => {
-    cacheStatsRef.data = {
-      size: 0,
-      l1Size: 0,
-      l2Size: 0,
-      hits: 0,
-      misses: 0,
-      hitRate: 'N/A',
-      backend: 'memory-only',
-      entries: [],
-    };
+  it('does not dump individual cache keys into the page', () => {
+    cacheStatsRef.data = populatedStats;
 
     renderTab();
 
     expect(screen.queryByTestId('data-table')).not.toBeInTheDocument();
+    expect(screen.queryByText('stats:3:eff28011ff7bd189089e1d192b14b09c95b42aed')).not.toBeInTheDocument();
+    expect(screen.queryByText('portainer:images')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Cached Entry Keys/i)).not.toBeInTheDocument();
+  });
+
+  it('keeps the aggregate counters, which do read', () => {
+    cacheStatsRef.data = populatedStats;
+
+    renderTab();
+
+    expect(screen.getByText('Hit Rate')).toBeInTheDocument();
+    expect(screen.getByText('83%')).toBeInTheDocument();
+    expect(screen.getByText('Redis Keys')).toBeInTheDocument();
+  });
+});
+
+describe('GeneralTab — placement', () => {
+  it('renders system information as a disclosure', () => {
+    renderTab();
+
+    const disclosure = screen.getByTestId('system-information');
+    expect(disclosure.tagName).toBe('DETAILS');
+    expect(within(disclosure).getByText('System Information')).toBeInTheDocument();
+  });
+
+  it('does not host cache administration — that belongs with the cache settings', () => {
+    renderTab();
+
+    expect(screen.queryByRole('button', { name: /clear all cache/i })).not.toBeInTheDocument();
   });
 });

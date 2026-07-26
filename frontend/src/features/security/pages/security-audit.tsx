@@ -1,11 +1,13 @@
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { type ColumnDef } from '@tanstack/react-table';
-import { Search, ShieldAlert } from 'lucide-react';
+import { ChevronDown, ChevronRight, Search, ShieldAlert, SlidersHorizontal } from 'lucide-react';
 import { useSecurityAudit, type SecurityAuditEntry } from '@/features/security/hooks/use-security-audit';
 import { useEndpoints } from '@/features/containers/hooks/use-endpoints';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { DataTable } from '@/shared/components/tables/data-table';
 import { SkeletonTableRow } from '@/shared/components/feedback/skeleton';
+import { PageHeader } from '@/shared/components/layout/page-header';
 import { cn } from '@/shared/lib/utils';
 import { ObservedDestinationsPanel } from '@/features/security/components/observed-destinations-panel';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
@@ -56,12 +58,45 @@ function capabilityBadgeClass(capability: string): string {
   return 'bg-muted text-muted-foreground';
 }
 
+/**
+ * Isolation modes worth a line of text. Docker's defaults (`bridge`, the
+ * per-compose-project network, `private` PID) are the answer for almost every
+ * container, and printing `net=container-insights_dashboard-net | pid=—` on
+ * every row spent a column on saying "normal" 13 times.
+ */
+function isolationNotes(posture: SecurityAuditEntry['posture']): string[] {
+  const notes: string[] = [];
+  const net = posture.networkMode ?? '';
+  const pid = posture.pidMode ?? '';
+  if (net === 'host') notes.push('host network');
+  else if (net.startsWith('container:')) notes.push(`network shared with ${net.slice('container:'.length)}`);
+  if (pid === 'host') notes.push('host PID namespace');
+  else if (pid.startsWith('container:')) notes.push(`PID shared with ${pid.slice('container:'.length)}`);
+  return notes;
+}
+
+/**
+ * Whether this container is worth a row at all.
+ *
+ * On a clean fleet every row read `None / No / net=… | pid=— / NONE / Active` —
+ * 13 rows of the same five constants, while the one number that mattered sat
+ * above them in 14px muted text. Rows are for exceptions; the count of
+ * everything else is a summary line.
+ */
+function isException(entry: SecurityAuditEntry): boolean {
+  return entry.findings.length > 0
+    || entry.posture.capAdd.length > 0
+    || entry.posture.privileged
+    || isolationNotes(entry.posture).length > 0;
+}
+
 export default function SecurityAuditPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedEndpoint, setSelectedEndpoint] = useState<string>('all');
   const [selectedSeverity, setSelectedSeverity] = useState<string>('all');
   const [selectedIgnored, setSelectedIgnored] = useState<string>('all');
   const [selectedStack, setSelectedStack] = useState<string>('all');
+  const [showClean, setShowClean] = useState(false);
 
   const { data: endpoints = [] } = useEndpoints();
   const { data, isLoading: auditLoading, isPending: auditPending, isError, error, refetch } = useSecurityAudit(
@@ -101,6 +136,40 @@ export default function SecurityAuditPage() {
         return a.containerName.localeCompare(b.containerName);
       });
   }, [entries, searchQuery, selectedSeverity, selectedIgnored, selectedStack]);
+
+  /**
+   * The one line an operator actually reads. It used to be 14px muted text
+   * under a table of constants; it is now the lead, and it names the three
+   * things this page checks rather than "13 containers shown".
+   */
+  const posture = useMemo(() => {
+    const withCaps = entries.filter((entry) => entry.posture.capAdd.length > 0);
+    const privileged = entries.filter((entry) => entry.posture.privileged);
+    const hostNamespaces = entries.filter((entry) => isolationNotes(entry.posture).length > 0);
+    const exceptions = entries.filter(isException);
+    return {
+      total: entries.length,
+      withCaps: withCaps.length,
+      privileged: privileged.length,
+      hostNamespaces: hostNamespaces.length,
+      exceptions: exceptions.length,
+      ignored: entries.filter((entry) => entry.ignored).length,
+    };
+  }, [entries]);
+
+  // Any active filter is an explicit request to see those rows, clean or not.
+  const isFiltered = searchQuery.trim() !== ''
+    || selectedSeverity !== 'all'
+    || selectedIgnored !== 'all'
+    || selectedStack !== 'all';
+
+  const cleanEntries = useMemo(
+    () => filteredEntries.filter((entry) => !isException(entry)),
+    [filteredEntries],
+  );
+  const visibleEntries = isFiltered || showClean
+    ? filteredEntries
+    : filteredEntries.filter(isException);
 
   const columns = useMemo<ColumnDef<SecurityAuditEntry, unknown>[]>(() => [
     {
@@ -183,14 +252,25 @@ export default function SecurityAuditPage() {
       },
     },
     {
-      id: 'networkPid',
-      header: 'Network/PID',
+      id: 'isolation',
+      header: 'Isolation',
       enableSorting: false,
       cell: ({ row }) => {
         const entry = row.original;
+        const notes = isolationNotes(entry.posture);
+        if (notes.length === 0) {
+          return (
+            <span
+              className="text-xs text-muted-foreground"
+              title={`network: ${entry.posture.networkMode ?? 'default'} · pid: ${entry.posture.pidMode ?? 'private'}`}
+            >
+              —
+            </span>
+          );
+        }
         return (
-          <span className={cn('text-xs text-muted-foreground', entry.ignored && 'opacity-70')}>
-            net={entry.posture.networkMode ?? '—'} | pid={entry.posture.pidMode ?? '—'}
+          <span className={cn('text-xs font-medium text-amber-700 dark:text-amber-400', entry.ignored && 'opacity-70')}>
+            {notes.join(', ')}
           </span>
         );
       },
@@ -202,6 +282,11 @@ export default function SecurityAuditPage() {
       sortingFn: (a, b) => severityRank(a.original.severity) - severityRank(b.original.severity),
       cell: ({ row }) => {
         const entry = row.original;
+        // A coloured badge for the ABSENCE of a finding is noise. Badges are
+        // for signal.
+        if (entry.severity === 'none') {
+          return <span className="text-xs text-muted-foreground">—</span>;
+        }
         return (
           <span
             className={cn(
@@ -239,10 +324,56 @@ export default function SecurityAuditPage() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Security Audit</h1>
-        <p className="text-muted-foreground">Container capability posture across endpoints with ignore-list visibility.</p>
-      </div>
+      <PageHeader
+        title="Security Audit"
+        subtitle={isLoading
+          ? undefined
+          : posture.exceptions === 0
+            ? `No container of ${posture.total} has added capabilities, privileged mode, or a host namespace`
+            : `${posture.exceptions} of ${posture.total} containers have added capabilities, privileged mode, or a host namespace`}
+        actions={(
+          <Link
+            to="/settings?tab=security"
+            className="inline-flex items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium hover:bg-accent"
+          >
+            <SlidersHorizontal className="h-4 w-4" />
+            Manage ignore list
+          </Link>
+        )}
+      />
+
+      {!isLoading && posture.total > 0 && (
+        <SpotlightCard>
+        <section className="rounded-lg border bg-card p-6 shadow-sm" data-testid="posture-summary">
+          <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div>
+              <dt className="text-sm text-muted-foreground">Added capabilities</dt>
+              <dd className="mt-1 text-2xl font-bold tracking-tight">{posture.withCaps}</dd>
+            </div>
+            <div>
+              <dt className="text-sm text-muted-foreground">Privileged</dt>
+              <dd className="mt-1 text-2xl font-bold tracking-tight">{posture.privileged}</dd>
+            </div>
+            <div>
+              <dt className="text-sm text-muted-foreground">Host network or PID</dt>
+              <dd className="mt-1 text-2xl font-bold tracking-tight">{posture.hostNamespaces}</dd>
+            </div>
+            <div>
+              <dt className="text-sm text-muted-foreground">On the ignore list</dt>
+              <dd className="mt-1 text-2xl font-bold tracking-tight">{posture.ignored}</dd>
+            </div>
+          </dl>
+          <p className="mt-4 text-sm text-muted-foreground">
+            Ignored containers are excluded from the dashboard security count. Edit the patterns
+            at{' '}
+            <Link to="/settings?tab=security" className="text-primary hover:underline">
+              Settings → Security
+            </Link>
+            .
+          </p>
+        </section>
+        </SpotlightCard>
+      )}
 
       <SpotlightCard>
       <section className="rounded-lg border bg-card p-6 shadow-sm">
@@ -318,8 +449,26 @@ export default function SecurityAuditPage() {
 
       <SpotlightCard>
       <section className="rounded-lg border bg-card p-6 shadow-sm">
-        <div className="mb-3 text-sm text-muted-foreground">
-          {filteredEntries.length} containers shown ({entries.filter((entry) => entry.findings.length > 0).length} with findings total)
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
+          <span>
+            {isFiltered
+              ? `${filteredEntries.length} of ${entries.length} containers match the filters`
+              : `${visibleEntries.length} container${visibleEntries.length === 1 ? '' : 's'} need a look`}
+          </span>
+          {!isFiltered && cleanEntries.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowClean((prev) => !prev)}
+              aria-expanded={showClean}
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 font-medium text-foreground hover:bg-accent"
+            >
+              {showClean
+                ? <ChevronDown className="h-4 w-4" />
+                : <ChevronRight className="h-4 w-4" />}
+              {showClean ? 'Hide' : 'Show'} {cleanEntries.length} clean container
+              {cleanEntries.length === 1 ? '' : 's'}
+            </button>
+          )}
         </div>
 
         {isLoading ? (
@@ -339,10 +488,18 @@ export default function SecurityAuditPage() {
             <p className="mt-3 font-medium">No matching containers</p>
             <p className="mt-1 text-sm text-muted-foreground">Try adjusting your search or filters.</p>
           </div>
+        ) : visibleEntries.length === 0 ? (
+          <div className="rounded-lg border bg-muted/30 p-8 text-center">
+            <ShieldAlert className="mx-auto h-8 w-8 text-muted-foreground" />
+            <p className="mt-3 font-medium">Nothing to review</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              No container adds a capability, runs privileged, or shares a host namespace.
+            </p>
+          </div>
         ) : (
           <DataTable
             columns={columns}
-            data={filteredEntries}
+            data={visibleEntries}
             hideSearch
             minTableWidth={1100}
           />

@@ -330,7 +330,12 @@ export function IncidentGroupsView({ search = '' }: { search?: string }) {
                             <div className="flex items-center gap-2 text-xs text-muted-foreground whitespace-nowrap">
                               <span>{formatDate(row.created_at)}</span>
                               <span aria-hidden="true">·</span>
-                              <span>{row.severity}</span>
+                              {/* Title Case, same vocabulary as `SeverityBadge`
+                                  — the raw lowercase enum ("critical") used to
+                                  print inches from a "Critical" badge. */}
+                              <span className="capitalize" data-testid="row-severity">
+                                {row.severity}
+                              </span>
                               <span aria-hidden="true">·</span>
                               <span>{row.endpoint_name ?? 'unknown'}</span>
                               {isExpanded
@@ -475,6 +480,17 @@ function rankSeverity(s: IncidentGroup['severity']): number {
   return s === 'critical' ? 0 : s === 'warning' ? 1 : 2;
 }
 
+/**
+ * Per-endpoint incident counts, as a read-only breakdown.
+ *
+ * These were `<button type="button">` elements with no `onClick` and no state,
+ * rendered in the same rounded-pill language as the working severity filter
+ * chips directly above them — so they read as filters and did nothing when
+ * clicked. There is no endpoint filter behind them to wire (a group can span
+ * endpoints, so filtering groups by endpoint would silently drop rows), so they
+ * are counts and now look like counts. The `+N more` disclosure stays
+ * interactive because it genuinely discloses.
+ */
 function EndpointChips({
   facets,
 }: {
@@ -484,21 +500,22 @@ function EndpointChips({
   const inline = facets.slice(0, 8);
   const overflow = facets.slice(8);
   return (
-    <div data-testid="endpoint-chip-row" className="flex flex-wrap items-center gap-2">
+    <div data-testid="endpoint-chip-row" className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+      <span>Active incidents by endpoint:</span>
       {inline.map((f) => (
-        <button key={`${f.endpoint_id ?? 'none'}`} type="button" className="rounded-full border px-3 py-1 text-xs">
-          {f.endpoint_name ?? 'unknown'} ({f.incident_count})
-        </button>
+        <span key={`${f.endpoint_id ?? 'none'}`} className="tabular-nums">
+          <span className="font-mono text-foreground">{f.endpoint_name ?? 'unknown'}</span>{' '}
+          {f.incident_count}
+        </span>
       ))}
       {overflow.length > 0 && (
         <details className="relative">
-          <summary className="cursor-pointer rounded-full border px-3 py-1 text-xs">+{overflow.length} more</summary>
+          <summary className="cursor-pointer underline decoration-dotted">+{overflow.length} more</summary>
           <ul className="absolute z-10 mt-1 max-h-64 w-64 overflow-auto rounded-md border bg-popover p-1 shadow">
             {overflow.map((f) => (
-              <li key={`${f.endpoint_id ?? 'none'}`}>
-                <button type="button" className="w-full rounded px-2 py-1 text-left text-xs hover:bg-muted">
-                  {f.endpoint_name ?? 'unknown'} ({f.incident_count})
-                </button>
+              <li key={`${f.endpoint_id ?? 'none'}`} className="px-2 py-1 tabular-nums">
+                <span className="font-mono text-foreground">{f.endpoint_name ?? 'unknown'}</span>{' '}
+                {f.incident_count}
               </li>
             ))}
           </ul>

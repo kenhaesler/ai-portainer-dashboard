@@ -48,6 +48,21 @@ const reportState = vi.hoisted(() => ({
           issues: ['CPU over-utilized (avg > 80%) — consider increasing CPU limits'],
         },
       ],
+      // Per-rule rollup the backend ships alongside `recommendations`, so the
+      // page can state a rule once instead of once per matching container.
+      recommendationSummary: [
+        {
+          id: 'cpu-underutilized',
+          metric: 'cpu',
+          statistic: 'p95',
+          comparison: 'below',
+          threshold: 10,
+          unit: 'percent',
+          recommendation: 'consider reducing CPU limits',
+          container_count: 2,
+          container_names: ['web-1', 'web-2'],
+        },
+      ] as Array<Record<string, unknown>> | undefined,
     },
     '7d': {
       timeRange: '7d',
@@ -210,6 +225,22 @@ vi.mock('@/features/containers/hooks/use-containers', () => ({
         labels: {},
         networks: [],
       },
+      // One container that follows the `<department>_<office>_<stack>`
+      // convention, so the taxonomy panel renders (it returns null when no
+      // stack parses).
+      {
+        id: 'c3',
+        name: 'berlin-web',
+        image: 'nginx:alpine',
+        state: 'running',
+        status: 'Up 2h',
+        endpointId: 1,
+        endpointName: 'local',
+        ports: [],
+        created: 1700000000,
+        labels: { 'com.docker.compose.project': 'IT_Berlin_web' },
+        networks: [],
+      },
     ],
     isLoading: false,
     isError: false,
@@ -239,6 +270,19 @@ describe('ReportsPage', () => {
   beforeEach(() => {
     mockExportToCsv.mockReset();
     mockExportManagementPdf.mockReset();
+    reportState.byRange['24h'].recommendationSummary = [
+      {
+        id: 'cpu-underutilized',
+        metric: 'cpu',
+        statistic: 'p95',
+        comparison: 'below',
+        threshold: 10,
+        unit: 'percent',
+        recommendation: 'consider reducing CPU limits',
+        container_count: 2,
+        container_names: ['web-1', 'web-2'],
+      },
+    ];
     reportState.byRange['24h'].containers = [
       {
         container_id: 'c1',
@@ -296,10 +340,21 @@ describe('ReportsPage', () => {
     ];
   });
 
-  it('renders the page header', () => {
+  it('renders one PageHeader whose title matches the nav label', () => {
     renderWithProviders(<ReportsPage />);
-    expect(screen.getByText('Resource Reports')).toBeTruthy();
-    expect(screen.getByText(/Utilization analysis/)).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 1, name: 'Reports' })).toBeInTheDocument();
+    // The old subtitle listed the page's own sections; this one carries state.
+    expect(screen.getByTestId('page-header-subtitle')).toHaveTextContent(
+      '1 containers over the last 24 hours',
+    );
+    expect(screen.queryByText(/Utilization analysis/)).not.toBeInTheDocument();
+  });
+
+  it('formats the container count as an integer and names the CPU denominator', () => {
+    renderWithProviders(<ReportsPage />);
+    // A COUNT used to render as "13.0" because every stat went through toFixed(1).
+    expect(screen.queryByText('1.0')).not.toBeInTheDocument();
+    expect(screen.getAllByText('100% = one core').length).toBe(2);
   });
 
   it('renders fleet summary KPIs', () => {
@@ -337,22 +392,41 @@ describe('ReportsPage', () => {
     expect(screen.getByText(/CPU Avg ↓/)).toBeTruthy();
   });
 
-  it('renders the Dienststelle DataTable when a group is expanded', () => {
+  it('renders the office DataTable when a group is expanded', () => {
     renderWithProviders(<ReportsPage />);
     const before = screen.getAllByTestId('data-table').length;
-    // Expand the "Standalone" group (both mock containers have no stack label).
+    // Expand the "Standalone" group (two mock containers have no stack label).
     fireEvent.click(screen.getByRole('button', { name: /Standalone/i }));
     const after = screen.getAllByTestId('data-table').length;
     expect(after).toBeGreaterThan(before);
-    // The Dienststelle table exposes its own column set.
+    // The grouped table exposes its own column set.
     expect(screen.getByText('Stack')).toBeTruthy();
     expect(screen.getByText('Env')).toBeTruthy();
     expect(screen.getByText('Image')).toBeTruthy();
   });
 
-  it('renders recommendations section', () => {
+  it('states each right-sizing rule once with a container count, not once per container', () => {
     renderWithProviders(<ReportsPage />);
-    expect(screen.getByText('Right-Sizing Recommendations')).toBeTruthy();
+
+    expect(screen.getByText('Right-sizing rules')).toBeTruthy();
+    // Two containers, both matching the same rule → one line, not two.
+    const lines = screen.getAllByTestId('right-sizing-rule');
+    expect(lines).toHaveLength(1);
+    expect(screen.getByText('2 containers')).toBeInTheDocument();
+    expect(screen.getByText(/CPU p95 below 10% — consider reducing CPU limits/)).toBeInTheDocument();
+    expect(screen.getByText('web-1, web-2')).toBeInTheDocument();
+  });
+
+  it('falls back to grouping the legacy per-container issue strings', () => {
+    // Backend that predates the rollup: no `recommendationSummary`.
+    reportState.byRange['24h'].recommendationSummary = undefined;
+    renderWithProviders(<ReportsPage />);
+
+    const lines = screen.getAllByTestId('right-sizing-rule');
+    expect(lines).toHaveLength(1);
+    expect(
+      screen.getByText(/CPU over-utilized \(avg > 80%\) — consider increasing CPU limits/),
+    ).toBeInTheDocument();
   });
 
   it('renders export CSV button', () => {
@@ -360,9 +434,9 @@ describe('ReportsPage', () => {
     expect(screen.getByText('Export CSV')).toBeTruthy();
   });
 
-  it('renders export management PDF button', () => {
+  it('renders the PDF export button', () => {
     renderWithProviders(<ReportsPage />);
-    expect(screen.getByRole('button', { name: /export management pdf/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /export pdf report/i })).toBeTruthy();
   });
 
   it('exports service-manager CSV rows with required fields', () => {
@@ -421,36 +495,41 @@ describe('ReportsPage', () => {
     expect(screen.getByText('Memory Trend (Fleet Avg)')).toBeTruthy();
   });
 
-  it('exports management PDF with default 7d range and infrastructure excluded', async () => {
+  it('inherits the page time range and infrastructure filter when opened', async () => {
     renderWithProviders(<ReportsPage />);
 
-    fireEvent.click(screen.getByRole('button', { name: /export management pdf/i }));
+    // Page filter is 24h with infrastructure excluded; the panel used to reset
+    // to 7d and phrase the same filter with the opposite polarity.
+    fireEvent.click(screen.getByRole('button', { name: /export pdf report/i }));
+    expect(screen.getAllByLabelText(/^exclude infrastructure services$/i)).toHaveLength(2);
+    expect(screen.queryByLabelText(/include infrastructure services/i)).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /generate pdf/i }));
 
     // The export module is loaded via dynamic import() in the handler (#1507),
     // so the mocked export function is called asynchronously.
     await waitFor(() => expect(mockExportManagementPdf).toHaveBeenCalledTimes(1));
     const [payload, filename] = mockExportManagementPdf.mock.calls[0];
-    expect(payload.timeRange).toBe('7d');
+    expect(payload.timeRange).toBe('24h');
     expect(payload.includeInfrastructure).toBe(false);
     expect(payload.containers).toHaveLength(1);
     expect(payload.containers[0].container_name).toBe('test-web');
-    expect(filename).toMatch(/^management-report-7d-all-endpoints-\d{4}-\d{2}-\d{2}\.pdf$/);
+    expect(filename).toMatch(/^management-report-24h-all-endpoints-\d{4}-\d{2}-\d{2}\.pdf$/);
   });
 
   it('exports management PDF with overrides when selected', async () => {
     renderWithProviders(<ReportsPage />);
 
-    fireEvent.click(screen.getByRole('button', { name: /export management pdf/i }));
-    fireEvent.click(screen.getAllByRole('button', { name: '24 Hours' })[1]);
-    fireEvent.click(screen.getByLabelText(/^include infrastructure services$/i));
+    fireEvent.click(screen.getByRole('button', { name: /export pdf report/i }));
+    fireEvent.click(screen.getAllByRole('button', { name: '7 Days' })[1]);
+    // Second checkbox is the panel's own copy of the page filter.
+    fireEvent.click(screen.getAllByLabelText(/^exclude infrastructure services$/i)[1]);
     fireEvent.click(screen.getByRole('button', { name: /generate pdf/i }));
 
     await waitFor(() => expect(mockExportManagementPdf).toHaveBeenCalledTimes(1));
     const [payload, filename] = mockExportManagementPdf.mock.calls[0];
-    expect(payload.timeRange).toBe('24h');
+    expect(payload.timeRange).toBe('7d');
     expect(payload.includeInfrastructure).toBe(true);
     expect(payload.containers).toHaveLength(2);
-    expect(filename).toMatch(/^management-report-24h-all-endpoints-\d{4}-\d{2}-\d{2}\.pdf$/);
+    expect(filename).toMatch(/^management-report-7d-all-endpoints-\d{4}-\d{2}-\d{2}\.pdf$/);
   });
 });

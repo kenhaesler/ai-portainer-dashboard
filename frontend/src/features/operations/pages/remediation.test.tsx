@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import RemediationPage from './remediation';
@@ -13,6 +13,31 @@ vi.mock('react-router-dom', async () => {
     useNavigate: () => mockNavigate,
   };
 });
+
+const authState = vi.hoisted(() => ({ role: 'admin' as 'admin' | 'operator' | 'viewer' }));
+
+vi.mock('@/providers/auth-provider', () => ({
+  useAuth: () => ({
+    role: authState.role,
+    username: 'ops',
+    isAuthenticated: true,
+    token: 'token',
+    login: vi.fn(),
+    loginWithToken: vi.fn(),
+    logout: vi.fn(),
+  }),
+}));
+
+vi.mock('@/features/containers/hooks/use-endpoints', () => ({
+  useEndpoints: () => ({ data: [{ id: 1, name: 'docker-dev-1' }] }),
+}));
+
+const mutationSpies = vi.hoisted(() => ({
+  approve: vi.fn(),
+  reject: vi.fn(),
+  execute: vi.fn(),
+  refetch: vi.fn(),
+}));
 
 const remediationState = vi.hoisted(() => {
   const pendingAction = {
@@ -48,16 +73,21 @@ vi.mock('@/features/operations/hooks/use-remediation', () => ({
     isLoading: false,
     isError: false,
     error: null,
-    refetch: vi.fn(),
+    refetch: mutationSpies.refetch,
     isFetching: false,
   }),
-  useApproveAction: () => ({ mutate: vi.fn(), isPending: false, variables: undefined }),
-  useRejectAction: () => ({ mutate: vi.fn(), isPending: false, variables: undefined }),
-  useExecuteAction: () => ({ mutate: vi.fn(), isPending: false, variables: undefined }),
+  useApproveAction: () => ({ mutate: mutationSpies.approve, isPending: false, variables: undefined }),
+  useRejectAction: () => ({ mutate: mutationSpies.reject, isPending: false, variables: undefined }),
+  useExecuteAction: () => ({ mutate: mutationSpies.execute, isPending: false, variables: undefined }),
 }));
 
+const autoRefreshOptions = vi.hoisted(() => ({ onTick: undefined as (() => void) | undefined }));
+
 vi.mock('@/shared/hooks/use-auto-refresh', () => ({
-  useAutoRefresh: () => ({ interval: 30, setInterval: vi.fn() }),
+  useAutoRefresh: (_interval: number, opts?: { onTick?: () => void }) => {
+    autoRefreshOptions.onTick = opts?.onTick;
+    return { interval: 30, setRefreshInterval: vi.fn(), setInterval: vi.fn() };
+  },
 }));
 
 vi.mock('@/providers/socket-provider', () => ({
@@ -246,15 +276,65 @@ describe('RemediationPage — execute confirmation dialog (#1539)', () => {
     remediationState.actions = [remediationState.pendingAction];
   });
 
-  it('opens an accessible modal dialog with title and description', () => {
+  it('names the action, the container and the endpoint in the accessible title', () => {
     renderPage();
 
     fireEvent.click(screen.getByRole('button', { name: /Execute/ }));
 
-    // Radix wires the title as the dialog's accessible name.
-    const dialog = screen.getByRole('dialog', { name: 'Execute Remediation Action' });
+    // Radix wires the title as the dialog's accessible name. A fixed
+    // "Execute Remediation Action" rendered identically for every row.
+    const dialog = screen.getByRole('dialog', { name: 'Run Stop Container on api-service now' });
     expect(dialog).toBeInTheDocument();
-    expect(screen.getByText(/perform the suggested operation/)).toBeInTheDocument();
+    expect(screen.getByText('docker-dev-1')).toBeInTheDocument();
+    // The consequence, not "perform the suggested operation".
+    expect(screen.getByText(/does not start again on its own/)).toBeInTheDocument();
+  });
+
+  it('quotes the rationale the decision rests on, labelled by its source', () => {
+    renderPage();
+
+    fireEvent.click(screen.getByRole('button', { name: /Execute/ }));
+
+    expect(screen.getByText('LLM analysis')).toBeInTheDocument();
+    expect(
+      screen.getAllByText(/Connection pool leak is exhausting memory over time\./).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it('uses the destructive confirm styling for a container-stopping action', () => {
+    renderPage();
+
+    fireEvent.click(screen.getByRole('button', { name: /Execute/ }));
+
+    const confirm = screen.getByRole('button', { name: 'Stop Container' });
+    expect(confirm.className).toContain('bg-destructive');
+  });
+
+  it('keeps the confirm non-destructive for an investigate-only action', () => {
+    remediationState.actions = [{
+      ...remediationState.pendingAction,
+      status: 'approved',
+      action_type: 'INVESTIGATE',
+    }];
+    renderPage();
+
+    fireEvent.click(screen.getByRole('button', { name: /Execute/ }));
+
+    const confirm = screen.getByRole('button', { name: 'Investigate' });
+    expect(confirm.className).not.toContain('bg-destructive');
+    expect(screen.getByText(/nothing on the container changes/i)).toBeInTheDocument();
+  });
+
+  it('passes the action id and a human label to the mutation', () => {
+    renderPage();
+
+    fireEvent.click(screen.getByRole('button', { name: /Execute/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Stop Container' }));
+
+    expect(mutationSpies.execute).toHaveBeenCalledWith(
+      { actionId: 'action-1', label: 'Stop Container on api-service' },
+      expect.anything(),
+    );
   });
 
   it('closes the dialog on Escape', async () => {
@@ -267,5 +347,163 @@ describe('RemediationPage — execute confirmation dialog (#1539)', () => {
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
+  });
+});
+
+describe('RemediationPage — approve and reject are decisions, not one clicks', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    authState.role = 'admin';
+    remediationState.actions = [remediationState.pendingAction];
+  });
+
+  it('confirms before approving instead of mutating straight from onClick', () => {
+    renderPage();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+
+    expect(mutationSpies.approve).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole('dialog', { name: 'Approve Stop Container on api-service' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Nothing runs until you press Execute/)).toBeInTheDocument();
+  });
+
+  it('collects a rejection reason and posts it with the rejection', () => {
+    renderPage();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reject' }));
+    fireEvent.change(screen.getByRole('textbox'), {
+      target: { value: 'Nightly import still running' },
+    });
+    const dialog = screen.getByTestId('remediation-decision-dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Reject' }));
+
+    expect(mutationSpies.reject).toHaveBeenCalledWith(
+      {
+        actionId: 'action-1',
+        label: 'Stop Container on api-service',
+        reason: 'Nightly import still running',
+      },
+      expect.anything(),
+    );
+  });
+});
+
+describe('RemediationPage — accountability columns', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    authState.role = 'admin';
+  });
+
+  afterEach(() => {
+    remediationState.actions = [remediationState.pendingAction];
+  });
+
+  it('shows who approved a decided action', () => {
+    remediationState.actions = [{
+      ...remediationState.pendingAction,
+      status: 'completed',
+      approved_by: 'simon',
+      execution_result: 'Container stopped in 412ms',
+    }];
+    renderPage();
+
+    expect(screen.getByRole('columnheader', { name: 'Decision' })).toBeInTheDocument();
+    expect(screen.getByText('simon')).toBeInTheDocument();
+    expect(screen.getByText(/Container stopped in 412ms/)).toBeInTheDocument();
+  });
+
+  it('shows the failure reason on a failed row instead of only the word Failed', () => {
+    remediationState.actions = [{
+      ...remediationState.pendingAction,
+      status: 'failed',
+      approved_by: 'simon',
+      execution_result: 'Portainer returned 409: container is restarting',
+    }];
+    renderPage();
+
+    expect(screen.getByText(/Portainer returned 409: container is restarting/)).toBeInTheDocument();
+  });
+
+  it('shows the rejecter and their stored reason', () => {
+    remediationState.actions = [{
+      ...remediationState.pendingAction,
+      status: 'rejected',
+      rejected_by: 'simon',
+      rejection_reason: 'Nightly import still running',
+    }];
+    renderPage();
+
+    expect(screen.getByText(/Rejected by/)).toBeInTheDocument();
+    expect(screen.getByText(/Nightly import still running/)).toBeInTheDocument();
+  });
+
+  it('says the approver is missing rather than inventing one', () => {
+    remediationState.actions = [{ ...remediationState.pendingAction, status: 'completed' }];
+    renderPage();
+
+    expect(screen.getByText('No approver recorded')).toBeInTheDocument();
+  });
+});
+
+describe('RemediationPage — role gate and header', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    remediationState.actions = [remediationState.pendingAction];
+  });
+
+  afterEach(() => {
+    authState.role = 'admin';
+  });
+
+  it('hides the decision controls from a non-admin and says why', () => {
+    authState.role = 'operator';
+    renderPage();
+
+    expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reject' })).not.toBeInTheDocument();
+    expect(screen.getByText(/require the admin role/)).toBeInTheDocument();
+    // Read-only paths stay available.
+    expect(screen.getByRole('button', { name: /Discuss with AI/ })).toBeInTheDocument();
+  });
+
+  it('renders one PageHeader whose subtitle carries the pending count', () => {
+    renderPage();
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Remediation' })).toBeInTheDocument();
+    expect(screen.getByTestId('page-header-subtitle')).toHaveTextContent(
+      '1 action awaiting approval · nothing runs without you',
+    );
+    expect(screen.queryByText(/self-healing/i)).not.toBeInTheDocument();
+  });
+
+  it('drops the KPI tiles that restated the filter chips', () => {
+    renderPage();
+
+    expect(screen.queryByText('Pending Approval')).not.toBeInTheDocument();
+    // The chips keep the counts and stay clickable.
+    expect(screen.getByRole('button', { name: /Pending/ })).toBeInTheDocument();
+  });
+
+  it('does not credit AI for an empty queue fed by a keyword rule table', () => {
+    remediationState.actions = [];
+    try {
+      renderPage();
+      expect(screen.getByText('No actions queued')).toBeInTheDocument();
+      expect(screen.queryByText(/AI monitoring/i)).not.toBeInTheDocument();
+      expect(screen.getByText(/monitoring pipeline raises an insight/)).toBeInTheDocument();
+    } finally {
+      remediationState.actions = [remediationState.pendingAction];
+    }
+  });
+
+  it('wires the auto-refresh interval to an actual refetch', () => {
+    renderPage();
+
+    expect(autoRefreshOptions.onTick).toBeTypeOf('function');
+    mutationSpies.refetch.mockClear();
+    autoRefreshOptions.onTick?.();
+    expect(mutationSpies.refetch).toHaveBeenCalled();
   });
 });

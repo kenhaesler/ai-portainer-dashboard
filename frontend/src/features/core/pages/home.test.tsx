@@ -42,8 +42,21 @@ vi.mock('@/features/containers/hooks/use-endpoints', () => ({
   useEndpoints: () => ({ data: [] }),
 }));
 
+// Captures the `onTick` the page passes so a test can assert the refresh
+// dropdown actually schedules fetches (the hook owns the timer since #phase-1).
+const capturedAutoRefresh: { onTick?: () => void } = {};
 vi.mock('@/shared/hooks/use-auto-refresh', () => ({
-  useAutoRefresh: () => ({ interval: 30, setInterval: vi.fn(), enabled: true, toggle: vi.fn() }),
+  useAutoRefresh: (_default?: number, opts?: { onTick?: () => void }) => {
+    capturedAutoRefresh.onTick = opts?.onTick;
+    return {
+      interval: 30,
+      setRefreshInterval: vi.fn(),
+      setInterval: vi.fn(),
+      enabled: true,
+      toggle: vi.fn(),
+      options: [0, 15, 30, 60, 120, 300],
+    };
+  },
 }));
 
 vi.mock('@/shared/hooks/use-force-refresh', () => ({
@@ -178,12 +191,14 @@ function renderPage() {
 describe('HomePage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    capturedAutoRefresh.onTick = undefined;
     // Default: containers query is idle / empty. Individual tests override
     // this when they need a specific fleet shape (e.g. 9 healthy / 1 unhealthy).
     mockUseContainers.mockReturnValue({
       data: [],
       isLoading: false,
       isError: false,
+      refetch: vi.fn(),
     } as any);
   });
 
@@ -245,7 +260,7 @@ describe('HomePage', () => {
     expect(within(hero).getByText('Security Findings')).toBeInTheDocument();
   });
 
-  it('navigates to the security audit when the Security Findings tile is clicked', () => {
+  it('renders the Security Findings tile as a real link to the audit page', () => {
     mockUseDashboardFull.mockReturnValue({
       data: makeDashboardData(),
       isLoading: false,
@@ -257,8 +272,36 @@ describe('HomePage', () => {
 
     renderPage();
 
-    fireEvent.click(screen.getByRole('button', { name: /Security Findings/i }));
-    expect(mockNavigate).toHaveBeenCalledWith('/security/audit');
+    // Was an onClick-only div-ish button: no href, no middle-click, no
+    // "open in new tab", and indistinguishable from the five dead tiles.
+    expect(screen.getByTestId('fleet-tile-link-Security Findings')).toHaveAttribute(
+      'href',
+      '/security/audit',
+    );
+  });
+
+  it('links the Stopped tile into a filtered Workload Explorer', () => {
+    mockUseDashboardFull.mockReturnValue({
+      data: makeDashboardData(),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+      isFetching: false,
+    } as any);
+    mockUseContainers.mockReturnValue({
+      data: [makeContainer({ id: 'e1', name: 'e1', state: 'exited' })],
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as any);
+
+    renderPage();
+
+    expect(screen.getByTestId('fleet-tile-link-Stopped')).toHaveAttribute(
+      'href',
+      '/workloads?state=exited',
+    );
   });
 
   it('does not render Recent Containers section (#801)', () => {
@@ -308,7 +351,7 @@ describe('HomePage', () => {
     expect(screen.queryByText('Endpoints')).not.toBeInTheDocument();
   });
 
-  it('renders the Overall Health Score with 9 healthy / 1 unhealthy (green)', () => {
+  it('leads with a needs-attention count and keeps the pass rate secondary', () => {
     mockUseDashboardFull.mockReturnValue({
       data: makeDashboardData(),
       isLoading: false,
@@ -318,7 +361,6 @@ describe('HomePage', () => {
       isFetching: false,
     } as any);
 
-    // 9 healthy + 1 unhealthy → score = 90.0% → green band (>= 80%)
     const healthy = Array.from({ length: 9 }, (_, i) =>
       makeContainer({ id: `h${i}`, name: `h${i}`, healthStatus: 'healthy' }),
     );
@@ -327,18 +369,19 @@ describe('HomePage', () => {
       data: [...healthy, ...unhealthy],
       isLoading: false,
       isError: false,
+      refetch: vi.fn(),
     } as any);
 
     renderPage();
 
     expect(screen.getByTestId('health-score-card')).toBeInTheDocument();
-    expect(screen.getByTestId('health-score')).toHaveTextContent('90.0%');
-    // ≥80% renders the green CheckCircle2 icon.
-    expect(screen.getByTestId('health-score-icon-green')).toBeInTheDocument();
-    expect(screen.getByText('9 of 10 reporting healthy')).toBeInTheDocument();
+    expect(screen.getByTestId('needs-attention-count')).toHaveTextContent('1');
+    // The old hero: "Overall Health Score 90.0%" in a ring that never moved.
+    expect(screen.queryByText(/Overall Health Score/i)).not.toBeInTheDocument();
+    expect(screen.getByTestId('healthcheck-pass-rate')).toHaveTextContent('90%');
   });
 
-  it('renders the page subtitle without mentioning recent containers', () => {
+  it('spends the subtitle on live fleet state rather than naming its own widgets', () => {
     mockUseDashboardFull.mockReturnValue({
       data: makeDashboardData(),
       isLoading: false,
@@ -350,6 +393,111 @@ describe('HomePage', () => {
 
     renderPage();
 
-    expect(screen.getByText('Dashboard overview with KPIs and charts')).toBeInTheDocument();
+    expect(screen.queryByText('Dashboard overview with KPIs and charts')).not.toBeInTheDocument();
+    expect(screen.getByTestId('page-header-subtitle')).toHaveTextContent(
+      '2 endpoints · 5 containers',
+    );
+  });
+
+  it('renders the page title through the shared PageHeader', () => {
+    mockUseDashboardFull.mockReturnValue({
+      data: makeDashboardData(),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+      isFetching: false,
+    } as any);
+
+    renderPage();
+
+    const header = screen.getByTestId('page-header');
+    expect(within(header).getByRole('heading', { level: 1 })).toHaveTextContent('Home');
+  });
+
+  // ---------------------------------------------------------------------------
+  // The refresh control used to schedule nothing on this page while rendering a
+  // pulsing "live" dot, and nothing on screen showed when the data landed.
+  // ---------------------------------------------------------------------------
+
+  it('wires the auto-refresh dropdown to real refetches via onTick', () => {
+    const refetch = vi.fn();
+    const refetchContainers = vi.fn();
+    mockUseDashboardFull.mockReturnValue({
+      data: makeDashboardData(),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch,
+      isFetching: false,
+      dataUpdatedAt: Date.now(),
+    } as any);
+    mockUseContainers.mockReturnValue({
+      data: [],
+      isLoading: false,
+      isError: false,
+      refetch: refetchContainers,
+    } as any);
+
+    renderPage();
+
+    expect(capturedAutoRefresh.onTick).toBeTypeOf('function');
+    capturedAutoRefresh.onTick?.();
+    expect(refetch).toHaveBeenCalledTimes(1);
+    expect(refetchContainers).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows a data-freshness stamp beside the refresh control', () => {
+    mockUseDashboardFull.mockReturnValue({
+      data: makeDashboardData(),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+      isFetching: false,
+      dataUpdatedAt: Date.now(),
+    } as any);
+
+    renderPage();
+
+    const actions = screen.getByTestId('page-header-actions');
+    expect(within(actions).getByText(/^Updated /)).toBeInTheDocument();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Fix by subtraction: "everything is running" was stated seven times above one
+  // fold, two of those arithmetically guaranteed complements.
+  // ---------------------------------------------------------------------------
+
+  it('no longer renders the Fleet Summary card or its Top Contributors ranking', () => {
+    mockUseDashboardFull.mockReturnValue({
+      data: makeDashboardData(),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+      isFetching: false,
+    } as any);
+
+    renderPage();
+
+    expect(screen.queryByText('Fleet Summary')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('mock-fleet')).not.toBeInTheDocument();
+  });
+
+  it('does not title a card "Top Workloads" when it holds no workloads', () => {
+    mockUseDashboardFull.mockReturnValue({
+      data: makeDashboardData(),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+      isFetching: false,
+    } as any);
+
+    renderPage();
+
+    expect(screen.queryByText('Top Workloads')).not.toBeInTheDocument();
+    expect(screen.getByText('Stacks by container count')).toBeInTheDocument();
   });
 });

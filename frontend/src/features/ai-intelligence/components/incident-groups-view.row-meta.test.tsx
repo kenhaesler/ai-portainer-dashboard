@@ -82,4 +82,16 @@ describe('IncidentGroupsView — row meta (Phase A)', () => {
     render(wrap(<IncidentGroupsView />));
     expect(screen.queryByText(/^(ML|Threshold|Prediction|Health Check|Scan|Pattern|Network)$/)).not.toBeInTheDocument();
   });
+
+  it('renders the row severity in the shared Title Case vocabulary', () => {
+    (useIncidentGroups as ReturnType<typeof vi.fn>).mockReturnValue({
+      data: { total_active: 1, endpoint_facets: [], groups: [mockGroup()] },
+      isLoading: false,
+    });
+    render(wrap(<IncidentGroupsView />));
+    // The raw lowercase enum used to print inches from a "Critical" badge.
+    const sev = screen.getByTestId('row-severity');
+    expect(sev).toHaveTextContent('critical');
+    expect(sev.className).toContain('capitalize');
+  });
 });

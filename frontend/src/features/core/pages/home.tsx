@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo } from 'react';
+import { lazy, Suspense, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AlertTriangle, Star, ShieldAlert, PackageOpen } from 'lucide-react';
 import { useDashboardFull } from '@/features/core/hooks/use-dashboard-full';
@@ -8,7 +8,9 @@ import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
 import { FleetHealthSummary } from '@/features/ai-intelligence/components/fleet-health-summary';
 import { StatusBadge } from '@/shared/components/feedback/status-badge';
 import { EmptyState } from '@/shared/components/feedback/empty-state';
+import { DataFreshness } from '@/shared/components/feedback/data-freshness';
 import { SkeletonChart } from '@/shared/components/feedback/skeleton';
+import { PageHeader } from '@/shared/components/layout/page-header';
 import { RefreshControls } from '@/shared/components/ui/refresh-controls';
 import { useForceRefresh } from '@/shared/hooks/use-force-refresh';
 import { FavoriteButton } from '@/shared/components/ui/favorite-button';
@@ -19,33 +21,55 @@ import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 // Lazy-loaded chart components — lets KPI cards render first
 const EndpointHealthOctagons = lazy(() => import('@/shared/components/charts/endpoint-health-octagons').then(m => ({ default: m.EndpointHealthOctagons })));
 const WorkloadTopBar = lazy(() => import('@/shared/components/charts/workload-top-bar').then(m => ({ default: m.WorkloadTopBar })));
-const FleetSummaryCard = lazy(() => import('@/shared/components/charts/fleet-summary-card').then(m => ({ default: m.FleetSummaryCard })));
 const ResourceOverviewCard = lazy(() => import('@/shared/components/charts/resource-overview-card').then(m => ({ default: m.ResourceOverviewCard })));
 
 function ChartSkeleton({ className }: { className?: string }) {
   return <div className={`animate-pulse rounded-lg bg-muted/50 ${className ?? 'h-[200px]'}`} />;
 }
 
+const PAGE_TITLE = 'Home';
+
 export default function HomePage() {
   const navigate = useNavigate();
   // Unified fetch: summary + resources + endpoints in one request
-  const { data: fullData, isLoading, isError, error, refetch, isFetching } = useDashboardFull(8);
+  const {
+    data: fullData,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    isFetching,
+    dataUpdatedAt,
+  } = useDashboardFull(8);
   const data = fullData?.summary;
   const resourcesData = fullData?.resources;
   const endpoints = fullData?.endpoints;
   const isLoadingResources = isLoading;
   const { forceRefresh, isForceRefreshing } = useForceRefresh('endpoints', refetch);
-  const { interval, setInterval } = useAutoRefresh(30);
   const favoriteIds = useFavoritesStore((s) => s.favoriteIds);
   const { data: favoriteContainers = [] } = useFavoriteContainers(favoriteIds);
 
-  // Containers feed the Overall Health Score row. Uses the same
-  // helpers as the Health & Monitoring page so the two views never disagree.
+  // Containers feed the Fleet Vitals hero. Uses the same helpers as the
+  // Health & Monitoring page so the two views never disagree.
   const {
     data: containers,
     isLoading: isLoadingContainers,
     isError: isContainersError,
+    refetch: refetchContainers,
   } = useContainers();
+
+  // The refresh dropdown now schedules the fetches it advertises. It used to
+  // write a localStorage preference and nothing else: this page armed no timer,
+  // `useContainers` sets no `refetchInterval`, and the control still rendered a
+  // pulsing "live" dot — so the hero's health numbers were frozen at mount with
+  // nothing on screen to say so. `DataFreshness` beside the control is the
+  // second signal that makes a stalled poll visible.
+  const handleTick = useCallback(() => {
+    refetch();
+    refetchContainers?.();
+  }, [refetch, refetchContainers]);
+  const { interval, setRefreshInterval } = useAutoRefresh(30, { onTick: handleTick });
+
   const healthStats = useMemo(() => {
     if (!containers) return null;
     return calculateHealthStats(containers);
@@ -72,18 +96,37 @@ export default function HomePage() {
       running: stack.runningCount,
       stopped: stack.stoppedCount,
       total: stack.containerCount,
+      // A bar you can click has to land somewhere real: the chart used to
+      // navigate to `/endpoints/:id`, a route this router does not define.
+      href: `/workloads?stack=${encodeURIComponent(stack.name)}`,
     }));
   }, [resourcesData]);
+
+  // Live state, not a description of the page's own widgets. The previous
+  // subtitle ("Dashboard overview with KPIs and charts") named the furniture
+  // and restated the title.
+  const subtitle = data
+    ? `${data.kpis.endpoints} endpoint${data.kpis.endpoints === 1 ? '' : 's'} · ` +
+      `${data.kpis.total} container${data.kpis.total === 1 ? '' : 's'}`
+    : undefined;
+
+  const headerActions = (
+    <>
+      <DataFreshness lastUpdated={dataUpdatedAt || null} onRefresh={() => refetch()} />
+      <RefreshControls
+        interval={interval}
+        onIntervalChange={setRefreshInterval}
+        onRefresh={() => refetch()}
+        onForceRefresh={forceRefresh}
+        isLoading={isFetching || isForceRefreshing}
+      />
+    </>
+  );
 
   if (isError) {
     return (
       <MotionPage>
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Home</h1>
-          <p className="text-muted-foreground">
-            Dashboard overview with KPIs and charts
-          </p>
-        </div>
+        <PageHeader title={PAGE_TITLE} />
         <EmptyState
           variant="error"
           icon={AlertTriangle}
@@ -102,21 +145,10 @@ export default function HomePage() {
 
   return (
     <MotionPage>
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Home</h1>
-          <p className="text-muted-foreground">
-            Dashboard overview with KPIs and charts
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <RefreshControls interval={interval} onIntervalChange={setInterval} onRefresh={() => refetch()} onForceRefresh={forceRefresh} isLoading={isFetching || isForceRefreshing} />
-        </div>
-      </div>
+      <PageHeader title={PAGE_TITLE} subtitle={subtitle} actions={headerActions} />
 
-      {/* Overall Health Score — full-width hero. Security Findings and Stopped
-          live INSIDE the pane as extra stat tiles (below the container-status
+      {/* Fleet Vitals — full-width hero. Security Findings and Stopped live
+          INSIDE the pane as extra stat tiles (below the container-status
           tiles), reusing FleetHealthSummary so Home and Health & Monitoring
           never drift. */}
       <MotionStagger stagger={0.05}>
@@ -126,7 +158,7 @@ export default function HomePage() {
               variant="error"
               icon={AlertTriangle}
               title="Failed to load fleet health"
-              description="Could not compute the Overall Health Score from container data."
+              description="Could not read container health from Portainer."
             />
           ) : (
             <SpotlightCard>
@@ -139,17 +171,18 @@ export default function HomePage() {
                     icon: PackageOpen,
                     label: 'Stopped',
                     value: healthStats?.stopped ?? 0,
-                    percentage:
-                      healthStats && healthStats.total > 0
-                        ? (healthStats.stopped / healthStats.total) * 100
-                        : undefined,
+                    // No link at zero: a chevron into an empty filtered table
+                    // is the dead end this was meant to fix.
+                    to: (healthStats?.stopped ?? 0) > 0 ? '/workloads?state=exited' : undefined,
                   },
                   {
                     icon: ShieldAlert,
                     label: 'Security Findings',
                     value: data?.security.flagged ?? 0,
                     variant: (data?.security.flagged ?? 0) > 0 ? 'danger' : 'default',
-                    onClick: () => navigate('/security/audit'),
+                    // Always linked: the audit page is worth opening at zero
+                    // findings too — it shows what was actually checked.
+                    to: '/security/audit',
                   },
                 ]}
               />
@@ -195,74 +228,64 @@ export default function HomePage() {
         </MotionReveal>
       )}
 
-      {/* Endpoint Health — full width, dynamic height */}
-      {isLoading ? (
-        <SkeletonChart size="lg" />
-      ) : data ? (
+      {/* Fleet resources — two fleet-wide gauges. These used to sit inside a
+          card titled "Top Workloads" that contained no workloads. */}
+      {isLoading || isLoadingResources ? (
+        <SkeletonChart size="md" />
+      ) : resourcesData ? (
         <MotionReveal>
           <SpotlightCard>
-            <div className="flex flex-col rounded-lg border bg-card p-6 shadow-sm">
-              <h3 className="mb-4 text-sm font-medium text-muted-foreground">
-                Endpoint Health
-              </h3>
-              <Suspense fallback={<ChartSkeleton className="h-[200px]" />}>
-                <EndpointHealthOctagons endpoints={endpointChartData} />
+            <div className="rounded-lg border bg-card p-6 shadow-sm">
+              <h3 className="mb-4 text-sm font-medium text-muted-foreground">Fleet Resources</h3>
+              <Suspense fallback={<ChartSkeleton className="h-[88px]" />}>
+                <ResourceOverviewCard
+                  cpuPercent={resourcesData.fleetCpuPercent}
+                  memoryPercent={resourcesData.fleetMemoryPercent}
+                />
               </Suspense>
             </div>
           </SpotlightCard>
         </MotionReveal>
       ) : null}
 
-      {/* Top Workloads + Fleet Summary */}
-      {isLoading || isLoadingResources ? (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-          <SkeletonChart size="lg" className="lg:col-span-2" />
+      {/* Endpoint health + stacks. Two panes across the full width so a wide
+          display carries content rather than gradient; the Fleet Summary card
+          that used to sit here restated "everything is running" a third and
+          fourth time (a 100%/0% complement bar and a one-row "Top
+          Contributors" ranking) and was deleted rather than restyled. */}
+      {isLoading ? (
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+          <SkeletonChart size="lg" className="xl:col-span-2" />
           <SkeletonChart size="lg" />
         </div>
       ) : data && resourcesData ? (
-        <MotionStagger className="grid grid-cols-1 gap-4 lg:grid-cols-3" stagger={0.05}>
-            <MotionReveal className="lg:col-span-2">
-              <SpotlightCard>
-                <div className="flex h-[520px] flex-col rounded-lg border bg-card p-6 shadow-sm">
-                  <h3 className="mb-4 text-sm font-medium text-muted-foreground">
-                    Top Workloads
-                  </h3>
-                  <Suspense fallback={<ChartSkeleton className="h-[60px] mb-4" />}>
-                    <div className="mb-4">
-                      <ResourceOverviewCard
-                        cpuPercent={resourcesData.fleetCpuPercent}
-                        memoryPercent={resourcesData.fleetMemoryPercent}
-                      />
-                    </div>
-                  </Suspense>
-                  <Suspense fallback={<ChartSkeleton className="flex-1" />}>
-                    <div className="flex-1 min-h-0 overflow-y-auto">
-                      <WorkloadTopBar endpoints={stackChartData} />
-                    </div>
-                  </Suspense>
-                </div>
-              </SpotlightCard>
-            </MotionReveal>
-            <MotionReveal>
-              <SpotlightCard>
-                <div className="flex h-[520px] flex-col rounded-lg border bg-card p-6 shadow-sm">
-                  <h3 className="mb-4 text-sm font-medium text-muted-foreground">
-                    Fleet Summary
-                  </h3>
-                  <Suspense fallback={<ChartSkeleton className="flex-1" />}>
-                    <div className="flex-1 min-h-0">
-                      <FleetSummaryCard
-                        endpoints={endpointChartData}
-                        totalContainers={data.kpis.total}
-                      />
-                    </div>
-                  </Suspense>
-                </div>
-              </SpotlightCard>
-            </MotionReveal>
-          </MotionStagger>
+        <MotionStagger className="grid grid-cols-1 gap-4 xl:grid-cols-3" stagger={0.05}>
+          <MotionReveal className="xl:col-span-2">
+            <SpotlightCard>
+              <div className="flex h-full min-h-[360px] flex-col rounded-lg border bg-card p-6 shadow-sm">
+                <h3 className="mb-4 text-sm font-medium text-muted-foreground">Endpoint Health</h3>
+                <Suspense fallback={<ChartSkeleton className="h-[200px]" />}>
+                  <EndpointHealthOctagons endpoints={endpointChartData} />
+                </Suspense>
+              </div>
+            </SpotlightCard>
+          </MotionReveal>
+          <MotionReveal>
+            <SpotlightCard>
+              <div className="flex h-full min-h-[360px] flex-col rounded-lg border bg-card p-6 shadow-sm">
+                <h3 className="mb-4 text-sm font-medium text-muted-foreground">
+                  Stacks by container count
+                </h3>
+                <Suspense fallback={<ChartSkeleton className="flex-1" />}>
+                  <div className="flex-1 min-h-0 overflow-y-auto">
+                    <WorkloadTopBar series={stackChartData} />
+                  </div>
+                </Suspense>
+              </div>
+            </SpotlightCard>
+          </MotionReveal>
+        </MotionStagger>
       ) : null}
-
     </MotionPage>
   );
 }
