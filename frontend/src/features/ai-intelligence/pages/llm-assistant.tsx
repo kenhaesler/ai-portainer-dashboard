@@ -71,6 +71,20 @@ const SUGGESTION_COUNT = 4;
 const ACTIONABLE_SEVERITIES = ['critical', 'warning'] as const;
 
 /**
+ * Shown when `GET /api/llm/status` itself failed, which is not the same fact
+ * as "there is no model" — see `llmKnownUnavailable` below.
+ */
+const LLM_STATUS_CHECK_FAILED =
+  'Could not check whether a language model is configured — the status request failed. Sending may still work.';
+
+/**
+ * Heading of the unconfigured panel, and the fallback for a server that says
+ * `available: false` with no reason. The panel's body paragraph is skipped
+ * when the two are equal, so the sentence does not appear twice.
+ */
+const NO_MODEL_HEADING = 'No language model is configured';
+
+/**
  * Turn the fleet's open insights into prompts that name the container which is
  * misbehaving *now*. One per container, most severe first, so the grid does
  * not spend two of its four slots on the same workload.
@@ -148,7 +162,7 @@ export default function LlmAssistantPage() {
   const { llmSocket } = useSockets();
   const isLlmConnected = useSocketConnected(llmSocket);
   const { data: modelsData } = useLlmModels();
-  const { data: llmStatus } = useLlmStatus();
+  const { data: llmStatus, isError: llmStatusFailed } = useLlmStatus();
   const { data: mcpServers } = useMcpServers();
   const { role } = useAuth();
   const isAdmin = role === 'admin';
@@ -157,6 +171,47 @@ export default function LlmAssistantPage() {
 
   const profiles = profileData?.profiles ?? [];
   const activeProfileId = profileData?.activeProfileId ?? 'default';
+
+  /**
+   * The page's one definition of "the server told us there is no model". The
+   * unconfigured panel and the suggestion grid it replaces read it directly;
+   * the model picker, the profile picker, the composer and Send read it
+   * through `llmDisabledReason` below.
+   *
+   * It branches on `available === false` alone, so an absent `data` — in
+   * flight, or failed (`useLlmStatus` is `retry: false`) — disables nothing. A
+   * failed status check is not evidence that the model is absent: chat runs
+   * over the LLM socket (`use-llm-chat.ts`), not over `/api/llm/status`. That
+   * case is reported as text instead, via `isError` and `composerNotice`.
+   */
+  const llmKnownUnavailable = llmStatus?.available === false;
+
+  /** Why the chat controls are inert, or `null` when they are not. */
+  const llmDisabledReason: string | null = llmKnownUnavailable
+    ? (llmStatus?.disabledReason ?? NO_MODEL_HEADING)
+    : null;
+
+  /**
+   * The unconfigured panel replaces the suggestion grid, so it only exists on
+   * an empty transcript — which is why it cannot be the page's only
+   * explanation for the dead composer (see `composerNotice`).
+   */
+  const showsUnconfiguredPanel = llmKnownUnavailable && messages.length === 0 && !isStreaming;
+
+  /**
+   * The one line under the composer, or `null` when the composer has nothing
+   * to explain.
+   *
+   * The composer and Send also carry the reason as a `title`, but only when
+   * `llmDisabledReason` is set — which is what disables them, and a tooltip on
+   * a disabled control is not something to rely on. So the reason is printed.
+   *
+   * Suppressed while the unconfigured panel is showing; pinned by the test
+   * `states the reason once when the panel is already carrying it`.
+   */
+  const composerNotice: string | null = showsUnconfiguredPanel
+    ? null
+    : (llmDisabledReason ?? (llmStatusFailed ? LLM_STATUS_CHECK_FAILED : null));
 
   const handleProfileSwitch = async (id: string) => {
     if (id === activeProfileId) return;
@@ -270,14 +325,19 @@ export default function LlmAssistantPage() {
         }
         actions={
           <>
-            {/* Profile Selector (admin-only) */}
+            {/* Profile Selector (admin-only).
+
+                Both pickers carry their disabled reason on a wrapper because
+                `ThemedSelect` exposes no `title` prop. The explanation the
+                operator is meant to read is `composerNotice`, printed under
+                the composer; these titles are an extra. */}
             {isAdmin && profiles.length > 0 && (
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5" title={llmDisabledReason ?? undefined}>
                 <Layers className="h-4 w-4 text-muted-foreground" />
                 <ThemedSelect
                   value={activeProfileId}
                   onValueChange={(val) => void handleProfileSwitch(val)}
-                  disabled={isStreaming || isSending || switchProfile.isPending}
+                  disabled={isStreaming || isSending || switchProfile.isPending || llmDisabledReason !== null}
                   options={profiles.map((p) => ({
                     value: p.id,
                     label: `${p.name}${p.isBuiltIn ? ' ✦' : ''}`,
@@ -288,16 +348,18 @@ export default function LlmAssistantPage() {
             {/* Model Selector. `min-w-[200px]` unconditionally pushed this off
                 the right edge of a 390px viewport. */}
             {modelsData && modelsData.models.length > 0 && (
-              <ThemedSelect
-                value={selectedModel}
-                onValueChange={(val) => setSelectedModel(val)}
-                disabled={isStreaming || isSending}
-                className="min-w-[9rem] sm:min-w-[200px]"
-                options={modelsData.models.map((model) => ({
-                  value: model.name,
-                  label: model.name,
-                }))}
-              />
+              <span className="inline-flex" title={llmDisabledReason ?? undefined}>
+                <ThemedSelect
+                  value={selectedModel}
+                  onValueChange={(val) => setSelectedModel(val)}
+                  disabled={isStreaming || isSending || llmDisabledReason !== null}
+                  className="min-w-[9rem] sm:min-w-[200px]"
+                  options={modelsData.models.map((model) => ({
+                    value: model.name,
+                    label: model.name,
+                  }))}
+                />
+              </span>
             )}
             <button
               onClick={handleClear}
@@ -352,15 +414,17 @@ export default function LlmAssistantPage() {
                 dropdown, a profile picker and four clickable suggestions on a
                 deployment with no LLM reachable, and only produced a red
                 `Error:` pill after the message was sent. */}
-            {messages.length === 0 && !isStreaming && llmStatus && !llmStatus.available && (
+            {showsUnconfiguredPanel && (
               <div className="flex flex-col items-center text-center" data-testid="assistant-unconfigured">
                 <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-border bg-muted">
                   <Bot className="h-7 w-7 text-muted-foreground" />
                 </div>
-                <h2 className="mt-4 text-lg font-semibold">No language model is configured</h2>
-                <p className="mt-2 max-w-md text-sm text-muted-foreground">
-                  {llmStatus.disabledReason}
-                </p>
+                <h2 className="mt-4 text-lg font-semibold">{NO_MODEL_HEADING}</h2>
+                {llmDisabledReason !== NO_MODEL_HEADING && (
+                  <p className="mt-2 max-w-md text-sm text-muted-foreground">
+                    {llmDisabledReason}
+                  </p>
+                )}
                 <Link
                   to="/settings?tab=ai-llm"
                   className="mt-4 inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
@@ -370,7 +434,7 @@ export default function LlmAssistantPage() {
               </div>
             )}
 
-            {messages.length === 0 && !isStreaming && llmStatus?.available !== false && (
+            {messages.length === 0 && !isStreaming && !llmKnownUnavailable && (
               <div className="flex flex-col items-center text-center" data-testid="assistant-empty-state">
                 <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-primary/20 bg-primary/10">
                   <Bot className="h-7 w-7 text-primary" />
@@ -481,18 +545,35 @@ export default function LlmAssistantPage() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 placeholder="Ask about your infrastructure..."
-                disabled={isStreaming || isSending || !isLlmConnected}
+                disabled={isStreaming || isSending || !isLlmConnected || llmDisabledReason !== null}
+                // The socket case is not named here on purpose: the
+                // "Reconnecting to AI service..." banner sits directly above
+                // this field. The missing-model case is named by
+                // `composerNotice` below.
+                title={llmDisabledReason ?? undefined}
                 className="flex-1 rounded-xl border border-input bg-background px-4 py-3 text-sm shadow-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 transition-all"
               />
               <button
                 type="submit"
-                disabled={!input.trim() || isStreaming || isSending || !isLlmConnected}
+                disabled={!input.trim() || isStreaming || isSending || !isLlmConnected || llmDisabledReason !== null}
+                title={llmDisabledReason ?? undefined}
                 className="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-3 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Send className="h-4 w-4" />
                 Send
               </button>
             </form>
+            {/* Covers the transcripts the panel above does not: that panel
+                renders only on an empty one, and `composerNotice` is null
+                while it is showing. */}
+            {composerNotice && (
+              <p
+                className="mt-2 text-xs text-muted-foreground"
+                data-testid="assistant-composer-notice"
+              >
+                {composerNotice}
+              </p>
+            )}
           </div>
         </div>
       </div>

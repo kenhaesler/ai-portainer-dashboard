@@ -48,6 +48,17 @@ const PAGE_TITLE = findDestination('/packet-capture')?.label ?? 'Packet Capture'
 /** Every mutating pcap route is `requireRole('admin')` on the backend. */
 const NOT_ADMIN_REASON = 'Requires the admin role';
 
+/**
+ * `GET /api/pcap/status` has not answered yet, so whether the feature is on is
+ * genuinely unknown. `usePcapStatus` is `staleTime: Infinity`, so this is one
+ * request per session rather than a recurring wait.
+ */
+const PCAP_STATUS_PENDING_REASON = 'Checking whether packet capture is enabled…';
+
+/** The status request failed, so "not yet known" is permanent, not a wait. */
+const PCAP_STATUS_FAILED_REASON =
+  'Cannot tell whether packet capture is enabled — the status request failed';
+
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
   const k = 1024;
@@ -123,7 +134,7 @@ export default function PacketCapture() {
   const { data: stacks } = useStacks();
   // The status tabs are groups, not raw enum values, so the narrowing happens
   // here rather than as a server-side `status=` that can only match one value.
-  const { data: pcapStatus } = usePcapStatus();
+  const { data: pcapStatus, isError: pcapStatusFailed } = usePcapStatus();
   const { data: capturesData, refetch, isFetching } = useCaptures({
     search: debouncedSearch || undefined,
   });
@@ -165,15 +176,23 @@ export default function PacketCapture() {
   // capture, and none of them matter if capture is switched off for the whole
   // deployment. That branch was missing entirely, so the button was live on a
   // stock install and the click ate a server error.
-  const startDisabledReason: string | null = pcapStatus && !pcapStatus.enabled
-    ? (pcapStatus.disabledReason ?? 'Packet capture is not enabled for this deployment')
-    : !canCapture
-      ? NOT_ADMIN_REASON
-      : !target
-        ? 'Select a target container'
-        : targetIsEdgeAsync
-          ? 'Edge Async endpoints cannot run docker exec'
-          : null;
+  //
+  // "Not yet known" is not "enabled" either. `pcapStatus` is undefined while
+  // the status request is in flight, and a `pcapStatus && !pcapStatus.enabled`
+  // guard skips the whole flag branch in that window — leaving the reason null
+  // and the button live in exactly the state a stock install starts in, which
+  // the click-time guard cannot fix because the reason is null there too.
+  const startDisabledReason: string | null = !pcapStatus
+    ? (pcapStatusFailed ? PCAP_STATUS_FAILED_REASON : PCAP_STATUS_PENDING_REASON)
+    : !pcapStatus.enabled
+      ? (pcapStatus.disabledReason ?? 'Packet capture is not enabled for this deployment')
+      : !canCapture
+        ? NOT_ADMIN_REASON
+        : !target
+          ? 'Select a target container'
+          : targetIsEdgeAsync
+            ? 'Edge Async endpoints cannot run docker exec'
+            : null;
 
   const handleStartCapture = () => {
     if (startDisabledReason !== null) return;

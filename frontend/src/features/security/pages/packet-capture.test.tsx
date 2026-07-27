@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { useCaptures, type Capture } from '@/features/security/hooks/use-pcap';
+import { useCaptures, usePcapStatus, type Capture } from '@/features/security/hooks/use-pcap';
 
 vi.mock('@/features/containers/hooks/use-endpoints', () => ({
   useEndpoints: vi.fn().mockReturnValue({
@@ -77,6 +77,25 @@ import PacketCapture, { captureStatusGroup, filterCapturesByGroup } from './pack
 
 const mockUseCaptures = vi.mocked(useCaptures);
 
+const PCAP_ENABLED = {
+  data: { enabled: true, disabledReason: null },
+} as ReturnType<typeof usePcapStatus>;
+
+/**
+ * Pick a running container in the cmdk picker, the way an operator does.
+ *
+ * Needed by the status-window tests: with no target selected, Start is
+ * disabled for that reason alone, and an assertion on its disabled state would
+ * pass whether or not the feature flag is being checked.
+ */
+function selectCaptureTarget(containerName: string) {
+  const search = screen.getByLabelText('Search capture target container');
+  fireEvent.focus(search);
+  fireEvent.change(search, { target: { value: containerName } });
+  fireEvent.click(screen.getByText(containerName));
+  expect(screen.getByLabelText('Clear selected container')).toBeInTheDocument();
+}
+
 function makeCapture(overrides: Partial<Capture> = {}): Capture {
   return {
     id: 'cap-12345678-abcd',
@@ -106,6 +125,11 @@ function makeCapture(overrides: Partial<Capture> = {}): Capture {
 describe('PacketCapture', () => {
   beforeEach(() => {
     mockRole = 'admin';
+    // Reset before re-stubbing: the status hook now drives four distinct
+    // reasons, and a stub left behind by a failing test would be read as the
+    // deployment's real state by the next one.
+    vi.mocked(usePcapStatus).mockReset();
+    vi.mocked(usePcapStatus).mockReturnValue(PCAP_ENABLED);
     mockUseCaptures.mockReturnValue({
       data: { captures: [] },
       refetch: vi.fn(),
@@ -150,13 +174,12 @@ describe('PacketCapture', () => {
     expect(screen.getByText('Requires the admin role')).toBeInTheDocument();
   });
 
-  it('disables Start when packet capture is off for the deployment, and names the env var', async () => {
+  it('disables Start when packet capture is off for the deployment, and names the env var', () => {
     // PCAP_ENABLED defaults to false and was enforced only inside startCapture
     // — after the click. `startDisabledReason` knew about three preconditions
     // and not about the feature flag, so a stock install offered a live Start
     // button and answered it with a server error.
-    const { usePcapStatus } = await import('@/features/security/hooks/use-pcap');
-    vi.mocked(usePcapStatus).mockReturnValueOnce({
+    vi.mocked(usePcapStatus).mockReturnValue({
       data: {
         enabled: false,
         disabledReason: 'Packet capture is turned off for this deployment. Set PCAP_ENABLED=true in the environment and restart the backend.',
@@ -168,6 +191,44 @@ describe('PacketCapture', () => {
     const start = screen.getByRole('button', { name: /start capture/i });
     expect(start).toBeDisabled();
     expect(start.getAttribute('title')).toMatch(/PCAP_ENABLED=true/);
+  });
+
+  it('keeps Start disabled while the status request is still in flight', () => {
+    // `pcapStatus` is undefined until GET /api/pcap/status answers, and the
+    // feature-flag branch used to be guarded by `pcapStatus && ...` — so with
+    // every other precondition met the reason came out null and Start went
+    // live, in exactly the window a stock install (PCAP_ENABLED defaults to
+    // false) starts in. The click-time guard could not close it either:
+    // `startDisabledReason` was null there too.
+    vi.mocked(usePcapStatus).mockReturnValue({
+      data: undefined,
+      isError: false,
+    } as ReturnType<typeof usePcapStatus>);
+
+    render(<PacketCapture />);
+    selectCaptureTarget('api-1');
+
+    const start = screen.getByRole('button', { name: /start capture/i });
+    expect(start).toBeDisabled();
+    expect(start).toHaveAttribute('title', 'Checking whether packet capture is enabled…');
+    expect(screen.getByText('Checking whether packet capture is enabled…')).toBeInTheDocument();
+    // A disabled primary must read as a muted surface, not a faded primary.
+    expect(start.className).toContain('bg-muted');
+  });
+
+  it('says so when the status request failed, rather than checking forever', () => {
+    vi.mocked(usePcapStatus).mockReturnValue({
+      data: undefined,
+      isError: true,
+    } as ReturnType<typeof usePcapStatus>);
+
+    render(<PacketCapture />);
+    selectCaptureTarget('api-1');
+
+    const start = screen.getByRole('button', { name: /start capture/i });
+    expect(start).toBeDisabled();
+    expect(start.getAttribute('title')).toMatch(/status request failed/);
+    expect(start.getAttribute('title')).not.toMatch(/Checking/);
   });
 
   it('shows the first-run guidance when there are no captures at all', () => {
