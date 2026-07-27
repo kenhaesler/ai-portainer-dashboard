@@ -20,8 +20,8 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  audit:
-    name: Security Audit
+  lockfile-integrity:
+    name: Lockfile Integrity
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -39,53 +39,28 @@ jobs:
       # `npm ci` exits 0 on a lockfile that cannot actually install. A dep a
       # package declares but the lockfile has no entry for is silently skipped
       # — that is how `@reduxjs/toolkit`'s `@standard-schema/utils` went missing
-      # with every job green. `npm audit` does not see it either.
+      # with every job green.
       #
       # `--all` is load-bearing, not cosmetic. Bare `npm ls` only validates to
       # depth 0 and exits 0 on exactly this tree, which is indistinguishable
-      # from a clean one — the same failure shape as `npm audit --offline`.
-      # Verified both directions against the pre-fix lockfile: with `--all` it
-      # exits 1 and names the missing package, without it exits 0.
+      # from a clean one. Verified both directions against the pre-fix
+      # lockfile: with `--all` it exits 1 and names the missing package,
+      # without it exits 0.
       #
       # Cannot cover `loadtests/`: `npm ls` needs an installed tree and this
       # job deliberately does not install there. See ci-audit-gate.test.ts.
+      #
+      # This job used to also run `npm audit` (production high+, critical,
+      # loadtests high+ — #1578). Removed (#1623): those steps gate on the
+      # installed version of a package, not on whether this app's code path
+      # can reach the vulnerable function, and with deliberately no
+      # suppression allowlist the only way to clear a red one was an
+      # immediate migration/override — which blocked every open Dependabot PR
+      # at once on advisories that turned out unreachable here (#1618, #1621).
+      # `npm run audit:prod` / `audit:all` / `audit:loadtests` remain as
+      # local, on-demand scripts; nothing in CI runs them anymore.
       - name: Verify lockfile integrity (npm ls --all)
         run: npm ls --all
-
-      # Enforcing (#1578). This step used to carry `continue-on-error: true`,
-      # which made it advisory-only — three separate High advisories reached
-      # `dev` with CI green (undici x3, nodemailer, ws) before being found by
-      # hand. A gate that cannot fail is not a gate.
-      #
-      # If this blocks your PR on an advisory you did not introduce: prefer a
-      # lockfile refresh (`npm update <pkg>`) or a root `overrides` entry, which
-      # removes the vulnerable code rather than hiding it. Every production High
-      # this repo has seen so far was fixable that way — including one npm
-      # reported as `fixAvailable: false`.
-      #
-      # Do not re-add `continue-on-error`, `|| true`, or `--offline` here.
-      # `--offline` in particular exits 0 with an empty report, which is
-      # indistinguishable from a clean audit. backend/src/ci-audit-gate.test.ts
-      # asserts against all three.
-      - name: Audit production dependencies (high+)
-        run: npm audit --omit=dev --audit-level=high
-
-      - name: Audit all dependencies (critical gate)
-        run: npm audit --audit-level=critical
-
-      # `loadtests/` is NOT an npm workspace and carries its own lockfile, so
-      # neither audit above can see it — a root `npm audit` simply does not
-      # traverse it. Advisories there surfaced only as Dependabot alerts, which
-      # is how a High (ws GHSA-96hv-2xvq-fx4p, memory-exhaustion DoS) sat in
-      # `dev` while this job stayed green.
-      #
-      # No `npm ci` needed: `npm audit` resolves from package.json +
-      # package-lock.json alone, so this costs a registry round-trip, not an
-      # install. Verified non-vacuous — run against the pre-fix lockfile this
-      # step exits 1 and reports the High.
-      - name: Audit loadtests dependencies (high+)
-        working-directory: loadtests
-        run: npm audit --audit-level=high
 
   typecheck:
     name: Type Check
