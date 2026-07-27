@@ -87,7 +87,48 @@ worth knowing before touching UI:
 6. **A capped list travels with its real count.** When a payload caps an array (`ALL_NAMES_CAP` in
    `incident-store.ts`, `RULE_CONTAINER_NAMES_CAP` in `reports.ts`), send the uncapped total
    alongside it and have the UI count with that. Counting the truncated array under-reports exactly
-   the large fleet the cap exists for.
+   the large fleet the cap exists for. This applies to the *sentence* describing a capped list
+   too: `/traces` read "All 200 traces: … container: unknown" while 3982 matched, and an operator
+   concluded the fleet had no container attribution. Say "These 200 of 3982".
+
+**Design-critique remediation round 2 (2026-07-27):** a second review, hunting "AI slop", found
+the prose was already good and the numbers were not. See `@docs/architecture.md`
+("Design-critique remediation, round 2"). Five more invariants:
+
+7. **A number and its qualifier render together, or neither renders.** Almost every round-2
+   finding was one shape: the system computed the qualifier — `status='error'`, `r_squared`,
+   `confidence`, the sample count, which table a value came from — and dropped it at the render
+   boundary while keeping the figure it qualifies. That produced `Error Rate 10000.0%`, `p95`
+   above `max`, a breach ETA for a container at 0.0% CPU, `confidence: 1.00` on every anomaly,
+   and "13.8 GB total disk usage" that double-counted every shared layer. Before rendering a
+   figure, ask what would let a reader discount it, and render that too — or render neither.
+   Never coerce a null statistic to `0`: `percentile_cont` over an empty set and a 0/0
+   satisfaction rate both printed confident zeroes.
+8. **Detector and state vocabularies have exactly one definition.** `CONTAINER_STATES` lives in
+   `@dashboard/contracts`; detector labels live in
+   `frontend/src/features/ai-intelligence/lib/detection-method-labels.ts`. Both existed twice and
+   both drifted — the fleet tile compared against Docker's `'exited'`, which the normalizer never
+   emits, so Home reported "0 stopped" with six containers down; and one detector rendered as
+   "ML" and "Metric anomaly" simultaneously on `/health`. Comparing a `ContainerState` against a
+   Docker-native word is now a compile error. **Record an honesty rule as a test, not a comment**
+   — `insight-card.tsx` had twelve lines explaining why the badge must not say "ML" and the rule
+   was lost anyway.
+9. **Gate an affordance on its real precondition, not on the ones you remembered.**
+   `startDisabledReason` on `/packet-capture` handled three preconditions and not `PCAP_ENABLED`,
+   which defaults to false — so a stock install offered a live Start Capture and answered the
+   click with a server error. `GET /api/pcap/status` and `GET /api/llm/status` exist for this.
+   Every disabled control names its reason; `title={canMutate ? undefined : NOT_ADMIN}` left an
+   admin with no explanation at all in the state most installs start in.
+10. **A guess must not wear the same treatment as a fact.** The log level column was a keyword
+   grep presented as the emitter's own level — `module: "trace-store"` badged DEBUG for containing
+   "trace", on the field operators triage on. `resolveLevel` prefers what the record declares and
+   marks the fallback `levelSource: 'guessed'`, rendered dimmed with a `?`.
+11. **Contrast and keyboard access are checked, not assumed.** `frontend/src/theme-contrast.test.ts`
+   holds every theme's `--color-muted-foreground` to 4.5:1 against its own background (three light
+   themes failed). The app shell has a skip link to `<main id="main-content">`; before it, reaching
+   content took 22-29 Tab presses on every route. `DataTable` takes controlled
+   `sorting`/`onSortingChange` — reach for that rather than hand-rolling `<span onClick>` headers,
+   which is how `/reports` ended up with `aria-sort` null on all eight columns and five inert.
 
 ## Security (Mandatory)
 

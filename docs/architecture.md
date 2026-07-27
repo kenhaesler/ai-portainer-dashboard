@@ -82,6 +82,76 @@ A second batch extended coverage across `packages/observability/src/routes/trace
 - **Page-level error isolation:** `AppLayout` (`frontend/src/features/core/components/layout/app-layout.tsx`) wraps the router `<Outlet>` in an `ErrorBoundary` (`PageBoundary`). A render error in one page degrades to an inline error card while the sidebar and header stay mounted, instead of bubbling to the `/` route's `errorElement` and replacing the whole shell. The boundary renders inside the route-keyed wrapper, so it resets on navigation. This also kept the CI E2E suite's authenticated shell alive on Portainer-backed routes when Portainer was unreachable. See #1420.
 - Frontend bundle strategy (#1507): route pages are lazy (`router.tsx`), vendor chunking uses Rolldown's `output.codeSplitting` groups in `frontend/vite.config.ts` (react-vendor, query-vendor only — recharts and framer-motion are deliberately ungrouped so chart code stays out of the eager graph and the LazyMotion feature bundle can split). All animated components import `m` from framer-motion; the `domMax` featureset loads asynchronously via `frontend/src/lib/motion-features.ts` (regression-guarded by `frontend/src/lazy-motion-features.test.ts`). jsPDF loads via dynamic import on Export PDF click (`management-pdf-export.ts`); the Metrics Dashboard chat panel and its react-markdown/highlight.js payload load on first open. React Compiler is enabled through `@rolldown/plugin-babel` + `reactCompilerPreset` (#1524). `frontend/scripts/check-bundle-size.ts` fails if recharts code ever re-enters the entry's static-import closure.
 
+## Design-critique remediation, round 2 (2026-07-27)
+
+A second whole-application review, run specifically to hunt "AI slop", found that the prose was
+already good and the **numbers** were not. Almost every finding had one shape: the system computed
+a qualifier and then discarded it at the render boundary. The fixes are grouped by that cause.
+
+**A number and its qualifier render together, or neither renders.** This is the rule the round-2
+fixes encode, and the one to apply to any new figure:
+
+- `getLlmStats` returns `errorRate` as a **percentage** (0-100); the tile multiplied by 100 again
+  and a single failed call rendered as `10000.0%`. Token, latency and model-share aggregates now
+  `FILTER (WHERE status <> 'error')`, and the payload carries `failedQueries`/`succeededQueries`
+  so the tiles can state their own basis. Latency and tokens render an em dash, never `0`, when
+  nothing succeeded.
+- `/api/reports/utilization` returned `p95` above `max` on four live rows. Above 6h the aggregates
+  come from a rollup (a continuous aggregate that refreshes on a policy, so it lags) while
+  percentiles can only come from raw `metrics` — two populations printed as one row. Percentiles
+  are now computed **only** when the aggregates also read raw metrics; otherwise they are `null`
+  and `aggregateSource.percentileNote` explains why. `percentile_cont` over an empty set returns
+  NULL, which `Number()` turned into a confident `0.00%`; null now reaches the client.
+- Right-sizing rules require `RIGHT_SIZING_MIN_SAMPLES` (10), counted from the raw samples backing
+  a percentile rather than the rollup bucket count, and never fire on a null percentile. A
+  container with two samples was being told to raise its CPU limits.
+- Capacity-forecast ETAs are gated on `confidence !== 'low'` (`hasReportableEta`). The fleet's
+  top-ranked risk was a container at **0.0% CPU** projected to breach within the hour. The risk
+  score's two branches previously used incompatible scales, so every breach more than four hours
+  out ranked below rows the same table labelled Healthy; the bands can no longer overlap.
+- Anomaly descriptions no longer print `confidence: 1.00` (a clamped restatement of the z-score),
+  no longer restate the z-score in words, and refuse to print a z-score above
+  `Z_SCORE_REPORTABLE_MAX` — `z-score: 1116.00` beside `mean: 0.0%` is a collapsed denominator,
+  not a distance.
+- A capped list's *sentence* carries the real total too: `These 200 of 3982 traces`, not
+  `All 200 traces`. This extends CLAUDE.md invariant 6 to the prose describing a capped array.
+
+**One container-state vocabulary.** `CONTAINER_STATES` in `@dashboard/contracts` is the only list,
+serialized through `ContainerStateSchema` and derived from by both `portainer-normalizers.ts` and
+the frontend's `Container` type. The fleet-health tile compared against `'exited'` — Docker's word,
+which the normalizer maps to `'stopped'` server-side — so the branch was unreachable and Home
+reported "0 stopped" with containers down. Comparing a `ContainerState` against a Docker-native
+word is now a compile error. Use `isDownState`/`containerStateTone` (`shared/lib/container-state.ts`)
+rather than comparing literals inline.
+
+**One detector-label map.** `frontend/src/features/ai-intelligence/lib/detection-method-labels.ts`
+is the single source. `signature-meta.ts` labelled `ml-anomaly` "ML" while `insight-card.tsx`
+labelled it "Metric anomaly" — both rendering on `/health` at once, over rows describing themselves
+as `method: adaptive`. The reasoning had been written down in a comment and was lost anyway;
+`detection-method-labels.test.ts` now fails if any consumer disagrees or if any label claims ML.
+
+**Contrast is a checked invariant.** `--color-muted-foreground` is the most-used text colour in the
+app and failed WCAG AA on three light themes (apple-light 4.31:1, catppuccin-latte 4.37:1,
+retro-70s 4.26:1). `frontend/src/theme-contrast.test.ts` parses the shipped `index.css` and holds
+**every** theme to 4.5:1, so a seventeenth theme with unreadable body text fails in CI.
+
+**Keyboard access where the work happens.** The app shell has a skip link targeting
+`<main id="main-content" tabIndex={-1}>` (22-29 Tab presses to content before). `DataTable` accepts
+controlled `sorting`/`onSortingChange`, which let `/reports` drop its hand-rolled `<span onClick>`
+headers — `aria-sort` was null on all eight and five were inert — and share one ordering across its
+two tables. The topology graph is named and its ~70 unnamed node/edge tab stops are out of the tab
+order. `/assistant` is `role="log"` + `aria-live="polite"`.
+
+**An affordance is gated on its real precondition.** `GET /api/pcap/status` and
+`GET /api/llm/status` exist so the UI can refuse before the click rather than after the error:
+`PCAP_ENABLED` defaults to false and was enforced only inside `startCapture`, and the Assistant
+offered four suggested questions on a deployment with no reachable LLM.
+
+**A guess is labelled a guess.** `resolveLevel` in `features/observability/lib/log-viewer.ts`
+prefers the level a log record declares (pino JSON, `LEVEL:` prefix) and falls back to the keyword
+grep with `levelSource: 'guessed'`, rendered dimmed with a `?`. The grep badged
+`module: "trace-store"` as DEBUG for containing the word "trace" — on the field operators triage on.
+
 ## Design-critique remediation (2026-07-26)
 
 A whole-application design review produced 173 findings; the fixes are grouped below by the
