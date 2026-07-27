@@ -27,6 +27,25 @@ vi.mock('@tanstack/react-query', () => ({
   useQueries: (args: unknown) => mockUseQueries(args),
 }));
 
+// jsdom reports every element as 0px tall, so the real virtualizer measures an
+// empty viewport and renders no rows at all. Same shape as the trace-explorer
+// and data-table mocks.
+vi.mock('@tanstack/react-virtual', () => ({
+  useVirtualizer: vi.fn(({ count }: { count: number }) => ({
+    getVirtualItems: () =>
+      Array.from({ length: count }, (_, i) => ({
+        index: i,
+        start: i * 28,
+        end: (i + 1) * 28,
+        size: 28,
+        key: i,
+      })),
+    getTotalSize: () => count * 28,
+    measureElement: vi.fn(),
+    scrollToIndex: vi.fn(),
+  })),
+}));
+
 vi.mock('@/shared/lib/api', () => ({
   api: {
     get: vi.fn(),
@@ -180,6 +199,7 @@ describe('LogViewerPage', () => {
             containerName: 'api',
             timestamp: '2026-05-05T10:00:00.000Z',
             level: 'error' as const,
+            levelSource: 'emitted' as const,
             message: 'connection refused',
             raw: '2026-05-05T10:00:00.000Z connection refused',
           },
@@ -196,6 +216,86 @@ describe('LogViewerPage', () => {
         expect(screen.getByRole('button', { name: /Export \.log/ })).toBeEnabled();
       });
       expect(screen.getByRole('button', { name: /Export \.json/ })).toBeEnabled();
+    });
+  });
+
+  /**
+   * The level cell shows how much is known about the level, not only what was
+   * concluded. `none` is the case this covers: it renders UNKNOWN, and the
+   * colour ternary's last branch is the INFO green, so it used to arrive in
+   * the same green as a stated INFO, undimmed and with no title — the
+   * treatment reserved for a level the emitter declared, on a row where
+   * nothing was established.
+   */
+  describe('level cell treatment by source', () => {
+    const streamOf = (
+      rows: Array<{ id: string; level: string; levelSource: string; message: string }>,
+    ) => ({
+      streamedEntries: rows.map((row) => ({
+        id: row.id,
+        containerId: 'c1',
+        containerName: 'api',
+        timestamp: '2026-05-05T10:00:00.000Z',
+        level: row.level,
+        levelSource: row.levelSource,
+        message: row.message,
+        raw: `2026-05-05T10:00:00.000Z ${row.message}`,
+      })),
+      isStreaming: true,
+      isFallback: false,
+      reset: vi.fn(),
+    });
+
+    const renderRows = async () => {
+      render(<LogViewerPage />);
+      fireEvent.click(screen.getByRole('button', { name: 'Select Container' }));
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Export \.log/ })).toBeEnabled();
+      });
+    };
+
+    it('gives an unestablished level a muted treatment, not the INFO green', async () => {
+      mockUseLogStream.mockReturnValue(
+        streamOf([{ id: 'n1', level: 'unknown', levelSource: 'none', message: 'count: 27' }]) as never,
+      );
+
+      await renderRows();
+
+      const cell = screen.getByText('UNKNOWN');
+      expect(cell.className).toContain('text-slate-400');
+      expect(cell.className).not.toContain('text-emerald-300');
+      expect(cell).toHaveAttribute(
+        'title',
+        'No level established — this record stated none and no keyword matched',
+      );
+    });
+
+    it('dims a guess and marks it with ?', async () => {
+      mockUseLogStream.mockReturnValue(
+        streamOf([{ id: 'g1', level: 'debug', levelSource: 'guessed', message: 'module: "x-store"' }]) as never,
+      );
+
+      await renderRows();
+
+      const cell = screen.getByText('DEBUG?');
+      expect(cell.className).toContain('opacity-60');
+      expect(cell).toHaveAttribute(
+        'title',
+        'Inferred from keywords in the line — this record did not state a level',
+      );
+    });
+
+    it('gives a declared level the full colour, undimmed', async () => {
+      mockUseLogStream.mockReturnValue(
+        streamOf([{ id: 'e1', level: 'error', levelSource: 'emitted', message: 'connection refused' }]) as never,
+      );
+
+      await renderRows();
+
+      const cell = screen.getByText('ERROR');
+      expect(cell.className).toContain('text-red-400');
+      expect(cell.className).not.toContain('opacity-60');
+      expect(cell).toHaveAttribute('title', 'Reported by the container');
     });
   });
 

@@ -14,11 +14,31 @@ export const ContainerPortSchema = z.object({
   ip: z.string().optional(),
 });
 
+/**
+ * The complete container-state vocabulary, and the only one any surface may
+ * compare against.
+ *
+ * This used to be a bare `z.string()` here and a hand-written union in
+ * `@dashboard/core`'s `portainer-normalizers.ts`. Two copies of a vocabulary
+ * drift, and this one did: the frontend's fleet-health tile compared against
+ * `'exited'` — Docker's word, which the normalizer maps to `'stopped'` before
+ * anything downstream sees it — so the stopped count was pinned at 0 while
+ * containers were genuinely down. Nothing caught it, because the tile's own
+ * tests built their fixtures from the same wrong word.
+ *
+ * Keep this the single source. `normalizeContainer` maps every Docker state
+ * into it (unrecognised input falls through to `'unknown'`), so the enum is
+ * total and safe to use as a response serializer.
+ */
+export const CONTAINER_STATES = ['running', 'stopped', 'paused', 'dead', 'unknown'] as const;
+
+export const ContainerStateSchema = z.enum(CONTAINER_STATES);
+
 export const NormalizedContainerSchema = z.object({
   id: z.string(),
   name: z.string(),
   image: z.string(),
-  state: z.string(),
+  state: ContainerStateSchema,
   status: z.string(),
   endpointId: z.number(),
   endpointName: z.string(),
@@ -31,4 +51,5 @@ export const NormalizedContainerSchema = z.object({
 });
 
 export type ContainerPort = z.infer<typeof ContainerPortSchema>;
+export type ContainerState = z.infer<typeof ContainerStateSchema>;
 export type NormalizedContainer = z.infer<typeof NormalizedContainerSchema>;

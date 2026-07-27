@@ -20,9 +20,18 @@ export interface LlmTrace {
 }
 
 export interface LlmStats {
+  /** Every call in the window, successful or not. */
   totalQueries: number;
+  /** Calls that returned an error. */
+  failedQueries: number;
+  /** Calls the token/latency aggregates are computed over. */
+  succeededQueries: number;
   totalTokens: number;
   avgLatencyMs: number;
+  /**
+   * Already a percentage (0-100), not a fraction. The tile multiplied it by
+   * 100 a second time and rendered a single failed call as "10000.0%".
+   */
   errorRate: number;
   avgFeedbackScore: number | null;
   feedbackCount: number;
@@ -55,8 +64,16 @@ function normalizeLlmStats(payload: unknown): LlmStats {
     })
     : [];
 
+  // Fall back to "everything succeeded" against an older server that does not
+  // send the split, so the basis note simply stays hidden rather than claiming
+  // failures that were never reported.
+  const totalQueries = asNumber(raw.totalQueries);
+  const failedQueries = asNumber(raw.failedQueries);
+
   return {
-    totalQueries: asNumber(raw.totalQueries),
+    totalQueries,
+    failedQueries,
+    succeededQueries: asNumber(raw.succeededQueries, totalQueries - failedQueries),
     totalTokens: asNumber(raw.totalTokens),
     avgLatencyMs: asNumber(raw.avgLatencyMs),
     errorRate: asNumber(raw.errorRate),

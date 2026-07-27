@@ -93,18 +93,97 @@ export interface RightSizingFinding extends RightSizingRule {
   measured: number;
 }
 
-/** Evaluate the fixed rules against one container's aggregates. */
+/**
+ * Minimum samples before a right-sizing rule may fire for a container.
+ *
+ * Mirrors `ANOMALY_MIN_SAMPLES`'s reasoning: a rule that fires on two readings
+ * is describing those two readings, not the container. A container with
+ * `samples: 2` was recommended "CPU avg above 80% — consider increasing CPU
+ * limits" off a pair of samples taken seconds apart, sitting in the same list
+ * as containers with 189.
+ */
+export const RIGHT_SIZING_MIN_SAMPLES = 10;
+
+/**
+ * Evaluate the fixed rules against one container's aggregates.
+ *
+ * Returns no findings when the statistic a rule reads is null (percentiles are
+ * null on rollup ranges) or when the container has too few samples to support
+ * a recommendation. Both are cases where the input exists but does not mean
+ * what the rule would take it to mean.
+ */
 export function evaluateRightSizingRules(
-  stats: { cpu: { avg: number; p95: number }; memory: { avg: number; p95: number } },
+  stats: {
+    cpu: { avg: number; p95: number | null; samples?: number; percentileSamples?: number };
+    memory: { avg: number; p95: number | null; samples?: number; percentileSamples?: number };
+  },
 ): RightSizingFinding[] {
   const findings: RightSizingFinding[] = [];
   for (const rule of RIGHT_SIZING_RULES) {
-    const measured = stats[rule.metric][rule.statistic];
+    const metricStats = stats[rule.metric];
+    const measured = metricStats[rule.statistic];
+    // A p95 that could not be computed is not a low p95.
+    if (measured === null || measured === undefined || !Number.isFinite(measured)) continue;
+
+    // Count the samples that actually back this statistic: percentile rules
+    // are supported by raw samples, average rules by the aggregate's own count.
+    const backing = rule.statistic === 'p95'
+      ? metricStats.percentileSamples ?? 0
+      : metricStats.samples ?? 0;
+    if (backing < RIGHT_SIZING_MIN_SAMPLES) continue;
+
     const crossed = rule.comparison === 'below' ? measured < rule.threshold : measured > rule.threshold;
     if (!crossed) continue;
     findings.push({ ...rule, measured });
   }
   return findings;
+}
+
+/**
+ * Which rules the selected *range* rules out, out of how many rules exist.
+ *
+ * Range-level only. The percentile query runs solely against the raw `metrics`
+ * table (`if (!rollup.isRollup)` below), so above 6h a p95-keyed rule has no
+ * value to test for any container.
+ *
+ * Known gap: `evaluateRightSizingRules` additionally skips a rule for a
+ * container backed by fewer than `RIGHT_SIZING_MIN_SAMPLES` samples, which this
+ * function cannot see — it is given a range, never a container. If every
+ * container is below that floor, the rule is evaluated for no container while
+ * `skippedRules` stays empty, and the client renders its coverage note only
+ * when that list is non-empty (`reports.tsx`, `unevaluatedRules.length > 0`),
+ * so nothing on screen says the rule went untested. Each container's
+ * `samples`/`percentileSamples` are on the wire; no field draws that conclusion.
+ *
+ * `totalRules` travels with the list so the client does not hard-code the
+ * fraction; the rules travel whole so it can name them in the same words it
+ * uses for the rules that fired.
+ */
+export interface RightSizingRangeCoverage {
+  totalRules: number;
+  /** Rules the range rules out for every container. Per-container skips are not in here. */
+  skippedRules: RightSizingRule[];
+  /** Why the range rules them out; null when the range rules none out. */
+  skippedReason: string | null;
+}
+
+export function describeRightSizingRangeCoverage(
+  percentilesAvailable: boolean,
+  timeRange: string,
+): RightSizingRangeCoverage {
+  // Percentiles are the only statistic a range can withhold wholesale. A rule
+  // keyed on one has nothing to test, for every container, on such a range.
+  const skippedRules = percentilesAvailable
+    ? []
+    : RIGHT_SIZING_RULES.filter((rule) => rule.statistic === 'p95');
+
+  return {
+    totalRules: RIGHT_SIZING_RULES.length,
+    skippedRules,
+    skippedReason: skippedRules.length > 0
+      ? `Percentiles are not computed over ${timeRange}, so a rule keyed on p95 has no value to test.`
+      : null,
+  };
 }
 
 /** pg pool exhaustion: connection could not be acquired within connectionTimeoutMillis */
@@ -193,6 +272,31 @@ async function withStatementTimeout<T>(
   }
 }
 
+/**
+ * Per-container stats for one metric type.
+ *
+ * `p50`/`p95`/`p99` are nullable for two distinct reasons, and both matter:
+ *  - the range uses a rollup table, so percentiles cannot be computed from the
+ *    same population as avg/min/max (printing them together produced rows
+ *    where p95 exceeded max), or
+ *  - the raw table held no samples, where `percentile_cont` returns NULL and
+ *    the old code coerced it to a confident `0`.
+ *
+ * `percentileSamples` is how many raw samples the percentiles were computed
+ * over — 0 whenever they are null — so the client can state the basis instead
+ * of implying the whole window.
+ */
+export interface ContainerMetricStats {
+  avg: number;
+  min: number;
+  max: number;
+  p50: number | null;
+  p95: number | null;
+  p99: number | null;
+  percentileSamples: number;
+  samples: number;
+}
+
 interface AggRow {
   container_id: string;
   container_name: string;
@@ -206,6 +310,10 @@ interface AggRow {
 
 function timeRangeToInterval(timeRange: string): string {
   switch (timeRange) {
+    // The only range `selectRollupTable` answers with the raw `metrics` table,
+    // and therefore the only one on which percentiles exist. It fell through to
+    // '1 day' before, which silently turned a 6h request into a rollup range.
+    case '6h': return '6 hours';
     case '24h': return '1 day';
     case '7d': return '7 days';
     case '30d': return '30 days';
@@ -334,9 +442,12 @@ export async function reportsRoutes(fastify: FastifyInstance) {
 
     const interval = timeRangeToInterval(timeRange);
 
-    // Auto-select rollup table for the main aggregation query. Percentile
-    // queries (percentile_cont) require individual values and must stay on
-    // the raw metrics table regardless of time range.
+    // Auto-select the table for the main aggregation query. This choice also
+    // decides whether percentiles exist at all: `percentile_cont` needs
+    // individual values, so it can only run when the selection is the raw
+    // `metrics` table (6h and below). Above that the percentile columns stay
+    // null rather than being computed over a different population than the
+    // avg/min/max beside them — see the block that builds `pResult`.
     const now = new Date();
     const from = new Date(now.getTime() - parseDurationMs(interval));
     const rollup = selectRollupTable(from, now);
@@ -404,9 +515,9 @@ export async function reportsRoutes(fastify: FastifyInstance) {
         container_name: string;
         endpoint_id: number;
         service_type: 'application' | 'infrastructure';
-        cpu: { avg: number; min: number; max: number; p50: number; p95: number; p99: number; samples: number } | null;
-        memory: { avg: number; min: number; max: number; p50: number; p95: number; p99: number; samples: number } | null;
-        memory_bytes: { avg: number; min: number; max: number; p50: number; p95: number; p99: number; samples: number } | null;
+        cpu: ContainerMetricStats | null;
+        memory: ContainerMetricStats | null;
+        memory_bytes: ContainerMetricStats | null;
       }>();
 
       for (const row of excludeInfrastructureContainers(rows as AggRow[], excludeInfrastructure, infrastructurePatterns)) {
@@ -426,37 +537,65 @@ export async function reportsRoutes(fastify: FastifyInstance) {
           });
         }
 
-        // Percentile queries always run against raw metrics (percentile_cont
-        // requires individual values that rollup tables do not carry).
-        const pConditions = [`container_id = $1`, `metric_type = $2`, `timestamp >= NOW() - INTERVAL '${interval}'`];
-        const pParams: unknown[] = [row.container_id, row.metric_type];
-        const pIdx = 3;
-        if (endpointId) {
-          pConditions.push(`endpoint_id = $${pIdx}`);
-          pParams.push(endpointId);
+        // Percentiles need individual values, so they can only come from the
+        // raw `metrics` hypertable. The avg/min/max beside them come from a
+        // rollup as soon as the range exceeds 6h — and the rollups are
+        // continuous aggregates that refresh on a policy, so they lag. A
+        // container that spiked in the last few minutes had that spike in raw
+        // and not yet in the rollup, and the row rendered `avg 0.0% · p95
+        // 34.0% · max 0.0%`: a 95th percentile above the maximum, which is not
+        // a number that can exist.
+        //
+        // Two populations must not be printed as one row. Percentiles are
+        // therefore computed only when the aggregates are also reading raw
+        // metrics; above that they are null, and the client renders them as
+        // unavailable with the reason rather than inventing a figure.
+        let pResult: { p50: number | null; p95: number | null; p99: number | null; samples: number } = {
+          p50: null, p95: null, p99: null, samples: 0,
+        };
+
+        if (!rollup.isRollup) {
+          const pConditions = [`container_id = $1`, `metric_type = $2`, `timestamp >= NOW() - INTERVAL '${interval}'`];
+          const pParams: unknown[] = [row.container_id, row.metric_type];
+          const pIdx = 3;
+          if (endpointId) {
+            pConditions.push(`endpoint_id = $${pIdx}`);
+            pParams.push(endpointId);
+          }
+
+          const pWhere = pConditions.join(' AND ');
+          const { rows: pRows } = await client.query(
+            `SELECT
+              percentile_cont(0.50) WITHIN GROUP (ORDER BY value) as p50,
+              percentile_cont(0.95) WITHIN GROUP (ORDER BY value) as p95,
+              percentile_cont(0.99) WITHIN GROUP (ORDER BY value) as p99,
+              COUNT(*)::int as samples
+            FROM metrics
+            WHERE ${pWhere}`,
+            pParams,
+          );
+
+          // `percentile_cont` over an empty set returns NULL, and Number(null)
+          // is 0 — which printed a confident "p95 0.00%" for a container that
+          // reported nothing at all. Keep null all the way to the client.
+          const raw = pRows[0];
+          pResult = {
+            p50: raw?.p50 == null ? null : Math.round(Number(raw.p50) * 100) / 100,
+            p95: raw?.p95 == null ? null : Math.round(Number(raw.p95) * 100) / 100,
+            p99: raw?.p99 == null ? null : Math.round(Number(raw.p99) * 100) / 100,
+            samples: raw?.samples ?? 0,
+          };
         }
-
-        const pWhere = pConditions.join(' AND ');
-        const { rows: pRows } = await client.query(
-          `SELECT
-            percentile_cont(0.50) WITHIN GROUP (ORDER BY value) as p50,
-            percentile_cont(0.95) WITHIN GROUP (ORDER BY value) as p95,
-            percentile_cont(0.99) WITHIN GROUP (ORDER BY value) as p99
-          FROM metrics
-          WHERE ${pWhere}`,
-          pParams,
-        );
-
-        const pResult = pRows[0] ?? { p50: 0, p95: 0, p99: 0 };
 
         const entry = containersMap.get(row.container_id)!;
         const stats = {
           avg: Math.round(Number(row.avg_value) * 100) / 100,
           min: Math.round(Number(row.min_value) * 100) / 100,
           max: Math.round(Number(row.max_value) * 100) / 100,
-          p50: Math.round(Number(pResult.p50) * 100) / 100,
-          p95: Math.round(Number(pResult.p95) * 100) / 100,
-          p99: Math.round(Number(pResult.p99) * 100) / 100,
+          p50: pResult.p50,
+          p95: pResult.p95,
+          p99: pResult.p99,
+          percentileSamples: pResult.samples,
           samples: row.sample_count,
         };
 
@@ -479,6 +618,11 @@ export async function reportsRoutes(fastify: FastifyInstance) {
 
       const fleetSummary = {
         totalContainers: fleetContainers.length,
+        // The population the table below shows. `totalContainers` counts only
+        // running containers, so the page led with "7 containers" above a
+        // 25-row table and a rule reading "25 containers: CPU p95 below 10%" —
+        // three numbers for one fleet, none of which named its own basis.
+        totalObserved: containers.length,
         avgCpu: cpuEntries.length > 0
           ? Math.round(cpuEntries.reduce((s, c) => s + c.cpu!.avg, 0) / cpuEntries.length * 100) / 100
           : 0,
@@ -541,6 +685,26 @@ export async function reportsRoutes(fastify: FastifyInstance) {
         fleetSummary,
         recommendations,
         recommendationSummary,
+        /**
+         * Where avg/min/max came from, and whether percentiles could be
+         * computed over the same rows. The client needs both to explain an
+         * empty p95 column instead of leaving the operator to guess.
+         */
+        aggregateSource: {
+          table: rollup.table,
+          isRollup: rollup.isRollup,
+          percentilesAvailable: !rollup.isRollup,
+          percentileNote: rollup.isRollup
+            ? `Percentiles need individual samples and are only computed on ranges of 6h or less. Over ${timeRange} the averages come from the ${rollup.table} rollup, which does not carry them.`
+            : null,
+        },
+        /**
+         * Which right-sizing rules this range could not evaluate for any
+         * container. An empty p95 column is visible; two of four rules going
+         * quiet behind it is not. Range-level skips only —
+         * `RightSizingRangeCoverage` documents what is deliberately not here.
+         */
+        rightSizingCoverage: describeRightSizingRangeCoverage(!rollup.isRollup, timeRange),
       };
     });
 

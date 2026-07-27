@@ -300,6 +300,21 @@ function CoverageRow({
   const canDisable = record.status === 'deployed';
   const canEnable = record.status === 'failed';
   const canToggle = canDisable || canEnable;
+
+  /**
+   * Why Enable/Disable is unavailable, in the operator's terms.
+   *
+   * `Enable` only applies to a deployment that previously failed, which is not
+   * discoverable from a greyed button. On a fresh install every row is
+   * `unknown`, so this was the state most operators met first.
+   */
+  const toggleDisabledReason = !canMutate
+    ? NOT_ADMIN_TITLE
+    : canToggle
+      ? null
+      : record.status === 'incompatible'
+        ? 'This endpoint cannot run Beyla'
+        : 'Enable applies to a deployment that failed. Use Deploy to install the tracer first.';
   const showRemoveToggle = record.status === 'deployed' || record.status === 'failed';
   const canDeploy = !showRemoveToggle && record.status !== 'incompatible';
 
@@ -362,7 +377,12 @@ function CoverageRow({
               disabled={!canMutate || mutationPending || !canToggle}
               className="rounded-md border border-border px-3 py-1 text-xs font-medium hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
               data-testid="toggle-btn"
-              title={canMutate ? undefined : NOT_ADMIN_TITLE}
+              // Every disabled state names its reason. This was
+              // `canMutate ? undefined : NOT_ADMIN_TITLE`, so an admin looking
+              // at the common `unknown` row got a greyed button with no
+              // tooltip at all — the only dead end on the page, sitting beside
+              // two live buttons.
+              title={toggleDisabledReason ?? undefined}
             >
               {canDisable ? 'Disable' : 'Enable'}
             </button>

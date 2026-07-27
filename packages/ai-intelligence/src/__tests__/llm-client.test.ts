@@ -12,6 +12,8 @@ import {
   resolveChatCompletionsUrl,
   resolveModelsUrl,
   buildInfrastructureContext,
+  resetLlmAvailabilityCache,
+  LLM_AVAILABILITY_TTL_MS,
   type LlmAuthType,
 } from '../services/llm-client.js';
 import type { NormalizedEndpoint, NormalizedContainer } from '@dashboard/core/portainer/portainer-normalizers.js';
@@ -49,6 +51,9 @@ describe('llm-client', () => {
     vi.restoreAllMocks();
     mockGetConfig.mockReturnValue({ ...DEFAULT_LLM_CONFIG });
     setConfigForTest({ LLM_VERIFY_SSL: true, LLM_REQUEST_TIMEOUT: 120000 });
+    // isLlmAvailable memoizes across calls; without this each test would see
+    // the previous test's verdict instead of exercising its own mock.
+    resetLlmAvailabilityCache();
   });
 
   afterEach(() => {
@@ -318,6 +323,101 @@ describe('llm-client', () => {
     it('returns false when no API URL is configured', async () => {
       mockGetConfig.mockReturnValue({ ...DEFAULT_LLM_CONFIG, apiUrl: '' });
       expect(await isLlmAvailable()).toBe(false);
+    });
+  });
+
+  // `GET /api/llm/status` runs this on every Assistant page load, so an
+  // uncached probe means one outbound request per viewer per visit — and a
+  // hung endpoint holding a handler for the full 5s timeout each time.
+  describe('isLlmAvailable memoization', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('does not re-probe within the TTL', async () => {
+      mockUndiciFetch.mockResolvedValue(new Response('{}', { status: 200 }));
+
+      expect(await isLlmAvailable()).toBe(true);
+      vi.advanceTimersByTime(LLM_AVAILABILITY_TTL_MS - 1);
+      expect(await isLlmAvailable()).toBe(true);
+
+      expect(mockUndiciFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('probes again once the TTL has expired', async () => {
+      mockUndiciFetch.mockResolvedValue(new Response('{}', { status: 200 }));
+
+      await isLlmAvailable();
+      vi.advanceTimersByTime(LLM_AVAILABILITY_TTL_MS + 1);
+      await isLlmAvailable();
+
+      expect(mockUndiciFetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('caches the negative result too', async () => {
+      // The whole point: a dead endpoint must not be dialled once per viewer.
+      mockUndiciFetch.mockRejectedValue(new Error('ECONNREFUSED'));
+
+      expect(await isLlmAvailable()).toBe(false);
+      expect(await isLlmAvailable()).toBe(false);
+      expect(await isLlmAvailable()).toBe(false);
+
+      expect(mockUndiciFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('caches a non-2xx response as unavailable without re-probing', async () => {
+      mockUndiciFetch.mockResolvedValue(new Response('Unauthorized', { status: 401 }));
+
+      expect(await isLlmAvailable()).toBe(false);
+      expect(await isLlmAvailable()).toBe(false);
+
+      expect(mockUndiciFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('collapses concurrent callers onto a single in-flight probe', async () => {
+      let resolveFetch: (res: Response) => void = () => {};
+      mockUndiciFetch.mockReturnValue(new Promise<Response>((resolve) => { resolveFetch = resolve; }));
+
+      const inFlight = [isLlmAvailable(), isLlmAvailable(), isLlmAvailable()];
+      // Let every caller reach the probe before any of them can finish.
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mockUndiciFetch).toHaveBeenCalledTimes(1);
+
+      resolveFetch(new Response('{}', { status: 200 }));
+      expect(await Promise.all(inFlight)).toEqual([true, true, true]);
+      expect(mockUndiciFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('re-probes when the configured URL changes', async () => {
+      mockUndiciFetch.mockResolvedValue(new Response('{}', { status: 200 }));
+      await isLlmAvailable();
+
+      // An operator fixing a wrong endpoint in Settings must not be told for
+      // another 30s about the host they just replaced.
+      mockGetConfig.mockReturnValue({
+        ...DEFAULT_LLM_CONFIG,
+        apiUrl: 'http://other-host:9000/v1/chat/completions',
+      });
+      await isLlmAvailable();
+
+      expect(mockUndiciFetch).toHaveBeenCalledTimes(2);
+      expect(mockUndiciFetch.mock.calls[1][0]).toBe('http://other-host:9000/v1/models');
+    });
+
+    it('re-probes when the configured token changes', async () => {
+      mockUndiciFetch.mockResolvedValue(new Response('Unauthorized', { status: 401 }));
+      expect(await isLlmAvailable()).toBe(false);
+
+      // Same URL, corrected credential: the cached 401 verdict no longer applies.
+      mockGetConfig.mockReturnValue({ ...DEFAULT_LLM_CONFIG, apiToken: 'corrected-token' });
+      mockUndiciFetch.mockResolvedValue(new Response('{}', { status: 200 }));
+      expect(await isLlmAvailable()).toBe(true);
+
+      expect(mockUndiciFetch).toHaveBeenCalledTimes(2);
     });
   });
 

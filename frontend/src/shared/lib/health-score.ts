@@ -11,6 +11,13 @@ export interface HealthStats {
   running: number;
   stopped: number;
   paused: number;
+  /**
+   * Containers Docker reports as `dead` — a failed removal, not a clean stop.
+   * Counted separately from `stopped` because it is a different fault, but it
+   * feeds `calculateNeedsAttention` the same way: a dead container is never
+   * something an operator has already dealt with.
+   */
+  dead: number;
   unhealthy: number;
   healthy: number;
   unknown: number;
@@ -29,6 +36,7 @@ export function calculateHealthStats(containers: Container[]): HealthStats {
     running: 0,
     stopped: 0,
     paused: 0,
+    dead: 0,
     unhealthy: 0,
     healthy: 0,
     unknown: 0,
@@ -36,9 +44,16 @@ export function calculateHealthStats(containers: Container[]): HealthStats {
   };
 
   containers.forEach((container) => {
+    // Compare against the contract vocabulary (`@dashboard/contracts`
+    // CONTAINER_STATES), never Docker's raw words. `normalizeContainer` maps
+    // Docker's `exited` to `stopped` server-side, so the `'exited'` this once
+    // tested for could never match and the fleet read "0 stopped" with
+    // containers down. `container-state-vocabulary.test.ts` fails if a state
+    // is added to the contract and not handled here.
     if (container.state === 'running') stats.running++;
-    else if (container.state === 'exited') stats.stopped++;
+    else if (container.state === 'stopped') stats.stopped++;
     else if (container.state === 'paused') stats.paused++;
+    else if (container.state === 'dead') stats.dead++;
 
     if (container.healthStatus === 'unhealthy') stats.unhealthy++;
     else if (container.healthStatus === 'healthy') stats.healthy++;
@@ -87,7 +102,7 @@ export interface InsightAttentionCounts {
  * "items across two lists" is only honest if it names both lists.
  */
 export interface AttentionBreakdown {
-  /** Containers that are unhealthy or stopped. */
+  /** Containers that are unhealthy, stopped, or dead. */
   containers: number;
   /** Unacknowledged critical + warning insights. `0` when none were supplied. */
   insights: number;
@@ -109,7 +124,7 @@ export function calculateNeedsAttention(
   stats: HealthStats,
   insights?: InsightAttentionCounts,
 ): AttentionBreakdown {
-  const containers = stats.unhealthy + stats.stopped;
+  const containers = stats.unhealthy + stats.stopped + stats.dead;
   const insightCount = insights ? insights.critical + insights.warning : 0;
   return {
     containers,

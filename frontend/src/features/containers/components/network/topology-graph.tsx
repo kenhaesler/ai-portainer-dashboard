@@ -771,6 +771,19 @@ export function TopologyGraph({
     }
   }, [onNodeClick]);
 
+  /**
+   * Accessible name for the graph pane, and the non-visual summary of it.
+   *
+   * The pane is `role="application"`, so without a name a screen-reader user
+   * is dropped into an unnamed widget that swallows their keystrokes. Naming
+   * it with the actual shape of the graph at least tells them what they have
+   * entered and how big it is before they decide to move on.
+   */
+  const ariaLabel = `Network topology: ${containers.length} ${
+    containers.length === 1 ? 'container' : 'containers'
+  } across ${networks.length} ${networks.length === 1 ? 'network' : 'networks'}. `
+    + 'This is a visual diagram; the same containers and their networks are listed in the Workloads table.';
+
   if (!containers.length && !networks.length) {
     return (
       <div className="flex h-full items-center justify-center text-muted-foreground">
@@ -832,7 +845,28 @@ export function TopologyGraph({
         maxZoom={MAX_ZOOM}
         fitView
         fitViewOptions={FIT_VIEW_OPTIONS}
-        attributionPosition="bottom-left"
+        /*
+          React Flow sets `role="application"` on its pane, which tells a
+          screen reader to hand every keystroke to the widget. Without a name
+          the user is dropped into an unnamed application region with no idea
+          what it contains, and every node and edge is a tab stop announcing a
+          raw 64-char container id — roughly 70 stops with no way past them.
+
+          `nodesFocusable`/`edgesFocusable` false takes the graph out of the
+          tab order entirely. Nothing is lost: the nodes were not operable by
+          keyboard anyway (selection is a mouse click that opens the detail
+          panel), and the same data is available as text in the container
+          table. The named region plus the summary below is what a
+          non-visual user can actually use.
+        */
+        aria-label={ariaLabel}
+        nodesFocusable={false}
+        edgesFocusable={false}
+        /*
+          Hides the "React Flow" badge. xyflow's Attribution component asks
+          that it be hidden only by Pro subscribers (its `data-message`).
+        */
+        proOptions={{ hideAttribution: true }}
       >
         <Background />
         <Controls />

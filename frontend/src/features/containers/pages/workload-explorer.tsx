@@ -26,6 +26,21 @@ import { WorkloadSmartSearch } from '@/shared/components/forms/workload-smart-se
 import { SelectionActionBar } from '@/shared/components/layout/selection-action-bar';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 import { ContainerComparisonView } from '@/features/containers/components/container-comparison-view';
+import type { ContainerState } from '@dashboard/contracts';
+
+/**
+ * States a user can filter by, in the order they are offered.
+ *
+ * Typed `ContainerState[]`, so a value the API cannot emit is a compile error.
+ * This list previously read `['running', 'stopped', 'exited', 'paused',
+ * 'created', 'restarting', 'dead']` — hand-written, and four of those seven are
+ * words `normalizeContainer` never produces. `Exited` in particular is a synonym
+ * for `Stopped` that could only ever show `(0)`, so the filter offered the
+ * operator two names for one state and a permanent zero for the other.
+ *
+ * `unknown` is omitted deliberately: it is not a state an operator filters for.
+ */
+const SELECTABLE_CONTAINER_STATES: ContainerState[] = ['running', 'stopped', 'paused', 'dead'];
 
 const MAX_COMPARE = 4;
 /** Cards rendered per batch below `md`, where there is no table pagination. */
@@ -673,7 +688,7 @@ export default function WorkloadExplorerPage() {
                     onValueChange={(value) => setSelectedState(value === '__all__' ? undefined : value)}
                     options={[
                       { value: '__all__', label: 'All states' },
-                      ...['running', 'stopped', 'exited', 'paused', 'created', 'restarting', 'dead'].map((state) => ({
+                      ...SELECTABLE_CONTAINER_STATES.map((state) => ({
                         value: state,
                         label: `${state.charAt(0).toUpperCase() + state.slice(1)} (${stateCounts[state] || 0})`,
                       })),

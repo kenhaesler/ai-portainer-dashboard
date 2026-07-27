@@ -209,6 +209,10 @@ export function SecurityAuditSettingsSection() {
             onChange={(event) => setDraftValue(event.target.value)}
             className="min-h-[160px] w-full rounded-md border border-input bg-background p-3 font-mono text-sm"
             placeholder="portainer\ntraefik\nnginx*"
+            // A placeholder is not an accessible name: it vanishes the moment
+            // the field has content, which is exactly when a screen-reader
+            // user needs to know what they are editing.
+            aria-label="Ignored container patterns, one per line"
             disabled={isLoading || updateIgnoreList.isPending}
           />
         )}

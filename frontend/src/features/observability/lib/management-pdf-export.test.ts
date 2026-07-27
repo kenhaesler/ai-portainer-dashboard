@@ -91,6 +91,34 @@ describe('buildManagementPdfModel', () => {
     expect(model.cpuTrend[0].label).toBe('2026-02-13');
   });
 
+  // The PDF options panel renders the same TIME_RANGES array as the page
+  // selector, so every one of these is selectable for the PDF. `6h` was added
+  // to that array and reached a three-entry lookup here, printing "Period: 6h".
+  it.each([
+    ['6h', 'Last 6 Hours'],
+    ['24h', 'Last 24 Hours'],
+    ['7d', 'Last 7 Days'],
+    ['30d', 'Last 30 Days'],
+  ])('renders %s as prose, not as the raw token', (timeRange, expected) => {
+    const model = buildManagementPdfModel(buildInput({ timeRange }));
+    expect(model.periodLabel).toBe(expected);
+  });
+
+  it('expands a range token the selector does not offer today', () => {
+    // The label is derived from the token, so a range added to the selector
+    // later reads as a sentence here without a second list to update.
+    expect(buildManagementPdfModel(buildInput({ timeRange: '90d' })).periodLabel)
+      .toBe('Last 90 Days');
+    expect(buildManagementPdfModel(buildInput({ timeRange: '1h' })).periodLabel)
+      .toBe('Last 1 Hour');
+  });
+
+  it('passes through a token it cannot expand', () => {
+    // Nothing truthful to turn this into, so it is not dressed up as one.
+    expect(buildManagementPdfModel(buildInput({ timeRange: 'all-time' })).periodLabel)
+      .toBe('all-time');
+  });
+
   it('returns stable empty states with no data', () => {
     const model = buildManagementPdfModel(buildInput({
       containers: [],

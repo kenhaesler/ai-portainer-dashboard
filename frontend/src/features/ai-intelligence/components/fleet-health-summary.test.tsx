@@ -10,6 +10,7 @@ const stats: HealthStats = {
   running: 8,
   stopped: 2,
   paused: 0,
+  dead: 0,
   unhealthy: 1,
   healthy: 7,
   unknown: 0,

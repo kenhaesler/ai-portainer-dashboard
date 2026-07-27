@@ -223,7 +223,13 @@ let mockChatStream: any;
 let runMonitoringCycle: () => Promise<void>;
 
 /** Helper: extract insights from the batch insertInsights call */
-function getInsertedInsights(): Array<{ category: string; severity: string; description: string; container_id: string | null }> {
+function getInsertedInsights(): Array<{
+  category: string;
+  severity: string;
+  description: string;
+  container_id: string | null;
+  detection_method?: string;
+}> {
   if (mockInsertInsights.mock.calls.length === 0) return [];
   return mockInsertInsights.mock.calls[0][0] as any[];
 }
@@ -944,9 +950,16 @@ describe('monitoring-service', () => {
 
     // The statistical detector's description is unique ("... standard deviations
     // from the moving average") — isolates it from threshold / IF / predictive.
+    // Identify the statistical anomaly path structurally, by its persisted
+    // detector and its distinguishing description clause. This used to match
+    // the sentence "standard deviations from the moving average", which was a
+    // word-for-word restatement of the `z-score:` printed beside it and has
+    // been removed — a filter keyed on boilerplate breaks when the boilerplate
+    // is deleted, which is the wrong signal.
     const statAnomalies = () =>
       getInsertedInsights().filter((i) =>
-        i.description.includes('standard deviations from the moving average'),
+        i.detection_method === 'ml-anomaly'
+        && !i.description.includes('Isolation Forest'),
       );
 
     const persistCfg = {

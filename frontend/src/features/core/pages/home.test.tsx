@@ -290,7 +290,7 @@ describe('HomePage', () => {
       isFetching: false,
     } as any);
     mockUseContainers.mockReturnValue({
-      data: [makeContainer({ id: 'e1', name: 'e1', state: 'exited' })],
+      data: [makeContainer({ id: 'e1', name: 'e1', state: 'stopped' })],
       isLoading: false,
       isError: false,
       refetch: vi.fn(),
@@ -298,9 +298,13 @@ describe('HomePage', () => {
 
     renderPage();
 
+    // `state=stopped`, the contract vocabulary. This assertion previously
+    // pinned `state=exited` — and the fixture above built its container from
+    // the same word, so the test agreed with the bug instead of catching it:
+    // the tile was linking to a filter that could only ever return no rows.
     expect(screen.getByTestId('fleet-tile-link-Stopped')).toHaveAttribute(
       'href',
-      '/workloads?state=exited',
+      '/workloads?state=stopped',
     );
   });
 

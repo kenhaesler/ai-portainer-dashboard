@@ -130,6 +130,12 @@ const themeState = {
   setSidebarIcon: vi.fn(),
   loginIcon: 'brain' as const,
   setLoginIcon: vi.fn(),
+  // This object replaces the store wholesale, so anything the real store gains
+  // and this mock lacks arrives as `undefined`. That is not a loud failure:
+  // SidebarLogo/LoginLogo would simply render null and the Sidebar and Login
+  // a11y checks would still report zero violations — a green test that had
+  // stopped testing anything. Keep this in sync with `ThemeState`.
+  setAppIcon: vi.fn(),
 };
 
 vi.mock('@/stores/theme-store', async () => {

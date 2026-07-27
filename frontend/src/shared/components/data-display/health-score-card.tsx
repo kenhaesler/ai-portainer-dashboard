@@ -7,32 +7,27 @@ import {
 } from '@/shared/lib/health-score';
 
 /**
- * The hero tile of the Fleet Vitals pane, shared by Home and Health &
- * Monitoring so the two pages can never disagree about the fleet's headline
- * number.
+ * The "Needs attention" tile of `FleetHealthSummary`.
  *
- * It used to lead with "Overall Health Score 100.0%" — the Docker healthcheck
- * pass rate under a name that claimed to summarise the fleet. On Health &
- * Monitoring that green 100.0% rendered two inches from "14 Critical", because
- * the rate is structurally blind to insights. The rate is still here and still
- * correct; it is now named for what it measures, states its own exclusion
- * inline, and is secondary to a count the operator can act on.
+ * Both figures are derived here from `stats` (plus the caller's unacknowledged
+ * insight counts) rather than accepted as props, so no caller can pass a number
+ * that disagrees with the data beside it.
  *
- * Both numbers are derived internally from `stats` (+ the caller's
- * unacknowledged insight counts) rather than accepted as props, so no caller
- * can pass a number that disagrees with the data beside it.
+ * The healthcheck pass rate is secondary and named for what it measures:
+ * `calculateHealthcheckPassRate` reads only `healthy`/`unhealthy`, so it can
+ * show 100% while the hero count is not zero — see the second case in
+ * `health-score-card.test.tsx`.
  *
- * There is deliberately no ring around the icon. The old one was
- * `border-8 border-primary/20` — a static full circle that read as a radial
- * progress meter and rendered identically at 100% and at 12%.
+ * No ring around the icon — a static circle encodes nothing; the last case in
+ * that test file fails if `border-8` returns.
  */
 export interface HealthScoreCardProps {
   /** Aggregated container health stats from `calculateHealthStats`. */
   stats: HealthStats;
   /**
-   * Unacknowledged critical / warning insight counts. Pages that don't load
-   * the insight feed (Home) omit this; the count then covers container state
-   * only and the breakdown line says so rather than implying zero insights.
+   * Unacknowledged critical / warning insight counts. Callers without the
+   * insight feed (Home) omit this; the clear-state sentence then mentions
+   * containers only.
    */
   insightCounts?: InsightAttentionCounts;
 }
@@ -58,10 +53,15 @@ export function HealthScoreCard({ stats, insightCounts }: HealthScoreCardProps) 
       `${plural(attention.insights, 'unacknowledged insight', 'unacknowledged insights')}`,
     );
   }
+  // The clear-state sentence names every bucket `attention.total` covers:
+  // containers (unhealthy + stopped + dead) and, when `insightCounts` was
+  // supplied, unacknowledged critical + warning insights. See
+  // `calculateNeedsAttention` and the clear-state cases in
+  // `health-score-card.test.tsx`.
   const breakdown = isClear
     ? insightCounts
-      ? 'No unhealthy or stopped containers, no unacknowledged critical or warning insights.'
-      : 'No unhealthy or stopped containers.'
+      ? 'No unhealthy, stopped or dead containers, no unacknowledged critical or warning insights.'
+      : 'No unhealthy, stopped or dead containers.'
     : breakdownParts.join(' · ');
 
   return (
@@ -86,10 +86,8 @@ export function HealthScoreCard({ stats, insightCounts }: HealthScoreCardProps) 
         <p className="text-xs text-muted-foreground mt-1" data-testid="needs-attention-breakdown">
           {breakdown}
         </p>
-        {/* Secondary, and named for what it measures. Whole percent only: on a
-            fleet of 11 reporting containers the tenths digit is noise — one
-            container moves the number 9.1 points, and the exact fraction is
-            spelled out on the same line anyway. */}
+        {/* Whole percent only — the exact fraction is spelled out on the same
+            line. */}
         <p className="mt-3 border-t pt-2 text-xs text-muted-foreground" data-testid="healthcheck-pass-rate">
           {passRate === null ? (
             <>

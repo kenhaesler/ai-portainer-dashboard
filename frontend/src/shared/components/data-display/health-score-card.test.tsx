@@ -9,6 +9,7 @@ function makeStats(overrides: Partial<HealthStats> = {}): HealthStats {
     running: 0,
     stopped: 0,
     paused: 0,
+    dead: 0,
     healthy: 0,
     unhealthy: 0,
     unknown: 0,
@@ -31,8 +32,7 @@ describe('HealthScoreCard', () => {
   });
 
   it('adds unacknowledged critical + warning insights to the hero count', () => {
-    // The regression this exists for: the hero read "100.0%" in green with
-    // "14 Critical" in the same card. The hero must be able to see the 14.
+    // The pass rate cannot see insights; the hero must.
     render(
       <HealthScoreCard
         stats={makeStats({ total: 11, healthy: 11, running: 11 })}
@@ -96,6 +96,33 @@ describe('HealthScoreCard', () => {
 
     expect(screen.getByTestId('needs-attention-count')).toHaveTextContent('0');
     expect(screen.getByTestId('attention-icon-clear')).toBeInTheDocument();
+    expect(screen.getByTestId('needs-attention-breakdown')).toHaveTextContent(
+      'No unhealthy, stopped or dead containers, no unacknowledged critical or warning insights.',
+    );
+  });
+
+  it('names dead containers in the clear-state sentence, since the zero covers them', () => {
+    // `calculateNeedsAttention` counts unhealthy + stopped + dead, so a
+    // sentence listing only the first two claims less than the count it
+    // explains.
+    render(<HealthScoreCard stats={makeStats({ total: 3, healthy: 3, running: 3 })} />);
+
+    const breakdown = screen.getByTestId('needs-attention-breakdown');
+    expect(breakdown).toHaveTextContent('No unhealthy, stopped or dead containers.');
+    expect(breakdown).not.toHaveTextContent('No unhealthy or stopped containers.');
+  });
+
+  it('is not clear when a dead container is present', () => {
+    // The other half of the sentence above: dead must actually break `isClear`,
+    // not merely be named by it.
+    render(<HealthScoreCard stats={makeStats({ total: 1, dead: 1, unknown: 1 })} />);
+
+    expect(screen.getByTestId('needs-attention-count')).toHaveTextContent('1');
+    expect(screen.queryByTestId('attention-icon-clear')).toBeNull();
+
+    const breakdown = screen.getByTestId('needs-attention-breakdown');
+    expect(breakdown).toHaveTextContent('1 container');
+    expect(breakdown).not.toHaveTextContent('No unhealthy');
   });
 
   it('uses the critical icon when a container is unhealthy and the warning icon otherwise', () => {
@@ -110,8 +137,7 @@ describe('HealthScoreCard', () => {
   });
 
   it('does not draw a static full-circle ring around the icon', () => {
-    // `border-8 border-primary/20` read as a radial progress meter and
-    // rendered identically at 100% and at 12%.
+    // The ring was `border-8 border-primary/20`, with no value bound to it.
     const { container } = render(
       <HealthScoreCard stats={makeStats({ total: 2, healthy: 1, unhealthy: 1, running: 2 })} />,
     );

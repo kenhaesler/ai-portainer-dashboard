@@ -8,6 +8,7 @@ import {
   flexRender,
   type ColumnDef,
   type SortingState,
+  type OnChangeFn,
   type ColumnFiltersState,
   type RowSelectionState,
   type Row,
@@ -63,7 +64,7 @@ export interface ServerPaginationProps {
   onPageChange: (page: number) => void;
 }
 
-interface DataTableProps<T> {
+interface DataTableBaseProps<T> {
   columns: ColumnDef<T, any>[];
   data: T[];
   searchKey?: string;
@@ -126,6 +127,52 @@ interface DataTableProps<T> {
   rowLabel?: (row: T) => string;
 }
 
+/**
+ * Controlled sort state. Supply both to share one ordering across several
+ * tables — the Reports page renders Application and Infrastructure as two
+ * DataTables that must sort together.
+ *
+ * That requirement is why Reports previously set `enableSorting: false` on
+ * every column and hand-rolled `<span onClick>` headers, which cost it
+ * everything this component already does correctly: real `<button>` headers,
+ * `aria-sort` on the `<th>`, and keyboard operation. It shipped with `aria-sort`
+ * null on all eight columns and five of them inert.
+ *
+ * Neither union member permits exactly one of the two props, so half a
+ * controlled sort fails to typecheck at the call site. The runtime fallback and
+ * its dev warning below remain for the callers types do not reach: JS
+ * consumers, and casts.
+ */
+type DataTableSortingProps =
+  | { sorting?: undefined; onSortingChange?: undefined }
+  | { sorting: SortingState; onSortingChange: OnChangeFn<SortingState> };
+
+type DataTableProps<T> = DataTableBaseProps<T> & DataTableSortingProps;
+
+/**
+ * `frontend/tsconfig.json` excludes every `.test.ts`/`.test.tsx` under `src/`,
+ * so a `@ts-expect-error` in the test file beside this one is compiled by nothing.
+ * These four are compiled by `npm run typecheck -w frontend`.
+ *
+ * They probe `DataTableProps`, not `DataTableSortingProps` alone: `SortProbeBase`
+ * shares no property with the union's all-optional first member, so probing that
+ * union directly reports the plain `<DataTable columns data />` call as rejected.
+ */
+type AcceptedByDataTable<P> = P extends DataTableProps<unknown> ? true : false;
+type AssertTrue<T extends true> = T;
+type AssertFalse<T extends false> = T;
+type SortProbeBase = { columns: ColumnDef<unknown, any>[]; data: unknown[] };
+export type DataTableSortingUnionChecks = [
+  AssertFalse<AcceptedByDataTable<SortProbeBase & { sorting: SortingState }>>,
+  AssertFalse<AcceptedByDataTable<SortProbeBase & { onSortingChange: OnChangeFn<SortingState> }>>,
+  AssertTrue<
+    AcceptedByDataTable<
+      SortProbeBase & { sorting: SortingState; onSortingChange: OnChangeFn<SortingState> }
+    >
+  >,
+  AssertTrue<AcceptedByDataTable<SortProbeBase>>,
+];
+
 export function DataTable<T>({
   columns,
   data,
@@ -148,8 +195,35 @@ export function DataTable<T>({
   rowClassName,
   rowHref,
   rowLabel,
+  sorting: controlledSorting,
+  onSortingChange,
 }: DataTableProps<T>) {
-  const [sorting, setSorting] = useState<SortingState>([]);
+  const [internalSorting, setInternalSorting] = useState<SortingState>([]);
+  const isSortingControlled = controlledSorting !== undefined && onSortingChange !== undefined;
+  const sorting = isSortingControlled ? controlledSorting : internalSorting;
+  const setSorting: OnChangeFn<SortingState> = isSortingControlled ? onSortingChange : setInternalSorting;
+
+  // `DataTableSortingProps` rejects half a controlled sort at compile time, so
+  // this covers only what types do not reach: JS callers, and casts. For those,
+  // the fallback above is silent — the table renders, sorts locally, and the
+  // caller's state simply never changes. Warn once per mount, in dev only: a
+  // wiring mistake, not a runtime fault, so it must not reach a production
+  // console. Both are pinned by the `controlled sorting wiring` tests in
+  // `data-table.test.tsx`.
+  const halfControlledSortWarned = useRef(false);
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    if (halfControlledSortWarned.current) return;
+    const hasSorting = controlledSorting !== undefined;
+    const hasHandler = onSortingChange !== undefined;
+    if (hasSorting === hasHandler) return;
+    halfControlledSortWarned.current = true;
+    const supplied = hasSorting ? 'sorting' : 'onSortingChange';
+    const missing = hasSorting ? 'onSortingChange' : 'sorting';
+    console.warn(
+      `DataTable: received \`${supplied}\` without \`${missing}\`. Controlled sorting needs both props; the table is using its own internal sort state instead.`
+    );
+  }, [controlledSorting, onSortingChange]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [pageIndex, setPageIndex] = useState(0);

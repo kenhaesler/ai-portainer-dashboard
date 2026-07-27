@@ -236,6 +236,22 @@ export function AppLayout() {
       transition={{ duration: showEntrance ? 0.3 : 0 }}
     >
       <DashboardBackground />
+      {/*
+        Skip link — the first thing in the tab order on every route.
+
+        Without it, reaching any page content took 22-29 Tab presses through
+        the sidebar, on every route and every visit; the topology graph then
+        added ~70 more stops with no way past them. Visually hidden until
+        focused, which is the point: it costs sighted mouse users nothing and
+        saves keyboard users the entire nav on every navigation.
+      */}
+      <a
+        href="#main-content"
+        data-testid="skip-to-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-primary focus:px-4 focus:py-2 focus:text-primary-foreground focus:shadow-lg focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+      >
+        Skip to content
+      </a>
       {/* Sidebar — hidden on mobile, spring entrance from left */}
       <m.div
         className="hidden md:block"
@@ -272,7 +288,10 @@ export function AppLayout() {
 
         {/* Main content — fades in from bottom */}
         <m.main
-          className="flex-1 overflow-y-auto p-3 pb-36 md:p-4"
+          id="main-content"
+          // Focusable only as a skip-link target, never a tab stop of its own.
+          tabIndex={-1}
+          className="flex-1 overflow-y-auto p-3 pb-36 outline-none md:p-4"
           initial={showEntrance ? { y: 12, opacity: 0 } : false}
           animate={{ y: 0, opacity: 1 }}
           transition={

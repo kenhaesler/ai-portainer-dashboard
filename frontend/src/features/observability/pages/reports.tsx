@@ -1,5 +1,5 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
-import { type ColumnDef } from '@tanstack/react-table';
+import { useState, useMemo, useEffect } from 'react';
+import { type ColumnDef, type SortingState } from '@tanstack/react-table';
 import {
   FileBarChart,
   Download,
@@ -20,7 +20,10 @@ import {
   useUtilizationReport,
   useTrendsReport,
 } from '@/features/observability/hooks/use-reports';
-import type { ContainerReport } from '@/features/observability/hooks/use-reports';
+import type {
+  ContainerReport,
+  RightSizingRuleDescriptor,
+} from '@/features/observability/hooks/use-reports';
 import { useEndpoints } from '@/features/containers/hooks/use-endpoints';
 import { useContainers } from '@/features/containers/hooks/use-containers';
 import type { Container } from '@/features/containers/hooks/use-containers';
@@ -41,7 +44,50 @@ import {
   type ManagementPdfTheme,
 } from '@/features/observability/lib/management-pdf-themes';
 
+/**
+ * Scope line for the page header.
+ *
+ * The KPI row averages over running containers while the table below lists
+ * every container observed in the window, so the page could lead with
+ * "7 containers" above 25 rows and a rule reading "25 containers: CPU p95
+ * below 10%". State the split only when the two actually differ — on a fleet
+ * where everything is up, "12 of 12 running" is noise.
+ */
+export function reportScopeSubtitle(
+  report: { fleetSummary: { totalContainers: number; totalObserved?: number } },
+  timeRange: string,
+): string {
+  const running = report.fleetSummary.totalContainers;
+  const observed = report.fleetSummary.totalObserved ?? running;
+  const window = TIME_RANGES.find((r) => r.value === timeRange)?.label.toLowerCase() ?? timeRange;
+  const noun = observed === 1 ? 'container' : 'containers';
+
+  return observed === running
+    ? `${observed} ${noun} over the last ${window}`
+    : `${running} of ${observed} ${noun} running, over the last ${window}`;
+}
+
+/**
+ * Display names for the right-sizing rule metrics.
+ *
+ * The statement was assembled with `rule.metric.toUpperCase()`, so it read
+ * "MEMORY p95 below 20% — consider reducing memory limits": the metric shouted
+ * in the first two words and spoken normally four words later, in one sentence.
+ */
+const METRIC_DISPLAY_LABELS: Record<string, string> = {
+  cpu: 'CPU',
+  memory: 'Memory',
+  memory_bytes: 'Memory',
+};
+
+/**
+ * 6 Hours is not a convenience option. It is the only range on which the
+ * backend reads the raw metrics table, so it is the only one that carries
+ * p50/p95/p99 — and therefore the only one on which the two p95-keyed
+ * right-sizing rules can fire at all.
+ */
 const TIME_RANGES = [
+  { value: '6h', label: '6 Hours' },
   { value: '24h', label: '24 Hours' },
   { value: '7d', label: '7 Days' },
   { value: '30d', label: '30 Days' },
@@ -59,26 +105,16 @@ const CPU_DENOMINATOR_LABEL = '100% = one core';
 const RULE_CONTAINER_PREVIEW = 6;
 
 /**
- * `recommendationSummary` from `GET /api/reports/utilization` — the per-rule
- * rollup that lets this page state a rule once instead of repeating byte-
- * identical advice per container.
+ * The condition half of a rule, e.g. "CPU p95 below 10%".
  *
- * Declared here rather than in `use-reports.ts` only because that hook is owned
- * by another workstream this pass; it belongs on `UtilizationReport`.
+ * Used for the `recommendationSummary` rules that fired and for the rules the
+ * range could not evaluate, so those two read in the same words. The legacy
+ * `recommendations` fallback below states the backend's `issue` strings
+ * verbatim instead.
  */
-interface RightSizingRuleSummary {
-  id: string;
-  metric: string;
-  statistic: string;
-  comparison: string;
-  threshold: number;
-  unit: string;
-  recommendation: string;
-  /** Every container the rule fired on. Uncapped — count with this. */
-  container_count: number;
-  /** A sample of the names, capped server-side; may be shorter than the count. */
-  container_names: string[];
-  names_truncated?: boolean;
+function ruleCondition(rule: RightSizingRuleDescriptor): string {
+  const metric = METRIC_DISPLAY_LABELS[rule.metric] ?? rule.metric;
+  return `${metric} ${rule.statistic} ${rule.comparison} ${rule.threshold}${rule.unit === 'percent' ? '%' : ''}`;
 }
 
 /** One rendered line: the rule, and the containers it matched. */
@@ -471,8 +507,10 @@ export default function ReportsPage() {
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [showPdfOptions, setShowPdfOptions] = useState(false);
   const [selectedEndpoint, setSelectedEndpoint] = useState<number | undefined>();
-  const [sortField, setSortField] = useState<'name' | 'cpu' | 'memory'>('name');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  // One ordering, shared by the Application and Infrastructure tables. This
+  // replaces a bespoke ('name' | 'cpu' | 'memory') + direction pair that only
+  // covered three of the eight columns.
+  const [sorting, setSorting] = useState<SortingState>([{ id: 'container_name', desc: false }]);
 
   const { data: endpoints } = useEndpoints();
   const { data: allContainers } = useContainers();
@@ -492,22 +530,6 @@ export default function ReportsPage() {
     data: pdfTrends,
     isLoading: pdfTrendsLoading,
   } = useTrendsReport(pdfTimeRange, selectedEndpoint, undefined, pdfExcludeInfrastructure);
-
-  // Sort containers
-  const sortedContainers = useMemo(() => {
-    if (!report?.containers) return [];
-    return [...report.containers].sort((a, b) => {
-      let cmp: number;
-      if (sortField === 'name') {
-        cmp = a.container_name.localeCompare(b.container_name);
-      } else if (sortField === 'cpu') {
-        cmp = (a.cpu?.avg ?? 0) - (b.cpu?.avg ?? 0);
-      } else {
-        cmp = (a.memory?.avg ?? 0) - (b.memory?.avg ?? 0);
-      }
-      return sortDir === 'asc' ? cmp : -cmp;
-    });
-  }, [report?.containers, sortField, sortDir]);
 
   // Trend chart data
   const cpuTrendData = useMemo(() => {
@@ -536,12 +558,11 @@ export default function ReportsPage() {
    * collapse still holds against an older backend.
    */
   const rightSizingGroups = useMemo<RightSizingGroup[]>(() => {
-    const supplied = (report as (typeof report & { recommendationSummary?: RightSizingRuleSummary[] }) | undefined)
-      ?.recommendationSummary;
+    const supplied = report?.recommendationSummary;
     if (supplied?.length) {
       return supplied.map((rule) => ({
         id: rule.id,
-        statement: `${rule.metric.toUpperCase()} ${rule.statistic} ${rule.comparison} ${rule.threshold}${rule.unit === 'percent' ? '%' : ''} — ${rule.recommendation}`,
+        statement: `${ruleCondition(rule)} — ${rule.recommendation}`,
         containerNames: rule.container_names,
         containerCount: rule.container_count,
         truncated: !!rule.names_truncated,
@@ -566,6 +587,18 @@ export default function ReportsPage() {
       truncated: false,
     }));
   }, [report]);
+
+  /**
+   * The rules the selected range could not evaluate at all.
+   *
+   * `evaluateRightSizingRules` skips a rule whose statistic is null — correct,
+   * but on any range above 6h that silently disables both p95-keyed rules for
+   * every container. Without this line the panel presents the two surviving
+   * rules as the whole engine. The fraction comes from the payload so it stays
+   * true if a rule is added.
+   */
+  const rightSizingCoverage = report?.rightSizingCoverage;
+  const unevaluatedRules = rightSizingCoverage?.skippedRules ?? [];
 
   const allContainersById = useMemo(() => {
     const byId = new Map<string, Container>();
@@ -678,26 +711,17 @@ export default function ReportsPage() {
     }
   };
 
-  const handleSort = useCallback((field: 'name' | 'cpu' | 'memory') => {
-    setSortField((prevField) => {
-      if (prevField === field) {
-        setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
-        return prevField;
-      }
-      setSortDir('asc');
-      return field;
-    });
-  }, []);
-
   const isLoading = reportLoading || trendsLoading;
   const isPdfLoading = pdfReportLoading || pdfTrendsLoading;
+  // Splitting only. Ordering is DataTable's (see `containerColumns`); sorting
+  // here as well would fight it.
   const applicationContainers = useMemo(
-    () => sortedContainers.filter((container) => container.service_type === 'application'),
-    [sortedContainers],
+    () => (report?.containers ?? []).filter((container) => container.service_type === 'application'),
+    [report?.containers],
   );
   const infrastructureContainers = useMemo(
-    () => sortedContainers.filter((container) => container.service_type === 'infrastructure'),
-    [sortedContainers],
+    () => (report?.containers ?? []).filter((container) => container.service_type === 'infrastructure'),
+    [report?.containers],
   );
 
   useEffect(() => {
@@ -771,24 +795,25 @@ export default function ReportsPage() {
     setPdfReportTitle(selected.reportTitle as string);
   };
 
-  // Sorting is driven by the parent (`handleSort`) and shared across the
-  // Application/Infrastructure tables, so the columns disable DataTable's own
-  // sorting and instead render the existing arrow indicators + click handlers.
-  const sortIndicator = (field: 'name' | 'cpu' | 'memory') =>
-    sortField === field ? (sortDir === 'asc' ? ' ↑' : ' ↓') : '';
-
+  // Every column is a real, sortable DataTable column.
+  //
+  // These were `enableSorting: false` with hand-rolled `<span onClick>`
+  // headers, because the Application and Infrastructure tables must sort
+  // together and DataTable owned its sort state privately. The cost was
+  // severe: `aria-sort` was null on all eight headers, none was tabbable, and
+  // five of the eight looked identical to the sortable ones while doing
+  // nothing at all. DataTable now accepts controlled sort state, so the two
+  // tables share an ordering *and* get real <button> headers, aria-sort and
+  // keyboard operation.
+  //
+  // `sortUndefined: 'last'` keeps containers with no reading for a metric at
+  // the bottom either way, rather than letting a missing value sort as 0 and
+  // masquerade as the quietest container in the fleet.
   const containerColumns = useMemo<ColumnDef<ContainerReport, unknown>[]>(() => [
     {
       accessorKey: 'container_name',
-      enableSorting: false,
-      header: () => (
-        <span
-          className="cursor-pointer hover:text-foreground"
-          onClick={() => handleSort('name')}
-        >
-          Container{sortIndicator('name')}
-        </span>
-      ),
+      header: 'Container',
+      sortUndefined: 'last',
       cell: ({ row }) => (
         <span className="block font-medium truncate max-w-[200px]" title={row.original.container_name}>
           {row.original.container_name}
@@ -797,15 +822,9 @@ export default function ReportsPage() {
     },
     {
       id: 'cpu_avg',
-      enableSorting: false,
-      header: () => (
-        <span
-          className="block w-full cursor-pointer text-right hover:text-foreground"
-          onClick={() => handleSort('cpu')}
-        >
-          CPU Avg{sortIndicator('cpu')}
-        </span>
-      ),
+      accessorFn: (row) => row.cpu?.avg,
+      header: () => <span className="block w-full text-right">CPU Avg</span>,
+      sortUndefined: 'last',
       cell: ({ row }) => (
         <span className={cn('block text-right', (row.original.cpu?.avg ?? 0) > 80 && 'text-red-500 font-medium')}>
           {row.original.cpu ? `${row.original.cpu.avg.toFixed(1)}%` : '—'}
@@ -814,18 +833,20 @@ export default function ReportsPage() {
     },
     {
       id: 'cpu_p95',
-      enableSorting: false,
+      accessorFn: (row) => row.cpu?.p95 ?? undefined,
       header: () => <span className="block w-full text-right">CPU p95</span>,
+      sortUndefined: 'last',
       cell: ({ row }) => (
         <span className="block text-right">
-          {row.original.cpu ? `${row.original.cpu.p95.toFixed(1)}%` : '—'}
+          {row.original.cpu?.p95 != null ? `${row.original.cpu.p95.toFixed(1)}%` : '—'}
         </span>
       ),
     },
     {
       id: 'cpu_max',
-      enableSorting: false,
+      accessorFn: (row) => row.cpu?.max,
       header: () => <span className="block w-full text-right">CPU Max</span>,
+      sortUndefined: 'last',
       cell: ({ row }) => (
         <span className="block text-right">
           {row.original.cpu ? `${row.original.cpu.max.toFixed(1)}%` : '—'}
@@ -834,15 +855,9 @@ export default function ReportsPage() {
     },
     {
       id: 'mem_avg',
-      enableSorting: false,
-      header: () => (
-        <span
-          className="block w-full cursor-pointer text-right hover:text-foreground"
-          onClick={() => handleSort('memory')}
-        >
-          Mem Avg{sortIndicator('memory')}
-        </span>
-      ),
+      accessorFn: (row) => row.memory?.avg,
+      header: () => <span className="block w-full text-right">Mem Avg</span>,
+      sortUndefined: 'last',
       cell: ({ row }) => (
         <span className={cn('block text-right', (row.original.memory?.avg ?? 0) > 85 && 'text-red-500 font-medium')}>
           {row.original.memory ? `${row.original.memory.avg.toFixed(1)}%` : '—'}
@@ -851,18 +866,20 @@ export default function ReportsPage() {
     },
     {
       id: 'mem_p95',
-      enableSorting: false,
+      accessorFn: (row) => row.memory?.p95 ?? undefined,
       header: () => <span className="block w-full text-right">Mem p95</span>,
+      sortUndefined: 'last',
       cell: ({ row }) => (
         <span className="block text-right">
-          {row.original.memory ? `${row.original.memory.p95.toFixed(1)}%` : '—'}
+          {row.original.memory?.p95 != null ? `${row.original.memory.p95.toFixed(1)}%` : '—'}
         </span>
       ),
     },
     {
       id: 'mem_max',
-      enableSorting: false,
+      accessorFn: (row) => row.memory?.max,
       header: () => <span className="block w-full text-right">Mem Max</span>,
+      sortUndefined: 'last',
       cell: ({ row }) => (
         <span className="block text-right">
           {row.original.memory ? `${row.original.memory.max.toFixed(1)}%` : '—'}
@@ -871,24 +888,37 @@ export default function ReportsPage() {
     },
     {
       id: 'samples',
-      enableSorting: false,
+      accessorFn: (row) => row.cpu?.samples ?? row.memory?.samples ?? 0,
       header: () => <span className="block w-full text-right">Samples</span>,
+      sortUndefined: 'last',
       cell: ({ row }) => (
         <span className="block text-right text-muted-foreground">
           {row.original.cpu?.samples ?? row.original.memory?.samples ?? 0}
         </span>
       ),
     },
-  ], [handleSort, sortField, sortDir]);
+  ], []);
 
   const renderContainerTable = (containers: ContainerReport[]) => (
     <div className="p-2">
+      {/* An empty p95 column has to say why. Percentiles need individual
+          samples, so above 6h they cannot be computed over the same rows as
+          avg/min/max — and printing both together produced rows where p95
+          exceeded max. The dash is deliberate; the note is what makes it
+          readable as "not computed" rather than "no data". */}
+      {report?.aggregateSource && !report.aggregateSource.percentilesAvailable && (
+        <p className="mb-3 text-xs text-muted-foreground" data-testid="percentile-basis-note">
+          {report.aggregateSource.percentileNote}
+        </p>
+      )}
       <DataTable
         columns={containerColumns}
         data={containers}
         hideSearch
         windowScroll
         getRowId={(c) => c.container_id}
+        sorting={sorting}
+        onSortingChange={setSorting}
       />
     </div>
   );
@@ -897,9 +927,7 @@ export default function ReportsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Reports"
-        subtitle={report
-          ? `${report.fleetSummary.totalContainers} containers over the last ${TIME_RANGES.find((r) => r.value === timeRange)?.label.toLowerCase() ?? timeRange}`
-          : undefined}
+        subtitle={report ? reportScopeSubtitle(report, timeRange) : undefined}
         actions={(
           <>
             <button
@@ -1217,20 +1245,38 @@ export default function ReportsPage() {
       )}
 
       {/* Right-sizing rules */}
-      {rightSizingGroups.length > 0 && (
+      {(rightSizingGroups.length > 0 || unevaluatedRules.length > 0) && (
         <SpotlightCard>
         <div className="rounded-lg border bg-card p-6 shadow-sm">
           <div className="flex flex-wrap items-center gap-2 mb-1">
             <Lightbulb className="h-5 w-5 text-amber-500" />
             <h3 className="text-lg font-semibold">Right-sizing rules</h3>
-            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900 dark:text-amber-200">
-              {rightSizingGroups.length}
+            {/*
+              * The panel also renders when nothing fired and the range merely
+              * ruled some rules out, so this pill has to say what it counts:
+              * an unlabelled "0" above "2 of 4 rules could not be evaluated"
+              * does not say which count is which.
+              */}
+            <span
+              className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900 dark:text-amber-200"
+              data-testid="right-sizing-fired-count"
+            >
+              {rightSizingGroups.length} fired
             </span>
           </div>
           <p className="mb-4 text-sm text-muted-foreground">
-            Fixed utilization thresholds, evaluated per container. One line per rule that fired —
-            every container a rule matched gets the same advice, so it is stated once.
+            Fixed utilization thresholds, evaluated per container.{' '}
+            {rightSizingGroups.length > 0
+              ? 'One line per rule that fired — every container a rule matched gets the same advice, so it is stated once.'
+              : 'None produced advice over this range.'}
           </p>
+          {rightSizingCoverage && unevaluatedRules.length > 0 && (
+            <p className="mb-4 text-xs text-muted-foreground" data-testid="right-sizing-coverage-note">
+              {unevaluatedRules.length} of {rightSizingCoverage.totalRules} rules could not be
+              evaluated: {unevaluatedRules.map(ruleCondition).join(', ')}.
+              {rightSizingCoverage.skippedReason && ` ${rightSizingCoverage.skippedReason}`}
+            </p>
+          )}
           <div className="space-y-3">
             {rightSizingGroups.map((group) => (
               <div key={group.id} className="rounded-md border p-3" data-testid="right-sizing-rule">

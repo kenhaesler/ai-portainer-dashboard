@@ -19,6 +19,8 @@ vi.mock('@/features/ai-intelligence/hooks/use-llm-chat', () => ({
 }));
 
 vi.mock('@/features/ai-intelligence/hooks/use-llm-models', () => ({
+  // Reachable by default; the unconfigured case has its own test.
+  useLlmStatus: vi.fn().mockReturnValue({ data: { available: true, disabledReason: null } }),
   useLlmModels: vi.fn().mockReturnValue({
     data: {
       models: [
@@ -123,10 +125,85 @@ vi.mock('@/shared/lib/api', () => ({
 
 import LlmAssistantPage, { suggestionsFromInsights, buildSuggestions } from './llm-assistant';
 import { useLlmChat } from '@/features/ai-intelligence/hooks/use-llm-chat';
-import { useLlmModels } from '@/features/ai-intelligence/hooks/use-llm-models';
+import { useLlmModels, useLlmStatus } from '@/features/ai-intelligence/hooks/use-llm-models';
 import { useAuth } from '@/providers/auth-provider';
 import { usePromptProfiles, useSwitchProfile } from '@/features/ai-intelligence/hooks/use-prompt-profiles';
 import { toast } from 'sonner';
+
+const UNCONFIGURED_REASON =
+  'No language model is reachable. Set LLM_API_URL and LLM_API_TOKEN, or configure the endpoint under Settings → AI & LLM.';
+
+const LLM_REACHABLE = {
+  data: { available: true, disabledReason: null },
+} as ReturnType<typeof useLlmStatus>;
+
+const LLM_UNCONFIGURED = {
+  data: { available: false, disabledReason: UNCONFIGURED_REASON },
+} as ReturnType<typeof useLlmStatus>;
+
+/**
+ * The status request itself failed. `useLlmStatus` is declared `retry: false`,
+ * so this leaves `data` at the same `undefined` an in-flight request has —
+ * `isError` is the only thing that separates the two.
+ */
+const LLM_STATUS_ERRORED = {
+  data: undefined,
+  isError: true,
+} as ReturnType<typeof useLlmStatus>;
+
+const EMPTY_CHAT = {
+  messages: [],
+  isStreaming: false,
+  currentResponse: '',
+  activeToolCalls: [],
+  statusMessage: null,
+  sendMessage: vi.fn(),
+  cancelGeneration: vi.fn(),
+  clearHistory: vi.fn(),
+} as unknown as ReturnType<typeof useLlmChat>;
+
+const TWO_TURN_TRANSCRIPT = [
+  { id: 'u1', role: 'user' as const, content: 'Hello', timestamp: new Date().toISOString() },
+  { id: 'a1', role: 'assistant' as const, content: 'Hi there.', timestamp: new Date().toISOString() },
+];
+
+const VIEWER = {
+  isAuthenticated: true,
+  username: 'viewer-user',
+  token: 'test-token',
+  role: 'viewer' as const,
+  login: vi.fn(),
+  loginWithToken: vi.fn(),
+  logout: vi.fn(),
+};
+
+const ADMIN = { ...VIEWER, username: 'admin', role: 'admin' as const };
+
+const PROFILES = [
+  { id: 'default', name: 'Default', description: 'Built-in profile', isBuiltIn: true, prompts: {}, createdAt: '', updatedAt: '' },
+  { id: 'custom-1', name: 'Security Focus', description: 'Security oriented', isBuiltIn: false, prompts: {}, createdAt: '', updatedAt: '' },
+];
+
+const DEFAULT_MODELS = {
+  data: { models: [{ name: 'llama3.2' }, { name: 'codellama' }], default: 'llama3.2' },
+} as ReturnType<typeof useLlmModels>;
+
+// One place that restores the mocks tests swap out, rather than each test
+// remembering to put the old value back. `vi.clearAllMocks()` in the describe
+// blocks below only clears call records, not return values, so a test that
+// logs an admin in with three profiles would otherwise leave the next test
+// looking at two comboboxes where it expects one.
+beforeEach(() => {
+  vi.mocked(useLlmStatus).mockReturnValue(LLM_REACHABLE);
+  vi.mocked(useLlmModels).mockReturnValue(DEFAULT_MODELS);
+  vi.mocked(useAuth).mockReturnValue(VIEWER);
+  vi.mocked(usePromptProfiles).mockReturnValue({ data: undefined } as ReturnType<typeof usePromptProfiles>);
+  // Empty transcript by default: a test that loads a conversation would
+  // otherwise leave the next test rendering it, and the transcript decides
+  // whether the unconfigured panel exists at all.
+  vi.mocked(useLlmChat).mockReturnValue(EMPTY_CHAT);
+  mockLlmSocket.connected = true;
+});
 
 function renderPage(initialEntry: string = '/assistant', state?: Record<string, unknown>) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -147,6 +224,140 @@ describe('LlmAssistantPage', () => {
   // The heading was "Welcome to Your AI Assistant" over "I have real-time
   // access to your entire Docker infrastructure" — a first-person capability
   // claim over six read-only tools.
+  it('says the model is unconfigured before the user spends a question finding out', () => {
+    // The page presented a model dropdown, a profile picker and four clickable
+    // suggestions on a deployment with no LLM reachable, and revealed the
+    // problem only as a red `Error:` pill after the message was sent. It could
+    // not tell you it was broken until you used it.
+    vi.mocked(useLlmStatus).mockReturnValue(LLM_UNCONFIGURED);
+
+    renderPage();
+
+    expect(screen.getByTestId('assistant-unconfigured')).toBeInTheDocument();
+    expect(screen.getByText(/Set LLM_API_URL and LLM_API_TOKEN/)).toBeInTheDocument();
+    // And the suggestions that cannot work are not offered.
+    expect(screen.queryByTestId('assistant-empty-state')).not.toBeInTheDocument();
+  });
+
+  it('disables every control that needs a model, and names the reason on each', () => {
+    // Stating the problem is not acting on it. The empty state said "No
+    // language model is configured" while the textarea, Send, the model
+    // dropdown and the profile picker all stayed live — so the operator could
+    // still type a question, send it into a void, and get back the same red
+    // `Error:` pill the empty state was added to prevent.
+    vi.mocked(useLlmStatus).mockReturnValue(LLM_UNCONFIGURED);
+    vi.mocked(useAuth).mockReturnValue(ADMIN);
+    vi.mocked(usePromptProfiles).mockReturnValue({
+      data: { profiles: PROFILES, activeProfileId: 'default' },
+    } as ReturnType<typeof usePromptProfiles>);
+    vi.mocked(useLlmModels).mockReturnValue({
+      data: { models: [{ name: 'llama3.2' }], default: 'llama3.2' },
+    } as ReturnType<typeof useLlmModels>);
+
+    renderPage();
+
+    const input = screen.getByPlaceholderText('Ask about your infrastructure...');
+    expect(input).toHaveProperty('disabled', true);
+    expect(input).toHaveAttribute('title', UNCONFIGURED_REASON);
+
+    const send = screen.getByRole('button', { name: /Send/i });
+    expect(send).toHaveProperty('disabled', true);
+    expect(send).toHaveAttribute('title', UNCONFIGURED_REASON);
+
+    // Profile picker first, then the model picker — the header's own order.
+    // Both carry the reason on their wrapper: ThemedSelect has no title prop.
+    const [profileSelect, modelSelect] = screen.getAllByRole('combobox');
+    expect(profileSelect).toHaveProperty('disabled', true);
+    expect(profileSelect.closest('[title]')).toHaveAttribute('title', UNCONFIGURED_REASON);
+    expect(modelSelect).toHaveProperty('disabled', true);
+    expect(modelSelect.closest('[title]')).toHaveAttribute('title', UNCONFIGURED_REASON);
+  });
+
+  it('prints the reason under the composer, where a disabled control cannot', () => {
+    // The unconfigured panel only renders on an empty transcript, so on a
+    // non-empty one the printed notice is the page's only visible explanation
+    // for the dead input and dead Send.
+    vi.mocked(useLlmStatus).mockReturnValue(LLM_UNCONFIGURED);
+    vi.mocked(useLlmChat).mockReturnValue({
+      ...EMPTY_CHAT,
+      messages: TWO_TURN_TRANSCRIPT,
+    } as unknown as ReturnType<typeof useLlmChat>);
+
+    renderPage();
+
+    // The transcript is rendered, so the panel is not.
+    expect(screen.getByText('Hello')).toBeInTheDocument();
+    expect(screen.queryByTestId('assistant-unconfigured')).not.toBeInTheDocument();
+
+    // The reason is on screen regardless.
+    expect(screen.getByTestId('assistant-composer-notice')).toHaveTextContent(UNCONFIGURED_REASON);
+    expect(screen.getByPlaceholderText('Ask about your infrastructure...')).toHaveProperty(
+      'disabled',
+      true,
+    );
+  });
+
+  it('states the reason once when the panel is already carrying it', () => {
+    // Same fact, one place at a time: with an empty transcript the panel is
+    // the explanation, and repeating it under the composer would put the same
+    // sentence on screen twice.
+    vi.mocked(useLlmStatus).mockReturnValue(LLM_UNCONFIGURED);
+
+    renderPage();
+
+    expect(screen.getByTestId('assistant-unconfigured')).toBeInTheDocument();
+    expect(screen.queryByTestId('assistant-composer-notice')).not.toBeInTheDocument();
+  });
+
+  it('reports a failed status check as a failed check, not as a missing model', () => {
+    // A failed request leaves `data` at the same `undefined` an in-flight one
+    // has, so reading only `data` folds the failure into "still loading".
+    // `isError` is what separates them.
+    //
+    // A failed probe of GET /api/llm/status is not evidence that the model is
+    // absent: chat runs over the LLM socket, not over that route. So nothing
+    // is disabled and no "not configured" claim is made — the page says only
+    // that it could not check.
+    vi.mocked(useLlmStatus).mockReturnValue(LLM_STATUS_ERRORED);
+
+    renderPage();
+
+    expect(screen.getByTestId('assistant-composer-notice')).toHaveTextContent(
+      /Could not check whether a language model is configured/,
+    );
+    expect(screen.queryByTestId('assistant-unconfigured')).not.toBeInTheDocument();
+    expect(screen.getByTestId('assistant-empty-state')).toBeInTheDocument();
+
+    const input = screen.getByPlaceholderText('Ask about your infrastructure...');
+    expect(input).toHaveProperty('disabled', false);
+    expect(input).not.toHaveAttribute('title');
+    expect(screen.getByRole('combobox')).toHaveProperty('disabled', false);
+  });
+
+  it('leaves the controls alone while the status request is still in flight', () => {
+    // Deliberately unlike /packet-capture, where the feature flag defaults to
+    // off so "not yet known" must be treated as not-yet-enabled. Here the
+    // reachable case is the common one, and blanking the model picker and
+    // deadening the textarea on every page load costs more than the moment of
+    // typing it would save. Only an explicit `available === false` counts.
+    //
+    // And nothing is said yet: in flight, the page has no finding to report,
+    // which is what separates this from the errored case above.
+    vi.mocked(useLlmStatus).mockReturnValue({ data: undefined } as ReturnType<typeof useLlmStatus>);
+    vi.mocked(useLlmModels).mockReturnValue({
+      data: { models: [{ name: 'llama3.2' }], default: 'llama3.2' },
+    } as ReturnType<typeof useLlmModels>);
+
+    renderPage();
+
+    const input = screen.getByPlaceholderText('Ask about your infrastructure...');
+    expect(input).toHaveProperty('disabled', false);
+    expect(input).not.toHaveAttribute('title');
+    expect(screen.getByRole('combobox')).toHaveProperty('disabled', false);
+    expect(screen.queryByTestId('assistant-unconfigured')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('assistant-composer-notice')).not.toBeInTheDocument();
+  });
+
   it('states the contract instead of welcoming the operator', () => {
     renderPage();
     expect(screen.queryByText(/Welcome to Your AI Assistant/)).toBeNull();

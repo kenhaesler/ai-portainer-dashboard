@@ -1057,15 +1057,18 @@ export default function TraceExplorerPage() {
           id="trace-source-guide"
           className="space-y-2 rounded-lg border bg-card p-4 text-xs text-muted-foreground"
         >
-          <p className="font-medium text-foreground">eBPF Quick Guide</p>
+          <p className="font-medium text-foreground">How these numbers are computed</p>
           <p>
-            `source: ebpf` means Beyla captured runtime network spans. `kind=server` is inbound traffic, `kind=client` is outbound calls, and `kind=internal` is in-process work. If endpoint/container is `unknown`, instrumentation still works but metadata enrichment is missing.
+            <code>source: ebpf</code> means Beyla captured runtime network spans.{' '}
+            <code>kind=server</code> is inbound traffic, <code>kind=client</code> is outbound
+            calls, and <code>kind=internal</code> is in-process work. If endpoint/container is{' '}
+            <code>unknown</code>, instrumentation still works but metadata enrichment is missing.
           </p>
           <p>
             Ingested in this window: {SOURCE_LABELS.ebpf} {sourceCounts.ebpf} · {SOURCE_LABELS.http} {sourceCounts.http} · {SOURCE_LABELS.scheduler} {sourceCounts.scheduler} · {SOURCE_LABELS.unknown} {sourceCounts.unknown}.
           </p>
           <p>
-            p95 and p50 are computed from the {durationStats.count} traces loaded into the list (up to 200), not from the full result set. Anomalous selects traces at least {ANOMALY_Z_THRESHOLD} standard deviations above that window&apos;s mean duration — the threshold the trace detector applies to latency p95 (`TRACES_ANOMALY_P95_ZSCORE`, default {ANOMALY_Z_THRESHOLD.toFixed(1)}).
+            p95 and p50 are computed from the {durationStats.count} traces loaded into the list (up to 200), not from the full result set. Anomalous selects traces at least {ANOMALY_Z_THRESHOLD} standard deviations above that window&apos;s mean duration — the threshold the trace detector applies to latency p95 (<code>TRACES_ANOMALY_P95_ZSCORE</code>, default {ANOMALY_Z_THRESHOLD.toFixed(1)}).
           </p>
         </div>
       )}
@@ -1652,13 +1655,23 @@ export default function TraceExplorerPage() {
         <div className="grid gap-6 lg:grid-cols-3">
           <div className="space-y-2">
             {/* Fields identical on every row are stated once here instead of
-                being reprinted on each card. */}
+                being reprinted on each card.
+
+                The count is "These N of M", not "All N": the list is capped at
+                200 while thousands can match, and over a 200-row page "All"
+                made a claim about the whole result set. An operator read
+                `container: unknown` here and concluded the fleet had no
+                container attribution at all. CLAUDE.md invariant 6 — a capped
+                list travels with its real count — applies to the sentence
+                describing the list just as much as to the list. */}
             {(constantFields.service
               || constantFields.source
               || constantFields.endpoint
               || constantFields.container) && (
               <p className="text-xs text-muted-foreground" data-testid="constant-fields">
-                All {filteredRows.length} traces:{' '}
+                {summary && summary.totalTraces > filteredRows.length
+                  ? `These ${filteredRows.length} of ${summary.totalTraces} traces:`
+                  : `All ${filteredRows.length} traces:`}{' '}
                 {[
                   constantFields.service,
                   constantFields.source && `source: ${SOURCE_LABELS[normalizeSource(constantFields.source)]}`,

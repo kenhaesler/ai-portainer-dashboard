@@ -212,6 +212,16 @@ function ModelBreakdownTable({
 /** Traces are fetched newest-first with this cap; the window narrows them. */
 const TRACE_LIMIT = 50;
 
+/**
+ * Error-rate threshold, in percent, matching the wording of the hover detail.
+ *
+ * `stats.errorRate` is a percentage (0-100). The comparison was written against
+ * `0.05` as though it were a fraction, so the "above the 5% error threshold"
+ * note actually fired at 0.05% — any window containing a single failed call out
+ * of two thousand. Named so the number and the sentence cannot drift apart.
+ */
+const ERROR_RATE_THRESHOLD_PCT = 5;
+
 export default function LlmObservabilityPage() {
   const [timeRange, setTimeRange] = useState<TimeRange>(24);
   const [privacyMode, setPrivacyMode] = useState(true);
@@ -267,6 +277,18 @@ export default function LlmObservabilityPage() {
 
   const lastUpdated = Math.max(statsUpdatedAt ?? 0, tracesUpdatedAt ?? 0) || null;
   const hasQueries = (stats?.totalQueries ?? 0) > 0;
+
+  // Token and latency aggregates cover successful calls only. When some calls
+  // failed, the tiles must say what they are an average *of* — otherwise a
+  // window where most calls errored reports a confident latency for a handful
+  // of survivors and reads as though it describes the whole window.
+  const hasSucceeded = (stats?.succeededQueries ?? 0) > 0;
+  const aggregateBasis =
+    (stats?.failedQueries ?? 0) > 0
+      ? `Over ${stats?.succeededQueries ?? 0} successful ${
+          (stats?.succeededQueries ?? 0) === 1 ? 'call' : 'calls'
+        } — ${stats?.failedQueries} failed and are excluded`
+      : undefined;
 
   return (
     <div className="space-y-6">
@@ -334,25 +356,35 @@ export default function LlmObservabilityPage() {
             value={stats?.totalQueries ?? 0}
             icon={<MessageSquare className="h-5 w-5" />}
           />
+          {/* An em dash, not a zero, when every call in the window failed:
+              "0 tokens / 0ms" is a measurement of work that never happened,
+              and 0ms in particular reads as an impossibly fast model. */}
           <KpiCard
             label="Total Tokens"
-            value={stats?.totalTokens ?? 0}
+            value={hasSucceeded ? (stats?.totalTokens ?? 0) : '—'}
             icon={<Hash className="h-5 w-5" />}
+            hoverDetail={aggregateBasis}
           />
           <KpiCard
             label="Avg Latency"
-            value={`${Math.round(stats?.avgLatencyMs ?? 0)}ms`}
+            value={hasSucceeded ? `${Math.round(stats?.avgLatencyMs ?? 0)}ms` : '—'}
             icon={<Zap className="h-5 w-5" />}
+            hoverDetail={aggregateBasis}
           />
           <KpiCard
             label="Error Rate"
-            value={`${((stats?.errorRate ?? 0) * 100).toFixed(1)}%`}
+            // `errorRate` arrives as a percentage (0-100). This multiplied it
+            // by 100 a second time, so a single failed call — 100% of a
+            // one-call window — rendered as "10000.0%".
+            value={`${(stats?.errorRate ?? 0).toFixed(1)}%`}
             icon={<AlertTriangle className="h-5 w-5" />}
             // No trend arrow: a down arrow on a rising error rate reads as an
             // improvement, and there is no direction in this payload anyway.
             hoverDetail={
-              (stats?.errorRate ?? 0) > 0.05
-                ? `${stats?.totalQueries ?? 0} calls, above the 5% error threshold`
+              // Compared against 5, not 0.05 — on a percentage the old
+              // threshold fired at 0.05% while the text claimed 5%.
+              (stats?.errorRate ?? 0) > ERROR_RATE_THRESHOLD_PCT
+                ? `${stats?.failedQueries ?? 0} of ${stats?.totalQueries ?? 0} calls failed, above the ${ERROR_RATE_THRESHOLD_PCT}% error threshold`
                 : undefined
             }
           />

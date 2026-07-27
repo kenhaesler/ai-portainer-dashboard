@@ -581,18 +581,37 @@ export async function tracesRoutes(fastify: FastifyInstance) {
       otelScopeVersion,
     }, 's');
 
+    // Two scopes, deliberately.
+    //
+    // `totalTraces` and `avgDuration` describe *traces*, so they are computed
+    // over root spans only — one root per trace, and a root span's duration is
+    // the trace's duration.
+    //
+    // `services` and `errorRate` describe the *window*, and restricting them
+    // to root spans made the header lie: it read "1 service · 0.6% errors"
+    // while the Service Map on the same page showed five services, including
+    // `llm-service` at 100% errors. A service that is only ever called by
+    // another service owns no root span, so the summary counted neither it nor
+    // its failures — the header hid the only fully-failing service on screen.
+    const allSpansWhere = buildWhere(conditions);
     conditions.push('s.parent_span_id IS NULL');
     const where = buildWhere(conditions);
 
-    const { summary, bySource } = await withAggregateTimeout(db, async (txDb) => {
-      const summary = await txDb.queryOne<{ totalTraces: number; avgDuration: number | null; errorRate: number | null; services: number }>(`
+    const { summary, spanScope, bySource } = await withAggregateTimeout(db, async (txDb) => {
+      const summary = await txDb.queryOne<{ totalTraces: number; avgDuration: number | null }>(`
         SELECT
           COUNT(DISTINCT s.trace_id)::integer as "totalTraces",
-          AVG(s.duration_ms)::float as "avgDuration",
+          AVG(s.duration_ms)::float as "avgDuration"
+        FROM spans s
+        ${where}
+      `, [...params]);
+
+      const spanScope = await txDb.queryOne<{ errorRate: number | null; services: number }>(`
+        SELECT
           (SUM(CASE WHEN s.status = 'error' THEN 1 ELSE 0 END)::float / NULLIF(COUNT(*), 0)) as "errorRate",
           COUNT(DISTINCT s.service_name)::integer as services
         FROM spans s
-        ${where}
+        ${allSpansWhere}
       `, [...params]);
 
       const bySource = await txDb.query<{ source: string; total: number }>(`
@@ -603,7 +622,7 @@ export async function tracesRoutes(fastify: FastifyInstance) {
         GROUP BY COALESCE(NULLIF(s.trace_source, ''), 'unknown')
       `, [...params]);
 
-      return { summary, bySource };
+      return { summary, spanScope, bySource };
     });
 
     const sourceCounts = {
@@ -624,8 +643,10 @@ export async function tracesRoutes(fastify: FastifyInstance) {
     return {
       totalTraces: summary?.totalTraces ?? 0,
       avgDuration: Math.round((summary?.avgDuration ?? 0) * 100) / 100,
-      errorRate: Math.round((summary?.errorRate ?? 0) * 10000) / 10000,
-      services: summary?.services ?? 0,
+      // Span-scoped, so a service reached only as a callee is counted and its
+      // failures reach the header.
+      errorRate: Math.round((spanScope?.errorRate ?? 0) * 10000) / 10000,
+      services: spanScope?.services ?? 0,
       sourceCounts,
     };
   });

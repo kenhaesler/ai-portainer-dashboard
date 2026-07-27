@@ -173,7 +173,10 @@ export default function HomePage() {
                     value: healthStats?.stopped ?? 0,
                     // No link at zero: a chevron into an empty filtered table
                     // is the dead end this was meant to fix.
-                    to: (healthStats?.stopped ?? 0) > 0 ? '/workloads?state=exited' : undefined,
+                    // `state=stopped`, not `state=exited`: the explorer filters
+                    // on the contract vocabulary, so the old URL landed on
+                    // "No results." and "0 containers across 0 endpoints".
+                    to: (healthStats?.stopped ?? 0) > 0 ? '/workloads?state=stopped' : undefined,
                   },
                   {
                     icon: ShieldAlert,

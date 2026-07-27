@@ -19,7 +19,7 @@ import {
   DEFAULT_LOGIN_ICON,
   type Theme,
 } from '@/stores/theme-store';
-import { ICON_SETS } from '@/shared/components/icons/icon-sets';
+import { AppIconSection } from './app-icon-section';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { cn } from '@/shared/lib/utils';
 import { toast } from 'sonner';
@@ -63,7 +63,7 @@ export function AppearanceTab() {
     setFaviconIcon(DEFAULT_FAVICON_ICON);
     setSidebarIcon(DEFAULT_SIDEBAR_ICON);
     setLoginIcon(DEFAULT_LOGIN_ICON);
-    toast.success('Applied recommended appearance preset');
+    toast.success('Applied the recommended look — theme, background and app icon reset');
   }, [setDashboardBackground, setIconTheme, setTheme, setToggleThemes, setFaviconIcon, setSidebarIcon, setLoginIcon]);
 
   return (
@@ -80,7 +80,8 @@ export function AppearanceTab() {
           <div>
             <p className="text-sm font-medium">Recommended Look</p>
             <p className="text-xs text-muted-foreground">
-              Glass Light + Mesh Particles with Light/Dark glass toggle.
+              Glass Light + Mesh Particles, the Light/Dark glass toggle, and the Brain app icon
+              on all three surfaces.
             </p>
           </div>
           <button
@@ -205,134 +206,7 @@ export function AppearanceTab() {
           </div>
         </div>
 
-        <div className="mt-6 border-t border-border pt-6">
-          <h3 className="text-sm font-medium mb-1">Favicon Icon</h3>
-          <p className="text-sm text-muted-foreground mb-3">
-            Choose which icon appears in the browser tab.
-          </p>
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-            {ICON_SETS.map((icon) => (
-              <button
-                key={icon.id}
-                onClick={() => setFaviconIcon(icon.id)}
-                className={cn(
-                  'flex flex-col items-center gap-2 p-3 rounded-lg border text-center transition-colors',
-                  faviconIcon === icon.id
-                    ? 'border-primary bg-primary/10'
-                    : 'border-border hover:border-primary/50 hover:bg-muted/50'
-                )}
-              >
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-green-500">
-                  <svg viewBox={icon.viewBox} className="h-6 w-6">
-                    {icon.paths.map((p, i) => (
-                      <path
-                        key={i}
-                        d={p.d}
-                        fill={p.fill === 'currentColor' ? '#fff' : (p.fill ?? 'none')}
-                        stroke={p.stroke === 'currentColor' ? '#fff' : (p.stroke ?? 'none')}
-                        strokeWidth={p.strokeWidth}
-                        strokeLinecap={p.strokeLinecap}
-                        strokeLinejoin={p.strokeLinejoin}
-                      />
-                    ))}
-                  </svg>
-                </div>
-                <div className="min-w-0">
-                  <div className="text-xs font-medium truncate">{icon.label}</div>
-                  <div className="text-[10px] text-muted-foreground truncate">{icon.description}</div>
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="mt-6 border-t border-border pt-6">
-          <h3 className="text-sm font-medium mb-1">Sidebar Logo</h3>
-          <p className="text-sm text-muted-foreground mb-3">
-            Choose which icon appears in the sidebar brand area.
-          </p>
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-            {ICON_SETS.map((icon) => (
-              <button
-                key={icon.id}
-                onClick={() => setSidebarIcon(icon.id)}
-                className={cn(
-                  'flex flex-col items-center gap-2 p-3 rounded-lg border text-center transition-colors',
-                  sidebarIcon === icon.id
-                    ? 'border-primary bg-primary/10'
-                    : 'border-border hover:border-primary/50 hover:bg-muted/50'
-                )}
-              >
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
-                  <svg viewBox={icon.viewBox} className="h-5 w-5 text-foreground">
-                    {icon.paths.map((p, i) => (
-                      <path
-                        key={i}
-                        d={p.d}
-                        fill={p.fill ?? 'none'}
-                        stroke={p.stroke ?? 'none'}
-                        strokeWidth={p.strokeWidth}
-                        strokeLinecap={p.strokeLinecap}
-                        strokeLinejoin={p.strokeLinejoin}
-                      />
-                    ))}
-                  </svg>
-                </div>
-                <div className="min-w-0">
-                  <div className="text-xs font-medium truncate">{icon.label}</div>
-                  <div className="text-[10px] text-muted-foreground truncate">{icon.description}</div>
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="mt-6 border-t border-border pt-6">
-          <h3 className="text-sm font-medium mb-1">Login Logo</h3>
-          <p className="text-sm text-muted-foreground mb-3">
-            Choose which icon appears on the login page with gradient animation.
-          </p>
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-            {ICON_SETS.map((icon) => (
-              <button
-                key={icon.id}
-                onClick={() => setLoginIcon(icon.id)}
-                className={cn(
-                  'flex flex-col items-center gap-2 p-3 rounded-lg border text-center transition-colors',
-                  loginIcon === icon.id
-                    ? 'border-primary bg-primary/10'
-                    : 'border-border hover:border-primary/50 hover:bg-muted/50'
-                )}
-              >
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-card">
-                  <svg viewBox={icon.viewBox} className="h-6 w-6">
-                    <defs>
-                      <linearGradient id={`login-preview-${icon.id}`} x1="0%" y1="0%" x2="100%" y2="100%">
-                        <stop offset="0%" stopColor="oklch(72% 0.14 244)" />
-                        <stop offset="100%" stopColor="oklch(78% 0.18 158)" />
-                      </linearGradient>
-                    </defs>
-                    {icon.paths.map((p, i) => (
-                      <path
-                        key={i}
-                        d={p.d}
-                        fill={p.fill === 'currentColor' ? `url(#login-preview-${icon.id})` : (p.fill ?? 'none')}
-                        stroke={p.stroke === 'currentColor' ? `url(#login-preview-${icon.id})` : (p.stroke ?? 'none')}
-                        strokeWidth={p.strokeWidth}
-                        strokeLinecap={p.strokeLinecap}
-                        strokeLinejoin={p.strokeLinejoin}
-                      />
-                    ))}
-                  </svg>
-                </div>
-                <div className="min-w-0">
-                  <div className="text-xs font-medium truncate">{icon.label}</div>
-                  <div className="text-[10px] text-muted-foreground truncate">{icon.description}</div>
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
+        <AppIconSection />
       </div>
     </div>
   );

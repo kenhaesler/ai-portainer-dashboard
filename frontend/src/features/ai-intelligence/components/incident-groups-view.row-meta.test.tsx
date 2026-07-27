@@ -42,7 +42,9 @@ describe('IncidentGroupsView — row meta (Phase A)', () => {
       isLoading: false,
     });
     render(wrap(<IncidentGroupsView />));
-    expect(screen.getByText('ML')).toBeInTheDocument();
+    // The row chip and the insight feed below it now read the same map.
+    expect(screen.getByText('Metric anomaly')).toBeInTheDocument();
+    expect(screen.queryByText('ML')).not.toBeInTheDocument();
   });
 
   it('renders the Threshold detection-method label for anomaly:threshold:* signatures', () => {

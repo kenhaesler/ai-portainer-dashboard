@@ -53,7 +53,7 @@ describe('SecurityTab', () => {
 
     expect(screen.getByText('Public Status Page')).toBeInTheDocument();
     const row = screen.getByTestId('setting-row-status.page.enabled');
-    expect(row).toHaveAttribute('data-risk', 'security');
+    expect(row).toHaveAttribute('data-risk', 'danger');
     expect(row).toHaveTextContent(/no sign-in/i);
     await waitFor(() => expect(screen.getByTestId('users-panel')).toBeInTheDocument());
   });
@@ -68,8 +68,8 @@ describe('SecurityTab', () => {
     renderTab();
 
     const row = screen.getByTestId('setting-row-oidc.allow_insecure_transport');
-    expect(row).toHaveAttribute('data-risk', 'security');
-    expect(within(row).getByText('Security')).toBeInTheDocument();
+    expect(row).toHaveAttribute('data-risk', 'danger');
+    expect(within(row).getByText('Weakens security')).toBeInTheDocument();
     expect(row).toHaveTextContent(/capture and replay them/i);
     // The toggle still defaults off — presentation changed, the default did not.
     expect(within(row).getByRole('switch')).toHaveAttribute('aria-checked', 'false');

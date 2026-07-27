@@ -177,7 +177,7 @@ describe('ContainerComparisonView', () => {
   it('renders the summary matrix on the shared DataTable with one column per container', () => {
     const containers = [
       makeContainer({ id: 'c1', name: 'web-app', state: 'running', image: 'nginx:1.25' }),
-      makeContainer({ id: 'c2', name: 'api', state: 'exited', image: 'node:20' }),
+      makeContainer({ id: 'c2', name: 'api', state: 'stopped', image: 'node:20' }),
     ];
 
     render(
@@ -206,7 +206,7 @@ describe('ContainerComparisonView', () => {
     // Attribute rows transposed onto the matrix, with per-container values.
     expect(screen.getByRole('cell', { name: 'State' })).toBeInTheDocument();
     expect(screen.getByText('running')).toBeInTheDocument();
-    expect(screen.getByText('exited')).toBeInTheDocument();
+    expect(screen.getByText('stopped')).toBeInTheDocument();
     expect(screen.getByText('nginx:1.25')).toBeInTheDocument();
     expect(screen.getByText('node:20')).toBeInTheDocument();
   });

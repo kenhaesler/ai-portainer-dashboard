@@ -3,8 +3,14 @@ import type { Insight } from '@dashboard/core/models/monitoring.js';
 type DerivableInsight = Pick<Insight, 'category' | 'metric_type' | 'detection_method' | 'title'>;
 
 const SIGNATURE_LABELS: Record<string, string> = {
-  'anomaly:ml-anomaly:cpu': 'Anomalous CPU usage (ML)',
-  'anomaly:ml-anomaly:memory': 'Anomalous memory usage (ML)',
+  // No "(ML)" qualifier. The `ml-anomaly` detector covers both the adaptive
+  // z-score path and the isolation-forest path, and the rows it produces
+  // describe themselves as `method: adaptive` — a moving average with a
+  // threshold. The group header claiming ML while the row said adaptive, and
+  // the insight feed below badging the same detector "Metric anomaly", was the
+  // single most-repeated overclaim in the UI.
+  'anomaly:ml-anomaly:cpu': 'Anomalous CPU usage',
+  'anomaly:ml-anomaly:memory': 'Anomalous memory usage',
   'anomaly:threshold:cpu': 'High CPU usage',
   'anomaly:threshold:memory': 'High memory usage',
   'predictive:prediction:cpu': 'Predicted CPU exhaustion',

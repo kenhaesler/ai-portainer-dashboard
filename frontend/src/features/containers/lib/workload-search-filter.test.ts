@@ -62,7 +62,7 @@ describe('filterContainers', () => {
   const containers = [
     makeContainer({ id: 'c1', name: 'nginx-proxy-1', image: 'nginx:1.25', state: 'running', status: 'Up 1 hour', endpointName: 'prod', labels: { 'com.docker.compose.project': 'proxy', app: 'nginx' } }),
     makeContainer({ id: 'c2', name: 'postgres-db-1', image: 'postgres:15', state: 'running', status: 'Up 2 hours', endpointName: 'prod', labels: { 'com.docker.compose.project': 'db' } }),
-    makeContainer({ id: 'c3', name: 'redis-cache-1', image: 'redis:alpine', state: 'exited', status: 'Exited (0)', endpointName: 'staging', labels: {}, ports: [{ private: 6379, public: 6379, type: 'tcp' }] }),
+    makeContainer({ id: 'c3', name: 'redis-cache-1', image: 'redis:alpine', state: 'stopped', status: 'Exited (0)', endpointName: 'staging', labels: {}, ports: [{ private: 6379, public: 6379, type: 'tcp' }] }),
     makeContainer({ id: 'c4', name: 'traefik-proxy-1', image: 'traefik:v3', state: 'running', status: 'Up 3 days', endpointName: 'staging', labels: { 'com.docker.compose.project': 'traefik' } }),
   ];
   const knownStackNames = ['proxy', 'db', 'traefik'];
@@ -83,7 +83,7 @@ describe('filterContainers', () => {
   });
 
   it('free text matches by state', () => {
-    const result = filterContainers(containers, 'exited', knownStackNames);
+    const result = filterContainers(containers, 'stopped', knownStackNames);
     expect(result.map((c) => c.id)).toEqual(['c3']);
   });
 
@@ -114,8 +114,8 @@ describe('filterContainers', () => {
     expect(result.map((c) => c.id)).not.toContain('c3');
   });
 
-  it('state:exited only matches exited containers', () => {
-    const result = filterContainers(containers, 'state:exited', knownStackNames);
+  it('state:stopped only matches stopped containers', () => {
+    const result = filterContainers(containers, 'state:stopped', knownStackNames);
     expect(result.map((c) => c.id)).toEqual(['c3']);
   });
 
@@ -155,7 +155,7 @@ describe('filterContainers', () => {
   });
 
   it('multiple tokens AND with no match returns empty', () => {
-    const result = filterContainers(containers, 'state:exited image:nginx', knownStackNames);
+    const result = filterContainers(containers, 'state:stopped image:nginx', knownStackNames);
     expect(result).toHaveLength(0);
   });
 
@@ -183,7 +183,7 @@ describe('deriveSearchChips', () => {
   const fleet = [
     makeContainer({ id: 'c1', name: 'nginx-proxy-1', image: 'nginx:1.25', state: 'running', endpointName: 'prod', labels: { 'com.docker.compose.project': 'proxy' } }),
     makeContainer({ id: 'c2', name: 'postgres-db-1', image: 'postgres:15', state: 'running', endpointName: 'prod', labels: { 'com.docker.compose.project': 'db' } }),
-    makeContainer({ id: 'c3', name: 'redis-cache-1', image: 'redis:alpine', state: 'exited', endpointName: 'staging', labels: {} }),
+    makeContainer({ id: 'c3', name: 'redis-cache-1', image: 'redis:alpine', state: 'stopped', endpointName: 'staging', labels: {} }),
     makeContainer({ id: 'c4', name: 'traefik-proxy-1', image: 'traefik:v3', state: 'running', endpointName: 'staging', labels: { 'com.docker.compose.project': 'traefik' } }),
   ];
 
@@ -202,8 +202,8 @@ describe('deriveSearchChips', () => {
   });
 
   it('suggests the rarest state, not the majority one', () => {
-    // 3 running / 1 exited — "state:running" would return almost everything.
-    expect(deriveSearchChips(fleet, knownStackNames)).toContain('state:exited');
+    // 3 running / 1 stopped — "state:running" would return almost everything.
+    expect(deriveSearchChips(fleet, knownStackNames)).toContain('state:stopped');
   });
 
   it('omits the state chip when every container shares one state', () => {

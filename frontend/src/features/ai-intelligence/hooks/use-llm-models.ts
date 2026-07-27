@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/shared/lib/api';
 import { useResource } from '@/shared/hooks/use-resource';
 import { STALE_TIMES } from '@/shared/lib/query-constants';
@@ -24,6 +24,34 @@ export interface LlmTestConnectionResponse {
   ok: boolean;
   models?: string[];
   error?: string;
+}
+
+export interface LlmStatus {
+  available: boolean;
+  disabledReason: string | null;
+}
+
+/**
+ * Whether a language model is actually reachable.
+ *
+ * The Assistant offered a model dropdown, a profile picker and four clickable
+ * suggested questions on a deployment with no LLM configured, and revealed the
+ * problem only after the user sent a message and got a red `Error:` pill — the
+ * page could not tell you it was broken until you used it.
+ *
+ * `retry: false`, so a failed request is not retried and leaves `data` at the
+ * same `undefined` an in-flight request has. Consumers that gate an
+ * affordance on this must read `isError` as well: without it, "the check
+ * failed" is indistinguishable from "the check has not finished", and only
+ * one of those is bounded by a round trip.
+ */
+export function useLlmStatus() {
+  return useQuery<LlmStatus>({
+    queryKey: ['llm', 'status'],
+    queryFn: () => api.get<LlmStatus>('/api/llm/status'),
+    staleTime: 30_000,
+    retry: false,
+  });
 }
 
 export function useLlmModels(host?: string) {

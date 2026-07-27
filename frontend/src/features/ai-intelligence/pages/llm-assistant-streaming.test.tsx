@@ -29,6 +29,7 @@ vi.mock('@/features/ai-intelligence/hooks/use-llm-chat', () => ({
 
 vi.mock('@/features/ai-intelligence/hooks/use-llm-models', () => ({
   useLlmModels: vi.fn().mockReturnValue({ data: undefined }),
+  useLlmStatus: vi.fn().mockReturnValue({ data: { available: true, disabledReason: null } }),
 }));
 
 vi.mock('@/features/ai-intelligence/hooks/use-mcp', () => ({

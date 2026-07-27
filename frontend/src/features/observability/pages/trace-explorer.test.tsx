@@ -286,6 +286,35 @@ describe('TraceExplorerPage', () => {
     expect(mockUseTraces.mock.calls.at(-1)?.[0]).toMatchObject({ status: undefined });
   });
 
+  it('carries the real total when the visible list is capped', () => {
+    // The list is capped at 200 while thousands can match, and this line read
+    // "All {visible} traces:". Over a 200-row page that is a claim about the
+    // whole result set — an operator reading `container: unknown` here
+    // concluded the fleet had no container attribution at all.
+    mockUseTraceSummary.mockReturnValue({
+      data: {
+        totalTraces: 3982,
+        avgDuration: 85,
+        errorRate: 0.2,
+        services: 1,
+        sourceCounts: { http: 3982, ebpf: 0, scheduler: 0, unknown: 0 },
+      },
+    });
+
+    renderWithRouter(<TraceExplorerPage />);
+
+    const constants = screen.getByTestId('constant-fields');
+    expect(constants.textContent).toMatch(/These 15 of 3982 traces:/);
+    expect(constants.textContent).not.toMatch(/All 15 traces/);
+  });
+
+  it('still says "All" when the visible list really is the whole result set', () => {
+    // The fixture's 15 rows are all 15 matches, so no qualifier is warranted.
+    renderWithRouter(<TraceExplorerPage />);
+
+    expect(screen.getByTestId('constant-fields').textContent).toMatch(/All 15 traces:/);
+  });
+
   it('states fields constant across the result set once, not on every card', () => {
     renderWithRouter(<TraceExplorerPage />);
 
@@ -315,14 +344,14 @@ describe('TraceExplorerPage', () => {
     expect(within(screen.getByTestId('trace-list')).getAllByText('OPTIONS *')).toHaveLength(3);
   });
 
-  it('keeps the eBPF quick guide, behind the header help toggle', () => {
+  it('keeps the computation guide, behind the header help toggle', () => {
     renderWithRouter(<TraceExplorerPage />);
 
-    expect(screen.queryByText('eBPF Quick Guide')).toBeNull();
+    expect(screen.queryByText('How these numbers are computed')).toBeNull();
 
     fireEvent.click(screen.getByTestId('source-guide-toggle'));
 
-    expect(screen.getByText('eBPF Quick Guide')).toBeInTheDocument();
+    expect(screen.getByText('How these numbers are computed')).toBeInTheDocument();
     expect(screen.getByText(/Beyla captured runtime network spans/)).toBeInTheDocument();
     // The source counters moved here rather than costing a strip above the list.
     expect(screen.getByText(/Ingested in this window/)).toBeInTheDocument();

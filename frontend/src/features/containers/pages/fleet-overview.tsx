@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { type ColumnDef } from '@tanstack/react-table';
 import * as Tabs from '@radix-ui/react-tabs';
@@ -139,6 +139,12 @@ function firstNameSegment(name: string | undefined): string | null {
 /** Hostname of an endpoint URL, for a `url:` chip that resolves to real rows. */
 function firstUrlHost(url: string | undefined): string | null {
   if (!url) return null;
+  // Only TCP-style endpoints have a hostname worth offering as a search
+  // example. A local socket (`unix:///var/run/docker.sock`) has none, and
+  // stripping the scheme then splitting on [/:] returned its first path
+  // segment — so the page offered `url:var` as a suggested filter: a parse
+  // artefact rendered as a clickable button.
+  if (/^unix:|^npipe:/i.test(url)) return null;
   const withoutScheme = url.replace(/^[a-z0-9+.-]+:\/\//i, '');
   const host = withoutScheme.split(/[/:]/).find(Boolean);
   return host ?? null;
@@ -381,10 +387,6 @@ export default function InfrastructurePage() {
   const endpointSearchQuery = searchParams.get('endpointSearch') ?? '';
   const stackSearchQuery = searchParams.get('stackSearch') ?? '';
   const k8sSearchQuery = searchParams.get('k8sSearch') ?? '';
-
-  // Autofocus gate: focus the Fleet search only on first mount, not on every re-entry
-  const fleetSearchAutoFocusedRef = useRef(false);
-  const markFleetSearchAutoFocused = useCallback(() => { fleetSearchAutoFocusedRef.current = true; }, []);
 
   // Shared data — single hook call each, no duplicate requests
   const {
@@ -1129,10 +1131,13 @@ export default function InfrastructurePage() {
                       placeholder="Search endpoints by name, status, type, or URL"
                       label="Search endpoints"
                       examples={endpointSearchExamples}
-                      // Focus the search when the Fleet tab first mounts; gate with ref
-                      // so re-mounting (tab switch) does not re-steal focus.
-                      autoFocus={!fleetSearchAutoFocusedRef.current}
-                      onAutoFocused={markFleetSearchAutoFocused}
+                      // No autofocus. Stealing focus into the search box on
+                      // mount put a keyboard user's first Tab on a filter
+                      // suggestion — past the <h1> and the entire tab bar,
+                      // which then never appeared in the first 22 tab stops —
+                      // and popped the software keyboard over the one card of
+                      // content on a phone. The skip link in the app shell is
+                      // the supported way to reach content quickly.
                       initialValue={endpointSearchQuery}
                       showCount={false}
                     />
