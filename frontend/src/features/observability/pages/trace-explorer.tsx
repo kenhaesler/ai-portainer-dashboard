@@ -1652,13 +1652,23 @@ export default function TraceExplorerPage() {
         <div className="grid gap-6 lg:grid-cols-3">
           <div className="space-y-2">
             {/* Fields identical on every row are stated once here instead of
-                being reprinted on each card. */}
+                being reprinted on each card.
+
+                The count is "These N of M", not "All N": the list is capped at
+                200 while thousands can match, and over a 200-row page "All"
+                made a claim about the whole result set. An operator read
+                `container: unknown` here and concluded the fleet had no
+                container attribution at all. CLAUDE.md invariant 6 — a capped
+                list travels with its real count — applies to the sentence
+                describing the list just as much as to the list. */}
             {(constantFields.service
               || constantFields.source
               || constantFields.endpoint
               || constantFields.container) && (
               <p className="text-xs text-muted-foreground" data-testid="constant-fields">
-                All {filteredRows.length} traces:{' '}
+                {summary && summary.totalTraces > filteredRows.length
+                  ? `These ${filteredRows.length} of ${summary.totalTraces} traces:`
+                  : `All ${filteredRows.length} traces:`}{' '}
                 {[
                   constantFields.service,
                   constantFields.source && `source: ${SOURCE_LABELS[normalizeSource(constantFields.source)]}`,

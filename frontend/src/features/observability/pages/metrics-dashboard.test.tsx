@@ -972,7 +972,7 @@ describe('MetricsDashboardPage', () => {
 
       renderPage();
       expect(
-        screen.getByText('No series has a projected breach time, so rank orders by trend, then by current value.'),
+        screen.getByText('No series has a projected breach time the fit supports, so rank orders by trend, then by current value.'),
       ).toBeInTheDocument();
     });
 

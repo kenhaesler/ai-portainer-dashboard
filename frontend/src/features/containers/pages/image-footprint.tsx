@@ -295,10 +295,23 @@ export default function ImageFootprintPage() {
 
         {!showSkeleton && images && (
           <div className="flex items-center gap-6 text-sm">
+            {/* Not "disk usage". This is the sum of per-image sizes, and Docker
+                reports each image's fully-expanded size — so every shared layer
+                is counted once per image that uses it. The table proves it on
+                screen: `library/alpine latest 13 MB` and `library/alpine 3.22
+                12.8 MB` are one ~13 MB blob billed as 25.8 MB. Real disk usage
+                here is roughly half the figure. Docker's /system/df returns the
+                true LayersSize and Reclaimable; until this reads that, the
+                label has to say what the number actually is. */}
             <div className="flex items-center gap-2">
               <HardDrive className="h-4 w-4 text-blue-500" />
               <span className="font-medium">{formatBytes(stats.totalSize)}</span>
-              <span className="text-muted-foreground">total disk usage</span>
+              <span
+                className="text-muted-foreground"
+                title="Sum of per-image sizes. Docker reports each image fully expanded, so layers shared between images are counted once per image — this is larger than the space actually used on disk."
+              >
+                total image size
+              </span>
             </div>
             <div className="flex items-center gap-2">
               <Layers className="h-4 w-4 text-emerald-500" />

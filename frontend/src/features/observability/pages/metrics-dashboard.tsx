@@ -169,12 +169,28 @@ function exportToCSV(data: Array<{ timestamp: string; value: number }>, filename
 
 type ForecastRiskLevel = 'critical' | 'warning' | 'healthy';
 
-function getForecastRiskLevel(forecast: CapacityForecast): ForecastRiskLevel {
-  if (forecast.timeToThreshold !== null && forecast.timeToThreshold <= 2) {
+/**
+ * An ETA is only shown when the fit behind it supports one.
+ *
+ * `capacity-forecaster.ts` computes `(90 - currentValue) / slope` from an OLS
+ * fit with no goodness-of-fit gate, so a weak fit over a past spike yields a
+ * hard "breach in ~1h" — the live fleet's top-ranked risk was a container at
+ * **0.0% CPU** projected to breach within the hour. The backend already
+ * returns `confidence` and `r_squared`; the fleet table rendered neither, so
+ * the two fields that would let an operator discount the row were dropped at
+ * the render boundary while the ETA they qualify was kept.
+ */
+export function hasReportableEta(forecast: Pick<CapacityForecast, 'timeToThreshold' | 'confidence'>): boolean {
+  return forecast.timeToThreshold !== null && forecast.confidence !== 'low';
+}
+
+export function getForecastRiskLevel(forecast: CapacityForecast): ForecastRiskLevel {
+  const eta = hasReportableEta(forecast) ? forecast.timeToThreshold : null;
+  if (eta !== null && eta <= 2) {
     return 'critical';
   }
   if (
-    (forecast.timeToThreshold !== null && forecast.timeToThreshold <= 6)
+    (eta !== null && eta <= 6)
     || (forecast.trend === 'increasing' && forecast.currentValue >= 75)
   ) {
     return 'warning';
@@ -182,14 +198,35 @@ function getForecastRiskLevel(forecast: CapacityForecast): ForecastRiskLevel {
   return 'healthy';
 }
 
-function getForecastRiskScore(forecast: CapacityForecast): number {
-  if (forecast.timeToThreshold !== null) {
-    return Math.max(0, 200 - forecast.timeToThreshold * 20);
+/**
+ * Rank for the "Risk-ranked" fleet table.
+ *
+ * The two branches previously used incompatible scales: `200 - eta * 20` for
+ * rows with an ETA (120 at 4h) against `120 + currentValue` for rows without
+ * (130.7 for a healthy container idling at 10.7%). Every projected breach more
+ * than four hours out was therefore buried below rows the same table labelled
+ * Healthy — a table that inverted its own severity column. The old ETA branch
+ * also clamped at 0, so a 10h breach sank beneath everything.
+ *
+ * The bands below cannot overlap: any row with a reportable ETA outranks every
+ * row without one, and within each band sooner/larger ranks higher.
+ */
+const ETA_BAND_FLOOR = 500;
+const MAX_RANKED_ETA_HOURS = 24;
+
+export function getForecastRiskScore(forecast: CapacityForecast): number {
+  if (hasReportableEta(forecast)) {
+    const hours = Math.min(Math.max(forecast.timeToThreshold!, 0), MAX_RANKED_ETA_HOURS);
+    // 1000 down to 760 — always clear of the no-ETA band below.
+    return 1000 - (hours / MAX_RANKED_ETA_HOURS) * 240;
   }
-  if (forecast.trend === 'increasing') return 120 + forecast.currentValue;
-  if (forecast.trend === 'stable') return 50 + forecast.currentValue / 2;
-  return forecast.currentValue / 2;
+  // Ceiling here is 400, comfortably under ETA_BAND_FLOOR.
+  if (forecast.trend === 'increasing') return 300 + Math.min(forecast.currentValue, 100);
+  if (forecast.trend === 'stable') return 150 + Math.min(forecast.currentValue, 100) / 2;
+  return Math.min(forecast.currentValue, 100) / 2;
 }
+
+export { ETA_BAND_FLOOR as FORECAST_ETA_BAND_FLOOR };
 
 const RISK_BADGE_STYLES: Record<ForecastRiskLevel, string> = {
   critical: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
@@ -530,8 +567,14 @@ export default function MetricsDashboardPage() {
   // sitting at 19.5% memory ended up ranked first.
   const forecastRankBasisNote = useMemo(() => {
     if (rankedForecasts.length === 0) return null;
-    return rankedForecasts.every((forecast) => forecast.timeToThreshold === null)
-      ? 'No series has a projected breach time, so rank orders by trend, then by current value.'
+    if (rankedForecasts.every((forecast) => !hasReportableEta(forecast))) {
+      return 'No series has a projected breach time the fit supports, so rank orders by trend, then by current value.';
+    }
+    const weak = rankedForecasts.filter(
+      (forecast) => forecast.timeToThreshold !== null && !hasReportableEta(forecast),
+    ).length;
+    return weak > 0
+      ? `${weak} projected breach${weak === 1 ? '' : 'es'} came from a low-confidence fit and are ranked as unprojected.`
       : null;
   }, [rankedForecasts]);
 
@@ -626,10 +669,30 @@ export default function MetricsDashboardPage() {
     {
       accessorKey: 'timeToThreshold',
       header: 'Threshold ETA',
-      cell: ({ getValue }) => {
-        const eta = getValue<number | null>();
-        return eta !== null ? `~${eta}h` : 'No breach predicted';
+      cell: ({ row }) => {
+        // A low-confidence fit produces an ETA the data does not support —
+        // the fleet's top-ranked risk was a container at 0.0% CPU projected
+        // to breach in an hour. Say the fit is too weak rather than printing
+        // an hour count, and never say "no breach predicted" when the truth
+        // is that nothing could be predicted at all.
+        if (row.original.timeToThreshold === null) return 'No breach predicted';
+        if (!hasReportableEta(row.original)) {
+          return <span className="text-muted-foreground">Fit too weak to project</span>;
+        }
+        return `~${row.original.timeToThreshold}h`;
       },
+    },
+    {
+      accessorKey: 'confidence',
+      header: 'Confidence',
+      cell: ({ row }) => (
+        <span
+          className="capitalize text-muted-foreground"
+          title={`R² = ${row.original.r_squared.toFixed(2)} · slope = ${row.original.slope.toFixed(3)}/h`}
+        >
+          {row.original.confidence}
+        </span>
+      ),
     },
     {
       id: 'status',
