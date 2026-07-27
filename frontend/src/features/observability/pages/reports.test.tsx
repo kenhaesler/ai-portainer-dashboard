@@ -7,8 +7,66 @@ import ReportsPage from './reports';
 const mockExportToCsv = vi.fn();
 const mockExportManagementPdf = vi.fn();
 
+/**
+ * The right-sizing rules the backend could not evaluate over a range, and how
+ * many rules exist. Percentiles are computed on 6h and below only, so on every
+ * longer range the two p95-keyed rules go quiet for every container.
+ */
+const COVERAGE_ROLLUP = {
+  totalRules: 4,
+  skippedRules: [
+    { id: 'cpu-underutilized', metric: 'cpu', statistic: 'p95', comparison: 'below', threshold: 10, unit: 'percent', recommendation: 'consider reducing CPU limits' },
+    { id: 'memory-underutilized', metric: 'memory', statistic: 'p95', comparison: 'below', threshold: 20, unit: 'percent', recommendation: 'consider reducing memory limits' },
+  ],
+  skippedReason: 'Percentiles are not computed over 24h, so a rule keyed on p95 has no value to test.',
+};
+
 const reportState = vi.hoisted(() => ({
   byRange: {
+    // 6h is the only range that reads the raw metrics table, so it is the only
+    // one whose fixture may show a p95 rule firing.
+    '6h': {
+      timeRange: '6h',
+      includeInfrastructure: false,
+      excludeInfrastructure: true,
+      containers: [
+        {
+          container_id: 'c1',
+          container_name: 'test-web',
+          endpoint_id: 1,
+          service_type: 'application',
+          cpu: { avg: 4, min: 1, max: 9, p50: 3, p95: 6, p99: 8, samples: 360 },
+          memory: { avg: 8, min: 4, max: 15, p50: 7, p95: 12, p99: 14, samples: 360 },
+          memory_bytes: null,
+        },
+      ],
+      fleetSummary: {
+        totalContainers: 1,
+        avgCpu: 4,
+        maxCpu: 9,
+        avgMemory: 8,
+        maxMemory: 15,
+      },
+      recommendations: [],
+      recommendationSummary: [
+        {
+          id: 'cpu-underutilized',
+          metric: 'cpu',
+          statistic: 'p95',
+          comparison: 'below',
+          threshold: 10,
+          unit: 'percent',
+          recommendation: 'consider reducing CPU limits',
+          container_count: 1,
+          container_names: ['test-web'],
+        },
+      ] as Array<Record<string, unknown>> | undefined,
+      rightSizingCoverage: {
+        totalRules: 4,
+        skippedRules: [],
+        skippedReason: null,
+      } as unknown,
+    },
     '24h': {
       timeRange: '24h',
       includeInfrastructure: false,
@@ -49,20 +107,22 @@ const reportState = vi.hoisted(() => ({
         },
       ],
       // Per-rule rollup the backend ships alongside `recommendations`, so the
-      // page can state a rule once instead of once per matching container.
+      // page can state a rule once instead of once per matching container. An
+      // `avg` rule: 24h is a rollup range, where a p95 rule cannot fire at all.
       recommendationSummary: [
         {
-          id: 'cpu-underutilized',
+          id: 'cpu-overutilized',
           metric: 'cpu',
-          statistic: 'p95',
-          comparison: 'below',
-          threshold: 10,
+          statistic: 'avg',
+          comparison: 'above',
+          threshold: 80,
           unit: 'percent',
-          recommendation: 'consider reducing CPU limits',
+          recommendation: 'consider increasing CPU limits',
           container_count: 2,
           container_names: ['web-1', 'web-2'],
         },
       ] as Array<Record<string, unknown>> | undefined,
+      rightSizingCoverage: undefined as unknown,
     },
     '7d': {
       timeRange: '7d',
@@ -272,15 +332,24 @@ describe('ReportsPage', () => {
     mockExportManagementPdf.mockReset();
     reportState.byRange['24h'].recommendationSummary = [
       {
-        id: 'cpu-underutilized',
+        id: 'cpu-overutilized',
         metric: 'cpu',
-        statistic: 'p95',
-        comparison: 'below',
-        threshold: 10,
+        statistic: 'avg',
+        comparison: 'above',
+        threshold: 80,
         unit: 'percent',
-        recommendation: 'consider reducing CPU limits',
+        recommendation: 'consider increasing CPU limits',
         container_count: 2,
         container_names: ['web-1', 'web-2'],
+      },
+    ];
+    reportState.byRange['24h'].rightSizingCoverage = COVERAGE_ROLLUP;
+    reportState.byRange['24h'].recommendations = [
+      {
+        container_id: 'c1',
+        container_name: 'test-web',
+        service_type: 'application',
+        issues: ['CPU over-utilized (avg > 80%) — consider increasing CPU limits'],
       },
     ];
     reportState.byRange['24h'].containers = [
@@ -437,7 +506,7 @@ describe('ReportsPage', () => {
     const lines = screen.getAllByTestId('right-sizing-rule');
     expect(lines).toHaveLength(1);
     expect(screen.getByText('2 containers')).toBeInTheDocument();
-    expect(screen.getByText(/CPU p95 below 10% — consider reducing CPU limits/)).toBeInTheDocument();
+    expect(screen.getByText(/CPU avg above 80% — consider increasing CPU limits/)).toBeInTheDocument();
     expect(screen.getByText('web-1, web-2')).toBeInTheDocument();
   });
 
@@ -448,13 +517,13 @@ describe('ReportsPage', () => {
     // fleet the cap exists for.
     reportState.byRange['24h'].recommendationSummary = [
       {
-        id: 'cpu-underutilized',
+        id: 'cpu-overutilized',
         metric: 'cpu',
-        statistic: 'p95',
-        comparison: 'below',
-        threshold: 10,
+        statistic: 'avg',
+        comparison: 'above',
+        threshold: 80,
         unit: 'percent',
-        recommendation: 'consider reducing CPU limits',
+        recommendation: 'consider increasing CPU limits',
         container_count: 525,
         container_names: Array.from({ length: 500 }, (_, i) => `svc-${i}`),
         names_truncated: true,
@@ -466,6 +535,79 @@ describe('ReportsPage', () => {
     expect(screen.queryByText('500 containers')).not.toBeInTheDocument();
     // "and N more" is relative to the true total too.
     expect(screen.getByText(/and 519 more/)).toBeInTheDocument();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Half the right-sizing engine is range-dependent. `evaluateRightSizingRules`
+  // skips a rule whose statistic is null, so on any range above 6h the two
+  // p95-keyed rules go quiet for every container — and the panel used to
+  // present the survivors as the whole engine.
+  // ---------------------------------------------------------------------------
+
+  it('states which right-sizing rules the selected range could not evaluate', () => {
+    renderWithProviders(<ReportsPage />);
+
+    const note = screen.getByTestId('right-sizing-coverage-note');
+    // The fraction comes from the payload — hard-coding "2 of 4" here would
+    // stop being true the moment a fifth rule is added.
+    expect(note).toHaveTextContent('2 of 4 rules could not be evaluated');
+    expect(note).toHaveTextContent('CPU p95 below 10%, Memory p95 below 20%');
+    expect(note).toHaveTextContent(
+      'Percentiles are not computed over 24h, so a rule keyed on p95 has no value to test.',
+    );
+  });
+
+  it('shows the panel for the unevaluated rules even when no rule fired', () => {
+    // The panel rendered only when a rule fired, so a range that disabled two
+    // rules and matched none with the other two said nothing at all.
+    reportState.byRange['24h'].recommendationSummary = [];
+    reportState.byRange['24h'].recommendations = [];
+    renderWithProviders(<ReportsPage />);
+
+    expect(screen.queryAllByTestId('right-sizing-rule')).toHaveLength(0);
+    expect(screen.getByText('Right-sizing rules')).toBeInTheDocument();
+    expect(screen.getByTestId('right-sizing-coverage-note')).toHaveTextContent(
+      '2 of 4 rules could not be evaluated',
+    );
+  });
+
+  it('labels the header count and drops the list description when nothing fired', () => {
+    // Since the panel renders on skipped rules alone, its header pill could
+    // show a bare "0" above "2 of 4 rules could not be evaluated", under a
+    // paragraph describing a list that was not there.
+    reportState.byRange['24h'].recommendationSummary = [];
+    reportState.byRange['24h'].recommendations = [];
+    renderWithProviders(<ReportsPage />);
+
+    expect(screen.getByTestId('right-sizing-fired-count')).toHaveTextContent('0 fired');
+    expect(screen.queryByText(/One line per rule that fired/)).not.toBeInTheDocument();
+    expect(screen.getByText(/None produced advice over this range/)).toBeInTheDocument();
+  });
+
+  it('labels the header count when rules did fire', () => {
+    renderWithProviders(<ReportsPage />);
+
+    expect(screen.getByTestId('right-sizing-fired-count')).toHaveTextContent('1 fired');
+    // The list description belongs with a list.
+    expect(screen.getByText(/One line per rule that fired/)).toBeInTheDocument();
+  });
+
+  it('hides the note against a server that does not send coverage', () => {
+    reportState.byRange['24h'].rightSizingCoverage = undefined;
+    renderWithProviders(<ReportsPage />);
+
+    expect(screen.queryByTestId('right-sizing-coverage-note')).not.toBeInTheDocument();
+    // The rules that did fire are unaffected.
+    expect(screen.getAllByTestId('right-sizing-rule')).toHaveLength(1);
+  });
+
+  it('drops the note on 6 Hours, the one range that can evaluate every rule', () => {
+    renderWithProviders(<ReportsPage />);
+    fireEvent.click(screen.getAllByRole('button', { name: '6 Hours' })[0]);
+
+    expect(screen.queryByTestId('right-sizing-coverage-note')).not.toBeInTheDocument();
+    // ...and a p95-keyed rule can finally fire.
+    expect(screen.getByText(/CPU p95 below 10% — consider reducing CPU limits/)).toBeInTheDocument();
   });
 
   it('falls back to grouping the legacy per-container issue strings', () => {
@@ -535,6 +677,10 @@ describe('ReportsPage', () => {
 
   it('renders time range selector buttons', () => {
     renderWithProviders(<ReportsPage />);
+    // 6 Hours is the only range the backend reads raw metrics for, so it is
+    // the only one that returns percentiles at all. Without it the p95 column
+    // is a dash on every reachable range.
+    expect(screen.getByText('6 Hours')).toBeTruthy();
     expect(screen.getByText('24 Hours')).toBeTruthy();
     expect(screen.getByText('7 Days')).toBeTruthy();
     expect(screen.getByText('30 Days')).toBeTruthy();

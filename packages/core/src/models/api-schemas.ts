@@ -605,8 +605,14 @@ export const LlmStatsQuerySchema = z.object({
 });
 
 // ─── Reports schemas ───────────────────────────────────────────────
+//
+// `6h` is the only range on which /api/reports/utilization can compute
+// percentiles: `selectRollupTable` reads the raw `metrics` hypertable at 6h and
+// below, and a rollup above it. Without this option every reachable range was a
+// rollup range, so p50/p95/p99 were always null and the two p95-keyed
+// right-sizing rules could never fire.
 export const ReportsQuerySchema = z.object({
-  timeRange: z.enum(['24h', '7d', '30d']).optional(),
+  timeRange: z.enum(['6h', '24h', '7d', '30d']).optional(),
   endpointId: z.coerce.number().optional(),
   containerId: z.string().max(128).optional(),
   includeInfrastructure: QueryBooleanSchema.optional(),

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { type ColumnDef, type SortingState } from '@tanstack/react-table';
 import {
   FileBarChart,
@@ -20,7 +20,10 @@ import {
   useUtilizationReport,
   useTrendsReport,
 } from '@/features/observability/hooks/use-reports';
-import type { ContainerReport } from '@/features/observability/hooks/use-reports';
+import type {
+  ContainerReport,
+  RightSizingRuleDescriptor,
+} from '@/features/observability/hooks/use-reports';
 import { useEndpoints } from '@/features/containers/hooks/use-endpoints';
 import { useContainers } from '@/features/containers/hooks/use-containers';
 import type { Container } from '@/features/containers/hooks/use-containers';
@@ -41,13 +44,6 @@ import {
   type ManagementPdfTheme,
 } from '@/features/observability/lib/management-pdf-themes';
 
-/**
- * Display names for the right-sizing rule metrics.
- *
- * The statement was assembled with `rule.metric.toUpperCase()`, so it read
- * "MEMORY p95 below 20% — consider reducing memory limits": the metric shouted
- * in the first two words and spoken normally four words later, in one sentence.
- */
 /**
  * Scope line for the page header.
  *
@@ -71,13 +67,27 @@ export function reportScopeSubtitle(
     : `${running} of ${observed} ${noun} running, over the last ${window}`;
 }
 
+/**
+ * Display names for the right-sizing rule metrics.
+ *
+ * The statement was assembled with `rule.metric.toUpperCase()`, so it read
+ * "MEMORY p95 below 20% — consider reducing memory limits": the metric shouted
+ * in the first two words and spoken normally four words later, in one sentence.
+ */
 const METRIC_DISPLAY_LABELS: Record<string, string> = {
   cpu: 'CPU',
   memory: 'Memory',
   memory_bytes: 'Memory',
 };
 
+/**
+ * 6 Hours is not a convenience option. It is the only range on which the
+ * backend reads the raw metrics table, so it is the only one that carries
+ * p50/p95/p99 — and therefore the only one on which the two p95-keyed
+ * right-sizing rules can fire at all.
+ */
 const TIME_RANGES = [
+  { value: '6h', label: '6 Hours' },
   { value: '24h', label: '24 Hours' },
   { value: '7d', label: '7 Days' },
   { value: '30d', label: '30 Days' },
@@ -95,26 +105,16 @@ const CPU_DENOMINATOR_LABEL = '100% = one core';
 const RULE_CONTAINER_PREVIEW = 6;
 
 /**
- * `recommendationSummary` from `GET /api/reports/utilization` — the per-rule
- * rollup that lets this page state a rule once instead of repeating byte-
- * identical advice per container.
+ * The condition half of a rule, e.g. "CPU p95 below 10%".
  *
- * Declared here rather than in `use-reports.ts` only because that hook is owned
- * by another workstream this pass; it belongs on `UtilizationReport`.
+ * Used for the `recommendationSummary` rules that fired and for the rules the
+ * range could not evaluate, so those two read in the same words. The legacy
+ * `recommendations` fallback below states the backend's `issue` strings
+ * verbatim instead.
  */
-interface RightSizingRuleSummary {
-  id: string;
-  metric: string;
-  statistic: string;
-  comparison: string;
-  threshold: number;
-  unit: string;
-  recommendation: string;
-  /** Every container the rule fired on. Uncapped — count with this. */
-  container_count: number;
-  /** A sample of the names, capped server-side; may be shorter than the count. */
-  container_names: string[];
-  names_truncated?: boolean;
+function ruleCondition(rule: RightSizingRuleDescriptor): string {
+  const metric = METRIC_DISPLAY_LABELS[rule.metric] ?? rule.metric;
+  return `${metric} ${rule.statistic} ${rule.comparison} ${rule.threshold}${rule.unit === 'percent' ? '%' : ''}`;
 }
 
 /** One rendered line: the rule, and the containers it matched. */
@@ -531,15 +531,6 @@ export default function ReportsPage() {
     isLoading: pdfTrendsLoading,
   } = useTrendsReport(pdfTimeRange, selectedEndpoint, undefined, pdfExcludeInfrastructure);
 
-  // Ordering is DataTable's now (see `containerColumns`), so this only splits
-  // the rows into the two tables. Sorting here as well would fight it — and
-  // the old comparator coerced a missing reading to 0, which sorted a
-  // container with no data as the quietest in the fleet.
-  const sortedContainers = useMemo(
-    () => report?.containers ?? [],
-    [report?.containers],
-  );
-
   // Trend chart data
   const cpuTrendData = useMemo(() => {
     if (!trends?.trends.cpu) return [];
@@ -567,12 +558,11 @@ export default function ReportsPage() {
    * collapse still holds against an older backend.
    */
   const rightSizingGroups = useMemo<RightSizingGroup[]>(() => {
-    const supplied = (report as (typeof report & { recommendationSummary?: RightSizingRuleSummary[] }) | undefined)
-      ?.recommendationSummary;
+    const supplied = report?.recommendationSummary;
     if (supplied?.length) {
       return supplied.map((rule) => ({
         id: rule.id,
-        statement: `${METRIC_DISPLAY_LABELS[rule.metric] ?? rule.metric} ${rule.statistic} ${rule.comparison} ${rule.threshold}${rule.unit === 'percent' ? '%' : ''} — ${rule.recommendation}`,
+        statement: `${ruleCondition(rule)} — ${rule.recommendation}`,
         containerNames: rule.container_names,
         containerCount: rule.container_count,
         truncated: !!rule.names_truncated,
@@ -597,6 +587,18 @@ export default function ReportsPage() {
       truncated: false,
     }));
   }, [report]);
+
+  /**
+   * The rules the selected range could not evaluate at all.
+   *
+   * `evaluateRightSizingRules` skips a rule whose statistic is null — correct,
+   * but on any range above 6h that silently disables both p95-keyed rules for
+   * every container. Without this line the panel presents the two surviving
+   * rules as the whole engine. The fraction comes from the payload so it stays
+   * true if a rule is added.
+   */
+  const rightSizingCoverage = report?.rightSizingCoverage;
+  const unevaluatedRules = rightSizingCoverage?.skippedRules ?? [];
 
   const allContainersById = useMemo(() => {
     const byId = new Map<string, Container>();
@@ -711,13 +713,15 @@ export default function ReportsPage() {
 
   const isLoading = reportLoading || trendsLoading;
   const isPdfLoading = pdfReportLoading || pdfTrendsLoading;
+  // Splitting only. Ordering is DataTable's (see `containerColumns`); sorting
+  // here as well would fight it.
   const applicationContainers = useMemo(
-    () => sortedContainers.filter((container) => container.service_type === 'application'),
-    [sortedContainers],
+    () => (report?.containers ?? []).filter((container) => container.service_type === 'application'),
+    [report?.containers],
   );
   const infrastructureContainers = useMemo(
-    () => sortedContainers.filter((container) => container.service_type === 'infrastructure'),
-    [sortedContainers],
+    () => (report?.containers ?? []).filter((container) => container.service_type === 'infrastructure'),
+    [report?.containers],
   );
 
   useEffect(() => {
@@ -1241,20 +1245,38 @@ export default function ReportsPage() {
       )}
 
       {/* Right-sizing rules */}
-      {rightSizingGroups.length > 0 && (
+      {(rightSizingGroups.length > 0 || unevaluatedRules.length > 0) && (
         <SpotlightCard>
         <div className="rounded-lg border bg-card p-6 shadow-sm">
           <div className="flex flex-wrap items-center gap-2 mb-1">
             <Lightbulb className="h-5 w-5 text-amber-500" />
             <h3 className="text-lg font-semibold">Right-sizing rules</h3>
-            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900 dark:text-amber-200">
-              {rightSizingGroups.length}
+            {/*
+              * The panel also renders when nothing fired and the range merely
+              * ruled some rules out, so this pill has to say what it counts:
+              * an unlabelled "0" above "2 of 4 rules could not be evaluated"
+              * does not say which count is which.
+              */}
+            <span
+              className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900 dark:text-amber-200"
+              data-testid="right-sizing-fired-count"
+            >
+              {rightSizingGroups.length} fired
             </span>
           </div>
           <p className="mb-4 text-sm text-muted-foreground">
-            Fixed utilization thresholds, evaluated per container. One line per rule that fired —
-            every container a rule matched gets the same advice, so it is stated once.
+            Fixed utilization thresholds, evaluated per container.{' '}
+            {rightSizingGroups.length > 0
+              ? 'One line per rule that fired — every container a rule matched gets the same advice, so it is stated once.'
+              : 'None produced advice over this range.'}
           </p>
+          {rightSizingCoverage && unevaluatedRules.length > 0 && (
+            <p className="mb-4 text-xs text-muted-foreground" data-testid="right-sizing-coverage-note">
+              {unevaluatedRules.length} of {rightSizingCoverage.totalRules} rules could not be
+              evaluated: {unevaluatedRules.map(ruleCondition).join(', ')}.
+              {rightSizingCoverage.skippedReason && ` ${rightSizingCoverage.skippedReason}`}
+            </p>
+          )}
           <div className="space-y-3">
             {rightSizingGroups.map((group) => (
               <div key={group.id} className="rounded-md border p-3" data-testid="right-sizing-rule">

@@ -139,6 +139,53 @@ export function evaluateRightSizingRules(
   return findings;
 }
 
+/**
+ * Which rules the selected *range* rules out, out of how many rules exist.
+ *
+ * Range-level only. The percentile query runs solely against the raw `metrics`
+ * table (`if (!rollup.isRollup)` below), so above 6h a p95-keyed rule has no
+ * value to test for any container.
+ *
+ * Known gap: `evaluateRightSizingRules` additionally skips a rule for a
+ * container backed by fewer than `RIGHT_SIZING_MIN_SAMPLES` samples, which this
+ * function cannot see — it is given a range, never a container. If every
+ * container is below that floor, the rule is evaluated for no container while
+ * `skippedRules` stays empty, and the client renders its coverage note only
+ * when that list is non-empty (`reports.tsx`, `unevaluatedRules.length > 0`),
+ * so nothing on screen says the rule went untested. Each container's
+ * `samples`/`percentileSamples` are on the wire; no field draws that conclusion.
+ *
+ * `totalRules` travels with the list so the client does not hard-code the
+ * fraction; the rules travel whole so it can name them in the same words it
+ * uses for the rules that fired.
+ */
+export interface RightSizingRangeCoverage {
+  totalRules: number;
+  /** Rules the range rules out for every container. Per-container skips are not in here. */
+  skippedRules: RightSizingRule[];
+  /** Why the range rules them out; null when the range rules none out. */
+  skippedReason: string | null;
+}
+
+export function describeRightSizingRangeCoverage(
+  percentilesAvailable: boolean,
+  timeRange: string,
+): RightSizingRangeCoverage {
+  // Percentiles are the only statistic a range can withhold wholesale. A rule
+  // keyed on one has nothing to test, for every container, on such a range.
+  const skippedRules = percentilesAvailable
+    ? []
+    : RIGHT_SIZING_RULES.filter((rule) => rule.statistic === 'p95');
+
+  return {
+    totalRules: RIGHT_SIZING_RULES.length,
+    skippedRules,
+    skippedReason: skippedRules.length > 0
+      ? `Percentiles are not computed over ${timeRange}, so a rule keyed on p95 has no value to test.`
+      : null,
+  };
+}
+
 /** pg pool exhaustion: connection could not be acquired within connectionTimeoutMillis */
 function isPoolTimeoutError(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
@@ -263,6 +310,10 @@ interface AggRow {
 
 function timeRangeToInterval(timeRange: string): string {
   switch (timeRange) {
+    // The only range `selectRollupTable` answers with the raw `metrics` table,
+    // and therefore the only one on which percentiles exist. It fell through to
+    // '1 day' before, which silently turned a 6h request into a rollup range.
+    case '6h': return '6 hours';
     case '24h': return '1 day';
     case '7d': return '7 days';
     case '30d': return '30 days';
@@ -391,9 +442,12 @@ export async function reportsRoutes(fastify: FastifyInstance) {
 
     const interval = timeRangeToInterval(timeRange);
 
-    // Auto-select rollup table for the main aggregation query. Percentile
-    // queries (percentile_cont) require individual values and must stay on
-    // the raw metrics table regardless of time range.
+    // Auto-select the table for the main aggregation query. This choice also
+    // decides whether percentiles exist at all: `percentile_cont` needs
+    // individual values, so it can only run when the selection is the raw
+    // `metrics` table (6h and below). Above that the percentile columns stay
+    // null rather than being computed over a different population than the
+    // avg/min/max beside them — see the block that builds `pResult`.
     const now = new Date();
     const from = new Date(now.getTime() - parseDurationMs(interval));
     const rollup = selectRollupTable(from, now);
@@ -644,6 +698,13 @@ export async function reportsRoutes(fastify: FastifyInstance) {
             ? `Percentiles need individual samples and are only computed on ranges of 6h or less. Over ${timeRange} the averages come from the ${rollup.table} rollup, which does not carry them.`
             : null,
         },
+        /**
+         * Which right-sizing rules this range could not evaluate for any
+         * container. An empty p95 column is visible; two of four rules going
+         * quiet behind it is not. Range-level skips only —
+         * `RightSizingRangeCoverage` documents what is deliberately not here.
+         */
+        rightSizingCoverage: describeRightSizingRangeCoverage(!rollup.isRollup, timeRange),
       };
     });
 

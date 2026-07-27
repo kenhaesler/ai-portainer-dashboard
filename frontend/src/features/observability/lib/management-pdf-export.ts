@@ -54,11 +54,27 @@ export interface ManagementPdfModel {
   reportTitle: string;
 }
 
+/**
+ * Prose for a range token, for the PDF's "Period:" line.
+ *
+ * `input.timeRange` is whichever value the operator picked in the PDF options
+ * panel, i.e. one of `TIME_RANGES` in `reports.tsx` (`6h`, `24h`, `7d`, `30d`).
+ * This was a three-entry lookup that returned anything else verbatim, so adding
+ * `6h` to that list — without touching this file — printed `Period: 6h` in a
+ * document whose every other line is a sentence. Reading the token rather than
+ * enumerating the tokens means the next range added to the selector needs no
+ * change here.
+ *
+ * A token that is not `<integer><h|d>` is still returned verbatim: there is
+ * nothing this function knows about it to expand it into.
+ */
 function timeRangeLabel(timeRange: string): string {
-  if (timeRange === '24h') return 'Last 24 Hours';
-  if (timeRange === '7d') return 'Last 7 Days';
-  if (timeRange === '30d') return 'Last 30 Days';
-  return timeRange;
+  const match = /^(\d+)([hd])$/.exec(timeRange);
+  if (!match) return timeRange;
+
+  const amount = Number(match[1]);
+  const unit = match[2] === 'h' ? 'Hour' : 'Day';
+  return `Last ${amount} ${unit}${amount === 1 ? '' : 's'}`;
 }
 
 function round(value: number): number {

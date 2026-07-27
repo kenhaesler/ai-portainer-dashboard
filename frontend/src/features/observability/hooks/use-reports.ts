@@ -36,6 +36,29 @@ export interface Recommendation {
   issues: string[];
 }
 
+/**
+ * One right-sizing rule, as the backend states it. Shared by the per-rule
+ * rollup (`recommendationSummary`) and by the rules a range could not evaluate
+ * (`rightSizingCoverage.skippedRules`), so both render in the same words.
+ */
+export interface RightSizingRuleDescriptor {
+  id: string;
+  metric: string;
+  statistic: string;
+  comparison: string;
+  threshold: number;
+  unit: string;
+  recommendation: string;
+}
+
+export interface RightSizingRuleSummary extends RightSizingRuleDescriptor {
+  /** Every container the rule fired on. Uncapped — count with this. */
+  container_count: number;
+  /** A sample of the names, capped server-side; may be shorter than the count. */
+  container_names: string[];
+  names_truncated?: boolean;
+}
+
 export interface UtilizationReport {
   timeRange: string;
   includeInfrastructure: boolean;
@@ -53,6 +76,11 @@ export interface UtilizationReport {
   };
   recommendations: Recommendation[];
   /**
+   * Per-rule rollup, so the page states a rule once instead of repeating
+   * byte-identical advice per container.
+   */
+  recommendationSummary?: RightSizingRuleSummary[];
+  /**
    * Which table avg/min/max came from, and whether percentiles could be
    * computed over the same rows. Optional so a client running against an older
    * server degrades to hiding the note rather than crashing.
@@ -62,6 +90,17 @@ export interface UtilizationReport {
     isRollup: boolean;
     percentilesAvailable: boolean;
     percentileNote: string | null;
+  };
+  /**
+   * The rules this range could not evaluate, and how many rules exist. Rules
+   * keyed on a percentile have nothing to test on a rollup range, so they go
+   * quiet for every container. Optional for the same reason as
+   * `aggregateSource`: an older server simply hides the note.
+   */
+  rightSizingCoverage?: {
+    totalRules: number;
+    skippedRules: RightSizingRuleDescriptor[];
+    skippedReason: string | null;
   };
 }
 

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vites
 import Fastify from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { reportsRoutes, clearReportCache, getReportCacheSize, setCachedReport, REPORT_CACHE_MAX_ENTRIES, evaluateRightSizingRules, RULE_CONTAINER_NAMES_CAP, RIGHT_SIZING_MIN_SAMPLES } from '../routes/reports.js';
+import { reportsRoutes, clearReportCache, getReportCacheSize, setCachedReport, REPORT_CACHE_MAX_ENTRIES, evaluateRightSizingRules, describeRightSizingRangeCoverage, RULE_CONTAINER_NAMES_CAP, RIGHT_SIZING_MIN_SAMPLES } from '../routes/reports.js';
 
 // The implementation acquires a pool client per request via pool.connect(),
 // sets statement_timeout, then queries via client.query(). We mirror that here.
@@ -19,17 +19,14 @@ vi.mock('@dashboard/core/db/timescale.js', () => ({
   getReportsDb: vi.fn().mockResolvedValue({ connect: () => mockConnect() }),
 }));
 
-const mockSelectRollupTable = vi.fn().mockReturnValue({
-  table: 'metrics',
-  timestampCol: 'timestamp',
-  valueCol: 'value',
-  isRollup: false,
-});
-
-// Kept: metrics-rollup-selector mock — no TimescaleDB in CI
-vi.mock('../services/metrics-rollup-selector.js', () => ({
-  selectRollupTable: (...args: unknown[]) => mockSelectRollupTable(...args),
-}));
+// NOT mocked: selectRollupTable is a pure function of the requested range and
+// touches no database (services/metrics-rollup-selector.ts). It used to be
+// stubbed to `isRollup: false` at module scope and again in beforeEach,
+// including for `timeRange=24h` and `7d` requests, which the real selector
+// resolves to a rollup table. Tests that re-stubbed it for themselves were
+// unaffected — 'omits percentiles on a rollup range' set `isRollup: true` for
+// its own 7d request — but the rest asserted percentile values on a branch
+// their range does not take. Now `?timeRange=` alone decides the branch.
 
 // Kept: infrastructure-service-classifier mock — tests control classification logic
 vi.mock('../services/infrastructure-service-classifier.js', () => ({
@@ -147,6 +144,55 @@ describe('evaluateRightSizingRules', () => {
   });
 });
 
+describe('describeRightSizingRangeCoverage', () => {
+  it('reports both p95 rules as unevaluable when percentiles are unavailable', () => {
+    const coverage = describeRightSizingRangeCoverage(false, '7d');
+
+    expect(coverage.skippedRules.map((r) => r.id)).toEqual(['cpu-underutilized', 'memory-underutilized']);
+    expect(coverage.skippedRules.every((r) => r.statistic === 'p95')).toBe(true);
+    expect(coverage.skippedReason).toContain('7d');
+  });
+
+  it('reports nothing skipped when percentiles are available', () => {
+    const coverage = describeRightSizingRangeCoverage(true, '6h');
+
+    expect(coverage.skippedRules).toEqual([]);
+    expect(coverage.skippedReason).toBeNull();
+  });
+
+  it('counts the rules that exist rather than a hard-coded total', () => {
+    // The client renders "N of totalRules"; totalRules has to follow
+    // RIGHT_SIZING_RULES, or adding a fifth rule makes the fraction a lie.
+    // Every rule the module defines fires for a container that crosses all of
+    // them, which is the only handle on that count from outside.
+    const everyRuleFires = evaluateRightSizingRules({
+      cpu: { avg: 90, p95: 2, samples: 60, percentileSamples: 60 },
+      memory: { avg: 90, p95: 2, samples: 60, percentileSamples: 60 },
+    });
+
+    expect(describeRightSizingRangeCoverage(true, '6h').totalRules).toBe(everyRuleFires.length);
+  });
+
+  it('covers range-level skips only — a per-container sample floor is not one', () => {
+    // The documented boundary, kept as a test so the next reader does not have
+    // to take the doc comment's word for it. On 6h the range withholds nothing,
+    // yet this container's two p95 rules were skipped all the same: 3 raw
+    // samples is below RIGHT_SIZING_MIN_SAMPLES. Coverage reports no skip,
+    // because it is given a range and never sees a container. A fleet where
+    // every container looks like this has both p95 rules evaluated for nobody
+    // and nothing in the payload saying so.
+    const findings = evaluateRightSizingRules({
+      cpu: { avg: 40, p95: 4, samples: 500, percentileSamples: 3 },
+      memory: { avg: 50, p95: 5, samples: 500, percentileSamples: 3 },
+    });
+    expect(findings.filter((f) => f.statistic === 'p95')).toEqual([]);
+
+    const coverage = describeRightSizingRangeCoverage(true, '6h');
+    expect(coverage.skippedRules).toEqual([]);
+    expect(coverage.skippedReason).toBeNull();
+  });
+});
+
 /** Highest $N referenced anywhere in a SQL string (0 when there are none). */
 function maxPlaceholder(sql: string): number {
   const indexes = [...sql.matchAll(/\$(\d+)/g)].map((m) => Number(m[1]));
@@ -171,12 +217,6 @@ describe('Reports routes', () => {
     mockClientQuery.mockReset().mockResolvedValue({ rows: [] });
     mockRelease.mockReset();
     mockConnect.mockReset().mockResolvedValue(mockClient);
-    mockSelectRollupTable.mockReturnValue({
-      table: 'metrics',
-      timestampCol: 'timestamp',
-      valueCol: 'value',
-      isRollup: false,
-    });
     clearReportCache();
     mockGetRunningIds.mockReset().mockResolvedValue(null);
   });
@@ -227,14 +267,9 @@ describe('Reports routes', () => {
               sample_count: 100,
             },
           ],
-        })
-        // Percentile queries (always on raw metrics)
-        .mockResolvedValueOnce({
-          rows: [{ p50: 50, p95: 95, p99: 99, samples: 60 }],
-        })
-        .mockResolvedValueOnce({
-          rows: [{ p50: 55, p95: 85, p99: 90, samples: 60 }],
         });
+      // No percentile responses are queued: 7d reads metrics_5min, and no
+      // percentile query is issued on a rollup range.
 
       const res = await app.inject({
         method: 'GET',
@@ -253,7 +288,8 @@ describe('Reports routes', () => {
 
     it('groups identical right-sizing advice with a container count', async () => {
       // Two containers, both idle: the same recommendation, which the UI used
-      // to print once per container.
+      // to print once per container. 6h, because the rule this exercises reads
+      // p95 and percentiles exist on no other range.
       const agg = (id: string, name: string, metric: string, avg: number) => ({
         container_id: id, container_name: name, endpoint_id: 1,
         metric_type: metric, avg_value: avg, min_value: avg, max_value: avg, sample_count: 10,
@@ -272,7 +308,7 @@ describe('Reports routes', () => {
         .mockResolvedValueOnce({ rows: [{ p50: 3, p95: 6, p99: 7, samples: 60 }] })   // c2 cpu
         .mockResolvedValueOnce({ rows: [{ p50: 6, p95: 9, p99: 10, samples: 60 }] }); // c2 memory
 
-      const res = await app.inject({ method: 'GET', url: '/api/reports/utilization?timeRange=24h' });
+      const res = await app.inject({ method: 'GET', url: '/api/reports/utilization?timeRange=6h' });
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.payload);
 
@@ -318,7 +354,7 @@ describe('Reports routes', () => {
         return { rows: [] };
       });
 
-      const res = await app.inject({ method: 'GET', url: '/api/reports/utilization?timeRange=24h' });
+      const res = await app.inject({ method: 'GET', url: '/api/reports/utilization?timeRange=6h' });
       expect(res.statusCode).toBe(200);
       const cpuRule = JSON.parse(res.payload).recommendationSummary
         .find((r: { id: string }) => r.id === 'cpu-underutilized');
@@ -369,8 +405,7 @@ describe('Reports routes', () => {
               sample_count: 50,
             },
           ],
-        })
-        .mockResolvedValueOnce({ rows: [{ p50: 40, p95: 90, p99: 95, samples: 60 }] });
+        });
 
       const res = await app.inject({
         method: 'GET',
@@ -402,8 +437,7 @@ describe('Reports routes', () => {
               sample_count: 50,
             },
           ],
-        })
-        .mockResolvedValueOnce({ rows: [{ p50: 9, p95: 18, p99: 20, samples: 60 }] });
+        });
 
       const res = await app.inject({
         method: 'GET',
@@ -418,14 +452,7 @@ describe('Reports routes', () => {
       expect(body.containers[0].service_type).toBe('infrastructure');
     });
 
-    it('uses rollup table columns when isRollup=true', async () => {
-      mockSelectRollupTable.mockReturnValue({
-        table: 'metrics_5min',
-        timestampCol: 'bucket',
-        valueCol: 'avg_value',
-        isRollup: true,
-      });
-
+    it('uses rollup table columns on a range above 6h', async () => {
       mockClientQuery
         .mockResolvedValueOnce({ rows: [] }) // SET statement_timeout
         .mockResolvedValueOnce({
@@ -441,8 +468,7 @@ describe('Reports routes', () => {
               sample_count: 288,
             },
           ],
-        })
-        .mockResolvedValueOnce({ rows: [{ p50: 50, p95: 88, p99: 92, samples: 60 }] });
+        });
 
       const res = await app.inject({
         method: 'GET',
@@ -459,6 +485,7 @@ describe('Reports routes', () => {
         (c) => String(c[0]).includes('metrics_5min'),
       );
       expect(aggCall).toBeTruthy();
+      expect(body.aggregateSource.table).toBe('metrics_5min');
     });
 
     // -----------------------------------------------------------------------
@@ -474,13 +501,6 @@ describe('Reports routes', () => {
     // -----------------------------------------------------------------------
 
     it('omits percentiles on a rollup range rather than mixing two populations', async () => {
-      mockSelectRollupTable.mockReturnValue({
-        table: 'metrics_5min',
-        timestampCol: 'bucket',
-        valueCol: 'avg_value',
-        isRollup: true,
-      });
-
       mockClientQuery
         .mockResolvedValueOnce({ rows: [] })
         .mockResolvedValueOnce({
@@ -516,11 +536,7 @@ describe('Reports routes', () => {
       expect(pCall).toBeFalsy();
     });
 
-    it('computes percentiles from raw metrics when the range does not use a rollup', async () => {
-      mockSelectRollupTable.mockReturnValue({
-        table: 'metrics', timestampCol: 'timestamp', valueCol: 'value', isRollup: false,
-      });
-
+    it('computes percentiles from raw metrics on the 6h range', async () => {
       mockClientQuery
         .mockResolvedValueOnce({ rows: [] })
         .mockResolvedValueOnce({
@@ -535,7 +551,7 @@ describe('Reports routes', () => {
 
       const res = await app.inject({
         method: 'GET',
-        url: '/api/reports/utilization?timeRange=24h',
+        url: '/api/reports/utilization?timeRange=6h',
       });
 
       expect(res.statusCode, res.payload).toBe(200);
@@ -544,7 +560,9 @@ describe('Reports routes', () => {
 
       expect(cpu.p95).toBe(88);
       expect(cpu.percentileSamples).toBe(288);
+      expect(body.aggregateSource.table).toBe('metrics');
       expect(body.aggregateSource.percentilesAvailable).toBe(true);
+      expect(body.aggregateSource.percentileNote).toBeNull();
       // p95 must sit inside [min, max] when both come from the same rows.
       expect(cpu.p95).toBeLessThanOrEqual(cpu.max);
       expect(cpu.p95).toBeGreaterThanOrEqual(cpu.min);
@@ -558,11 +576,7 @@ describe('Reports routes', () => {
     it('keeps a percentile null when the raw window held no samples', async () => {
       // `percentile_cont` over an empty set returns NULL; Number(null) is 0,
       // and the table printed a confident "p95 0.00%" for a container that
-      // reported nothing.
-      mockSelectRollupTable.mockReturnValue({
-        table: 'metrics', timestampCol: 'timestamp', valueCol: 'value', isRollup: false,
-      });
-
+      // reported nothing. Only 6h reaches this code at all.
       mockClientQuery
         .mockResolvedValueOnce({ rows: [] })
         .mockResolvedValueOnce({
@@ -577,7 +591,7 @@ describe('Reports routes', () => {
 
       const res = await app.inject({
         method: 'GET',
-        url: '/api/reports/utilization?timeRange=24h',
+        url: '/api/reports/utilization?timeRange=6h',
       });
 
       const cpu = JSON.parse(res.payload).containers[0].cpu;
@@ -585,12 +599,87 @@ describe('Reports routes', () => {
       expect(cpu.percentileSamples).toBe(0);
     });
 
+    // -----------------------------------------------------------------------
+    // Half the right-sizing engine is range-dependent, and used to go quiet
+    // without saying so. Before `6h` existed, every range the querystring
+    // accepted was a rollup range, so the two p95-keyed rules could not fire on
+    // any request an operator was able to make.
+    // -----------------------------------------------------------------------
+
+    it('names the right-sizing rules a rollup range cannot evaluate', async () => {
+      mockClientQuery
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({
+          rows: [
+            // Busy CPU (an avg rule can still fire) beside idle memory (only a
+            // p95 rule could have caught it).
+            { container_id: 'c1', container_name: 'api', endpoint_id: 1, metric_type: 'cpu',
+              avg_value: 90, min_value: 80, max_value: 99, sample_count: 288 },
+            { container_id: 'c1', container_name: 'api', endpoint_id: 1, metric_type: 'memory',
+              avg_value: 5, min_value: 4, max_value: 6, sample_count: 288 },
+          ],
+        });
+
+      const res = await app.inject({ method: 'GET', url: '/api/reports/utilization?timeRange=7d' });
+      expect(res.statusCode, res.payload).toBe(200);
+      const body = JSON.parse(res.payload);
+
+      expect(body.aggregateSource.percentilesAvailable).toBe(false);
+      expect(body.aggregateSource.percentileNote).not.toBeNull();
+      expect(body.containers[0].memory.p95).toBeNull();
+      expect(body.containers[0].memory.percentileSamples).toBe(0);
+
+      // The surviving rule fired; neither p95 rule appears anywhere, in either
+      // the per-container findings or the rollup.
+      const summaryIds = body.recommendationSummary.map((r: { id: string }) => r.id);
+      expect(summaryIds).toEqual(['cpu-overutilized']);
+      expect(body.recommendationSummary.some((r: { statistic: string }) => r.statistic === 'p95')).toBe(false);
+      const findings = body.recommendations.flatMap((r: { findings: Array<{ statistic: string }> }) => r.findings);
+      expect(findings.some((f: { statistic: string }) => f.statistic === 'p95')).toBe(false);
+
+      // ...and the payload says which two rules were not run, out of how many.
+      expect(body.rightSizingCoverage.totalRules).toBe(4);
+      expect(body.rightSizingCoverage.skippedRules.map((r: { id: string }) => r.id))
+        .toEqual(['cpu-underutilized', 'memory-underutilized']);
+      expect(body.rightSizingCoverage.skippedReason).toContain('7d');
+    });
+
+    it('evaluates every right-sizing rule on the 6h range', async () => {
+      mockClientQuery
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({
+          rows: [
+            { container_id: 'c1', container_name: 'api', endpoint_id: 1, metric_type: 'cpu',
+              avg_value: 2, min_value: 1, max_value: 6, sample_count: 360 },
+            { container_id: 'c1', container_name: 'api', endpoint_id: 1, metric_type: 'memory',
+              avg_value: 5, min_value: 4, max_value: 9, sample_count: 360 },
+          ],
+        })
+        .mockResolvedValueOnce({ rows: [{ p50: 2, p95: 4, p99: 5, samples: 360 }] })  // cpu
+        .mockResolvedValueOnce({ rows: [{ p50: 5, p95: 8, p99: 9, samples: 360 }] }); // memory
+
+      const res = await app.inject({ method: 'GET', url: '/api/reports/utilization?timeRange=6h' });
+      expect(res.statusCode, res.payload).toBe(200);
+      const body = JSON.parse(res.payload);
+
+      expect(body.aggregateSource.table).toBe('metrics');
+      expect(body.aggregateSource.isRollup).toBe(false);
+      expect(body.aggregateSource.percentilesAvailable).toBe(true);
+      expect(body.containers[0].cpu.p95).toBe(4);
+      expect(body.containers[0].memory.p95).toBe(8);
+
+      // Both p95-keyed rules fire — the pair that no other range can reach.
+      expect(body.recommendationSummary.map((r: { id: string }) => r.id))
+        .toEqual(['cpu-underutilized', 'memory-underutilized']);
+
+      // Nothing to disclaim, so nothing is disclaimed.
+      expect(body.rightSizingCoverage.skippedRules).toEqual([]);
+      expect(body.rightSizingCoverage.skippedReason).toBeNull();
+    });
+
     it('names the population the table shows, not just the running subset', async () => {
       // The page led with "7 containers" above a 25-row table because
       // fleetSummary counted only running containers and nothing said so.
-      mockSelectRollupTable.mockReturnValue({
-        table: 'metrics', timestampCol: 'timestamp', valueCol: 'value', isRollup: false,
-      });
       mockGetRunningIds.mockResolvedValueOnce(new Set(['live']));
 
       mockClientQuery
@@ -605,7 +694,7 @@ describe('Reports routes', () => {
 
       const res = await app.inject({
         method: 'GET',
-        url: '/api/reports/utilization?timeRange=24h',
+        url: '/api/reports/utilization?timeRange=6h',
       });
 
       const body = JSON.parse(res.payload);
@@ -640,7 +729,7 @@ describe('Reports routes', () => {
         .mockResolvedValueOnce({ rows: [{ p50: 40, p95: 78, p99: 80, samples: 60 }] }) // percentile: live
         .mockResolvedValueOnce({ rows: [{ p50: 0, p95: 0, p99: 0, samples: 60 }] });   // percentile: dead
 
-      const res = await app.inject({ method: 'GET', url: '/api/reports/utilization?timeRange=24h' });
+      const res = await app.inject({ method: 'GET', url: '/api/reports/utilization?timeRange=6h' });
       const body = JSON.parse(res.payload);
 
       expect(body.containers).toHaveLength(2);          // per-container rows unchanged
@@ -661,7 +750,7 @@ describe('Reports routes', () => {
         .mockResolvedValueOnce({ rows: [{ p50: 40, p95: 78, p99: 80, samples: 60 }] })
         .mockResolvedValueOnce({ rows: [{ p50: 0, p95: 0, p99: 0, samples: 60 }] });
 
-      const res = await app.inject({ method: 'GET', url: '/api/reports/utilization?timeRange=24h' });
+      const res = await app.inject({ method: 'GET', url: '/api/reports/utilization?timeRange=6h' });
       const body = JSON.parse(res.payload);
 
       expect(body.fleetSummary.avgCpu).toBe(20);        // (40+0)/2
@@ -710,13 +799,6 @@ describe('Reports routes', () => {
     });
 
     it('uses time_bucket when rollup table is selected', async () => {
-      mockSelectRollupTable.mockReturnValue({
-        table: 'metrics_1hour',
-        timestampCol: 'bucket',
-        valueCol: 'avg_value',
-        isRollup: true,
-      });
-
       mockClientQuery
         .mockResolvedValueOnce({ rows: [] }) // SET statement_timeout
         .mockResolvedValueOnce({
@@ -851,14 +933,7 @@ describe('Reports routes', () => {
       expect(body.topServices[0].containerName).toBe('redis');
     });
 
-    it('uses rollup table columns for both queries when isRollup=true', async () => {
-      mockSelectRollupTable.mockReturnValue({
-        table: 'metrics_5min',
-        timestampCol: 'bucket',
-        valueCol: 'avg_value',
-        isRollup: true,
-      });
-
+    it('uses rollup table columns for both queries on a range above 6h', async () => {
       mockClientQuery
         .mockResolvedValueOnce({ rows: [] }) // SET statement_timeout
         .mockResolvedValueOnce({
