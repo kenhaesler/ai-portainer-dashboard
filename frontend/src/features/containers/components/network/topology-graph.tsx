@@ -863,9 +863,8 @@ export function TopologyGraph({
         nodesFocusable={false}
         edgesFocusable={false}
         /*
-          Removes the "React Flow" attribution, which rendered into the
-          product page and collided with the zoom controls and the legend in
-          one 200x80px corner — at zoom it overlapped a node label.
+          Hides the "React Flow" badge. xyflow's Attribution component asks
+          that it be hidden only by Pro subscribers (its `data-message`).
         */
         proOptions={{ hideAttribution: true }}
       >

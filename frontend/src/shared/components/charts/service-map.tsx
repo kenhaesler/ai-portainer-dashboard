@@ -87,8 +87,12 @@ export function ServiceMap({ serviceNodes, serviceEdges }: ServiceMapProps) {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         fitView
-        // Attribution hidden: it rendered into the product page.
-        proOptions={{ hideAttribution: true }}
+        // xyflow asks that the attribution be kept, so it stays. `<Controls />`
+        // defaults to bottom-left too, but the two do not land on the same
+        // origin: xyflow's stylesheet insets `.react-flow__panel` with
+        // `margin: 15px` and resets `.react-flow__attribution` back to
+        // `margin: 0`, so the badge sits flush against the container edge.
+        attributionPosition="bottom-left"
       >
         <Background />
         <Controls />
