@@ -345,7 +345,7 @@ describe('ReportsPage', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Reports' })).toBeInTheDocument();
     // The old subtitle listed the page's own sections; this one carries state.
     expect(screen.getByTestId('page-header-subtitle')).toHaveTextContent(
-      '1 containers over the last 24 hours',
+      '1 container over the last 24 hours',
     );
     expect(screen.queryByText(/Utilization analysis/)).not.toBeInTheDocument();
   });

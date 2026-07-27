@@ -41,6 +41,42 @@ import {
   type ManagementPdfTheme,
 } from '@/features/observability/lib/management-pdf-themes';
 
+/**
+ * Display names for the right-sizing rule metrics.
+ *
+ * The statement was assembled with `rule.metric.toUpperCase()`, so it read
+ * "MEMORY p95 below 20% — consider reducing memory limits": the metric shouted
+ * in the first two words and spoken normally four words later, in one sentence.
+ */
+/**
+ * Scope line for the page header.
+ *
+ * The KPI row averages over running containers while the table below lists
+ * every container observed in the window, so the page could lead with
+ * "7 containers" above 25 rows and a rule reading "25 containers: CPU p95
+ * below 10%". State the split only when the two actually differ — on a fleet
+ * where everything is up, "12 of 12 running" is noise.
+ */
+export function reportScopeSubtitle(
+  report: { fleetSummary: { totalContainers: number; totalObserved?: number } },
+  timeRange: string,
+): string {
+  const running = report.fleetSummary.totalContainers;
+  const observed = report.fleetSummary.totalObserved ?? running;
+  const window = TIME_RANGES.find((r) => r.value === timeRange)?.label.toLowerCase() ?? timeRange;
+  const noun = observed === 1 ? 'container' : 'containers';
+
+  return observed === running
+    ? `${observed} ${noun} over the last ${window}`
+    : `${running} of ${observed} ${noun} running, over the last ${window}`;
+}
+
+const METRIC_DISPLAY_LABELS: Record<string, string> = {
+  cpu: 'CPU',
+  memory: 'Memory',
+  memory_bytes: 'Memory',
+};
+
 const TIME_RANGES = [
   { value: '24h', label: '24 Hours' },
   { value: '7d', label: '7 Days' },
@@ -541,7 +577,7 @@ export default function ReportsPage() {
     if (supplied?.length) {
       return supplied.map((rule) => ({
         id: rule.id,
-        statement: `${rule.metric.toUpperCase()} ${rule.statistic} ${rule.comparison} ${rule.threshold}${rule.unit === 'percent' ? '%' : ''} — ${rule.recommendation}`,
+        statement: `${METRIC_DISPLAY_LABELS[rule.metric] ?? rule.metric} ${rule.statistic} ${rule.comparison} ${rule.threshold}${rule.unit === 'percent' ? '%' : ''} — ${rule.recommendation}`,
         containerNames: rule.container_names,
         containerCount: rule.container_count,
         truncated: !!rule.names_truncated,
@@ -818,7 +854,7 @@ export default function ReportsPage() {
       header: () => <span className="block w-full text-right">CPU p95</span>,
       cell: ({ row }) => (
         <span className="block text-right">
-          {row.original.cpu ? `${row.original.cpu.p95.toFixed(1)}%` : '—'}
+          {row.original.cpu?.p95 != null ? `${row.original.cpu.p95.toFixed(1)}%` : '—'}
         </span>
       ),
     },
@@ -855,7 +891,7 @@ export default function ReportsPage() {
       header: () => <span className="block w-full text-right">Mem p95</span>,
       cell: ({ row }) => (
         <span className="block text-right">
-          {row.original.memory ? `${row.original.memory.p95.toFixed(1)}%` : '—'}
+          {row.original.memory?.p95 != null ? `${row.original.memory.p95.toFixed(1)}%` : '—'}
         </span>
       ),
     },
@@ -883,6 +919,16 @@ export default function ReportsPage() {
 
   const renderContainerTable = (containers: ContainerReport[]) => (
     <div className="p-2">
+      {/* An empty p95 column has to say why. Percentiles need individual
+          samples, so above 6h they cannot be computed over the same rows as
+          avg/min/max — and printing both together produced rows where p95
+          exceeded max. The dash is deliberate; the note is what makes it
+          readable as "not computed" rather than "no data". */}
+      {report?.aggregateSource && !report.aggregateSource.percentilesAvailable && (
+        <p className="mb-3 text-xs text-muted-foreground" data-testid="percentile-basis-note">
+          {report.aggregateSource.percentileNote}
+        </p>
+      )}
       <DataTable
         columns={containerColumns}
         data={containers}
@@ -897,9 +943,7 @@ export default function ReportsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Reports"
-        subtitle={report
-          ? `${report.fleetSummary.totalContainers} containers over the last ${TIME_RANGES.find((r) => r.value === timeRange)?.label.toLowerCase() ?? timeRange}`
-          : undefined}
+        subtitle={report ? reportScopeSubtitle(report, timeRange) : undefined}
         actions={(
           <>
             <button

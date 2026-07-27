@@ -5,9 +5,17 @@ interface MetricStats {
   avg: number;
   min: number;
   max: number;
-  p50: number;
-  p95: number;
-  p99: number;
+  /**
+   * Null when the percentile could not be computed over the same rows as
+   * avg/min/max — see `UtilizationReport['aggregateSource']`. Rendering a null
+   * as `0` is what produced rows reading `p95 0.00%` for containers that
+   * reported nothing, and mixing the two sources produced `p95` above `max`.
+   */
+  p50: number | null;
+  p95: number | null;
+  p99: number | null;
+  /** Raw samples backing the percentiles above. 0 whenever they are null. */
+  percentileSamples: number;
   samples: number;
 }
 
@@ -34,13 +42,27 @@ export interface UtilizationReport {
   excludeInfrastructure: boolean;
   containers: ContainerReport[];
   fleetSummary: {
+    /** Running containers only — the population the KPI row averages over. */
     totalContainers: number;
+    /** Every container in `containers`, running or not. */
+    totalObserved: number;
     avgCpu: number;
     maxCpu: number;
     avgMemory: number;
     maxMemory: number;
   };
   recommendations: Recommendation[];
+  /**
+   * Which table avg/min/max came from, and whether percentiles could be
+   * computed over the same rows. Optional so a client running against an older
+   * server degrades to hiding the note rather than crashing.
+   */
+  aggregateSource?: {
+    table: string;
+    isRollup: boolean;
+    percentilesAvailable: boolean;
+    percentileNote: string | null;
+  };
 }
 
 interface TrendPoint {

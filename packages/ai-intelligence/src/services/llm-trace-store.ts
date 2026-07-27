@@ -33,10 +33,34 @@ export interface LlmTrace {
 }
 
 export interface LlmStats {
+  /** Every call in the window, successful or not. */
   totalQueries: number;
+  /** Calls that returned `status = 'error'`. */
+  failedQueries: number;
+  /**
+   * Calls the aggregates below are computed over: `totalQueries -
+   * failedQueries`. Carried so the UI can state the basis of its own numbers
+   * rather than implying they describe every call.
+   */
+  succeededQueries: number;
+  /** Summed over successful calls only. A failed call transfers no tokens. */
   totalTokens: number;
+  /**
+   * Averaged over successful calls only.
+   *
+   * This used to average every row, so a call that failed before it left the
+   * process contributed the time taken to raise a config error — and the page
+   * reported "Avg Latency 69ms" for a model that never received a request.
+   */
   avgLatencyMs: number;
+  /**
+   * Failed share of the window, **already a percentage** (0-100), not a
+   * fraction. The frontend multiplied it by 100 a second time and rendered
+   * "10000.0%"; the name now says which it is, and `llm-trace-store.test.ts`
+   * pins the scale.
+   */
   errorRate: number;
+  /** Successful calls per model. Errors are excluded, so shares sum over calls a model actually served. */
   modelBreakdown: Array<{ model: string; count: number; tokens: number }>;
 }
 
@@ -70,16 +94,22 @@ export async function getRecentTraces(limit: number = 50): Promise<LlmTrace[]> {
 export async function getLlmStats(hoursBack: number = 24): Promise<LlmStats> {
   const db = getDbForDomain('llm-traces');
 
+  // Token and latency aggregates are FILTERed to successful calls. A call that
+  // errored transferred no tokens and never reached the model, so folding it in
+  // reports work that did not happen — one failed call was enough to make this
+  // page claim gpt-4o-mini served a request it never received.
   const summary = await db.queryOne<{
     total_queries: number;
+    failed_queries: number;
     total_tokens: number;
     avg_latency_ms: number;
     error_rate: number;
   }>(`
     SELECT
       COUNT(*)::integer as total_queries,
-      COALESCE(SUM(total_tokens)::integer, 0) as total_tokens,
-      COALESCE(AVG(latency_ms), 0) as avg_latency_ms,
+      COALESCE(SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END)::integer, 0) as failed_queries,
+      COALESCE(SUM(total_tokens) FILTER (WHERE status <> 'error')::integer, 0) as total_tokens,
+      COALESCE(AVG(latency_ms) FILTER (WHERE status <> 'error'), 0) as avg_latency_ms,
       COALESCE(SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0), 0) as error_rate
     FROM llm_traces
     WHERE created_at >= NOW() + (? || ' hours')::INTERVAL
@@ -89,12 +119,18 @@ export async function getLlmStats(hoursBack: number = 24): Promise<LlmStats> {
     SELECT model, COUNT(*)::integer as count, COALESCE(SUM(total_tokens)::integer, 0) as tokens
     FROM llm_traces
     WHERE created_at >= NOW() + (? || ' hours')::INTERVAL
+      AND status <> 'error'
     GROUP BY model
     ORDER BY count DESC
   `, [`-${hoursBack}`]);
 
+  const totalQueries = summary?.total_queries ?? 0;
+  const failedQueries = summary?.failed_queries ?? 0;
+
   return {
-    totalQueries: summary?.total_queries ?? 0,
+    totalQueries,
+    failedQueries,
+    succeededQueries: totalQueries - failedQueries,
     totalTokens: summary?.total_tokens ?? 0,
     avgLatencyMs: Math.round(summary?.avg_latency_ms ?? 0),
     errorRate: Math.round((summary?.error_rate ?? 0) * 100) / 100,

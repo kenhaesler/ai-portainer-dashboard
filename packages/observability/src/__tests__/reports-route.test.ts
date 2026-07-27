@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vites
 import Fastify from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { reportsRoutes, clearReportCache, getReportCacheSize, setCachedReport, REPORT_CACHE_MAX_ENTRIES, evaluateRightSizingRules, RULE_CONTAINER_NAMES_CAP } from '../routes/reports.js';
+import { reportsRoutes, clearReportCache, getReportCacheSize, setCachedReport, REPORT_CACHE_MAX_ENTRIES, evaluateRightSizingRules, RULE_CONTAINER_NAMES_CAP, RIGHT_SIZING_MIN_SAMPLES } from '../routes/reports.js';
 
 // The implementation acquires a pool client per request via pool.connect(),
 // sets statement_timeout, then queries via client.query(). We mirror that here.
@@ -64,11 +64,11 @@ vi.mock('../services/container-lifecycle-store.js', () => ({
 
 describe('evaluateRightSizingRules', () => {
   it('returns nothing when every aggregate sits inside the thresholds', () => {
-    expect(evaluateRightSizingRules({ cpu: { avg: 40, p95: 60 }, memory: { avg: 50, p95: 70 } })).toEqual([]);
+    expect(evaluateRightSizingRules({ cpu: { avg: 40, p95: 60, samples: 60, percentileSamples: 60 }, memory: { avg: 50, p95: 70, samples: 60, percentileSamples: 60 } })).toEqual([]);
   });
 
   it('carries the rule id, threshold and measured value so identical advice can be grouped', () => {
-    const findings = evaluateRightSizingRules({ cpu: { avg: 2, p95: 4 }, memory: { avg: 50, p95: 70 } });
+    const findings = evaluateRightSizingRules({ cpu: { avg: 2, p95: 4, samples: 60, percentileSamples: 60 }, memory: { avg: 50, p95: 70, samples: 60, percentileSamples: 60 } });
     expect(findings).toHaveLength(1);
     expect(findings[0].id).toBe('cpu-underutilized');
     expect(findings[0].statistic).toBe('p95');
@@ -81,21 +81,69 @@ describe('evaluateRightSizingRules', () => {
   });
 
   it('keeps the historical one-line string so existing consumers do not break', () => {
-    const findings = evaluateRightSizingRules({ cpu: { avg: 2, p95: 4 }, memory: { avg: 90, p95: 95 } });
+    const findings = evaluateRightSizingRules({ cpu: { avg: 2, p95: 4, samples: 60, percentileSamples: 60 }, memory: { avg: 90, p95: 95, samples: 60, percentileSamples: 60 } });
     const issues = findings.map((f) => f.issue);
     expect(issues).toContain('CPU under-utilized (p95 < 10%) — consider reducing CPU limits');
     expect(issues).toContain('Memory over-utilized (avg > 85%) — consider increasing memory limits');
   });
 
   it('fires all four rules independently', () => {
-    expect(evaluateRightSizingRules({ cpu: { avg: 90, p95: 95 }, memory: { avg: 90, p95: 95 } }).map(f => f.id))
+    expect(evaluateRightSizingRules({ cpu: { avg: 90, p95: 95, samples: 60, percentileSamples: 60 }, memory: { avg: 90, p95: 95, samples: 60, percentileSamples: 60 } }).map(f => f.id))
       .toEqual(['cpu-overutilized', 'memory-overutilized']);
-    expect(evaluateRightSizingRules({ cpu: { avg: 1, p95: 2 }, memory: { avg: 1, p95: 2 } }).map(f => f.id))
+    expect(evaluateRightSizingRules({ cpu: { avg: 1, p95: 2, samples: 60, percentileSamples: 60 }, memory: { avg: 1, p95: 2, samples: 60, percentileSamples: 60 } }).map(f => f.id))
       .toEqual(['cpu-underutilized', 'memory-underutilized']);
   });
 
   it('does not fire exactly at a threshold', () => {
-    expect(evaluateRightSizingRules({ cpu: { avg: 80, p95: 10 }, memory: { avg: 85, p95: 20 } })).toEqual([]);
+    expect(evaluateRightSizingRules({ cpu: { avg: 80, p95: 10, samples: 60, percentileSamples: 60 }, memory: { avg: 85, p95: 20, samples: 60, percentileSamples: 60 } })).toEqual([]);
+  });
+
+  // -------------------------------------------------------------------------
+  // Sample-floor and null-percentile guards. A container with `samples: 2`
+  // was issued "CPU avg above 80% — consider increasing CPU limits" off two
+  // readings taken seconds apart, listed beside containers with 189 samples
+  // and with nothing on screen distinguishing them.
+  // -------------------------------------------------------------------------
+
+  it('does not recommend anything for a container with too few samples', () => {
+    const findings = evaluateRightSizingRules({
+      cpu: { avg: 103.8, p95: 103.8, samples: 2, percentileSamples: 2 },
+      memory: { avg: 50, p95: 70, samples: 2, percentileSamples: 2 },
+    });
+
+    expect(findings).toEqual([]);
+  });
+
+  it('fires once the sample floor is met', () => {
+    const findings = evaluateRightSizingRules({
+      cpu: { avg: 103.8, p95: 103.8, samples: RIGHT_SIZING_MIN_SAMPLES, percentileSamples: RIGHT_SIZING_MIN_SAMPLES },
+      memory: { avg: 50, p95: 70, samples: RIGHT_SIZING_MIN_SAMPLES, percentileSamples: RIGHT_SIZING_MIN_SAMPLES },
+    });
+
+    expect(findings.map((f) => f.id)).toContain('cpu-overutilized');
+  });
+
+  it('treats a null p95 as "not computed", never as a low p95', () => {
+    // Percentiles are null on rollup ranges. A rule reading "p95 below 10%"
+    // must not fire on the absence of a p95 — that would recommend shrinking
+    // limits for every container on any range longer than 6h.
+    const findings = evaluateRightSizingRules({
+      cpu: { avg: 40, p95: null, samples: 500, percentileSamples: 0 },
+      memory: { avg: 50, p95: null, samples: 500, percentileSamples: 0 },
+    });
+
+    expect(findings.filter((f) => f.statistic === 'p95')).toEqual([]);
+  });
+
+  it('backs a p95 rule with the percentile sample count, not the aggregate count', () => {
+    // 500 rollup buckets do not make a percentile trustworthy when it was
+    // computed over 3 raw samples.
+    const findings = evaluateRightSizingRules({
+      cpu: { avg: 40, p95: 4, samples: 500, percentileSamples: 3 },
+      memory: { avg: 50, p95: 70, samples: 500, percentileSamples: 3 },
+    });
+
+    expect(findings.map((f) => f.id)).not.toContain('cpu-underutilized');
   });
 });
 
@@ -182,10 +230,10 @@ describe('Reports routes', () => {
         })
         // Percentile queries (always on raw metrics)
         .mockResolvedValueOnce({
-          rows: [{ p50: 50, p95: 95, p99: 99 }],
+          rows: [{ p50: 50, p95: 95, p99: 99, samples: 60 }],
         })
         .mockResolvedValueOnce({
-          rows: [{ p50: 55, p95: 85, p99: 90 }],
+          rows: [{ p50: 55, p95: 85, p99: 90, samples: 60 }],
         });
 
       const res = await app.inject({
@@ -219,10 +267,10 @@ describe('Reports routes', () => {
           ],
         })
         // one percentile query per (container, metric) row, in order
-        .mockResolvedValueOnce({ rows: [{ p50: 2, p95: 4, p99: 5 }] })   // c1 cpu
-        .mockResolvedValueOnce({ rows: [{ p50: 5, p95: 8, p99: 9 }] })   // c1 memory
-        .mockResolvedValueOnce({ rows: [{ p50: 3, p95: 6, p99: 7 }] })   // c2 cpu
-        .mockResolvedValueOnce({ rows: [{ p50: 6, p95: 9, p99: 10 }] }); // c2 memory
+        .mockResolvedValueOnce({ rows: [{ p50: 2, p95: 4, p99: 5, samples: 60 }] })   // c1 cpu
+        .mockResolvedValueOnce({ rows: [{ p50: 5, p95: 8, p99: 9, samples: 60 }] })   // c1 memory
+        .mockResolvedValueOnce({ rows: [{ p50: 3, p95: 6, p99: 7, samples: 60 }] })   // c2 cpu
+        .mockResolvedValueOnce({ rows: [{ p50: 6, p95: 9, p99: 10, samples: 60 }] }); // c2 memory
 
       const res = await app.inject({ method: 'GET', url: '/api/reports/utilization?timeRange=24h' });
       expect(res.statusCode).toBe(200);
@@ -261,7 +309,7 @@ describe('Reports routes', () => {
       let seenAgg = false;
       mockClientQuery.mockImplementation(async (sql: string) => {
         if (typeof sql === 'string' && sql.includes('percentile_cont')) {
-          return { rows: [{ p50: 2, p95: 4, p99: 5 }] };
+          return { rows: [{ p50: 2, p95: 4, p99: 5, samples: 60 }] };
         }
         if (!seenAgg && typeof sql === 'string' && sql.includes('avg_value')) {
           seenAgg = true;
@@ -322,7 +370,7 @@ describe('Reports routes', () => {
             },
           ],
         })
-        .mockResolvedValueOnce({ rows: [{ p50: 40, p95: 90, p99: 95 }] });
+        .mockResolvedValueOnce({ rows: [{ p50: 40, p95: 90, p99: 95, samples: 60 }] });
 
       const res = await app.inject({
         method: 'GET',
@@ -355,7 +403,7 @@ describe('Reports routes', () => {
             },
           ],
         })
-        .mockResolvedValueOnce({ rows: [{ p50: 9, p95: 18, p99: 20 }] });
+        .mockResolvedValueOnce({ rows: [{ p50: 9, p95: 18, p99: 20, samples: 60 }] });
 
       const res = await app.inject({
         method: 'GET',
@@ -394,7 +442,7 @@ describe('Reports routes', () => {
             },
           ],
         })
-        .mockResolvedValueOnce({ rows: [{ p50: 50, p95: 88, p99: 92 }] });
+        .mockResolvedValueOnce({ rows: [{ p50: 50, p95: 88, p99: 92, samples: 60 }] });
 
       const res = await app.inject({
         method: 'GET',
@@ -406,17 +454,164 @@ describe('Reports routes', () => {
       expect(body.containers).toHaveLength(1);
       expect(body.containers[0].container_name).toBe('api');
       expect(body.containers[0].cpu.avg).toBe(55);
-      expect(body.containers[0].cpu.p95).toBe(88);
       // Main agg query should reference the rollup table
       const aggCall = mockClientQuery.mock.calls.find(
         (c) => String(c[0]).includes('metrics_5min'),
       );
       expect(aggCall).toBeTruthy();
-      // Percentile query must always use raw metrics table
+    });
+
+    // -----------------------------------------------------------------------
+    // p95 > max regression. avg/min/max come from a rollup above 6h;
+    // percentiles can only come from raw `metrics`. The rollups are continuous
+    // aggregates that refresh on a policy, so a container that spiked in the
+    // last few minutes had the spike in raw and not yet in the rollup — and
+    // the row rendered `avg 0.0% · p95 34.0% · max 0.0%`. Four rows on the
+    // live fleet showed a 95th percentile above their own maximum.
+    //
+    // Two populations must not be printed as one row, so percentiles are now
+    // computed only when the aggregates also read raw metrics.
+    // -----------------------------------------------------------------------
+
+    it('omits percentiles on a rollup range rather than mixing two populations', async () => {
+      mockSelectRollupTable.mockReturnValue({
+        table: 'metrics_5min',
+        timestampCol: 'bucket',
+        valueCol: 'avg_value',
+        isRollup: true,
+      });
+
+      mockClientQuery
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              container_id: 'c1', container_name: 'api', endpoint_id: 1, metric_type: 'cpu',
+              // A lagging rollup: this container's recent spike is not here yet.
+              avg_value: 0, min_value: 0, max_value: 0, sample_count: 288,
+            },
+          ],
+        });
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/reports/utilization?timeRange=7d',
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.payload);
+      const cpu = body.containers[0].cpu;
+
+      expect(cpu.p50).toBeNull();
+      expect(cpu.p95).toBeNull();
+      expect(cpu.p99).toBeNull();
+      expect(cpu.percentileSamples).toBe(0);
+      expect(body.aggregateSource.isRollup).toBe(true);
+      expect(body.aggregateSource.percentilesAvailable).toBe(false);
+      expect(body.aggregateSource.percentileNote).toMatch(/6h or less/i);
+
+      // And no percentile query was issued at all — the mixed row cannot be
+      // constructed even by accident.
+      const pCall = mockClientQuery.mock.calls.find((c) => String(c[0]).includes('percentile_cont'));
+      expect(pCall).toBeFalsy();
+    });
+
+    it('computes percentiles from raw metrics when the range does not use a rollup', async () => {
+      mockSelectRollupTable.mockReturnValue({
+        table: 'metrics', timestampCol: 'timestamp', valueCol: 'value', isRollup: false,
+      });
+
+      mockClientQuery
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              container_id: 'c1', container_name: 'api', endpoint_id: 1, metric_type: 'cpu',
+              avg_value: 55, min_value: 10, max_value: 90, sample_count: 288,
+            },
+          ],
+        })
+        .mockResolvedValueOnce({ rows: [{ p50: 50, p95: 88, p99: 92, samples: 288 }] });
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/reports/utilization?timeRange=24h',
+      });
+
+      expect(res.statusCode, res.payload).toBe(200);
+      const body = JSON.parse(res.payload);
+      const cpu = body.containers[0].cpu;
+
+      expect(cpu.p95).toBe(88);
+      expect(cpu.percentileSamples).toBe(288);
+      expect(body.aggregateSource.percentilesAvailable).toBe(true);
+      // p95 must sit inside [min, max] when both come from the same rows.
+      expect(cpu.p95).toBeLessThanOrEqual(cpu.max);
+      expect(cpu.p95).toBeGreaterThanOrEqual(cpu.min);
+
       const pCall = mockClientQuery.mock.calls.find(
         (c) => String(c[0]).includes('percentile_cont') && String(c[0]).includes('FROM metrics'),
       );
       expect(pCall).toBeTruthy();
+    });
+
+    it('keeps a percentile null when the raw window held no samples', async () => {
+      // `percentile_cont` over an empty set returns NULL; Number(null) is 0,
+      // and the table printed a confident "p95 0.00%" for a container that
+      // reported nothing.
+      mockSelectRollupTable.mockReturnValue({
+        table: 'metrics', timestampCol: 'timestamp', valueCol: 'value', isRollup: false,
+      });
+
+      mockClientQuery
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              container_id: 'c1', container_name: 'api', endpoint_id: 1, metric_type: 'cpu',
+              avg_value: 55, min_value: 10, max_value: 90, sample_count: 288,
+            },
+          ],
+        })
+        .mockResolvedValueOnce({ rows: [{ p50: null, p95: null, p99: null, samples: 0 }] });
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/reports/utilization?timeRange=24h',
+      });
+
+      const cpu = JSON.parse(res.payload).containers[0].cpu;
+      expect(cpu.p95).toBeNull();
+      expect(cpu.percentileSamples).toBe(0);
+    });
+
+    it('names the population the table shows, not just the running subset', async () => {
+      // The page led with "7 containers" above a 25-row table because
+      // fleetSummary counted only running containers and nothing said so.
+      mockSelectRollupTable.mockReturnValue({
+        table: 'metrics', timestampCol: 'timestamp', valueCol: 'value', isRollup: false,
+      });
+      mockGetRunningIds.mockResolvedValueOnce(new Set(['live']));
+
+      mockClientQuery
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({
+          rows: [
+            { container_id: 'live', container_name: 'web', endpoint_id: 1, metric_type: 'cpu', avg_value: 40, min_value: 10, max_value: 80, sample_count: 100 },
+            { container_id: 'dead', container_name: 'old', endpoint_id: 1, metric_type: 'cpu', avg_value: 0, min_value: 0, max_value: 0, sample_count: 100 },
+          ],
+        })
+        .mockResolvedValue({ rows: [{ p50: 40, p95: 60, p99: 70, samples: 100 }] });
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/reports/utilization?timeRange=24h',
+      });
+
+      const body = JSON.parse(res.payload);
+      expect(body.fleetSummary.totalContainers).toBe(1);
+      expect(body.fleetSummary.totalObserved).toBe(2);
+      expect(body.containers).toHaveLength(2);
     });
 
     it('serves cached result on second request', async () => {
@@ -442,8 +637,8 @@ describe('Reports routes', () => {
             { container_id: 'dead', container_name: 'old', endpoint_id: 1, metric_type: 'cpu', avg_value: 0, min_value: 0, max_value: 0, sample_count: 100 },
           ],
         })
-        .mockResolvedValueOnce({ rows: [{ p50: 40, p95: 78, p99: 80 }] }) // percentile: live
-        .mockResolvedValueOnce({ rows: [{ p50: 0, p95: 0, p99: 0 }] });   // percentile: dead
+        .mockResolvedValueOnce({ rows: [{ p50: 40, p95: 78, p99: 80, samples: 60 }] }) // percentile: live
+        .mockResolvedValueOnce({ rows: [{ p50: 0, p95: 0, p99: 0, samples: 60 }] });   // percentile: dead
 
       const res = await app.inject({ method: 'GET', url: '/api/reports/utilization?timeRange=24h' });
       const body = JSON.parse(res.payload);
@@ -463,8 +658,8 @@ describe('Reports routes', () => {
             { container_id: 'b', container_name: 'old', endpoint_id: 1, metric_type: 'cpu', avg_value: 0, min_value: 0, max_value: 0, sample_count: 100 },
           ],
         })
-        .mockResolvedValueOnce({ rows: [{ p50: 40, p95: 78, p99: 80 }] })
-        .mockResolvedValueOnce({ rows: [{ p50: 0, p95: 0, p99: 0 }] });
+        .mockResolvedValueOnce({ rows: [{ p50: 40, p95: 78, p99: 80, samples: 60 }] })
+        .mockResolvedValueOnce({ rows: [{ p50: 0, p95: 0, p99: 0, samples: 60 }] });
 
       const res = await app.inject({ method: 'GET', url: '/api/reports/utilization?timeRange=24h' });
       const body = JSON.parse(res.payload);

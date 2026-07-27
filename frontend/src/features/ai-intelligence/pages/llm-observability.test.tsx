@@ -22,9 +22,14 @@ beforeAll(() => {
 
 const mockStats = {
   totalQueries: 142,
+  failedQueries: 4,
+  succeededQueries: 138,
   totalTokens: 58300,
   avgLatencyMs: 1250,
-  errorRate: 0.03,
+  // A percentage, not a fraction. This read `0.03` while the tile multiplied
+  // by 100 — the fixture and the bug agreed, so "3.0%" rendered and nobody
+  // noticed the scale was wrong until a real one-call window showed 10000.0%.
+  errorRate: 3,
   avgFeedbackScore: 4.2,
   feedbackCount: 37,
   modelBreakdown: [
@@ -205,6 +210,8 @@ describe('LlmObservabilityPage', () => {
   it('uses the shared EmptyState, naming the range, when no model data exists', () => {
     withStats({
       totalQueries: 10,
+      failedQueries: 0,
+      succeededQueries: 10,
       totalTokens: 1200,
       avgLatencyMs: 700,
       errorRate: 0,
@@ -373,6 +380,8 @@ describe('zero-traffic state', () => {
   it('collapses the four tiles to one line with a link to the assistant', () => {
     withStats({
       totalQueries: 0,
+      failedQueries: 0,
+      succeededQueries: 0,
       totalTokens: 0,
       avgLatencyMs: 0,
       errorRate: 0,
@@ -402,7 +411,7 @@ describe('zero-traffic state', () => {
 
 describe('error rate tile', () => {
   it('does not put a downward trend arrow on a rising error rate', () => {
-    withStats({ ...mockStats, errorRate: 0.12 });
+    withStats({ ...mockStats, errorRate: 12, failedQueries: 17, succeededQueries: 125 });
 
     const { container } = renderPage();
     expect(screen.getByText('12.0%')).toBeTruthy();
@@ -411,5 +420,61 @@ describe('error rate tile', () => {
     expect(screen.queryByText('Above 5%')).toBeNull();
     expect(container.querySelector('.lucide-trending-down')).toBeNull();
     expect(screen.getByText(/above the 5% error threshold/i)).toBeTruthy();
+  });
+
+  // ---------------------------------------------------------------------
+  // Scale regression. `errorRate` is a percentage (0-100) from
+  // `getLlmStats`; the tile multiplied it by 100 again. A window holding one
+  // failed call is 100% failed, and the page rendered "10000.0%" — the
+  // largest number on the screen, and an impossible one.
+  // ---------------------------------------------------------------------
+
+  it('renders errorRate as the percentage it already is, not percent-of-percent', () => {
+    withStats({ ...mockStats, totalQueries: 1, failedQueries: 1, succeededQueries: 0, errorRate: 100 });
+
+    renderPage();
+
+    expect(screen.getByText('100.0%')).toBeTruthy();
+    expect(screen.queryByText('10000.0%')).toBeNull();
+  });
+
+  it('does not flag a sub-threshold error rate (the check reads percent, not fraction)', () => {
+    // 1% is below the stated 5% threshold. The comparison was written against
+    // 0.05, so on a percentage scale it fired for anything above 0.05%.
+    withStats({ ...mockStats, errorRate: 1, failedQueries: 1, succeededQueries: 141 });
+
+    renderPage();
+
+    expect(screen.getByText('1.0%')).toBeTruthy();
+    expect(screen.queryByText(/above the 5% error threshold/i)).toBeNull();
+  });
+
+  it('states what the token and latency aggregates are computed over when calls failed', () => {
+    withStats({ ...mockStats, totalQueries: 10, failedQueries: 3, succeededQueries: 7 });
+
+    renderPage();
+
+    expect(screen.getAllByText(/Over 7 successful calls .* 3 failed and are excluded/i).length).toBe(2);
+  });
+
+  it('shows a dash, not a zero, for latency and tokens when every call failed', () => {
+    // The reported case: one call that never left the process produced
+    // "Avg Latency 69ms" and a model breakdown claiming gpt-4o-mini served
+    // 100% of traffic. A failed call measures nothing.
+    withStats({
+      ...mockStats,
+      totalQueries: 1,
+      failedQueries: 1,
+      succeededQueries: 0,
+      totalTokens: 0,
+      avgLatencyMs: 0,
+      errorRate: 100,
+      modelBreakdown: [],
+    });
+
+    renderPage();
+
+    expect(screen.queryByText('0ms')).toBeNull();
+    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(2);
   });
 });
