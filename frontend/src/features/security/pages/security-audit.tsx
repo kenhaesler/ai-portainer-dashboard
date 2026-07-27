@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import { type ColumnDef } from '@tanstack/react-table';
 import { ChevronDown, ChevronRight, Search, ShieldAlert, SlidersHorizontal } from 'lucide-react';
 import { useSecurityAudit, type SecurityAuditEntry } from '@/features/security/hooks/use-security-audit';

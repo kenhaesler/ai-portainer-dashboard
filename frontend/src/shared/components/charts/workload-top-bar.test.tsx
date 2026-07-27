@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter } from 'react-router';
 import { WorkloadTopBar, buildChartData } from './workload-top-bar';
 
 // Mock recharts — keep all real exports, only replace ResponsiveContainer

@@ -1,5 +1,5 @@
 import { m, useReducedMotion } from 'framer-motion';
-import { useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router';
 import { cn } from '@/shared/lib/utils';
 import { pageVariants, transition, easing, duration } from '@/shared/lib/motion-tokens';
 

@@ -1,4 +1,4 @@
-import { Navigate, useSearchParams } from 'react-router-dom';
+import { Navigate, useSearchParams } from 'react-router';
 
 /**
  * Permanent redirect from the legacy /comparison route to the merged

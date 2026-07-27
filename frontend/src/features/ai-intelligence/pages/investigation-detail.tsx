@@ -1,4 +1,4 @@
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router';
 import { ArrowLeft, Brain, Clock, Database, Layers, Server, AlertTriangle, Loader2 } from 'lucide-react';
 import {
   safeParseJson,

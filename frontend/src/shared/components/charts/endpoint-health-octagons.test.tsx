@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EndpointHealthOctagons, getHealthLevel_testable } from './endpoint-health-octagons';
 
 const mockNavigate = vi.fn();
-vi.mock('react-router-dom', () => ({
+vi.mock('react-router', () => ({
   useNavigate: () => mockNavigate,
   Link: ({ to, children, ...rest }: any) => (
     <a href={to} {...rest}>

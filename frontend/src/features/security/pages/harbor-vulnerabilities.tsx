@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import { type ColumnDef } from '@tanstack/react-table';
 import {
   Shield, ShieldAlert, ShieldCheck, Search, RefreshCw, ArrowRight,

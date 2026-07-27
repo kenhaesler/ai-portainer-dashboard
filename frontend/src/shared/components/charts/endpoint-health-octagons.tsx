@@ -1,5 +1,5 @@
 import { memo, useCallback, useMemo, useRef, useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router';
 import { m, useReducedMotion } from 'framer-motion';
 import { cn } from '@/shared/lib/utils';
 import { duration, easing } from '@/shared/lib/motion-tokens';

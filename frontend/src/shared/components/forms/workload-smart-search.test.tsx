@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter } from 'react-router';
 import type { Container } from '@/features/containers/hooks/use-containers';
 
 const mockMutate = vi.fn();
@@ -13,8 +13,8 @@ vi.mock('@/features/ai-intelligence/hooks/use-nl-query', () => ({
   }),
 }));
 
-vi.mock('react-router-dom', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('react-router-dom')>();
+vi.mock('react-router', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('react-router')>();
   return {
     ...actual,
     useNavigate: () => mockNavigate,

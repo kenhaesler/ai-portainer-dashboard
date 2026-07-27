@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router';
 import { useQueries } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {

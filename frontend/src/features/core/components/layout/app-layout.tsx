@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import type { ReactNode } from 'react';
-import { Navigate, Outlet, useLocation, useNavigate, useNavigationType, useOutlet } from 'react-router-dom';
+import { Navigate, Outlet, useLocation, useNavigate, useNavigationType, useOutlet } from 'react-router';
 import { useAuth } from '@/providers/auth-provider';
 import { Sidebar } from '@/features/core/components/layout/sidebar';
 import { Header } from '@/features/core/components/layout/header';

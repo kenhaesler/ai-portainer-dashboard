@@ -1,4 +1,4 @@
-import { Navigate } from 'react-router-dom';
+import { Navigate } from 'react-router';
 import { useAuth, type UserRole } from '@/providers/auth-provider';
 
 interface ProtectedRouteProps {

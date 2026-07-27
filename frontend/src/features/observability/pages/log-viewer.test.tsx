@@ -19,7 +19,7 @@ const mockSetSearchParams = vi.fn((updater: URLSearchParams | ((p: URLSearchPara
   }
 });
 
-vi.mock('react-router-dom', () => ({
+vi.mock('react-router', () => ({
   useSearchParams: () => [mockUrlSearch, mockSetSearchParams],
 }));
 

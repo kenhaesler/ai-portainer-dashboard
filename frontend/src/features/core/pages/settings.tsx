@@ -22,7 +22,7 @@ import { useAuth } from '@/providers/auth-provider';
 import { useThemeStore } from '@/stores/theme-store';
 import { SkeletonText } from '@/shared/components/feedback/skeleton';
 import { toast } from 'sonner';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router';
 
 import {
   DEFAULT_SETTINGS,

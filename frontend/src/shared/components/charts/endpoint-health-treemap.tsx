@@ -1,6 +1,6 @@
 import { memo, useCallback, useMemo } from 'react';
 import { Treemap, ResponsiveContainer, Tooltip } from 'recharts';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 
 export interface EndpointHealthTreemapProps {
   endpoints: Array<{

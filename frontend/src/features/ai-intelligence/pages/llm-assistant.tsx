@@ -1,5 +1,5 @@
 import { memo, useState, useRef, useEffect, useCallback } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { Send, X, Trash2, Bot, User, AlertCircle, Copy, Check, Wrench, CheckCircle2, XCircle, Layers, WifiOff, Loader2 } from 'lucide-react';
 import type { Insight } from '@dashboard/contracts';

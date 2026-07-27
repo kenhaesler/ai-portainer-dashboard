@@ -283,7 +283,7 @@ describe('Settings tab structure', () => {
 
 describe('SettingsPage — auto-save boundary', () => {
   async function renderSettings(initialEntry = '/settings') {
-    const { MemoryRouter } = await import('react-router-dom');
+    const { MemoryRouter } = await import('react-router');
     const SettingsPage = (await import('./settings')).default;
     const qc = new QueryClient({
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -465,7 +465,7 @@ describe('SettingsPage — auto-save boundary', () => {
 
 describe('SettingsPage — finding one of 107 keys', () => {
   async function renderSettings() {
-    const { MemoryRouter } = await import('react-router-dom');
+    const { MemoryRouter } = await import('react-router');
     const SettingsPage = (await import('./settings')).default;
     const qc = new QueryClient({
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } },

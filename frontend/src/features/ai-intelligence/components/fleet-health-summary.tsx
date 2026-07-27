@@ -1,5 +1,5 @@
 import { Activity, AlertCircle, AlertTriangle, CheckCircle2, ChevronRight, HelpCircle, Info } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import { SkeletonChart } from '@/shared/components/feedback/skeleton';
 import { HealthScoreCard } from '@/shared/components/data-display/health-score-card';
 import {

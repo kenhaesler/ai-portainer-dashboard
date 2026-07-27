@@ -16,7 +16,7 @@ import {
   type Updater,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import { cn } from '@/shared/lib/utils';
 import { Checkbox } from '@/shared/components/ui/checkbox';
 import { ArrowUpDown, ChevronLeft, ChevronRight, ArrowUp, ArrowDown } from 'lucide-react';

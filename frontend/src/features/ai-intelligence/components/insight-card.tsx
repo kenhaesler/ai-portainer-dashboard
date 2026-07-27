@@ -19,7 +19,7 @@ import {
   TrendingUp,
   FileText,
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import type { AnomalyDimension, Severity } from '@dashboard/contracts';
 import { detectionMethodLabel } from '@/features/ai-intelligence/lib/detection-method-labels';
 import { cn, formatDate } from '@/shared/lib/utils';

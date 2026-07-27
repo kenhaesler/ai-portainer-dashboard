@@ -1,6 +1,6 @@
 import { memo, useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 
 /**
  * A stacked running/stopped bar per series row.

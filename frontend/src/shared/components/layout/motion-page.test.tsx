@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter } from 'react-router';
 import { MotionPage, MotionStagger, MotionReveal, _resetVisitedPaths } from './motion-page';
 
 // Mock framer-motion to inspect props without running real animations

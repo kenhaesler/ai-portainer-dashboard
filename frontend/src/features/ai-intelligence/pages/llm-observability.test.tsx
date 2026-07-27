@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter } from 'react-router';
 
 // Stub matchMedia for useReducedMotion / useCountUp in KpiCard
 beforeAll(() => {

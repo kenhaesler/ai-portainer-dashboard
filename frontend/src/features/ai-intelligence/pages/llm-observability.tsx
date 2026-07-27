@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { type ColumnDef } from '@tanstack/react-table';
 import { LlmLatencyBreakdown, formatWindowLabel } from '@/features/ai-intelligence/components/llm-latency-breakdown';
