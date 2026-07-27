@@ -34,6 +34,10 @@ vi.mock('@/features/containers/hooks/use-stacks', () => ({
 }));
 
 vi.mock('@/features/security/hooks/use-pcap', () => ({
+  // Enabled by default here; the disabled case has its own test below.
+  usePcapStatus: vi.fn().mockReturnValue({
+    data: { enabled: true, disabledReason: null },
+  }),
   useCaptures: vi.fn().mockReturnValue({
     data: { captures: [] },
     refetch: vi.fn(),
@@ -144,6 +148,26 @@ describe('PacketCapture', () => {
     expect(start).toBeDisabled();
     expect(start).toHaveAttribute('title', 'Requires the admin role');
     expect(screen.getByText('Requires the admin role')).toBeInTheDocument();
+  });
+
+  it('disables Start when packet capture is off for the deployment, and names the env var', async () => {
+    // PCAP_ENABLED defaults to false and was enforced only inside startCapture
+    // — after the click. `startDisabledReason` knew about three preconditions
+    // and not about the feature flag, so a stock install offered a live Start
+    // button and answered it with a server error.
+    const { usePcapStatus } = await import('@/features/security/hooks/use-pcap');
+    vi.mocked(usePcapStatus).mockReturnValueOnce({
+      data: {
+        enabled: false,
+        disabledReason: 'Packet capture is turned off for this deployment. Set PCAP_ENABLED=true in the environment and restart the backend.',
+      },
+    } as ReturnType<typeof usePcapStatus>);
+
+    render(<PacketCapture />);
+
+    const start = screen.getByRole('button', { name: /start capture/i });
+    expect(start).toBeDisabled();
+    expect(start.getAttribute('title')).toMatch(/PCAP_ENABLED=true/);
   });
 
   it('shows the first-run guidance when there are no captures at all', () => {

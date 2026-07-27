@@ -15,7 +15,7 @@ import { insertLlmTrace } from '../services/llm-trace-store.js';
 import { LlmQueryBodySchema, LlmTestConnectionBodySchema, LlmModelsQuerySchema, LlmTestPromptBodySchema } from '@dashboard/core/models/api-schemas.js';
 import { PROMPT_TEST_FIXTURES } from '../services/prompt-test-fixtures.js';
 import { isPromptInjection, sanitizeLlmOutput } from '../services/prompt-guard.js';
-import { getAuthHeaders, getFetchErrorMessage, llmFetch, REDACTED_TOKEN_PLACEHOLDER, resolveChatCompletionsUrl, resolveModelsUrl } from '../services/llm-client.js';
+import { getAuthHeaders, getFetchErrorMessage, isLlmAvailable, llmFetch, REDACTED_TOKEN_PLACEHOLDER, resolveChatCompletionsUrl, resolveModelsUrl } from '../services/llm-client.js';
 
 const log = createChildLogger('route:llm');
 
@@ -85,6 +85,37 @@ export async function llmRoutes(fastify: FastifyInstance) {
   const llmRateMax = (getConfig() as Record<string, unknown>).LLM_RATE_LIMIT_PER_MINUTE as number;
 
   // Natural language query endpoint
+  /**
+   * Whether an LLM is actually reachable, for surfaces that must not offer a
+   * conversation they cannot have.
+   *
+   * The Assistant presented a model dropdown, a profile picker, a
+   * "Standard / General-purpose model" badge and four clickable suggested
+   * questions on a deployment with no LLM configured — and only revealed the
+   * problem after the user sent a message and got a red `Error:` pill. The
+   * page could not tell you it was broken until you used it.
+   *
+   * `authenticate` only: it reports whether a feature is on, never the
+   * endpoint or token. The 30s cache keeps a dead endpoint from being probed
+   * on every page visit while still recovering quickly once it comes back.
+   */
+  fastify.get('/api/llm/status', {
+    schema: {
+      tags: ['LLM'],
+      summary: 'Whether an LLM endpoint is configured and reachable',
+      security: [{ bearerAuth: [] }],
+    },
+    preHandler: [fastify.authenticate],
+  }, async () => {
+    const available = await isLlmAvailable();
+    return {
+      available,
+      disabledReason: available
+        ? null
+        : 'No language model is reachable. Set LLM_API_URL and LLM_API_TOKEN, or configure the endpoint under Settings → AI & LLM.',
+    };
+  });
+
   fastify.post<{ Body: { query: string } }>('/api/llm/query', {
     schema: {
       tags: ['LLM'],

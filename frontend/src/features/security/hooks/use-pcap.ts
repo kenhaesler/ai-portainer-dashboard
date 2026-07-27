@@ -55,6 +55,28 @@ interface CapturesResponse {
   captures: Capture[];
 }
 
+export interface PcapStatus {
+  enabled: boolean;
+  disabledReason: string | null;
+}
+
+/**
+ * Whether packet capture is switched on for this deployment.
+ *
+ * `PCAP_ENABLED` defaults to false and was enforced only server-side, inside
+ * `startCapture` — after the click. The form offered a live "Start Capture"
+ * on a stock install and the operator learned the feature was off from an
+ * error toast.
+ */
+export function usePcapStatus() {
+  return useQuery<PcapStatus>({
+    queryKey: ['pcap', 'status'],
+    queryFn: () => api.get<PcapStatus>('/api/pcap/status'),
+    // A deployment flag, not fleet state — it cannot change without a restart.
+    staleTime: Infinity,
+  });
+}
+
 export function useCaptures(filters?: { status?: string; containerId?: string; search?: string }) {
   return useQuery<CapturesResponse>({
     queryKey: ['pcap', 'captures', filters],

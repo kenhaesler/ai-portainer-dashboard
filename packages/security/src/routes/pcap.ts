@@ -20,10 +20,43 @@ import { assertCapability } from '@dashboard/infrastructure';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { getErrorStatusCode } from '@dashboard/core/utils/http-error.js';
 import { errorDetails } from '@dashboard/core/plugins/error-handler.js';
+import { getConfig } from '@dashboard/core/config/index.js';
 
 const log = createChildLogger('pcap-route');
 
 export async function pcapRoutes(fastify: FastifyInstance, opts: { llm: LLMInterface }) {
+  /**
+   * Whether packet capture is switched on for this deployment.
+   *
+   * `PCAP_ENABLED` defaults to false, and it was enforced only inside
+   * `startCapture` — i.e. after the click. The page's own `startDisabledReason`
+   * knew about three preconditions (not admin, no target, Edge Async) and not
+   * about the feature flag, so on a stock install an admin filled in the form,
+   * got a live "Start Capture" button, clicked it, and ate a server error. The
+   * one destructive-ish action on the page was the least guarded.
+   *
+   * Read-only and cheap; `authenticate` is enough. It reports a flag the
+   * operator sets, not anything about the fleet.
+   */
+  fastify.get('/api/pcap/status', {
+    schema: {
+      tags: ['Packet Capture'],
+      summary: 'Whether packet capture is enabled for this deployment',
+      security: [{ bearerAuth: [] }],
+    },
+    preHandler: [fastify.authenticate],
+  }, async () => {
+    const config = getConfig();
+    return {
+      enabled: config.PCAP_ENABLED,
+      // Named so the UI can tell the operator exactly what to change, the way
+      // the Elasticsearch empty state already does.
+      disabledReason: config.PCAP_ENABLED
+        ? null
+        : 'Packet capture is turned off for this deployment. Set PCAP_ENABLED=true in the environment and restart the backend.',
+    };
+  });
+
   // Start a new capture
   fastify.post('/api/pcap/captures', {
     schema: {

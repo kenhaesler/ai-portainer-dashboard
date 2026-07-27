@@ -223,7 +223,13 @@ let mockChatStream: any;
 let runMonitoringCycle: () => Promise<void>;
 
 /** Helper: extract insights from the batch insertInsights call */
-function getInsertedInsights(): Array<{ category: string; severity: string; description: string; container_id: string | null }> {
+function getInsertedInsights(): Array<{
+  category: string;
+  severity: string;
+  description: string;
+  container_id: string | null;
+  detection_method?: string;
+}> {
   if (mockInsertInsights.mock.calls.length === 0) return [];
   return mockInsertInsights.mock.calls[0][0] as any[];
 }

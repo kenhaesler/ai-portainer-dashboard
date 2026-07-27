@@ -1,5 +1,5 @@
 import { memo, useState, useRef, useEffect, useCallback } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Send, X, Trash2, Bot, User, AlertCircle, Copy, Check, Wrench, CheckCircle2, XCircle, Layers, WifiOff, Loader2 } from 'lucide-react';
 import type { Insight } from '@dashboard/contracts';
@@ -12,7 +12,7 @@ import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
 import { useLlmChat, type ToolCallEvent } from '@/features/ai-intelligence/hooks/use-llm-chat';
 import { useSockets, useSocketConnected } from '@/providers/socket-provider';
-import { useLlmModels } from '@/features/ai-intelligence/hooks/use-llm-models';
+import { useLlmModels, useLlmStatus } from '@/features/ai-intelligence/hooks/use-llm-models';
 import { getModelUseCase } from '@/features/core/components/settings/model-use-cases';
 import { useMcpServers } from '@/features/ai-intelligence/hooks/use-mcp';
 import { usePromptProfiles, useSwitchProfile } from '@/features/ai-intelligence/hooks/use-prompt-profiles';
@@ -148,6 +148,7 @@ export default function LlmAssistantPage() {
   const { llmSocket } = useSockets();
   const isLlmConnected = useSocketConnected(llmSocket);
   const { data: modelsData } = useLlmModels();
+  const { data: llmStatus } = useLlmStatus();
   const { data: mcpServers } = useMcpServers();
   const { role } = useAuth();
   const isAdmin = role === 'admin';
@@ -346,7 +347,30 @@ export default function LlmAssistantPage() {
                 `justify-center` inside `h-[calc(100vh-8rem)]` the heading and
                 the icon sat above the container's top edge on a 390px
                 viewport, so the first visible text was mid-sentence. */}
-            {messages.length === 0 && !isStreaming && (
+            {/* Say the assistant is unavailable before the user spends a
+                question finding out. This page used to present a model
+                dropdown, a profile picker and four clickable suggestions on a
+                deployment with no LLM reachable, and only produced a red
+                `Error:` pill after the message was sent. */}
+            {messages.length === 0 && !isStreaming && llmStatus && !llmStatus.available && (
+              <div className="flex flex-col items-center text-center" data-testid="assistant-unconfigured">
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-border bg-muted">
+                  <Bot className="h-7 w-7 text-muted-foreground" />
+                </div>
+                <h2 className="mt-4 text-lg font-semibold">No language model is configured</h2>
+                <p className="mt-2 max-w-md text-sm text-muted-foreground">
+                  {llmStatus.disabledReason}
+                </p>
+                <Link
+                  to="/settings?tab=ai-llm"
+                  className="mt-4 inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+                >
+                  Open AI &amp; LLM settings
+                </Link>
+              </div>
+            )}
+
+            {messages.length === 0 && !isStreaming && llmStatus?.available !== false && (
               <div className="flex flex-col items-center text-center" data-testid="assistant-empty-state">
                 <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-primary/20 bg-primary/10">
                   <Bot className="h-7 w-7 text-primary" />

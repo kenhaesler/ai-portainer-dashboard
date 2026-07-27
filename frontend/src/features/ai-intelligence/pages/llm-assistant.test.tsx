@@ -19,6 +19,8 @@ vi.mock('@/features/ai-intelligence/hooks/use-llm-chat', () => ({
 }));
 
 vi.mock('@/features/ai-intelligence/hooks/use-llm-models', () => ({
+  // Reachable by default; the unconfigured case has its own test.
+  useLlmStatus: vi.fn().mockReturnValue({ data: { available: true, disabledReason: null } }),
   useLlmModels: vi.fn().mockReturnValue({
     data: {
       models: [
@@ -147,6 +149,31 @@ describe('LlmAssistantPage', () => {
   // The heading was "Welcome to Your AI Assistant" over "I have real-time
   // access to your entire Docker infrastructure" — a first-person capability
   // claim over six read-only tools.
+  it('says the model is unconfigured before the user spends a question finding out', async () => {
+    // The page presented a model dropdown, a profile picker and four clickable
+    // suggestions on a deployment with no LLM reachable, and revealed the
+    // problem only as a red `Error:` pill after the message was sent. It could
+    // not tell you it was broken until you used it.
+    const { useLlmStatus } = await import('@/features/ai-intelligence/hooks/use-llm-models');
+    vi.mocked(useLlmStatus).mockReturnValue({
+      data: {
+        available: false,
+        disabledReason: 'No language model is reachable. Set LLM_API_URL and LLM_API_TOKEN, or configure the endpoint under Settings → AI & LLM.',
+      },
+    } as ReturnType<typeof useLlmStatus>);
+
+    renderPage();
+
+    expect(screen.getByTestId('assistant-unconfigured')).toBeInTheDocument();
+    expect(screen.getByText(/Set LLM_API_URL and LLM_API_TOKEN/)).toBeInTheDocument();
+    // And the suggestions that cannot work are not offered.
+    expect(screen.queryByTestId('assistant-empty-state')).not.toBeInTheDocument();
+
+    vi.mocked(useLlmStatus).mockReturnValue({
+      data: { available: true, disabledReason: null },
+    } as ReturnType<typeof useLlmStatus>);
+  });
+
   it('states the contract instead of welcoming the operator', () => {
     renderPage();
     expect(screen.queryByText(/Welcome to Your AI Assistant/)).toBeNull();

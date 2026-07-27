@@ -24,6 +24,7 @@ import { useContainers } from '@/features/containers/hooks/use-containers';
 import { useStacks } from '@/features/containers/hooks/use-stacks';
 import {
   useCaptures,
+  usePcapStatus,
   useStartCapture,
   useStopCapture,
   useDeleteCapture,
@@ -122,6 +123,7 @@ export default function PacketCapture() {
   const { data: stacks } = useStacks();
   // The status tabs are groups, not raw enum values, so the narrowing happens
   // here rather than as a server-side `status=` that can only match one value.
+  const { data: pcapStatus } = usePcapStatus();
   const { data: capturesData, refetch, isFetching } = useCaptures({
     search: debouncedSearch || undefined,
   });
@@ -159,15 +161,22 @@ export default function PacketCapture() {
    * never says why is a dead end — the operator cannot tell whether the button
    * is broken or whether they have missed a step.
    */
-  const startDisabledReason: string | null = !canCapture
-    ? NOT_ADMIN_REASON
-    : !target
-      ? 'Select a target container'
-      : targetIsEdgeAsync
-        ? 'Edge Async endpoints cannot run docker exec'
-        : null;
+  // The feature flag comes first: every other precondition is about *this*
+  // capture, and none of them matter if capture is switched off for the whole
+  // deployment. That branch was missing entirely, so the button was live on a
+  // stock install and the click ate a server error.
+  const startDisabledReason: string | null = pcapStatus && !pcapStatus.enabled
+    ? (pcapStatus.disabledReason ?? 'Packet capture is not enabled for this deployment')
+    : !canCapture
+      ? NOT_ADMIN_REASON
+      : !target
+        ? 'Select a target container'
+        : targetIsEdgeAsync
+          ? 'Edge Async endpoints cannot run docker exec'
+          : null;
 
   const handleStartCapture = () => {
+    if (startDisabledReason !== null) return;
     if (!target || targetIsEdgeAsync || !canCapture) return;
 
     startCapture.mutate({
