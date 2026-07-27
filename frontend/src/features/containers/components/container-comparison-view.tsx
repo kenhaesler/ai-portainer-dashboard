@@ -14,6 +14,7 @@ import { type Container } from '@/features/containers/hooks/use-containers';
 import { useComparisonMetrics, type ComparisonTarget } from '@/features/containers/hooks/use-container-comparison';
 import { DataTable } from '@/shared/components/tables/data-table';
 import { formatDate, cn } from '@/shared/lib/utils';
+import { containerStateTone } from '@/shared/lib/container-state';
 
 export const COMPARISON_CHART_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444'];
 export const COMPARISON_TIME_RANGES = ['15m', '1h', '6h', '24h', '7d'] as const;
@@ -212,9 +213,9 @@ function SummaryTable({ containers }: { containers: Container[] }) {
           <span
             className={cn(
               'rounded-full px-2 py-0.5 text-xs font-medium',
-              c.state === 'running'
+              containerStateTone(c.state) === 'running'
                 ? 'bg-emerald-500/10 text-emerald-500'
-                : c.state === 'exited'
+                : containerStateTone(c.state) === 'down'
                   ? 'bg-red-500/10 text-red-500'
                   : 'bg-gray-500/10 text-gray-500',
             )}

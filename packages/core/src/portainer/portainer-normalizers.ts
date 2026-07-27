@@ -1,3 +1,4 @@
+import type { ContainerState } from '@dashboard/contracts';
 import type { Endpoint, Container, Stack, Network, K8sPod, K8sDeployment, K8sService, K8sNamespace } from '../models/portainer.js';
 import { isKubernetesEndpoint, isDockerEndpoint } from '../models/portainer.js';
 import { createChildLogger } from '../utils/logger.js';
@@ -46,7 +47,13 @@ export interface NormalizedContainer {
   id: string;
   name: string;
   image: string;
-  state: 'running' | 'stopped' | 'paused' | 'dead' | 'unknown';
+  /**
+   * Derived from `@dashboard/contracts` rather than restated here. The literal
+   * union used to be written out in this file as well, which let the frontend
+   * compare against Docker's `'exited'` — a word `normalizeContainer` maps away
+   * below and no consumer ever sees.
+   */
+  state: ContainerState;
   status: string;
   created: number;
   endpointId: number;

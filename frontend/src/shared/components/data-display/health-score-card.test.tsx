@@ -9,6 +9,7 @@ function makeStats(overrides: Partial<HealthStats> = {}): HealthStats {
     running: 0,
     stopped: 0,
     paused: 0,
+    dead: 0,
     healthy: 0,
     unhealthy: 0,
     unknown: 0,

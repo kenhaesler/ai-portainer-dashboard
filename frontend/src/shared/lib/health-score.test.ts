@@ -32,6 +32,7 @@ describe('calculateHealthStats', () => {
       running: 0,
       stopped: 0,
       paused: 0,
+      dead: 0,
       unhealthy: 0,
       healthy: 0,
       unknown: 0,
@@ -79,7 +80,7 @@ describe('calculateHealthStats', () => {
 
   it('should count stopped containers as stopped and unknown', () => {
     const containers = [
-      makeContainer({ state: 'exited', healthStatus: undefined }),
+      makeContainer({ state: 'stopped', healthStatus: undefined }),
     ];
 
     const stats = calculateHealthStats(containers);
@@ -106,7 +107,7 @@ describe('calculateHealthStats', () => {
       makeContainer({ id: '2', state: 'running', healthStatus: 'healthy' }),
       makeContainer({ id: '3', state: 'running', healthStatus: 'unhealthy' }),
       makeContainer({ id: '4', state: 'running', healthStatus: undefined }),
-      makeContainer({ id: '5', state: 'exited', healthStatus: undefined }),
+      makeContainer({ id: '5', state: 'stopped', healthStatus: undefined }),
       makeContainer({ id: '6', state: 'paused', healthStatus: undefined }),
     ];
 
@@ -190,11 +191,11 @@ describe('calculateHealthStats', () => {
     expect(healthPercentage).toBe(0);
   });
 
-  it('regression #1025: running, paused, and exited containers without healthStatus all flow to unknown (not healthy)', () => {
+  it('regression #1025: running, paused, and stopped containers without healthStatus all flow to unknown (not healthy)', () => {
     const containers = [
       makeContainer({ id: '1', state: 'running', healthStatus: undefined }),
       makeContainer({ id: '2', state: 'paused', healthStatus: undefined }),
-      makeContainer({ id: '3', state: 'exited', healthStatus: undefined }),
+      makeContainer({ id: '3', state: 'stopped', healthStatus: undefined }),
     ];
 
     const stats = calculateHealthStats(containers);
@@ -215,12 +216,12 @@ describe('calculateHealthStats', () => {
 
   it('score: 2 healthy + 1 unhealthy + 1 stopped-no-check yields ~66.7% (stopped excluded)', () => {
     // Pre-fix used (healthy / total) * 100 = 50%. Post-fix excludes the
-    // exited-no-healthcheck container from the denominator.
+    // stopped-no-healthcheck container from the denominator.
     const containers = [
       makeContainer({ id: '1', state: 'running', healthStatus: 'healthy' }),
       makeContainer({ id: '2', state: 'running', healthStatus: 'healthy' }),
       makeContainer({ id: '3', state: 'running', healthStatus: 'unhealthy' }),
-      makeContainer({ id: '4', state: 'exited', healthStatus: undefined }),
+      makeContainer({ id: '4', state: 'stopped', healthStatus: undefined }),
     ];
 
     const stats = calculateHealthStats(containers);
@@ -314,9 +315,9 @@ describe('calculateHealthStats', () => {
     expect(stats.noHealthcheck).toBe(2);
   });
 
-  it('noHealthcheck: does NOT count exited or paused containers (only running)', () => {
+  it('noHealthcheck: does NOT count stopped or paused containers (only running)', () => {
     const containers = [
-      makeContainer({ id: '1', state: 'exited', healthStatus: undefined }),
+      makeContainer({ id: '1', state: 'stopped', healthStatus: undefined }),
       makeContainer({ id: '2', state: 'paused', healthStatus: undefined }),
       makeContainer({ id: '3', state: 'running', healthStatus: undefined }),
     ];
@@ -351,12 +352,12 @@ describe('calculateHealthStats', () => {
   // pure (no input mutation, deterministic across calls).
   // -------------------------------------------------------------------------
 
-  it('healthStatus takes precedence over state: an exited container with healthStatus="healthy" still counts as healthy', () => {
+  it('healthStatus takes precedence over state: a stopped container with healthStatus="healthy" still counts as healthy', () => {
     // Defensive branch: if a non-running container somehow carries an
     // explicit healthy/unhealthy status (e.g. last-known status surfaced by
     // the API), the explicit value wins over the state-based fallback.
     const containers = [
-      makeContainer({ state: 'exited', healthStatus: 'healthy' }),
+      makeContainer({ state: 'stopped', healthStatus: 'healthy' }),
     ];
 
     const stats = calculateHealthStats(containers);
@@ -366,9 +367,9 @@ describe('calculateHealthStats', () => {
     expect(stats.unknown).toBe(0);
   });
 
-  it('healthStatus takes precedence over state: an exited container with healthStatus="unhealthy" counts as unhealthy', () => {
+  it('healthStatus takes precedence over state: a stopped container with healthStatus="unhealthy" counts as unhealthy', () => {
     const containers = [
-      makeContainer({ state: 'exited', healthStatus: 'unhealthy' }),
+      makeContainer({ state: 'stopped', healthStatus: 'unhealthy' }),
     ];
 
     const stats = calculateHealthStats(containers);
@@ -380,7 +381,7 @@ describe('calculateHealthStats', () => {
 
   it('unrecognised state values flow through to unknown without affecting other counters', () => {
     // Docker exposes additional states (created, restarting, removing, dead).
-    // None of these match running/exited/paused; with no healthStatus they
+    // None of these match running/stopped/paused/dead; with no healthStatus they
     // should still be counted as unknown via the final `else` branch.
     const containers = [
       makeContainer({ id: '1', state: 'created', healthStatus: undefined }),
@@ -414,7 +415,7 @@ describe('calculateHealthStats', () => {
   it('is deterministic: repeated calls with the same input return equivalent stats', () => {
     const containers = [
       makeContainer({ id: '1', state: 'running', healthStatus: 'healthy' }),
-      makeContainer({ id: '2', state: 'exited', healthStatus: undefined }),
+      makeContainer({ id: '2', state: 'stopped', healthStatus: undefined }),
       makeContainer({ id: '3', state: 'running', healthStatus: 'unhealthy' }),
     ];
 
@@ -438,7 +439,7 @@ describe('calculateNeedsAttention', () => {
     const stats = calculateHealthStats([
       makeContainer({ id: '1', state: 'running', healthStatus: 'healthy' }),
       makeContainer({ id: '2', state: 'running', healthStatus: 'unhealthy' }),
-      makeContainer({ id: '3', state: 'exited', healthStatus: undefined }),
+      makeContainer({ id: '3', state: 'stopped', healthStatus: undefined }),
     ]);
 
     expect(calculateNeedsAttention(stats)).toEqual({

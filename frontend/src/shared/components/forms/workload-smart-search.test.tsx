@@ -42,7 +42,7 @@ function makeContainer(overrides: Partial<Container> = {}): Container {
 
 const containers: Container[] = [
   makeContainer({ id: 'c1', name: 'nginx-proxy-1', image: 'nginx:latest', state: 'running' }),
-  makeContainer({ id: 'c2', name: 'postgres-db-1', image: 'postgres:15', state: 'exited' }),
+  makeContainer({ id: 'c2', name: 'postgres-db-1', image: 'postgres:15', state: 'stopped' }),
   makeContainer({ id: 'c3', name: 'redis-cache-1', image: 'redis:alpine', state: 'running' }),
 ];
 
@@ -94,8 +94,8 @@ describe('WorkloadSmartSearch', () => {
     const group = screen.getByRole('group', { name: 'Suggested filters' });
     const labels = Array.from(group.querySelectorAll('button')).map((b) => b.textContent);
     expect(labels.length).toBeGreaterThan(0);
-    // 2 running / 1 exited — the rarest state is the one worth suggesting.
-    expect(labels).toContain('state:exited');
+    // 2 running / 1 stopped — the rarest state is the one worth suggesting.
+    expect(labels).toContain('state:stopped');
     // Fixture images are nginx / postgres / redis, so `image:nginx` is real here.
     expect(labels).toContain('image:nginx');
     // The literals that used to ship: none of them exist in this fixture.
@@ -289,11 +289,11 @@ describe('WorkloadSmartSearch', () => {
 
   it('clicking a filter chip sets query and filters', () => {
     const { onFiltered } = renderComponent();
-    fireEvent.click(screen.getByRole('button', { name: 'state:exited' }));
+    fireEvent.click(screen.getByRole('button', { name: 'state:stopped' }));
 
-    expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('state:exited');
+    expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('state:stopped');
     const lastCall = onFiltered.mock.calls[onFiltered.mock.calls.length - 1][0] as Container[];
-    expect(lastCall).toHaveLength(1); // only c2 is exited
+    expect(lastCall).toHaveLength(1); // only c2 is stopped
   });
 
   it('shows answer result card after AI search', async () => {

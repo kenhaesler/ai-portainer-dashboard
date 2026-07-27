@@ -38,6 +38,7 @@ import {
   ThumbsDown,
 } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { isDownState } from '@/shared/lib/container-state';
 
 /**
  * Map the correlated-anomaly ladder onto the product's insight severity
@@ -416,7 +417,7 @@ export default function AiMonitorPage() {
   const healthIssues = useMemo(() => {
     if (!containers) return [];
     return containers.filter(
-      (c) => c.healthStatus === 'unhealthy' || c.state === 'exited',
+      (c) => c.healthStatus === 'unhealthy' || isDownState(c.state),
     );
   }, [containers]);
 

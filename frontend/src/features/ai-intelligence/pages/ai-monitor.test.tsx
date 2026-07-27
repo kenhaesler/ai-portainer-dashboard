@@ -479,7 +479,7 @@ describe('AiMonitorPage', () => {
         { id: '1', name: 'web', state: 'running', healthStatus: 'healthy', image: 'nginx', status: 'Up', endpointId: 1, endpointName: 'local', ports: [], created: 0, networks: [], labels: {} },
         { id: '2', name: 'api', state: 'running', healthStatus: 'unhealthy', image: 'node', status: 'Up', endpointId: 1, endpointName: 'local', ports: [], created: 0, networks: [], labels: {} },
         { id: '3', name: 'db', state: 'running', healthStatus: undefined, image: 'postgres', status: 'Up', endpointId: 1, endpointName: 'local', ports: [], created: 0, networks: [], labels: {} },
-        { id: '4', name: 'cache', state: 'exited', healthStatus: undefined, image: 'redis', status: 'Exited', endpointId: 1, endpointName: 'local', ports: [], created: 0, networks: [], labels: {} },
+        { id: '4', name: 'cache', state: 'stopped', healthStatus: undefined, image: 'redis', status: 'Exited', endpointId: 1, endpointName: 'local', ports: [], created: 0, networks: [], labels: {} },
       ],
       isLoading: false,
       isError: false,
@@ -496,7 +496,7 @@ describe('AiMonitorPage', () => {
     expect(screen.queryByText('Overall Health Score')).toBeNull();
     // The healthcheck pass rate is still here, named for what it measures and
     // stating its exclusion: healthy / (healthy + unhealthy) = 50%, with the
-    // db (no healthcheck) and cache (exited) outside the denominator.
+    // db (no healthcheck) and cache (stopped) outside the denominator.
     expect(screen.getByTestId('healthcheck-pass-rate')).toHaveTextContent('50%');
     expect(screen.getByTestId('healthcheck-pass-rate')).toHaveTextContent(
       '1 of 2 containers with a healthcheck',
@@ -555,7 +555,7 @@ describe('AiMonitorPage', () => {
     vi.mocked(useContainers).mockReturnValue({
       data: [
         { id: '1', name: 'sick-api', state: 'running', healthStatus: 'unhealthy', image: 'node:20', status: 'Up', endpointId: 1, endpointName: 'local', ports: [], created: 0, networks: [], labels: {} },
-        { id: '2', name: 'crashed-worker', state: 'exited', healthStatus: undefined, image: 'python:3', status: 'Exited', endpointId: 1, endpointName: 'local', ports: [], created: 0, networks: [], labels: {} },
+        { id: '2', name: 'crashed-worker', state: 'stopped', healthStatus: undefined, image: 'python:3', status: 'Exited', endpointId: 1, endpointName: 'local', ports: [], created: 0, networks: [], labels: {} },
         { id: '3', name: 'healthy-web', state: 'running', healthStatus: 'healthy', image: 'nginx', status: 'Up', endpointId: 1, endpointName: 'local', ports: [], created: 0, networks: [], labels: {} },
       ],
       isLoading: false,

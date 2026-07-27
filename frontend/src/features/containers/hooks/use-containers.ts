@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import type { ContainerState } from '@dashboard/contracts';
 import { api } from '@/shared/lib/api';
 import { STALE_TIMES } from '@/shared/lib/query-constants';
 
@@ -6,7 +7,18 @@ export interface Container {
   id: string;
   name: string;
   image: string;
-  state: string;
+  /**
+   * The contract vocabulary, not a free string.
+   *
+   * This was `string`, which is how the fleet-health tile came to compare
+   * against `'exited'` — a Docker word the server-side normalizer maps to
+   * `'stopped'` before the client ever sees it. A `string` here makes an
+   * unreachable comparison look perfectly reasonable to both the compiler and
+   * the reviewer. `NormalizedContainerSchema` serializes this field through
+   * `ContainerStateSchema`, so the narrowing is a fact about the payload, not
+   * an optimistic assertion about it.
+   */
+  state: ContainerState;
   status: string;
   endpointId: number;
   endpointName: string;
