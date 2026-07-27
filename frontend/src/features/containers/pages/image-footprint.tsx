@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { type ColumnDef } from '@tanstack/react-table';
 import { AnimatePresence, m } from 'framer-motion';
@@ -563,6 +563,9 @@ function ImageDetailPanel({
     setTimeout(() => setCopiedField(null), 1500);
   }, []);
 
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+
   // Close on Escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -571,6 +574,45 @@ function ImageDetailPanel({
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
+
+  /**
+   * Move focus into the panel on open and return it on close.
+   *
+   * The panel declared `role="dialog"` but never took focus, so it opened
+   * behind the keyboard user: focus stayed on the table row underneath,
+   * Tab walked the page *behind* the dialog, and a screen reader was never
+   * told a dialog had opened at all. Restoring focus on close matters just as
+   * much — without it, dismissing the panel dropped focus to the top of the
+   * document and lost the operator's place in a 20-row table.
+   */
+  useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    closeButtonRef.current?.focus();
+    return () => previouslyFocused?.focus?.();
+  }, []);
+
+  // Keep Tab inside the panel while it is open. `aria-modal` tells assistive
+  // tech the rest of the page is inert; this makes that true for the keyboard.
+  useEffect(() => {
+    const handleTab = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab' || !panelRef.current) return;
+      const focusable = panelRef.current.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', handleTab);
+    return () => document.removeEventListener('keydown', handleTab);
+  }, []);
 
   const staleness = stalenessMap.get(image.name);
 
@@ -591,7 +633,9 @@ function ImageDetailPanel({
       {/* Slide-in panel */}
       <m.div
         key="image-detail-panel"
+        ref={panelRef}
         role="dialog"
+        aria-modal="true"
         aria-label={`Details for ${image.name}`}
         className="fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col border-l border-border/50 bg-card/90 shadow-2xl backdrop-blur-[45px]"
         initial={{ x: '100%', opacity: 0.8 }}
@@ -608,6 +652,7 @@ function ImageDetailPanel({
             <h2 className="mt-0.5 truncate text-lg font-semibold">{image.name}</h2>
           </div>
           <button
+            ref={closeButtonRef}
             onClick={onClose}
             aria-label="Close details"
             className="ml-4 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-accent/80"

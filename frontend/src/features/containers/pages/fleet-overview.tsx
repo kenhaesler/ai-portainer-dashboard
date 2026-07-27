@@ -1129,9 +1129,13 @@ export default function InfrastructurePage() {
                       placeholder="Search endpoints by name, status, type, or URL"
                       label="Search endpoints"
                       examples={endpointSearchExamples}
-                      // Focus the search when the Fleet tab first mounts; gate with ref
-                      // so re-mounting (tab switch) does not re-steal focus.
-                      autoFocus={!fleetSearchAutoFocusedRef.current}
+                      // No autofocus. Stealing focus into the search box on
+                      // mount put a keyboard user's first Tab on a filter
+                      // suggestion — past the <h1> and the entire tab bar,
+                      // which then never appeared in the first 22 tab stops —
+                      // and popped the software keyboard over the one card of
+                      // content on a phone. The skip link in the app shell is
+                      // the supported way to reach content quickly.
                       onAutoFocused={markFleetSearchAutoFocused}
                       initialValue={endpointSearchQuery}
                       showCount={false}

@@ -8,6 +8,7 @@ import {
   flexRender,
   type ColumnDef,
   type SortingState,
+  type OnChangeFn,
   type ColumnFiltersState,
   type RowSelectionState,
   type Row,
@@ -124,6 +125,19 @@ interface DataTableProps<T> {
    * text, which is usually adequate.
    */
   rowLabel?: (row: T) => string;
+  /**
+   * Controlled sort state. Supply both to share one ordering across several
+   * tables — the Reports page renders Application and Infrastructure as two
+   * DataTables that must sort together.
+   *
+   * That requirement is why Reports previously set `enableSorting: false` on
+   * every column and hand-rolled `<span onClick>` headers, which cost it
+   * everything this component already does correctly: real `<button>` headers,
+   * `aria-sort` on the `<th>`, and keyboard operation. Five of its eight
+   * headers also ended up looking sortable while doing nothing.
+   */
+  sorting?: SortingState;
+  onSortingChange?: OnChangeFn<SortingState>;
 }
 
 export function DataTable<T>({
@@ -148,8 +162,13 @@ export function DataTable<T>({
   rowClassName,
   rowHref,
   rowLabel,
+  sorting: controlledSorting,
+  onSortingChange,
 }: DataTableProps<T>) {
-  const [sorting, setSorting] = useState<SortingState>([]);
+  const [internalSorting, setInternalSorting] = useState<SortingState>([]);
+  const isSortingControlled = controlledSorting !== undefined && onSortingChange !== undefined;
+  const sorting = isSortingControlled ? controlledSorting : internalSorting;
+  const setSorting: OnChangeFn<SortingState> = isSortingControlled ? onSortingChange : setInternalSorting;
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [pageIndex, setPageIndex] = useState(0);

@@ -87,7 +87,8 @@ export function ServiceMap({ serviceNodes, serviceEdges }: ServiceMapProps) {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         fitView
-        attributionPosition="bottom-left"
+        // Attribution hidden: it rendered into the product page.
+        proOptions={{ hideAttribution: true }}
       >
         <Background />
         <Controls />

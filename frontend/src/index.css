@@ -91,7 +91,7 @@
     --color-secondary: #ccd0da; /* Surface1 */
     --color-secondary-foreground: #4c4f69; /* Text */
     --color-muted: #bcc0cc; /* Surface2 */
-    --color-muted-foreground: #6c6f85; /* Subtext0 */
+    --color-muted-foreground: #5c5f77; /* Subtext1 — Subtext0 (#6c6f85) is 4.37:1 on Base, under AA */
     --color-accent: #1e66f5; /* Blue */
     --color-accent-foreground: #eff1f5; /* Base */
     --color-destructive: #d20f39; /* Red */
@@ -235,7 +235,7 @@
     --color-secondary: #e8ddc5;
     --color-secondary-foreground: #4a3f35;
     --color-muted: #e2d5b8;
-    --color-muted-foreground: #7a6e5d;
+    --color-muted-foreground: #6b6050; /* was #7a6e5d — 4.26:1 on this bg, under AA */
     --color-accent: #c8a35c;
     --color-accent-foreground: #f4edd8;
     --color-destructive: #c45a4a;
@@ -563,7 +563,7 @@
     --color-secondary: rgba(255, 255, 255, 0.5);
     --color-secondary-foreground: #1a1a2e;
     --color-muted: rgba(148, 163, 184, 0.3);
-    --color-muted-foreground: #64748b;
+    --color-muted-foreground: #5b6b80; /* was #64748b (slate-500) — 4.31:1 on this bg, under AA */
     --color-accent: #8b5cf6; /* Purple accent */
     --color-accent-foreground: #ffffff;
     --color-destructive: #ef4444;

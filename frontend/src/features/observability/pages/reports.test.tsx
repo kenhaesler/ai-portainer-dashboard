@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import ReportsPage from './reports';
@@ -382,14 +382,38 @@ describe('ReportsPage', () => {
   });
 
   it('toggles sort direction on the shared utilization column header', () => {
+    // The header used to be a `<span onClick>` carrying a text arrow, with
+    // `aria-sort` null on every `<th>` and nothing tabbable — the table could
+    // not be sorted by keyboard at all, and five of its eight headers looked
+    // sortable while doing nothing. It is now a real DataTable column, so the
+    // contract to assert is the accessible one.
     renderWithProviders(<ReportsPage />);
-    const cpuHeader = screen.getByText('CPU Avg');
-    // No indicator until clicked.
-    expect(cpuHeader.textContent).toBe('CPU Avg');
-    fireEvent.click(cpuHeader);
-    expect(screen.getByText(/CPU Avg ↑/)).toBeTruthy();
-    fireEvent.click(screen.getByText(/CPU Avg ↑/));
-    expect(screen.getByText(/CPU Avg ↓/)).toBeTruthy();
+
+    const cpuHeaderCell = screen.getAllByRole('columnheader', { name: /CPU Avg/ })[0];
+    expect(cpuHeaderCell).toHaveAttribute('aria-sort', 'none');
+
+    const cpuButton = within(cpuHeaderCell).getByRole('button');
+
+    // A numeric column sorts descending first — highest CPU at the top is what
+    // an operator opens this table for — then reverses.
+    fireEvent.click(cpuButton);
+    const firstDirection = cpuHeaderCell.getAttribute('aria-sort');
+    expect(firstDirection).toBe('descending');
+
+    fireEvent.click(cpuButton);
+    expect(cpuHeaderCell).toHaveAttribute('aria-sort', 'ascending');
+  });
+
+  it('exposes every utilization column as a keyboard-operable sort control', () => {
+    // CPU p95, CPU Max, Mem p95, Mem Max and Samples were visually identical
+    // to the sortable headers and inert.
+    renderWithProviders(<ReportsPage />);
+
+    for (const name of ['Container', 'CPU Avg', 'CPU p95', 'CPU Max', 'Mem Avg', 'Mem p95', 'Mem Max', 'Samples']) {
+      const cell = screen.getAllByRole('columnheader', { name: new RegExp(name) })[0];
+      expect(cell, `${name} header cell`).toHaveAttribute('aria-sort');
+      expect(within(cell).getByRole('button'), `${name} sort button`).toBeTruthy();
+    }
   });
 
   it('renders the office DataTable when a group is expanded', () => {

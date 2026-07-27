@@ -210,12 +210,15 @@ export function UsersPanel() {
         <section className="rounded-lg border bg-card p-6 shadow-sm">
           <div className="mb-4 flex flex-wrap items-center gap-2">
             <input
+              type="search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search username..."
+              aria-label="Search users by username"
               className="h-8 rounded-md border border-input bg-background px-2 text-sm"
             />
             <ThemedSelect
+              ariaLabel="Filter users by role"
               value={roleFilter}
               onValueChange={(val) => setRoleFilter(val as 'all' | UserRole)}
               options={[
@@ -282,6 +285,7 @@ export function UsersPanel() {
             <div className="block">
               <span className="mb-1 block text-muted-foreground">Role</span>
               <ThemedSelect
+                ariaLabel="Role for the new user"
                 value={form.role}
                 onValueChange={(val) => setForm((prev) => ({ ...prev, role: val as UserRole }))}
                 options={[

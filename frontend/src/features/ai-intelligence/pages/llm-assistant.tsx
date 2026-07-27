@@ -322,7 +322,26 @@ export default function LlmAssistantPage() {
       <div className="flex-1 overflow-hidden rounded-xl border bg-gradient-to-b from-card to-card/50 shadow-xl backdrop-blur-sm">
         <div className="flex h-full flex-col">
           {/* Messages Area */}
-          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          {/*
+            `role="log"` + `aria-live="polite"`: the app's one conversational
+            surface announced nothing at all. Streaming markdown, the
+            "Generating response" state, tool activity and the error pill were
+            visual-only, so a screen-reader user asked a question and received
+            silence with no way to tell whether anything was happening.
+
+            `polite` rather than `assertive` so a long answer does not
+            interrupt the user mid-sentence, and `aria-relevant="additions"` so
+            only newly appended turns are announced rather than the whole
+            transcript being re-read on every token.
+          */}
+          <div
+            className="flex-1 overflow-y-auto p-6 space-y-6"
+            role="log"
+            aria-live="polite"
+            aria-relevant="additions"
+            aria-label="Conversation"
+            aria-busy={isStreaming || isSending}
+          >
             {/* Anchored to the top of the scroll area, not centred in it: with
                 `justify-center` inside `h-[calc(100vh-8rem)]` the heading and
                 the icon sat above the container's top edge on a 390px

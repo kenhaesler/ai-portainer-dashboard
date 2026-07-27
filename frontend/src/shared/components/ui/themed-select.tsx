@@ -23,6 +23,14 @@ interface ThemedSelectProps {
   disabled?: boolean;
   className?: string;
   id?: string;
+  /**
+   * Accessible name, when no `<label for>` points at this control.
+   *
+   * Radix renders the trigger as a `<button>`, so a nearby `<span>` heading
+   * does not name it — the Create User role select and the users role filter
+   * both announced as an unnamed button with only their current value.
+   */
+  ariaLabel?: string;
 }
 
 export function ThemedSelect({
@@ -33,6 +41,7 @@ export function ThemedSelect({
   disabled,
   className,
   id,
+  ariaLabel,
 }: ThemedSelectProps) {
   const isGroup = (entry: SelectEntry): entry is SelectOptionGroup => 'options' in entry;
 
@@ -63,6 +72,7 @@ export function ThemedSelect({
     <SelectPrimitive.Root value={value} onValueChange={onValueChange} disabled={disabled}>
       <SelectPrimitive.Trigger
         id={id}
+        aria-label={ariaLabel}
         className={cn(
           'inline-flex h-9 items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs',
           'ring-offset-background transition-colors',

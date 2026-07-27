@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
-import { type ColumnDef } from '@tanstack/react-table';
+import { type ColumnDef, type SortingState } from '@tanstack/react-table';
 import {
   FileBarChart,
   Download,
@@ -507,8 +507,10 @@ export default function ReportsPage() {
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [showPdfOptions, setShowPdfOptions] = useState(false);
   const [selectedEndpoint, setSelectedEndpoint] = useState<number | undefined>();
-  const [sortField, setSortField] = useState<'name' | 'cpu' | 'memory'>('name');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  // One ordering, shared by the Application and Infrastructure tables. This
+  // replaces a bespoke ('name' | 'cpu' | 'memory') + direction pair that only
+  // covered three of the eight columns.
+  const [sorting, setSorting] = useState<SortingState>([{ id: 'container_name', desc: false }]);
 
   const { data: endpoints } = useEndpoints();
   const { data: allContainers } = useContainers();
@@ -529,21 +531,14 @@ export default function ReportsPage() {
     isLoading: pdfTrendsLoading,
   } = useTrendsReport(pdfTimeRange, selectedEndpoint, undefined, pdfExcludeInfrastructure);
 
-  // Sort containers
-  const sortedContainers = useMemo(() => {
-    if (!report?.containers) return [];
-    return [...report.containers].sort((a, b) => {
-      let cmp: number;
-      if (sortField === 'name') {
-        cmp = a.container_name.localeCompare(b.container_name);
-      } else if (sortField === 'cpu') {
-        cmp = (a.cpu?.avg ?? 0) - (b.cpu?.avg ?? 0);
-      } else {
-        cmp = (a.memory?.avg ?? 0) - (b.memory?.avg ?? 0);
-      }
-      return sortDir === 'asc' ? cmp : -cmp;
-    });
-  }, [report?.containers, sortField, sortDir]);
+  // Ordering is DataTable's now (see `containerColumns`), so this only splits
+  // the rows into the two tables. Sorting here as well would fight it — and
+  // the old comparator coerced a missing reading to 0, which sorted a
+  // container with no data as the quietest in the fleet.
+  const sortedContainers = useMemo(
+    () => report?.containers ?? [],
+    [report?.containers],
+  );
 
   // Trend chart data
   const cpuTrendData = useMemo(() => {
@@ -714,17 +709,6 @@ export default function ReportsPage() {
     }
   };
 
-  const handleSort = useCallback((field: 'name' | 'cpu' | 'memory') => {
-    setSortField((prevField) => {
-      if (prevField === field) {
-        setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
-        return prevField;
-      }
-      setSortDir('asc');
-      return field;
-    });
-  }, []);
-
   const isLoading = reportLoading || trendsLoading;
   const isPdfLoading = pdfReportLoading || pdfTrendsLoading;
   const applicationContainers = useMemo(
@@ -807,24 +791,25 @@ export default function ReportsPage() {
     setPdfReportTitle(selected.reportTitle as string);
   };
 
-  // Sorting is driven by the parent (`handleSort`) and shared across the
-  // Application/Infrastructure tables, so the columns disable DataTable's own
-  // sorting and instead render the existing arrow indicators + click handlers.
-  const sortIndicator = (field: 'name' | 'cpu' | 'memory') =>
-    sortField === field ? (sortDir === 'asc' ? ' ↑' : ' ↓') : '';
-
+  // Every column is a real, sortable DataTable column.
+  //
+  // These were `enableSorting: false` with hand-rolled `<span onClick>`
+  // headers, because the Application and Infrastructure tables must sort
+  // together and DataTable owned its sort state privately. The cost was
+  // severe: `aria-sort` was null on all eight headers, none was tabbable, and
+  // five of the eight looked identical to the sortable ones while doing
+  // nothing at all. DataTable now accepts controlled sort state, so the two
+  // tables share an ordering *and* get real <button> headers, aria-sort and
+  // keyboard operation.
+  //
+  // `sortUndefined: 'last'` keeps containers with no reading for a metric at
+  // the bottom either way, rather than letting a missing value sort as 0 and
+  // masquerade as the quietest container in the fleet.
   const containerColumns = useMemo<ColumnDef<ContainerReport, unknown>[]>(() => [
     {
       accessorKey: 'container_name',
-      enableSorting: false,
-      header: () => (
-        <span
-          className="cursor-pointer hover:text-foreground"
-          onClick={() => handleSort('name')}
-        >
-          Container{sortIndicator('name')}
-        </span>
-      ),
+      header: 'Container',
+      sortUndefined: 'last',
       cell: ({ row }) => (
         <span className="block font-medium truncate max-w-[200px]" title={row.original.container_name}>
           {row.original.container_name}
@@ -833,15 +818,9 @@ export default function ReportsPage() {
     },
     {
       id: 'cpu_avg',
-      enableSorting: false,
-      header: () => (
-        <span
-          className="block w-full cursor-pointer text-right hover:text-foreground"
-          onClick={() => handleSort('cpu')}
-        >
-          CPU Avg{sortIndicator('cpu')}
-        </span>
-      ),
+      accessorFn: (row) => row.cpu?.avg,
+      header: () => <span className="block w-full text-right">CPU Avg</span>,
+      sortUndefined: 'last',
       cell: ({ row }) => (
         <span className={cn('block text-right', (row.original.cpu?.avg ?? 0) > 80 && 'text-red-500 font-medium')}>
           {row.original.cpu ? `${row.original.cpu.avg.toFixed(1)}%` : '—'}
@@ -850,8 +829,9 @@ export default function ReportsPage() {
     },
     {
       id: 'cpu_p95',
-      enableSorting: false,
+      accessorFn: (row) => row.cpu?.p95 ?? undefined,
       header: () => <span className="block w-full text-right">CPU p95</span>,
+      sortUndefined: 'last',
       cell: ({ row }) => (
         <span className="block text-right">
           {row.original.cpu?.p95 != null ? `${row.original.cpu.p95.toFixed(1)}%` : '—'}
@@ -860,8 +840,9 @@ export default function ReportsPage() {
     },
     {
       id: 'cpu_max',
-      enableSorting: false,
+      accessorFn: (row) => row.cpu?.max,
       header: () => <span className="block w-full text-right">CPU Max</span>,
+      sortUndefined: 'last',
       cell: ({ row }) => (
         <span className="block text-right">
           {row.original.cpu ? `${row.original.cpu.max.toFixed(1)}%` : '—'}
@@ -870,15 +851,9 @@ export default function ReportsPage() {
     },
     {
       id: 'mem_avg',
-      enableSorting: false,
-      header: () => (
-        <span
-          className="block w-full cursor-pointer text-right hover:text-foreground"
-          onClick={() => handleSort('memory')}
-        >
-          Mem Avg{sortIndicator('memory')}
-        </span>
-      ),
+      accessorFn: (row) => row.memory?.avg,
+      header: () => <span className="block w-full text-right">Mem Avg</span>,
+      sortUndefined: 'last',
       cell: ({ row }) => (
         <span className={cn('block text-right', (row.original.memory?.avg ?? 0) > 85 && 'text-red-500 font-medium')}>
           {row.original.memory ? `${row.original.memory.avg.toFixed(1)}%` : '—'}
@@ -887,8 +862,9 @@ export default function ReportsPage() {
     },
     {
       id: 'mem_p95',
-      enableSorting: false,
+      accessorFn: (row) => row.memory?.p95 ?? undefined,
       header: () => <span className="block w-full text-right">Mem p95</span>,
+      sortUndefined: 'last',
       cell: ({ row }) => (
         <span className="block text-right">
           {row.original.memory?.p95 != null ? `${row.original.memory.p95.toFixed(1)}%` : '—'}
@@ -897,8 +873,9 @@ export default function ReportsPage() {
     },
     {
       id: 'mem_max',
-      enableSorting: false,
+      accessorFn: (row) => row.memory?.max,
       header: () => <span className="block w-full text-right">Mem Max</span>,
+      sortUndefined: 'last',
       cell: ({ row }) => (
         <span className="block text-right">
           {row.original.memory ? `${row.original.memory.max.toFixed(1)}%` : '—'}
@@ -907,15 +884,16 @@ export default function ReportsPage() {
     },
     {
       id: 'samples',
-      enableSorting: false,
+      accessorFn: (row) => row.cpu?.samples ?? row.memory?.samples ?? 0,
       header: () => <span className="block w-full text-right">Samples</span>,
+      sortUndefined: 'last',
       cell: ({ row }) => (
         <span className="block text-right text-muted-foreground">
           {row.original.cpu?.samples ?? row.original.memory?.samples ?? 0}
         </span>
       ),
     },
-  ], [handleSort, sortField, sortDir]);
+  ], []);
 
   const renderContainerTable = (containers: ContainerReport[]) => (
     <div className="p-2">
@@ -935,6 +913,8 @@ export default function ReportsPage() {
         hideSearch
         windowScroll
         getRowId={(c) => c.container_id}
+        sorting={sorting}
+        onSortingChange={setSorting}
       />
     </div>
   );
