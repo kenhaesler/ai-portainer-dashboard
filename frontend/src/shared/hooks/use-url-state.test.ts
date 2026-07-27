@@ -10,6 +10,13 @@ vi.mock('react-router', () => ({
   useSearchParams: () => [mockSearchParams, mockSetSearchParams],
 }));
 
+// The hook infers its generic from the default value, so an unannotated
+// `useURLState('sort', 'name-asc')` narrows the setter to the default alone.
+// A caller whose key holds more than one value states that domain, and so do
+// these tests — the same way a page would.
+type SortValue = 'name-asc' | 'cpu-desc';
+type ViewValue = 'table' | 'grid';
+
 describe('useURLState', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -28,7 +35,7 @@ describe('useURLState', () => {
   });
 
   it('calls setSearchParams with new value', () => {
-    const { result } = renderHook(() => useURLState('sort', 'name-asc'));
+    const { result } = renderHook(() => useURLState<SortValue>('sort', 'name-asc'));
 
     act(() => {
       result.current[1]('cpu-desc');
@@ -47,7 +54,7 @@ describe('useURLState', () => {
 
   it('removes key when value equals default', () => {
     mockSearchParams = new URLSearchParams('sort=cpu-desc');
-    const { result } = renderHook(() => useURLState('sort', 'name-asc'));
+    const { result } = renderHook(() => useURLState<SortValue>('sort', 'name-asc'));
 
     act(() => {
       result.current[1]('name-asc');
@@ -72,7 +79,7 @@ describe('useURLState', () => {
   });
 
   it('preserves other URL params when setting a value', () => {
-    const { result } = renderHook(() => useURLState('view', 'table'));
+    const { result } = renderHook(() => useURLState<ViewValue>('view', 'table'));
 
     act(() => {
       result.current[1]('grid');

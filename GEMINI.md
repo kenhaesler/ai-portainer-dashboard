@@ -28,6 +28,8 @@ This file provides guidance to Google Gemini and Gemini-based coding tools worki
 
 **Tests required** — Every change needs tests. PRs without tests are blocked by CI. Backend: `backend/src/**/*.test.ts`, Packages: `packages/*/src/**/*.test.ts`, Frontend: `frontend/src/**/*.test.{ts,tsx}`, E2E: `e2e/*.spec.ts`. Both use Vitest; frontend uses jsdom + `@testing-library/react`. Never use `--no-verify`.
 
+**Test files are typechecked — everywhere.** Packages' tests are covered by the per-package `typecheck` script (#1586) and frontend's by `frontend/tsconfig.test.json`, which `npm run typecheck -w frontend` runs alongside the browser program (#1617). Both gaps once hid real errors for months, so do not "fix" a test's type error by reaching for `any`, `@ts-expect-error`, or a cast — correct the fixture. `frontend/src/typecheck-gate.test.ts` and `backend/src/typecheck-gate.test.ts` fail if either program stops covering the tests. (Canonical: `CLAUDE.md` → Code Quality; issues #1586, #1617.)
+
 **Mocks are for CI only.** External services (Portainer API, LLM API, Redis) are unavailable in CI, so tests must mock those calls. But mocks should be minimal — only mock what CI cannot reach. Prefer real integrations wherever possible:
 
 - **Backend DB tests**: Use real PostgreSQL via `test-db-helper.ts` (port 5433). Never mock the database.

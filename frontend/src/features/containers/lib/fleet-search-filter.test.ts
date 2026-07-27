@@ -6,9 +6,11 @@ import {
   type StackWithEndpoint,
 } from './fleet-search-filter';
 import type { Endpoint } from '@/features/containers/hooks/use-endpoints';
+import { snapshotSourceFor } from '@/test/endpoint-fixture';
+
 
 function makeEndpoint(overrides: Partial<Endpoint> = {}): Endpoint {
-  return {
+  const base: Omit<Endpoint, 'snapshotSource'> = {
     id: 1,
     name: 'prod-server-1',
     type: 1,
@@ -27,6 +29,7 @@ function makeEndpoint(overrides: Partial<Endpoint> = {}): Endpoint {
     capabilities: { exec: true, realtimeLogs: true, liveStats: true, immediateActions: true },
     ...overrides,
   };
+  return { ...base, snapshotSource: overrides.snapshotSource ?? snapshotSourceFor(base) };
 }
 
 function makeStack(overrides: Partial<StackWithEndpoint> = {}): StackWithEndpoint {

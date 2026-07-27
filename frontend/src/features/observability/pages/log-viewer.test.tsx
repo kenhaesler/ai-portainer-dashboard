@@ -1,8 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import type { useLogStream } from '@/features/observability/hooks/use-log-stream';
+import type { ParsedLogEntry } from '@/features/observability/lib/log-viewer';
 import LogViewerPage from './log-viewer';
 
-const mockUseQueries = vi.fn(() => []);
+/** The one `useQueries` argument the page builds, and which this test inspects. */
+interface LogViewerQueriesArg {
+  queries: Array<{
+    queryKey: unknown[];
+    queryFn: () => unknown;
+    refetchInterval: number | false;
+    enabled: boolean;
+  }>;
+}
+
+const mockUseQueries = vi.fn<(args: LogViewerQueriesArg) => unknown[]>(() => []);
 const mockUseUiStore = vi.fn((selector: (state: { potatoMode: boolean }) => boolean) =>
   selector({ potatoMode: false }),
 );
@@ -24,7 +36,7 @@ vi.mock('react-router', () => ({
 }));
 
 vi.mock('@tanstack/react-query', () => ({
-  useQueries: (args: unknown) => mockUseQueries(args),
+  useQueries: (args: LogViewerQueriesArg) => mockUseQueries(args),
 }));
 
 // jsdom reports every element as 0px tall, so the real virtualizer measures an
@@ -62,7 +74,11 @@ vi.mock('@/shared/hooks/use-page-visibility', () => ({
   usePageVisibility: () => mockUsePageVisibility(),
 }));
 
-const mockUseLogStream = vi.fn(() => ({
+// Typed against the real hook, so a fixture that drifts from `ParsedLogEntry`
+// (or an option the page stops passing) is a compile error here.
+type UseLogStream = typeof useLogStream;
+
+const mockUseLogStream = vi.fn<UseLogStream>(() => ({
   streamedEntries: [],
   isStreaming: false,
   isFallback: false,
@@ -70,7 +86,7 @@ const mockUseLogStream = vi.fn(() => ({
 }));
 
 vi.mock('@/features/observability/hooks/use-log-stream', () => ({
-  useLogStream: (...args: unknown[]) => mockUseLogStream(...args),
+  useLogStream: (...args: Parameters<UseLogStream>) => mockUseLogStream(...args),
 }));
 
 vi.mock('@/features/containers/hooks/use-endpoints', () => ({
@@ -174,9 +190,7 @@ describe('LogViewerPage', () => {
 
     it('does not open a stream while nothing is selected', () => {
       render(<LogViewerPage />);
-      const lastCall = mockUseLogStream.mock.calls.at(-1)?.[0] as
-        | { enabled: boolean }
-        | undefined;
+      const lastCall = mockUseLogStream.mock.calls.at(-1)?.[0];
       expect(lastCall?.enabled).toBe(false);
     });
   });
@@ -198,8 +212,8 @@ describe('LogViewerPage', () => {
             containerId: 'c1',
             containerName: 'api',
             timestamp: '2026-05-05T10:00:00.000Z',
-            level: 'error' as const,
-            levelSource: 'emitted' as const,
+            level: 'error',
+            levelSource: 'emitted',
             message: 'connection refused',
             raw: '2026-05-05T10:00:00.000Z connection refused',
           },
@@ -229,8 +243,8 @@ describe('LogViewerPage', () => {
    */
   describe('level cell treatment by source', () => {
     const streamOf = (
-      rows: Array<{ id: string; level: string; levelSource: string; message: string }>,
-    ) => ({
+      rows: Array<Pick<ParsedLogEntry, 'id' | 'level' | 'levelSource' | 'message'>>,
+    ): ReturnType<UseLogStream> => ({
       streamedEntries: rows.map((row) => ({
         id: row.id,
         containerId: 'c1',
@@ -256,7 +270,7 @@ describe('LogViewerPage', () => {
 
     it('gives an unestablished level a muted treatment, not the INFO green', async () => {
       mockUseLogStream.mockReturnValue(
-        streamOf([{ id: 'n1', level: 'unknown', levelSource: 'none', message: 'count: 27' }]) as never,
+        streamOf([{ id: 'n1', level: 'unknown', levelSource: 'none', message: 'count: 27' }]),
       );
 
       await renderRows();
@@ -272,7 +286,7 @@ describe('LogViewerPage', () => {
 
     it('dims a guess and marks it with ?', async () => {
       mockUseLogStream.mockReturnValue(
-        streamOf([{ id: 'g1', level: 'debug', levelSource: 'guessed', message: 'module: "x-store"' }]) as never,
+        streamOf([{ id: 'g1', level: 'debug', levelSource: 'guessed', message: 'module: "x-store"' }]),
       );
 
       await renderRows();
@@ -287,7 +301,7 @@ describe('LogViewerPage', () => {
 
     it('gives a declared level the full colour, undimmed', async () => {
       mockUseLogStream.mockReturnValue(
-        streamOf([{ id: 'e1', level: 'error', levelSource: 'emitted', message: 'connection refused' }]) as never,
+        streamOf([{ id: 'e1', level: 'error', levelSource: 'emitted', message: 'connection refused' }]),
       );
 
       await renderRows();
@@ -371,7 +385,7 @@ describe('LogViewerPage', () => {
     await waitFor(() => {
       const calls = mockUseQueries.mock.calls;
       expect(calls.length).toBeGreaterThan(0);
-      const lastCall = calls[calls.length - 1][0] as { queries: Array<{ refetchInterval: number | false }> };
+      const lastCall = calls[calls.length - 1][0];
       expect(lastCall.queries).toHaveLength(1);
       expect(lastCall.queries[0]?.refetchInterval).toBe(5000);
     });
@@ -391,7 +405,7 @@ describe('LogViewerPage', () => {
     await waitFor(() => {
       const calls = mockUseQueries.mock.calls;
       expect(calls.length).toBeGreaterThan(0);
-      const lastCall = calls[calls.length - 1][0] as { queries: Array<{ refetchInterval: number | false }> };
+      const lastCall = calls[calls.length - 1][0];
       expect(lastCall.queries).toHaveLength(1);
       expect(lastCall.queries[0]?.refetchInterval).toBe(false);
     });
@@ -406,7 +420,7 @@ describe('LogViewerPage', () => {
     await waitFor(() => {
       const calls = mockUseQueries.mock.calls;
       expect(calls.length).toBeGreaterThan(0);
-      const lastCall = calls[calls.length - 1][0] as { queries: Array<{ refetchInterval: number | false }> };
+      const lastCall = calls[calls.length - 1][0];
       expect(lastCall.queries).toHaveLength(1);
       expect(lastCall.queries[0]?.refetchInterval).toBe(false);
     });

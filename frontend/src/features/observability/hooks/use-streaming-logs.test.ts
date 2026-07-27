@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { useStreamingLogs } from './use-streaming-logs';
 import { api } from '@/shared/lib/api';
@@ -10,8 +10,9 @@ vi.mock('@/shared/lib/api', () => ({
   },
 }));
 
-// Helper to create a mock ReadableStream from SSE lines
-function createMockSSEStream(events: string[], delay = 0): ReadableStream<Uint8Array> {
+// Helper to create a mock ReadableStream from SSE lines. The element type is
+// the one a real `Response.body` carries, since that is what it stands in for.
+function createMockSSEStream(events: string[], delay = 0): NonNullable<Response['body']> {
   const encoder = new TextEncoder();
   let index = 0;
 
@@ -28,13 +29,26 @@ function createMockSSEStream(events: string[], delay = 0): ReadableStream<Uint8A
   });
 }
 
+// `typeof fetch` merges the DOM and @types/node declarations into an overload
+// set, and `Mock<T>` only carries T's last overload — so name the single
+// signature the hook actually calls.
+type FetchFn = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+
+// useStreamingLogs reads exactly `ok`, `status`, `body` and `json()` off the
+// response, so tests supply those and nothing else. One helper so the narrowing
+// to Response lives in a single place.
+type ResponseStub = Pick<Response, 'ok'> & Partial<Pick<Response, 'status' | 'body' | 'json'>>;
+function mockResponse(stub: ResponseStub): Response {
+  return stub as Response;
+}
+
 describe('useStreamingLogs', () => {
-  let mockFetch: ReturnType<typeof vi.fn>;
+  let mockFetch: Mock<FetchFn>;
 
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useFakeTimers();
-    mockFetch = vi.fn();
+    mockFetch = vi.fn<FetchFn>();
     global.fetch = mockFetch;
   });
 
@@ -61,11 +75,11 @@ describe('useStreamingLogs', () => {
       `data: ${JSON.stringify({ done: true, reason: 'container_stopped' })}\n\n`,
     ]);
 
-    mockFetch.mockResolvedValue({
+    mockFetch.mockResolvedValue(mockResponse({
       ok: true,
       body: sseStream,
-      json: vi.fn(),
-    });
+      json: vi.fn<Response['json']>(),
+    }));
 
     const { result } = renderHook(() =>
       useStreamingLogs(1, 'abc123', { autoReconnect: false }),
@@ -91,11 +105,11 @@ describe('useStreamingLogs', () => {
       `data: ${JSON.stringify({ done: true })}\n\n`,
     ]);
 
-    mockFetch.mockResolvedValue({
+    mockFetch.mockResolvedValue(mockResponse({
       ok: true,
       body: sseStream,
-      json: vi.fn(),
-    });
+      json: vi.fn<Response['json']>(),
+    }));
 
     const { result } = renderHook(() =>
       useStreamingLogs(1, 'abc123', { autoReconnect: false }),
@@ -120,11 +134,11 @@ describe('useStreamingLogs', () => {
 
     const sseStream = createMockSSEStream(events);
 
-    mockFetch.mockResolvedValue({
+    mockFetch.mockResolvedValue(mockResponse({
       ok: true,
       body: sseStream,
-      json: vi.fn(),
-    });
+      json: vi.fn<Response['json']>(),
+    }));
 
     const { result } = renderHook(() =>
       useStreamingLogs(1, 'abc123', { maxLines: 5, autoReconnect: false }),
@@ -143,11 +157,11 @@ describe('useStreamingLogs', () => {
   it('transitions to error on stream failure', async () => {
     vi.useRealTimers();
 
-    mockFetch.mockResolvedValue({
+    mockFetch.mockResolvedValue(mockResponse({
       ok: false,
       status: 502,
-      json: vi.fn().mockResolvedValue({ error: 'Docker unavailable' }),
-    });
+      json: vi.fn<Response['json']>().mockResolvedValue({ error: 'Docker unavailable' }),
+    }));
 
     const { result } = renderHook(() =>
       useStreamingLogs(1, 'abc123', { autoReconnect: false }),
@@ -164,11 +178,11 @@ describe('useStreamingLogs', () => {
   it('routes a 401 through the shared auth:expired handler', async () => {
     vi.useRealTimers();
 
-    mockFetch.mockResolvedValue({
+    mockFetch.mockResolvedValue(mockResponse({
       ok: false,
       status: 401,
-      json: vi.fn().mockResolvedValue({ error: 'Session expired' }),
-    });
+      json: vi.fn<Response['json']>().mockResolvedValue({ error: 'Session expired' }),
+    }));
 
     const { result } = renderHook(() =>
       useStreamingLogs(1, 'abc123', { autoReconnect: false }),
@@ -190,11 +204,11 @@ describe('useStreamingLogs', () => {
       `data: ${JSON.stringify({ done: true })}\n\n`,
     ]);
 
-    mockFetch.mockResolvedValue({
+    mockFetch.mockResolvedValue(mockResponse({
       ok: true,
       body: sseStream,
-      json: vi.fn(),
-    });
+      json: vi.fn<Response['json']>(),
+    }));
 
     const { result } = renderHook(() =>
       useStreamingLogs(1, 'abc123', { autoReconnect: true }),
@@ -222,11 +236,11 @@ describe('useStreamingLogs', () => {
       `data: ${JSON.stringify({ done: true })}\n\n`,
     ]);
 
-    mockFetch.mockResolvedValue({
+    mockFetch.mockResolvedValue(mockResponse({
       ok: true,
       body: sseStream,
-      json: vi.fn(),
-    });
+      json: vi.fn<Response['json']>(),
+    }));
 
     const { result } = renderHook(() =>
       useStreamingLogs(1, 'abc123', { autoReconnect: false }),

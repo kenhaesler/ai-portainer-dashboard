@@ -43,7 +43,10 @@ const mockLlmSocket = {
   on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
     llmSocketHandlers[event] = handler;
   }),
-  off: vi.fn((event: string) => {
+  // socket.io's `off(event, handler)` — the second argument is accepted
+  // because every caller passes it; this registry holds one handler per
+  // event, so unregistering by event name alone is enough.
+  off: vi.fn((event: string, _handler?: (...args: unknown[]) => void) => {
     delete llmSocketHandlers[event];
   }),
 };

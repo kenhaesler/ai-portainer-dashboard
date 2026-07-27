@@ -37,6 +37,7 @@ import {
   useUpdateProfile,
   useImportPreview,
   useImportApply,
+  type ImportPreviewResponse,
 } from './use-prompt-profiles';
 
 const DEFAULT_PROFILE = {
@@ -279,7 +280,7 @@ const VALID_IMPORT_DATA = {
   },
 };
 
-const MOCK_PREVIEW_RESPONSE = {
+const MOCK_PREVIEW_RESPONSE: ImportPreviewResponse = {
   valid: true,
   profile: 'Security Audit',
   exportedAt: '2026-02-08T14:30:00Z',
@@ -309,7 +310,7 @@ describe('useImportPreview', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    let preview: typeof MOCK_PREVIEW_RESPONSE | undefined;
+    let preview: ImportPreviewResponse | undefined;
     await act(async () => {
       preview = await result.current.mutateAsync(VALID_IMPORT_DATA);
     });

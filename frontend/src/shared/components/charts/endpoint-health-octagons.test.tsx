@@ -1,6 +1,18 @@
 import { render, screen, fireEvent, act, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { EndpointHealthOctagons, getHealthLevel_testable } from './endpoint-health-octagons';
+import {
+  EndpointHealthOctagons,
+  getHealthLevel_testable,
+  type EndpointHealthOctagonsProps,
+} from './endpoint-health-octagons';
+
+/**
+ * The element type the component actually accepts. Derived from the prop rather
+ * than inferred from the ENDPOINTS fixture below: that fixture exercises none of
+ * the optional fields, so inferring from it silently narrowed `withHexGrid` to
+ * the five always-present keys and rejected every offline/unavailable endpoint.
+ */
+type EndpointHealth = EndpointHealthOctagonsProps['endpoints'][number];
 
 const mockNavigate = vi.fn();
 vi.mock('react-router', () => ({
@@ -47,7 +59,7 @@ function renderWithWidth(ui: React.ReactElement, width = 600) {
   return result;
 }
 
-const ENDPOINTS = [
+const ENDPOINTS: EndpointHealth[] = [
   { id: 1, name: 'Production', running: 9, stopped: 1, total: 10 },
   { id: 2, name: 'Staging', running: 4, stopped: 4, total: 8 },
   { id: 3, name: 'Dev', running: 1, stopped: 5, total: 6 },
@@ -59,7 +71,7 @@ const ENDPOINTS = [
  * deliberately drops the hex grid for one row per endpoint, so tests about the
  * hexagon itself have to supply a fleet big enough to get one.
  */
-function withHexGrid(...endpoints: (typeof ENDPOINTS)[number][]) {
+function withHexGrid(...endpoints: EndpointHealth[]): EndpointHealth[] {
   const filler = ENDPOINTS.slice(0, Math.max(0, 4 - endpoints.length)).map((ep, i) => ({
     ...ep,
     id: 1000 + i,

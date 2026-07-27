@@ -1,0 +1,30 @@
+{
+  // The typecheck program that actually contains the test files (#1617).
+  //
+  // `tsconfig.json` deliberately still excludes `*.test.ts(x)`: it is the
+  // BROWSER program, the one `npm run build` runs before `vite build`, and it
+  // must stay free of Node globals so a stray `process.env` in a component is
+  // still a compile error. This config is the sibling that adds the tests back
+  // — plus `vitest.setup.ts` (which carries the jest-dom matcher types) and
+  // `scripts/`, which `bundle-size.test.ts` imports.
+  //
+  // Both are run by `npm run typecheck -w frontend`. Dropping either half
+  // recreates a gap: without this file the tests are typechecked by nothing
+  // (the #1617 bug); without the base run, Node globals leak into app code.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // Node globals are legitimate HERE — several tests read the repo's own
+    // files (nginx.conf, index.css, the ESLint config) to assert against
+    // shipped configuration, and scripts/check-bundle-size.ts is a CLI.
+    // Automatic @types inclusion does not pick @types/node up in this tree,
+    // so it has to be named. Naming it does not drop the other @types
+    // packages: every one of them (react, chai, d3-*, ...) enters the program
+    // through ordinary module resolution, not through typeRoots.
+    "types": ["node"],
+    // A separate buildinfo from tsconfig.json's — sharing one file would make
+    // each run invalidate the other's cache.
+    "tsBuildInfoFile": "./node_modules/.cache/tsbuildinfo.test"
+  },
+  "include": ["src", "vitest.setup.ts", "scripts"],
+  "exclude": []
+}

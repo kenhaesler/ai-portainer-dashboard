@@ -1,7 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import type { Container } from '@/features/containers/hooks/use-containers';
+import type { Container, UseContainersParams } from '@/features/containers/hooks/use-containers';
 
 const mockSetSearchParams = vi.fn();
 const mockNavigate = vi.fn();
@@ -35,59 +35,83 @@ vi.mock('@/features/containers/hooks/use-stacks', () => ({
   }),
 }));
 
+const defaultContainers: Container[] = [
+  {
+    id: 'c-workers',
+    name: 'workers-api-1',
+    image: 'workers:latest',
+    state: 'running',
+    status: 'Up',
+    endpointId: 1,
+    endpointName: 'local',
+    ports: [],
+    created: 1700000000,
+    labels: { 'com.docker.compose.project': 'workers' },
+    networks: [],
+  },
+  {
+    id: 'c-beyla',
+    name: 'beyla',
+    image: 'grafana/beyla:latest',
+    state: 'running',
+    status: 'Up',
+    endpointId: 1,
+    endpointName: 'local',
+    ports: [],
+    created: 1700000000,
+    labels: {},
+    networks: [],
+  },
+  {
+    id: 'c-billing',
+    name: 'billing-api-1',
+    image: 'billing:latest',
+    state: 'running',
+    status: 'Up',
+    endpointId: 1,
+    endpointName: 'local',
+    ports: [],
+    created: 1700000000,
+    labels: { 'com.docker.compose.project': 'billing' },
+    networks: [],
+  },
+];
+
+/**
+ * The slice of `useContainers()`'s `UseQueryResult` that the page reads.
+ * `data` is optional-by-value and `error` nullable for the same reason TanStack
+ * types them that way: the loading and error branches below assert the page
+ * survives a query that has no data yet.
+ */
+interface ContainersQuery {
+  data: Container[] | undefined;
+  isLoading: boolean;
+  isError: boolean;
+  error: Error | null;
+  refetch: Mock<() => void>;
+  isFetching: boolean;
+  /** Epoch ms of the last successful fetch; 0 until the query first resolves. */
+  dataUpdatedAt: number;
+}
+
+// `satisfies` rather than a plain annotation so `defaultContainersMock.data[0]`
+// stays a `Container` for the cell-renderer tests below.
 const defaultContainersMock = {
-  data: [
-    {
-      id: 'c-workers',
-      name: 'workers-api-1',
-      image: 'workers:latest',
-      state: 'running',
-      status: 'Up',
-      endpointId: 1,
-      endpointName: 'local',
-      ports: [],
-      created: 1700000000,
-      labels: { 'com.docker.compose.project': 'workers' },
-      networks: [],
-    },
-    {
-      id: 'c-beyla',
-      name: 'beyla',
-      image: 'grafana/beyla:latest',
-      state: 'running',
-      status: 'Up',
-      endpointId: 1,
-      endpointName: 'local',
-      ports: [],
-      created: 1700000000,
-      labels: {},
-      networks: [],
-    },
-    {
-      id: 'c-billing',
-      name: 'billing-api-1',
-      image: 'billing:latest',
-      state: 'running',
-      status: 'Up',
-      endpointId: 1,
-      endpointName: 'local',
-      ports: [],
-      created: 1700000000,
-      labels: { 'com.docker.compose.project': 'billing' },
-      networks: [],
-    },
-  ] as Container[],
+  data: defaultContainers,
   isLoading: false,
   isError: false,
   error: null,
-  refetch: vi.fn(),
+  refetch: vi.fn<() => void>(),
   isFetching: false,
-};
+  dataUpdatedAt: 0,
+} satisfies ContainersQuery;
 
-const mockUseContainers = vi.fn(() => defaultContainersMock);
+type UseContainersFn = (params?: UseContainersParams) => ContainersQuery;
+
+const mockUseContainers = vi.fn<UseContainersFn>(() => defaultContainersMock);
 
 vi.mock('@/features/containers/hooks/use-containers', () => ({
-  useContainers: (...args: unknown[]) => mockUseContainers(...args),
+  useContainers: (...args: Parameters<UseContainersFn>) => mockUseContainers(...args),
 }));
 
 let mockAutoRefreshOptions: { onTick?: () => void } | undefined;

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, type Mock } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { LlmSettingsSection, getRedisSystemInfo } from './settings';
@@ -48,11 +48,13 @@ describe('LlmSettingsSection', () => {
     'llm.auth_type': 'bearer',
   };
 
-  let onChange: ReturnType<typeof vi.fn>;
+  // Matches LlmSettingsSectionProps['onChange'].
+  type OnSettingChange = (key: string, value: string) => void;
+  let onChange: Mock<OnSettingChange>;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    onChange = vi.fn();
+    onChange = vi.fn<OnSettingChange>();
     mockGet.mockResolvedValue({
       models: [
         { name: 'gpt-4o-mini', size: 2_000_000_000 },

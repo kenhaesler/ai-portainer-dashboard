@@ -3,7 +3,11 @@ import { render, screen, fireEvent, act } from '@testing-library/react';
 import { ContainerMultiSelect, type ContainerOption } from './container-multi-select';
 
 function makeContainers(count: number, options?: { stack?: string }): ContainerOption[] {
-  return Array.from({ length: count }, (_, i) => ({
+  // The callback's return type is annotated so both ternary branches are
+  // checked against `ContainerOption`: without it the label-less branch infers
+  // as `{ 'com.docker.compose.project'?: undefined }`, which no
+  // `Record<string, string>` accepts.
+  return Array.from({ length: count }, (_, i): ContainerOption => ({
     id: `id-${i + 1}`,
     name: `container-${i + 1}`,
     state: i % 3 === 0 ? 'running' : i % 3 === 1 ? 'stopped' : 'paused',

@@ -1,21 +1,21 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 import { exportToCsv } from './csv-export';
 
 describe('exportToCsv', () => {
-  let mockCreateObjectURL: ReturnType<typeof vi.fn>;
-  let mockRevokeObjectURL: ReturnType<typeof vi.fn>;
-  let mockLinkClick: ReturnType<typeof vi.fn>;
+  let mockCreateObjectURL: Mock<typeof URL.createObjectURL>;
+  let mockRevokeObjectURL: Mock<typeof URL.revokeObjectURL>;
+  let mockLinkClick: Mock<HTMLAnchorElement['click']>;
   let mockLink: HTMLAnchorElement;
 
   beforeEach(() => {
     // Mock URL methods
-    mockCreateObjectURL = vi.fn().mockReturnValue('blob:mock-url');
-    mockRevokeObjectURL = vi.fn();
+    mockCreateObjectURL = vi.fn<typeof URL.createObjectURL>().mockReturnValue('blob:mock-url');
+    mockRevokeObjectURL = vi.fn<typeof URL.revokeObjectURL>();
     global.URL.createObjectURL = mockCreateObjectURL;
     global.URL.revokeObjectURL = mockRevokeObjectURL;
 
     // Mock document.createElement for the anchor element
-    mockLinkClick = vi.fn();
+    mockLinkClick = vi.fn<HTMLAnchorElement['click']>();
     mockLink = {
       href: '',
       download: '',

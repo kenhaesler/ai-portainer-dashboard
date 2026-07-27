@@ -223,6 +223,22 @@ For detailed specs (animation durations, easing curves, glass override patterns,
   script still invokes every package's script, and that no package's plain `tsconfig.json` regains a
   test-file exclusion — following the same "drive the actual shipped config, don't describe it"
   pattern as `ci-audit-gate.test.ts` (#1578) and `packages-boundaries.test.ts` (#1585).
+- **`npm run typecheck` covers frontend test files too (#1617).** The frontend twin of #1586, and
+  worse: `frontend/tsconfig.json` excluded `src/**/*.test.ts(x)` and `frontend/package.json`'s
+  `typecheck` was a bare `tsc --noEmit`, with **no** sibling config adding them back, so all 245
+  frontend test files were compiled by nothing. `frontend/tsconfig.test.json` is that sibling —
+  same base config plus the tests, `vitest.setup.ts`, `scripts/`, and `types: ["node"]` — and
+  `typecheck` now runs both. Keep them two programs: the base one stays the *browser* program
+  (`npm run build` runs it, it has no node types, so `process.env` in a component is still an
+  error). **Matcher types belong with matcher registration:** `expect.extend(matchers)` types
+  nothing, which is why 2241 of the 2401 surfaced errors were `TS2339` on jest-dom matchers that
+  do exist; `vitest.setup.ts` now uses `@testing-library/jest-dom/vitest` (one import, both
+  halves) and declares vitest-axe's `toHaveNoViolations` beside its `expect.extend`, since
+  vitest-axe 0.1.0 still augments the pre-vitest-2 `global.Vi` namespace. `frontend/src/typecheck-gate.test.ts`
+  asserts every `*.test.ts(x)` **discovered on disk** lands in a program the `typecheck` script
+  actually runs, resolving each config through TypeScript's own API so an exclusion inherited via
+  `extends` cannot hide. It does not assert the two-program layout — merging them is a legitimate
+  design; coverage is the invariant.
 
 ## Git Workflow
 

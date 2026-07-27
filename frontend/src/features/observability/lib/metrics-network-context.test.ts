@@ -4,9 +4,9 @@ import type { Container } from '@/features/containers/hooks/use-containers';
 import type { Network } from '@/features/containers/hooks/use-networks';
 
 function makeContainer(overrides: Partial<Container> & { id: string; name: string }): Container {
+  // `...overrides` stays last so a caller's `state`/`labels`/`networks` win over the
+  // defaults below; `id`/`name` are required on the parameter, so the spread supplies them.
   return {
-    id: overrides.id,
-    name: overrides.name,
     image: 'nginx:latest',
     state: 'running',
     status: 'Up 1 hour',
@@ -22,11 +22,8 @@ function makeContainer(overrides: Partial<Container> & { id: string; name: strin
 
 function makeNetwork(overrides: Partial<Network> & { id: string; name: string; containers: string[] }): Network {
   return {
-    id: overrides.id,
-    name: overrides.name,
     endpointId: 1,
     endpointName: 'local',
-    containers: overrides.containers,
     ...overrides,
   };
 }

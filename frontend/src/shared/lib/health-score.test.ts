@@ -23,6 +23,25 @@ function makeContainer(overrides: Partial<Container> = {}): Container {
   };
 }
 
+/**
+ * Builds a container whose state is **deliberately outside** the contract
+ * vocabulary (`CONTAINER_STATES` in `@dashboard/contracts`) — a Docker-native
+ * word such as `created` or `restarting` that `normalizeContainer` never emits.
+ *
+ * `Container.state` is `ContainerState`, so the compiler refuses these values
+ * outright; that refusal is exactly what the fall-through case below exercises,
+ * so the value has to be built on purpose. Widening through a `string` parameter
+ * and asserting back is the narrowest way to do it, and keeping it in one named
+ * helper stops an ordinary fixture from carrying an out-of-contract state by
+ * accident.
+ */
+function makeContainerWithNonContractState(
+  state: string,
+  overrides: Partial<Container> = {},
+): Container {
+  return { ...makeContainer(overrides), state } as Container;
+}
+
 describe('calculateHealthStats', () => {
   it('should return all zeros for an empty array', () => {
     const stats = calculateHealthStats([]);
@@ -380,12 +399,13 @@ describe('calculateHealthStats', () => {
   });
 
   it('unrecognised state values flow through to unknown without affecting other counters', () => {
-    // Docker exposes additional states (created, restarting, removing, dead).
-    // None of these match running/stopped/paused/dead; with no healthStatus they
-    // should still be counted as unknown via the final `else` branch.
+    // Docker exposes additional states (created, restarting, removing). None of
+    // these are in the contract vocabulary, so none matches
+    // running/stopped/paused; `dead` is in it and lands in `stats.dead`. With no
+    // healthStatus all three still reach unknown via the final `else` branch.
     const containers = [
-      makeContainer({ id: '1', state: 'created', healthStatus: undefined }),
-      makeContainer({ id: '2', state: 'restarting', healthStatus: undefined }),
+      makeContainerWithNonContractState('created', { id: '1', healthStatus: undefined }),
+      makeContainerWithNonContractState('restarting', { id: '2', healthStatus: undefined }),
       makeContainer({ id: '3', state: 'dead', healthStatus: undefined }),
     ];
 

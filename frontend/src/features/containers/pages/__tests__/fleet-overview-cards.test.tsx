@@ -43,12 +43,14 @@ import { useStacks } from '@/features/containers/hooks/use-stacks';
 import type { Endpoint } from '@/features/containers/hooks/use-endpoints';
 import type { Stack } from '@/features/containers/hooks/use-stacks';
 import { useUiStore } from '@/stores/ui-store';
+import { snapshotSourceFor } from '@/test/endpoint-fixture';
 
 const mockUseEndpoints = vi.mocked(useEndpoints);
 const mockUseStacks = vi.mocked(useStacks);
 
+
 function makeEndpoint(overrides: Partial<Endpoint> = {}): Endpoint {
-  return {
+  const base: Omit<Endpoint, 'snapshotSource'> = {
     id: 1,
     name: 'test-endpoint',
     type: 1,
@@ -67,6 +69,7 @@ function makeEndpoint(overrides: Partial<Endpoint> = {}): Endpoint {
     capabilities: { exec: true, realtimeLogs: true, liveStats: true, immediateActions: true },
     ...overrides,
   };
+  return { ...base, snapshotSource: overrides.snapshotSource ?? snapshotSourceFor(base) };
 }
 
 function makeStack(overrides: Partial<Stack> = {}): Stack {

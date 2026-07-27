@@ -11,11 +11,13 @@ vi.mock('@/shared/lib/api', () => ({
 
 import { api } from '@/shared/lib/api';
 import { useEndpointCapabilities, type Endpoint, type EdgeCapabilities } from './use-endpoints';
+import { snapshotSourceFor } from '@/test/endpoint-fixture';
 
 const mockApi = vi.mocked(api);
 
+
 function makeEndpoint(overrides: Partial<Endpoint> = {}): Endpoint {
-  return {
+  const base: Omit<Endpoint, 'snapshotSource'> = {
     id: 1,
     name: 'test-endpoint',
     type: 1,
@@ -34,6 +36,7 @@ function makeEndpoint(overrides: Partial<Endpoint> = {}): Endpoint {
     capabilities: { exec: true, realtimeLogs: true, liveStats: true, immediateActions: true },
     ...overrides,
   };
+  return { ...base, snapshotSource: overrides.snapshotSource ?? snapshotSourceFor(base) };
 }
 
 function createWrapper() {

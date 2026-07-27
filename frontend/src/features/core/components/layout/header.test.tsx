@@ -62,7 +62,9 @@ function renderAt(path = '/') {
 describe('Header', () => {
   beforeEach(() => {
     vi.stubEnv('VITE_GIT_COMMIT', 'abc1234');
-    vi.stubEnv('DEV', 'true');
+    // `DEV` is a boolean on `ImportMetaEnv`, and vi.stubEnv coerces it to
+    // Vite's "1"/"" the same way for `true` as it did for the string 'true'.
+    vi.stubEnv('DEV', true);
     mockContainerDetail.data = undefined;
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,

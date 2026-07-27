@@ -18,13 +18,8 @@ import { render, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { axe } from 'vitest-axe';
-import * as axeMatchers from 'vitest-axe/matchers';
 
-// Register vitest-axe matchers (toHaveNoViolations) in this test file.
-// We extend here rather than in vitest.setup.ts because the side-effect
-// import (vitest-axe/extend-expect) ships an empty JS file in the current
-// version and the linter removes bare expect.extend() from the setup file.
-expect.extend(axeMatchers);
+// `toHaveNoViolations` is registered and typed once in frontend/vitest.setup.ts.
 
 // ---------------------------------------------------------------------------
 // Global mocks shared across all tests

@@ -7,7 +7,14 @@ const mockUseUiStore = vi.fn((selector: (state: { potatoMode: boolean }) => bool
   selector({ potatoMode: false }),
 );
 const mockDisconnectAll = vi.fn();
-const mockGetNamespaceSocket = vi.fn((namespace: string) => createMockSocket(namespace));
+// Mirrors the real getNamespaceSocket(namespace, token) — the tests assert on
+// the token argument, so the mock has to accept it.
+type GetNamespaceSocket = (namespace: string, token: string) => MockSocket;
+const mockGetNamespaceSocket = vi.fn<GetNamespaceSocket>((namespace) =>
+  createMockSocket(namespace),
+);
+
+type MockSocket = ReturnType<typeof createMockSocket>;
 
 function createMockSocket(namespace: string) {
   return {

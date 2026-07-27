@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { ComponentProps } from 'react';
 import { render, screen, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
@@ -20,7 +21,10 @@ import {
   shortenAxisLabels,
 } from './correlation-insights-panel';
 
-function renderPanel(props: { llmAvailable: boolean; hours?: number }) {
+// Props come from the component itself, not a hand-copied shape: the local copy
+// had drifted and omitted `selectedContainerId`, so the three tests that pass it
+// were type-checked against a prop list the component outgrew.
+function renderPanel(props: ComponentProps<typeof CorrelationInsightsPanel>) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
