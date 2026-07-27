@@ -419,7 +419,14 @@ describe('AiMonitorPage', () => {
     expect(screen.queryByText('Memory Leak Suspected')).toBeNull();
   });
 
-  it('falls back to the pattern string when patternMatch is absent (stale server build)', () => {
+  // Named for what it proves. Until #1617 the fixture OMITTED `patternMatch`
+  // and the name said "absent (stale server build)" — a wire shape
+  // `CorrelatedAnomaly` cannot express, since the field is declared required
+  // and nullable. `null` is the current server saying no rule fired. Both reach
+  // the same branch (`patternMatch?.summary ?? pattern`), so the assertions are
+  // unchanged; the stale-build variant would need `patternMatch?:` on the
+  // frontend type, which is app source and a separate decision.
+  it('falls back to the pattern string when no rule fired (patternMatch: null)', () => {
     vi.mocked(useCorrelatedAnomalies).mockReturnValue(mockQuery<CorrelatedAnomaly[]>({
       data: [
         {
