@@ -21,7 +21,7 @@ import { cn } from '@/shared/lib/utils';
 import { PageHeader } from '@/shared/components/layout/page-header';
 import { findDestination } from '@/features/core/lib/navigation-manifest';
 import { ContainerMultiSelect } from '@/shared/components/forms/container-multi-select';
-import { buildSearchMatcher, filterLines, parseLogs, sortByTimestamp, toLocalTimestamp, type LogLevel, type ParsedLogEntry } from '@/features/observability/lib/log-viewer';
+import { buildSearchMatcher, filterLines, parseLogs, sortByTimestamp, toLocalTimestamp, type LogLevel, type LogLevelSource, type ParsedLogEntry } from '@/features/observability/lib/log-viewer';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { useUiStore } from '@/stores/ui-store';
 import { usePageVisibility } from '@/shared/hooks/use-page-visibility';
@@ -38,6 +38,18 @@ const LEVEL_OPTIONS: Array<{ value: LogLevel | 'all'; label: string }> = [
   { value: 'debug', label: 'Debug' },
 ];
 const CONTAINER_COLORS = ['text-cyan-300', 'text-emerald-300', 'text-yellow-300', 'text-fuchsia-300', 'text-blue-300'];
+
+/**
+ * What the level cell claims about itself, one entry per `levelSource`, so no
+ * row is left with an unexplained level. `none` needs its own sentence: the
+ * cell reads UNKNOWN, which says a level is missing but not whether anyone
+ * looked.
+ */
+const LEVEL_SOURCE_TITLE: Record<LogLevelSource, string> = {
+  emitted: 'Reported by the container',
+  guessed: 'Inferred from keywords in the line — this record did not state a level',
+  none: 'No level established — this record stated none and no keyword matched',
+};
 
 const PAGE_TITLE = findDestination('/logs')?.label ?? 'Log Viewer';
 
@@ -250,32 +262,30 @@ function VirtualizedLogView({
                   }}
                   className={`grid grid-cols-[170px_180px_70px_1fr] gap-3 border-b border-slate-800/70 px-3 py-1 text-slate-100 ${lineWrap ? 'whitespace-pre-wrap break-words' : 'whitespace-nowrap'}`}
                 >
-                  <span className="text-slate-500">{toLocalTimestamp(entry.timestamp)}</span>
+                  {/* slate-400, not slate-500, for the same reason as the level
+                      column below: slate-500 on bg-slate-950 measures 4.2:1,
+                      under the 4.5:1 this repo holds body text to. */}
+                  <span className="text-slate-400">{toLocalTimestamp(entry.timestamp)}</span>
                   <span className={CONTAINER_COLORS[virtualRow.index % CONTAINER_COLORS.length]}>
                     [{entry.containerName}]
                   </span>
-                  {/* A guessed level is dimmed and suffixed with `?`.
-                      `detectLevel` is a keyword grep over the whole line, so
-                      `module: "trace-store"` was labelled DEBUG for containing
-                      "trace", and `no errors found` was labelled ERROR. This
-                      is the field an operator triages on; a grep result must
-                      not wear the same treatment as a level the emitter
-                      actually declared. */}
+                  {/* `none` is tested ahead of the level ternary because that
+                      ternary's last branch is the INFO green, which would
+                      render UNKNOWN as a stated INFO. slate-400 rather than
+                      slate-500: slate-500 on bg-slate-950 measures 4.2:1,
+                      under the 4.5:1 floor theme-contrast.test.ts holds muted
+                      text to elsewhere. */}
                   <span
                     className={cn(
-                      entry.level === 'error' ? 'text-red-400'
-                        : entry.level === 'warn' ? 'text-amber-400'
-                          : entry.level === 'debug' ? 'text-sky-300'
-                            : 'text-emerald-300',
+                      entry.levelSource === 'none'
+                        ? 'text-slate-400'
+                        : entry.level === 'error' ? 'text-red-400'
+                          : entry.level === 'warn' ? 'text-amber-400'
+                            : entry.level === 'debug' ? 'text-sky-300'
+                              : 'text-emerald-300',
                       entry.levelSource === 'guessed' && 'opacity-60',
                     )}
-                    title={
-                      entry.levelSource === 'guessed'
-                        ? 'Inferred from keywords in the line — this record did not state a level'
-                        : entry.levelSource === 'emitted'
-                          ? 'Reported by the container'
-                          : undefined
-                    }
+                    title={LEVEL_SOURCE_TITLE[entry.levelSource]}
                   >
                     {entry.level.toUpperCase()}{entry.levelSource === 'guessed' ? '?' : ''}
                   </span>

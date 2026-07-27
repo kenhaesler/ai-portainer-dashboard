@@ -26,8 +26,8 @@ describe('log-viewer utilities', () => {
 
   it('sorts chronologically', () => {
     const sorted = sortByTimestamp([
-      { id: '2', containerId: 'a', containerName: 'x', timestamp: '2026-02-06T10:02:00Z', level: 'info', message: 'b', raw: 'b' },
-      { id: '1', containerId: 'a', containerName: 'x', timestamp: '2026-02-06T10:01:00Z', level: 'info', message: 'a', raw: 'a' },
+      { id: '2', containerId: 'a', containerName: 'x', timestamp: '2026-02-06T10:02:00Z', level: 'info', levelSource: 'emitted', message: 'b', raw: 'b' },
+      { id: '1', containerId: 'a', containerName: 'x', timestamp: '2026-02-06T10:01:00Z', level: 'info', levelSource: 'emitted', message: 'a', raw: 'a' },
     ]);
     expect(sorted[0].id).toBe('1');
   });
@@ -155,6 +155,7 @@ describe('filterLines (trace correlation)', () => {
     containerName: 'api',
     timestamp: '2026-05-14T11:00:00Z',
     level: 'info',
+    levelSource: 'emitted',
     message: raw,
     raw,
   });
