@@ -105,12 +105,35 @@ interface ThemeState {
   setDashboardBackground: (bg: DashboardBackground) => void;
   iconTheme: IconTheme;
   setIconTheme: (theme: IconTheme) => void;
+  /**
+   * The app icon, and the primary of the three.
+   *
+   * Settings offers one picker driving all three surfaces rather than three
+   * identical 10-option grids. There is deliberately no separate `appIcon`
+   * key: `faviconIcon` *is* the primary, and "this surface is overridden" is
+   * derived as `sidebarIcon !== faviconIcon`. Adding a key would mean a
+   * persist `version` bump, and this store has no `migrate` — zustand 5
+   * discards the entire persisted blob on an unmigrated version mismatch,
+   * taking theme, toggleThemes, dashboardBackground and iconTheme down with
+   * the icons. Deriving costs nothing and cannot lose data.
+   */
   faviconIcon: AppIconId;
   setFaviconIcon: (icon: AppIconId) => void;
   sidebarIcon: AppIconId;
   setSidebarIcon: (icon: AppIconId) => void;
   loginIcon: AppIconId;
   setLoginIcon: (icon: AppIconId) => void;
+  /**
+   * Set the app icon, carrying along only the surfaces that were *following*
+   * it.
+   *
+   * A surface follows when its value equals the current primary. A surface the
+   * operator deliberately set to something else keeps that choice — picking a
+   * new app icon must not silently erase a per-surface override, and there is
+   * no undo anywhere in this UI. Functional `set` so it reads live state
+   * rather than a value captured at render.
+   */
+  setAppIcon: (icon: AppIconId) => void;
   resolvedTheme: () => 'dark' | 'light';
   themeClass: () => string;
 }
@@ -137,6 +160,12 @@ export const useThemeStore = create<ThemeState>()(
       setSidebarIcon: (sidebarIcon) => set({ sidebarIcon }),
       loginIcon: DEFAULT_LOGIN_ICON,
       setLoginIcon: (loginIcon) => set({ loginIcon }),
+      setAppIcon: (icon) => set((state) => ({
+        faviconIcon: icon,
+        // Only surfaces that were following the old primary move with it.
+        sidebarIcon: state.sidebarIcon === state.faviconIcon ? icon : state.sidebarIcon,
+        loginIcon: state.loginIcon === state.faviconIcon ? icon : state.loginIcon,
+      })),
       resolvedTheme: () => {
         const { theme } = get();
         if (theme === 'system') {
