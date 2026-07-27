@@ -139,6 +139,12 @@ function firstNameSegment(name: string | undefined): string | null {
 /** Hostname of an endpoint URL, for a `url:` chip that resolves to real rows. */
 function firstUrlHost(url: string | undefined): string | null {
   if (!url) return null;
+  // Only TCP-style endpoints have a hostname worth offering as a search
+  // example. A local socket (`unix:///var/run/docker.sock`) has none, and
+  // stripping the scheme then splitting on [/:] returned its first path
+  // segment — so the page offered `url:var` as a suggested filter: a parse
+  // artefact rendered as a clickable button.
+  if (/^unix:|^npipe:/i.test(url)) return null;
   const withoutScheme = url.replace(/^[a-z0-9+.-]+:\/\//i, '');
   const host = withoutScheme.split(/[/:]/).find(Boolean);
   return host ?? null;

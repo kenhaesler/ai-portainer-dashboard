@@ -3,6 +3,7 @@ import { ChevronRight, Settings2 } from 'lucide-react';
 import { useCacheStats } from '@/features/core/hooks/use-cache-admin';
 import { useSystemInfo } from '@/features/core/hooks/use-system-info';
 import { PRODUCT_NAME } from '@/shared/lib/product';
+import { themeOptions } from '@/stores/theme-store';
 
 export interface CacheStatsSummary {
   backend: 'multi-layer' | 'memory-only';
@@ -76,7 +77,14 @@ export function GeneralTab({ theme }: GeneralTabProps) {
           </div>
           <div className="rounded-lg bg-muted/50 p-4">
             <p className="text-xs text-muted-foreground">Theme</p>
-            <p className="font-medium mt-1 capitalize">{theme.replace('-', ' ')}</p>
+            {/* The picker's own label, not the store id capitalised. This
+                printed "Apple Light" — a theme name that appears nowhere in
+                the product, because the id `apple-light` is labelled
+                "Glass Light" in the Appearance tab. */}
+            <p className="font-medium mt-1">
+              {themeOptions.find((option) => option.value === theme)?.label
+                ?? theme.replace(/-/g, ' ')}
+            </p>
           </div>
           <div className="rounded-lg bg-muted/50 p-4">
             <p className="text-xs text-muted-foreground">Redis Cache</p>

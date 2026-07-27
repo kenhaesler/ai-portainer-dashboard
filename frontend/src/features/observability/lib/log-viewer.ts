@@ -1,11 +1,28 @@
 export type LogLevel = 'error' | 'warn' | 'info' | 'debug' | 'unknown';
 
+/**
+ * How a line's level was established.
+ *
+ * `emitted` — the record stated its own level (a pino/bunyan `level` field, or
+ * a `LEVEL:`-style prefix). Trustworthy.
+ * `guessed` — inferred from keywords anywhere in the line. This is a grep
+ * result and it is wrong often: the visible line `module: "trace-store"` was
+ * labelled DEBUG because it contains the word "trace", `no errors found` was
+ * labelled ERROR, and `warning: none` was labelled WARN. The level column is
+ * the operator's primary triage signal, so a guess must be distinguishable
+ * from a fact rather than sharing its treatment.
+ * `none` — nothing to go on.
+ */
+export type LogLevelSource = 'emitted' | 'guessed' | 'none';
+
 export interface ParsedLogEntry {
   id: string;
   containerId: string;
   containerName: string;
   timestamp: string | null;
   level: LogLevel;
+  /** Whether `level` was stated by the emitter or inferred from keywords. */
+  levelSource: LogLevelSource;
   message: string;
   raw: string;
 }
@@ -44,6 +61,55 @@ function stripControlChars(input: string): string {
   return output;
 }
 
+/** Map a level word from any emitter onto our five-value vocabulary. */
+function normalizeLevelWord(word: string): LogLevel | null {
+  switch (word.toLowerCase()) {
+    case 'fatal': case 'panic': case 'crit': case 'critical': case 'error': case 'err':
+      return 'error';
+    case 'warn': case 'warning':
+      return 'warn';
+    case 'info': case 'notice': case 'information':
+      return 'info';
+    case 'debug': case 'trace': case 'verbose':
+      return 'debug';
+    default:
+      return null;
+  }
+}
+
+/**
+ * The level the record states about itself, or null if it states none.
+ *
+ * Covers pino/bunyan JSON (`"level":30` or `"level":"info"`) and the common
+ * `LEVEL: message` / `[LEVEL]` prefixes. Anything found here is a fact from
+ * the emitter, not an inference about the text.
+ */
+export function emittedLevel(input: string): LogLevel | null {
+  const json = /"level"\s*:\s*(?:"([a-z]+)"|(\d{1,2}))/i.exec(input);
+  if (json) {
+    if (json[1]) return normalizeLevelWord(json[1]);
+    const n = Number(json[2]);
+    if (n >= 50) return 'error';
+    if (n >= 40) return 'warn';
+    if (n >= 30) return 'info';
+    return 'debug';
+  }
+
+  // A level prefix at the head of the line: "INFO: ...", "[WARN] ...",
+  // "10:40:55 ERROR ...". Anchored near the start so a level word buried in
+  // prose cannot masquerade as a declaration.
+  const prefix = /^[^A-Za-z]{0,32}\[?([A-Za-z]{3,11})\]?\s*[:|-]?\s/.exec(input);
+  if (prefix) return normalizeLevelWord(prefix[1]);
+
+  return null;
+}
+
+/**
+ * Keyword guess, used only when the record declares nothing.
+ *
+ * Deliberately still available, and deliberately labelled: `levelSource`
+ * carries whether the answer came from here or from the emitter.
+ */
 export function detectLevel(input: string): LogLevel {
   const line = input.toLowerCase();
   if (/\berror\b|\bfatal\b|\bpanic\b|\bexception\b/.test(line)) return 'error';
@@ -51,6 +117,17 @@ export function detectLevel(input: string): LogLevel {
   if (/\bdebug\b|\btrace\b/.test(line)) return 'debug';
   if (/\binfo\b/.test(line)) return 'info';
   return 'unknown';
+}
+
+/** The level and where it came from. Prefers what the record declares. */
+export function resolveLevel(input: string): { level: LogLevel; levelSource: LogLevelSource } {
+  const declared = emittedLevel(input);
+  if (declared) return { level: declared, levelSource: 'emitted' };
+
+  const guessed = detectLevel(input);
+  return guessed === 'unknown'
+    ? { level: 'unknown', levelSource: 'none' }
+    : { level: guessed, levelSource: 'guessed' };
 }
 
 export function parseLogs({ containerId, containerName, logs }: ParseInput): ParsedLogEntry[] {
@@ -67,7 +144,7 @@ export function parseLogs({ containerId, containerName, logs }: ParseInput): Par
         containerId,
         containerName,
         timestamp,
-        level: detectLevel(message),
+        ...resolveLevel(message),
         message,
         raw: line,
       };

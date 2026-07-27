@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { detectLevel, lintLogLine, type ParsedLogEntry } from '@/features/observability/lib/log-viewer';
+import { resolveLevel, lintLogLine, type ParsedLogEntry } from '@/features/observability/lib/log-viewer';
 import { api } from '@/shared/lib/api';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
@@ -49,7 +49,9 @@ function parseStreamedLine(
     containerId,
     containerName,
     timestamp,
-    level: detectLevel(message),
+    // Same resolution as the polled path: prefer the level the record states,
+    // and mark a keyword guess as a guess.
+    ...resolveLevel(message),
     message,
     raw: cleaned,
   };

@@ -1057,15 +1057,18 @@ export default function TraceExplorerPage() {
           id="trace-source-guide"
           className="space-y-2 rounded-lg border bg-card p-4 text-xs text-muted-foreground"
         >
-          <p className="font-medium text-foreground">eBPF Quick Guide</p>
+          <p className="font-medium text-foreground">How these numbers are computed</p>
           <p>
-            `source: ebpf` means Beyla captured runtime network spans. `kind=server` is inbound traffic, `kind=client` is outbound calls, and `kind=internal` is in-process work. If endpoint/container is `unknown`, instrumentation still works but metadata enrichment is missing.
+            <code>source: ebpf</code> means Beyla captured runtime network spans.{' '}
+            <code>kind=server</code> is inbound traffic, <code>kind=client</code> is outbound
+            calls, and <code>kind=internal</code> is in-process work. If endpoint/container is{' '}
+            <code>unknown</code>, instrumentation still works but metadata enrichment is missing.
           </p>
           <p>
             Ingested in this window: {SOURCE_LABELS.ebpf} {sourceCounts.ebpf} · {SOURCE_LABELS.http} {sourceCounts.http} · {SOURCE_LABELS.scheduler} {sourceCounts.scheduler} · {SOURCE_LABELS.unknown} {sourceCounts.unknown}.
           </p>
           <p>
-            p95 and p50 are computed from the {durationStats.count} traces loaded into the list (up to 200), not from the full result set. Anomalous selects traces at least {ANOMALY_Z_THRESHOLD} standard deviations above that window&apos;s mean duration — the threshold the trace detector applies to latency p95 (`TRACES_ANOMALY_P95_ZSCORE`, default {ANOMALY_Z_THRESHOLD.toFixed(1)}).
+            p95 and p50 are computed from the {durationStats.count} traces loaded into the list (up to 200), not from the full result set. Anomalous selects traces at least {ANOMALY_Z_THRESHOLD} standard deviations above that window&apos;s mean duration — the threshold the trace detector applies to latency p95 (<code>TRACES_ANOMALY_P95_ZSCORE</code>, default {ANOMALY_Z_THRESHOLD.toFixed(1)}).
           </p>
         </div>
       )}

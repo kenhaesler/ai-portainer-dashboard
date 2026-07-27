@@ -344,14 +344,14 @@ describe('TraceExplorerPage', () => {
     expect(within(screen.getByTestId('trace-list')).getAllByText('OPTIONS *')).toHaveLength(3);
   });
 
-  it('keeps the eBPF quick guide, behind the header help toggle', () => {
+  it('keeps the computation guide, behind the header help toggle', () => {
     renderWithRouter(<TraceExplorerPage />);
 
-    expect(screen.queryByText('eBPF Quick Guide')).toBeNull();
+    expect(screen.queryByText('How these numbers are computed')).toBeNull();
 
     fireEvent.click(screen.getByTestId('source-guide-toggle'));
 
-    expect(screen.getByText('eBPF Quick Guide')).toBeInTheDocument();
+    expect(screen.getByText('How these numbers are computed')).toBeInTheDocument();
     expect(screen.getByText(/Beyla captured runtime network spans/)).toBeInTheDocument();
     // The source counters moved here rather than costing a strip above the list.
     expect(screen.getByText(/Ingested in this window/)).toBeInTheDocument();

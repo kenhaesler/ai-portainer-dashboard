@@ -254,8 +254,30 @@ function VirtualizedLogView({
                   <span className={CONTAINER_COLORS[virtualRow.index % CONTAINER_COLORS.length]}>
                     [{entry.containerName}]
                   </span>
-                  <span className={entry.level === 'error' ? 'text-red-400' : entry.level === 'warn' ? 'text-amber-400' : entry.level === 'debug' ? 'text-sky-300' : 'text-emerald-300'}>
-                    {entry.level.toUpperCase()}
+                  {/* A guessed level is dimmed and suffixed with `?`.
+                      `detectLevel` is a keyword grep over the whole line, so
+                      `module: "trace-store"` was labelled DEBUG for containing
+                      "trace", and `no errors found` was labelled ERROR. This
+                      is the field an operator triages on; a grep result must
+                      not wear the same treatment as a level the emitter
+                      actually declared. */}
+                  <span
+                    className={cn(
+                      entry.level === 'error' ? 'text-red-400'
+                        : entry.level === 'warn' ? 'text-amber-400'
+                          : entry.level === 'debug' ? 'text-sky-300'
+                            : 'text-emerald-300',
+                      entry.levelSource === 'guessed' && 'opacity-60',
+                    )}
+                    title={
+                      entry.levelSource === 'guessed'
+                        ? 'Inferred from keywords in the line — this record did not state a level'
+                        : entry.levelSource === 'emitted'
+                          ? 'Reported by the container'
+                          : undefined
+                    }
+                  >
+                    {entry.level.toUpperCase()}{entry.levelSource === 'guessed' ? '?' : ''}
                   </span>
                   <span>{renderLogMessage(entry.message, searchNeedle)}</span>
                 </div>
