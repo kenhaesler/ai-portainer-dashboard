@@ -60,7 +60,10 @@
     "zod": "^4.3.6"
   },
   "overrides": {
-    "zod": "^4.3.6"
+    "zod": "^4.3.6",
+    "@fastify/swagger-ui": {
+      "@fastify/static": "^10.1.2"
+    }
   },
   "engines": {
     "node": ">=22.0.0"
