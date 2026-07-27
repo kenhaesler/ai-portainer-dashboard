@@ -56,8 +56,9 @@ export interface LlmStats {
   /**
    * Failed share of the window, **already a percentage** (0-100), not a
    * fraction. The frontend multiplied it by 100 a second time and rendered
-   * "10000.0%"; the name now says which it is, and `llm-trace-store.test.ts`
-   * pins the scale.
+   * "10000.0%". The name does not distinguish the two scales — the field is
+   * consumed by the frontend and was left alone — so this doc is what says
+   * which it is, and `__tests__/llm-stats-aggregation.test.ts` pins it.
    */
   errorRate: number;
   /** Successful calls per model. Errors are excluded, so shares sum over calls a model actually served. */

@@ -1,5 +1,5 @@
 import { Agent, fetch as undiciFetch } from 'undici';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { readFileSync } from 'fs';
 import pLimit from 'p-limit';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
@@ -384,24 +384,121 @@ Provide concise, actionable recommendations. When suggesting changes, always exp
 }
 
 /**
- * Probe the configured LLM endpoint via `/v1/models`. Returns true if the
- * endpoint responds with HTTP 2xx, false otherwise (or if no URL is set).
+ * How long one availability probe result is reused, in milliseconds.
+ *
+ * Both outcomes are cached: caching only the positive one would leave a dead
+ * endpoint being dialled on every page visit, which is the case that actually
+ * costs something — each probe holds a request handler for up to the 5s
+ * timeout below.
  */
-export async function isLlmAvailable(): Promise<boolean> {
-  try {
-    const llmConfig = await getEffectiveLlmConfig();
-    if (!llmConfig.apiUrl) return false;
+export const LLM_AVAILABILITY_TTL_MS = 30_000;
 
-    const modelsUrl = resolveModelsUrl(llmConfig.apiUrl);
-    const response = await llmFetch(modelsUrl, {
+const AVAILABILITY_PROBE_TIMEOUT_MS = 5000;
+
+interface AvailabilityCacheEntry {
+  /** Identity of the endpoint the answer is about — see availabilityCacheKey. */
+  key: string;
+  available: boolean;
+  expiresAt: number;
+}
+
+/**
+ * A single slot rather than a map: there is exactly one effective LLM config at
+ * a time, so a key mismatch after a Settings change discards the old answer
+ * without any invalidation hook, and nothing accumulates.
+ */
+let availabilityCache: AvailabilityCacheEntry | null = null;
+
+/** Set while a probe is outstanding so N concurrent callers share one request. */
+let availabilityProbe: { key: string; promise: Promise<boolean> } | null = null;
+
+/**
+ * Bumped by resetLlmAvailabilityCache so a probe that was already in flight
+ * cannot write its (now unwanted) result into the fresh cache.
+ */
+let availabilityGeneration = 0;
+
+type LlmConnectionConfig = Awaited<ReturnType<typeof getEffectiveLlmConfig>>;
+
+/**
+ * Identity of the endpoint a cached answer applies to. Anything that changes
+ * what the probe would ask, or who it would ask as, has to be in here — an
+ * operator who fixes a wrong URL or a rejected token in Settings must not be
+ * told for another 30s that the *old* endpoint is still down.
+ *
+ * The token is hashed rather than embedded so the key stays safe to log.
+ */
+function availabilityCacheKey(llmConfig: LlmConnectionConfig): string {
+  const tokenFingerprint = llmConfig.apiToken
+    ? createHash('sha256').update(llmConfig.apiToken).digest('hex').slice(0, 16)
+    : 'none';
+  return `${resolveModelsUrl(llmConfig.apiUrl)}|${llmConfig.authType}|${tokenFingerprint}`;
+}
+
+/** Never rejects: an unreachable endpoint is a `false`, not an error. */
+async function probeLlmEndpoint(llmConfig: LlmConnectionConfig): Promise<boolean> {
+  try {
+    const response = await llmFetch(resolveModelsUrl(llmConfig.apiUrl), {
       headers: {
         ...getAuthHeaders(llmConfig.apiToken, llmConfig.authType),
       },
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(AVAILABILITY_PROBE_TIMEOUT_MS),
     });
     return response.ok;
   } catch {
     log.warn('LLM endpoint is not available');
     return false;
   }
+}
+
+/**
+ * Whether the configured LLM endpoint answers on `/v1/models`.
+ *
+ * The result is memoized for LLM_AVAILABILITY_TTL_MS per effective endpoint,
+ * and concurrent callers share one in-flight probe, because this is called on
+ * a per-request path (`GET /api/llm/status`, which every Assistant page load
+ * hits) as well as from the monitoring cycle. The configured endpoint is still
+ * re-read from settings on every call — that lookup is what makes a Settings
+ * change take effect immediately; only the outbound probe is cached.
+ */
+export async function isLlmAvailable(): Promise<boolean> {
+  let llmConfig: LlmConnectionConfig;
+  try {
+    llmConfig = await getEffectiveLlmConfig();
+  } catch {
+    // Settings unreadable — report unavailable, but do not cache a verdict we
+    // never actually reached the endpoint to form.
+    log.warn('LLM endpoint is not available');
+    return false;
+  }
+  if (!llmConfig.apiUrl) return false;
+
+  const key = availabilityCacheKey(llmConfig);
+  if (availabilityCache && availabilityCache.key === key && availabilityCache.expiresAt > Date.now()) {
+    return availabilityCache.available;
+  }
+  if (availabilityProbe && availabilityProbe.key === key) {
+    return availabilityProbe.promise;
+  }
+
+  const generation = availabilityGeneration;
+  const promise = probeLlmEndpoint(llmConfig).then((available) => {
+    if (generation === availabilityGeneration) {
+      availabilityCache = { key, available, expiresAt: Date.now() + LLM_AVAILABILITY_TTL_MS };
+      // Only clear the slot if it is still this probe: if the endpoint changed
+      // mid-flight a newer probe already owns it, and clearing would send the
+      // next caller off to start a third request.
+      if (availabilityProbe?.promise === promise) availabilityProbe = null;
+    }
+    return available;
+  });
+  availabilityProbe = { key, promise };
+  return promise;
+}
+
+/** Test-only: forget the memoized probe result and abandon any in-flight one. */
+export function resetLlmAvailabilityCache(): void {
+  availabilityGeneration += 1;
+  availabilityCache = null;
+  availabilityProbe = null;
 }

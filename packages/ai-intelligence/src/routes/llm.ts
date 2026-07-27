@@ -96,8 +96,15 @@ export async function llmRoutes(fastify: FastifyInstance) {
    * page could not tell you it was broken until you used it.
    *
    * `authenticate` only: it reports whether a feature is on, never the
-   * endpoint or token. The 30s cache keeps a dead endpoint from being probed
-   * on every page visit while still recovering quickly once it comes back.
+   * endpoint or token. `isLlmAvailable()` memoizes the verdict server-side for
+   * 30s per effective endpoint and collapses concurrent callers onto one
+   * outbound request, so N viewers opening the Assistant cost one probe rather
+   * than N. What is shared is the request, not the wait: callers arriving
+   * while a probe is in flight await the same promise, so against a hung
+   * endpoint each of them still blocks for its full 5s timeout. Only once that
+   * first probe resolves do the next 30s of visits answer from the memoized
+   * verdict without touching the network. Changing the endpoint in Settings
+   * changes the cache key, so this never answers for the previous host.
    */
   fastify.get('/api/llm/status', {
     schema: {
