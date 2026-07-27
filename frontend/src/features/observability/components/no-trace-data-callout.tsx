@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import { Activity, ArrowRight } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 

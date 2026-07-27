@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { Search, Sparkles, Loader2, ArrowRight, AlertCircle, X } from 'lucide-react';
 import { useNlQuery, type NlQueryResult } from '@/features/ai-intelligence/hooks/use-nl-query';
 import { cn } from '@/shared/lib/utils';

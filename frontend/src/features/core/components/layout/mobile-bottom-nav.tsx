@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router';
 import { MoreHorizontal, X } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import { useHarborEnabled } from '@/features/security/hooks/use-harbor-vulnerabilities';

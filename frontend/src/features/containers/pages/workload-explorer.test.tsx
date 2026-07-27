@@ -8,7 +8,7 @@ const mockNavigate = vi.fn();
 const mockExportToCsv = vi.fn();
 let mockQueryString = 'endpoint=1&stack=workers';
 
-vi.mock('react-router-dom', () => ({
+vi.mock('react-router', () => ({
   useSearchParams: () => [new URLSearchParams(mockQueryString), mockSetSearchParams],
   useNavigate: () => mockNavigate,
   Link: ({ to, children, ...rest }: { to: string; children?: ReactNode }) => (

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { RouteObject } from 'react-router-dom';
+import type { RouteObject } from 'react-router';
 import { appRoutes } from '@/router';
 import {
   navDestinations,

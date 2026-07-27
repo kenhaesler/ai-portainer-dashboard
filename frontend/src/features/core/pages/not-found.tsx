@@ -1,4 +1,4 @@
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router';
 import { FileQuestion, ArrowRight } from 'lucide-react';
 import { EmptyState } from '@/shared/components/feedback/empty-state';
 import { closestDestination, findDestination } from '@/features/core/lib/navigation-manifest';

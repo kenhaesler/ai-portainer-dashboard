@@ -11,7 +11,7 @@ const state = vi.hoisted(() => ({
   isLoading: false,
 }));
 
-vi.mock('react-router-dom', () => ({
+vi.mock('react-router', () => ({
   useParams: () => ({ endpointId: '1', containerId: 'c1abcdef01234567' }),
   useSearchParams: () => [new URLSearchParams(state.search), mockSetSearchParams],
   useNavigate: () => mockNavigate,

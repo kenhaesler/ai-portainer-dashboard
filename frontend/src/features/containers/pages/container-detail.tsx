@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
+import { useParams, useSearchParams, useNavigate } from 'react-router';
 import { AlertTriangle, ArrowLeft, Info, ScrollText, Activity, Clock, Wifi, GitBranch } from 'lucide-react';
 import * as Tabs from '@radix-ui/react-tabs';
 import { useContainerDetail } from '@/features/containers/hooks/use-container-detail';

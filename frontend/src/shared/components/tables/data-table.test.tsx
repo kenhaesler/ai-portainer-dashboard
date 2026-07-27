@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, render, screen, fireEvent } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter } from 'react-router';
 import { DataTable } from './data-table';
 import type { ColumnDef, OnChangeFn, SortingState } from '@tanstack/react-table';
 import type { ReactElement } from 'react';

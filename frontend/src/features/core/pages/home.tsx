@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { AlertTriangle, Star, ShieldAlert, PackageOpen } from 'lucide-react';
 import { useDashboardFull } from '@/features/core/hooks/use-dashboard-full';
 import { useContainers, useFavoriteContainers } from '@/features/containers/hooks/use-containers';

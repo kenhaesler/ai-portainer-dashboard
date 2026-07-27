@@ -1,5 +1,5 @@
 import { useMemo, useState, useCallback, useEffect } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router';
 import { ChevronDown, ChevronRight, Layers, Loader2, Inbox } from 'lucide-react';
 import { EmptyState } from '@/shared/components/feedback/empty-state';
 import { useIncidentInsights } from '../hooks/use-incident-insights';

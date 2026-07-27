@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import {
   CheckCircle2,
   AlertTriangle,

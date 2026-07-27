@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState } from 'react';
-import { useLocation, Link } from 'react-router-dom';
+import { useLocation, Link } from 'react-router';
 import { ChevronRight, ChevronDown } from 'lucide-react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { SidebarLogo } from '@/shared/components/icons/sidebar-logo';

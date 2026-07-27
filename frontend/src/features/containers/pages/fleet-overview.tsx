@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router';
 import { type ColumnDef } from '@tanstack/react-table';
 import * as Tabs from '@radix-ui/react-tabs';
 import {

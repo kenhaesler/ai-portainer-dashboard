@@ -37,7 +37,7 @@ import {
   Sigma,
   ThumbsDown,
 } from 'lucide-react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router';
 import { isDownState } from '@/shared/lib/container-state';
 
 /**

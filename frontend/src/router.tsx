@@ -1,6 +1,6 @@
 import { lazy, Suspense } from 'react';
-import type { RouteObject } from 'react-router-dom';
-import { createBrowserRouter, Navigate } from 'react-router-dom';
+import type { RouteObject } from 'react-router';
+import { createBrowserRouter, Navigate } from 'react-router';
 import { AppLayout } from '@/features/core/components/layout/app-layout';
 import { RouteErrorBoundary } from '@/shared/components/feedback/route-error-boundary';
 import { ChunkLoadErrorBoundary } from '@/shared/components/feedback/chunk-load-error-boundary';

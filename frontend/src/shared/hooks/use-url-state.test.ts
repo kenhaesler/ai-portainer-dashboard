@@ -2,11 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useURLState } from './use-url-state';
 
-// Mock react-router-dom
+// Mock react-router
 const mockSetSearchParams = vi.fn();
 let mockSearchParams = new URLSearchParams();
 
-vi.mock('react-router-dom', () => ({
+vi.mock('react-router', () => ({
   useSearchParams: () => [mockSearchParams, mockSetSearchParams],
 }));
 

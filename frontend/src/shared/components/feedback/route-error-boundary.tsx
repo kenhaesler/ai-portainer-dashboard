@@ -1,4 +1,4 @@
-import { useRouteError, isRouteErrorResponse, useNavigate } from 'react-router-dom';
+import { useRouteError, isRouteErrorResponse, useNavigate } from 'react-router';
 import { AlertTriangle, RefreshCw, Home, WifiOff, FileQuestion } from 'lucide-react';
 import { useState } from 'react';
 
