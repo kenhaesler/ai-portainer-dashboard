@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { type ColumnDef } from '@tanstack/react-table';
 import * as Tabs from '@radix-ui/react-tabs';
@@ -387,10 +387,6 @@ export default function InfrastructurePage() {
   const endpointSearchQuery = searchParams.get('endpointSearch') ?? '';
   const stackSearchQuery = searchParams.get('stackSearch') ?? '';
   const k8sSearchQuery = searchParams.get('k8sSearch') ?? '';
-
-  // Autofocus gate: focus the Fleet search only on first mount, not on every re-entry
-  const fleetSearchAutoFocusedRef = useRef(false);
-  const markFleetSearchAutoFocused = useCallback(() => { fleetSearchAutoFocusedRef.current = true; }, []);
 
   // Shared data — single hook call each, no duplicate requests
   const {
@@ -1142,7 +1138,6 @@ export default function InfrastructurePage() {
                       // and popped the software keyboard over the one card of
                       // content on a phone. The skip link in the app shell is
                       // the supported way to reach content quickly.
-                      onAutoFocused={markFleetSearchAutoFocused}
                       initialValue={endpointSearchQuery}
                       showCount={false}
                     />

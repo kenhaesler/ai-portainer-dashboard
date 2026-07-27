@@ -201,32 +201,54 @@ export function getForecastRiskLevel(forecast: CapacityForecast): ForecastRiskLe
 /**
  * Rank for the "Risk-ranked" fleet table.
  *
- * The two branches previously used incompatible scales: `200 - eta * 20` for
- * rows with an ETA (120 at 4h) against `120 + currentValue` for rows without
- * (130.7 for a healthy container idling at 10.7%). Every projected breach more
- * than four hours out was therefore buried below rows the same table labelled
- * Healthy — a table that inverted its own severity column. The old ETA branch
- * also clamped at 0, so a 10h breach sank beneath everything.
+ * Two bands: any row with a reportable ETA outranks every row without one, and
+ * within each band sooner/larger ranks higher. The two facing band edges are
+ * derived from the constants below and exported, so the separation is
+ * expressed in code — the previous version tuned four literals (1000, 240,
+ * 300, 150) and exported an `ETA_BAND_FLOOR` this function never read.
  *
- * The bands below cannot overlap: any row with a reportable ETA outranks every
- * row without one, and within each band sooner/larger ranks higher.
+ * `forecast-ranking.test.ts` scores a grid of both branches and fails if the
+ * bands meet; separate cases pin each input clamp.
  */
-const ETA_BAND_FLOOR = 500;
+
+// One slot per trend for rows with no ETA, ordered increasing > stable >
+// decreasing. `currentValue` is scaled into part of a slot, so trend decides
+// the slot and current value only orders rows inside it.
+const NO_ETA_TREND_SLOTS: Record<CapacityForecast['trend'], number> = {
+  decreasing: 0,
+  stable: 1,
+  increasing: 2,
+};
+const NO_ETA_SLOT_SIZE = 100;
+// Kept below NO_ETA_SLOT_SIZE so a full-value row cannot reach the next slot.
+const NO_ETA_VALUE_SPAN = 50;
+const NO_ETA_BAND_CEILING =
+  Math.max(...Object.values(NO_ETA_TREND_SLOTS)) * NO_ETA_SLOT_SIZE + NO_ETA_VALUE_SPAN;
+
+// Derived from the ceiling, so the gap between the bands is exactly
+// NO_ETA_SLOT_SIZE.
+const ETA_BAND_FLOOR = NO_ETA_BAND_CEILING + NO_ETA_SLOT_SIZE;
+// How far above ETA_BAND_FLOOR the band reaches. Must be positive: a negative
+// value inverts the within-band ordering and drops part of the band below the
+// floor.
+const ETA_BAND_SPAN = 240;
 const MAX_RANKED_ETA_HOURS = 24;
 
 export function getForecastRiskScore(forecast: CapacityForecast): number {
   if (hasReportableEta(forecast)) {
     const hours = Math.min(Math.max(forecast.timeToThreshold!, 0), MAX_RANKED_ETA_HOURS);
-    // 1000 down to 760 — always clear of the no-ETA band below.
-    return 1000 - (hours / MAX_RANKED_ETA_HOURS) * 240;
+    // Sooner ranks higher. An ETA past MAX_RANKED_ETA_HOURS lands on the band
+    // floor rather than sinking below the unprojected rows.
+    return ETA_BAND_FLOOR + (1 - hours / MAX_RANKED_ETA_HOURS) * ETA_BAND_SPAN;
   }
-  // Ceiling here is 400, comfortably under ETA_BAND_FLOOR.
-  if (forecast.trend === 'increasing') return 300 + Math.min(forecast.currentValue, 100);
-  if (forecast.trend === 'stable') return 150 + Math.min(forecast.currentValue, 100) / 2;
-  return Math.min(forecast.currentValue, 100) / 2;
+  const value = Math.min(Math.max(forecast.currentValue, 0), 100);
+  return NO_ETA_TREND_SLOTS[forecast.trend] * NO_ETA_SLOT_SIZE + (value / 100) * NO_ETA_VALUE_SPAN;
 }
 
-export { ETA_BAND_FLOOR as FORECAST_ETA_BAND_FLOOR };
+export {
+  ETA_BAND_FLOOR as FORECAST_ETA_BAND_FLOOR,
+  NO_ETA_BAND_CEILING as FORECAST_NO_ETA_BAND_CEILING,
+};
 
 const RISK_BADGE_STYLES: Record<ForecastRiskLevel, string> = {
   critical: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',

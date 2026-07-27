@@ -102,9 +102,35 @@ fixes encode, and the one to apply to any new figure:
   are now computed **only** when the aggregates also read raw metrics; otherwise they are `null`
   and `aggregateSource.percentileNote` explains why. `percentile_cont` over an empty set returns
   NULL, which `Number()` turned into a confident `0.00%`; null now reaches the client.
+- Nothing reachable exercised that percentile branch before this issue. `ReportsQuerySchema`
+  accepted `24h|7d|30d`, and `selectRollupTable` reads the raw `metrics` hypertable only at **6h
+  and below**, so every range the querystring allowed was a rollup range: `p50`/`p95`/`p99` were
+  always null and the two p95-keyed right-sizing rules could never fire — a percentile column and
+  half a rule set that no reachable request could reach. `6h` was added to the schema and to
+  `TIME_RANGES` in `reports.tsx` (which feeds the page's range selector and the PDF options panel
+  alike), and `timeRangeToInterval` answers it with `6 hours` instead of falling through to
+  `1 day`. The management PDF's `Period:` line derives its prose from the range token now, rather
+  than from a three-entry lookup that fell behind the selector the moment `6h` joined it and
+  printed `Period: 6h`.
 - Right-sizing rules require `RIGHT_SIZING_MIN_SAMPLES` (10), counted from the raw samples backing
   a percentile rather than the rollup bucket count, and never fire on a null percentile. A
   container with two samples was being told to raise its CPU limits.
+- What the chosen range costs is stated rather than left to an empty column: the utilization
+  payload carries `rightSizingCoverage` (`{ totalRules, skippedRules, skippedReason }`) and
+  `/reports` renders "2 of 4 rules could not be evaluated: CPU p95 below 10%, Memory p95 below
+  20%", naming the unevaluated rules in the same words it uses for the ones that fired and taking
+  the fraction from the payload so a fifth rule cannot make it a lie. The panel renders for that
+  note alone, and its header count is labelled (`0 fired`) so an unlabelled `0` no longer sits
+  above that sentence. The coverage is range-level only. **Known gap, not closed:**
+  `evaluateRightSizingRules` also skips a rule for an individual container backed by fewer than 10
+  samples, and no field reports that. If every container is below that floor, a rule is evaluated
+  for no container while `skippedRules` stays empty. `/reports` gates the whole panel on
+  `rightSizingGroups.length > 0 || unevaluatedRules.length > 0`, so in that case both are zero and
+  the panel does not render at all — the operator sees no right-sizing section and nothing saying
+  two rules went unevaluated. The gap is silent, not conservative.
+  `RightSizingRangeCoverage`'s doc comment says the same, and
+  `reports-route.test.ts` (`covers range-level skips only — a per-container sample floor is not
+  one`) pins the boundary.
 - Capacity-forecast ETAs are gated on `confidence !== 'low'` (`hasReportableEta`). The fleet's
   top-ranked risk was a container at **0.0% CPU** projected to breach within the hour. The risk
   score's two branches previously used incompatible scales, so every breach more than four hours

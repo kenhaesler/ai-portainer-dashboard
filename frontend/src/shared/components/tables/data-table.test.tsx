@@ -2,7 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { DataTable } from './data-table';
-import type { ColumnDef } from '@tanstack/react-table';
+import type { ColumnDef, OnChangeFn, SortingState } from '@tanstack/react-table';
+import type { ReactElement } from 'react';
 
 // Mock @tanstack/react-virtual
 vi.mock('@tanstack/react-virtual', () => ({
@@ -1133,6 +1134,140 @@ describe('DataTable', () => {
         'href',
         '/containers/1/1'
       );
+    });
+  });
+
+  describe('controlled sorting wiring', () => {
+    let warnSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      warnSpy.mockRestore();
+      vi.unstubAllEnvs();
+    });
+
+    /**
+     * A DataTable whose two sorting props are independently optional. The
+     * shipped props type is a union that rejects exactly that shape — see
+     * `DataTableSortingUnionChecks` in `data-table.tsx`, which `tsc` checks and
+     * this file's `tsc` does not (`frontend/tsconfig.json` excludes test
+     * files). So a cast is how a TypeScript test reaches the runtime guard, and
+     * it stands in for the callers that guard is for: JS consumers, and casts.
+     */
+    const HalfControlledDataTable = DataTable as unknown as (props: {
+      columns: ColumnDef<TestRow, any>[];
+      data: TestRow[];
+      sorting?: SortingState;
+      onSortingChange?: OnChangeFn<SortingState>;
+    }) => ReactElement;
+
+    it('warns, naming both props, when only `sorting` is supplied', () => {
+      // The failure is otherwise invisible: the table renders and sorts, and
+      // the caller's state simply never updates.
+      render(
+        <HalfControlledDataTable
+          columns={testColumns}
+          data={makeRows(5)}
+          sorting={[{ id: 'name', desc: false }]}
+        />
+      );
+
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      const message = String(warnSpy.mock.calls[0][0]);
+      expect(message).toContain('sorting');
+      expect(message).toContain('onSortingChange');
+    });
+
+    it('warns, naming both props, when only `onSortingChange` is supplied', () => {
+      render(<HalfControlledDataTable columns={testColumns} data={makeRows(5)} onSortingChange={vi.fn()} />);
+
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      const message = String(warnSpy.mock.calls[0][0]);
+      expect(message).toContain('sorting');
+      expect(message).toContain('onSortingChange');
+    });
+
+    it('emits nothing outside DEV, so the diagnostic cannot reach a production console', () => {
+      // Deleting the `if (!import.meta.env.DEV) return;` line left all 86 tests
+      // passing: vitest runs with DEV true, so the false branch was unreached.
+      vi.stubEnv('DEV', false);
+
+      render(
+        <HalfControlledDataTable
+          columns={testColumns}
+          data={makeRows(5)}
+          sorting={[{ id: 'name', desc: false }]}
+        />
+      );
+
+      expect(warnSpy).not.toHaveBeenCalled();
+      // The guard skipped the warning, not the render.
+      expect(screen.getByText('container-1')).toBeInTheDocument();
+    });
+
+    it('does not warn when both are supplied', () => {
+      render(
+        <DataTable
+          columns={testColumns}
+          data={makeRows(5)}
+          sorting={[{ id: 'name', desc: false }]}
+          onSortingChange={vi.fn()}
+        />
+      );
+
+      expect(warnSpy).not.toHaveBeenCalled();
+    });
+
+    it('does not warn when neither is supplied', () => {
+      render(<DataTable columns={testColumns} data={makeRows(5)} />);
+
+      expect(warnSpy).not.toHaveBeenCalled();
+    });
+
+    it('warns at most once per mount, not once per render', () => {
+      const { rerender } = render(
+        <HalfControlledDataTable
+          columns={testColumns}
+          data={makeRows(5)}
+          sorting={[{ id: 'name', desc: false }]}
+        />
+      );
+      rerender(
+        <HalfControlledDataTable
+          columns={testColumns}
+          data={makeRows(5)}
+          sorting={[{ id: 'id', desc: true }]}
+        />
+      );
+      rerender(
+        <HalfControlledDataTable
+          columns={testColumns}
+          data={makeRows(6)}
+          sorting={[{ id: 'id', desc: true }]}
+        />
+      );
+
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('drives sorting from the parent when both props are supplied', () => {
+      const onSortingChange = vi.fn();
+      render(
+        <DataTable
+          columns={testColumns}
+          data={makeRows(5)}
+          sorting={[{ id: 'name', desc: true }]}
+          onSortingChange={onSortingChange}
+        />
+      );
+
+      const nameHeader = screen.getByText('Name').closest('th')!;
+      expect(nameHeader).toHaveAttribute('aria-sort', 'descending');
+      fireEvent.click(nameHeader.querySelector('button')!);
+      expect(onSortingChange).toHaveBeenCalled();
     });
   });
 

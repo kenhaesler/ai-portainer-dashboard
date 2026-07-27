@@ -77,7 +77,14 @@ frontend/vite.config.d.ts
 .superpowers/
 
 # Design-review tooling scratch (critique snapshots, live-preview state, caches).
-# Only `frontend/.gitignore` covered this, so a `.impeccable/` at the repo root
-# — and the one the tool writes beside it — showed up as untracked and was one
-# `git add -A` away from being committed.
+# No slash in these patterns, so each matches at any depth.
 .impeccable/
+.impeccable-live.json
+.impeccable-live/
+impeccable-live.client.ts
+
+frontend/src/lib/impeccable/ImpeccableLiveRoot.svelte
+frontend/src/lib/impeccable/__runtime.js
+# Path-anchored: unanchored, `[0-9a-f]*/` also ignores `backend/`, `docs/`,
+# `e2e/` and `frontend/`.
+frontend/src/lib/impeccable/[0-9a-f]*/

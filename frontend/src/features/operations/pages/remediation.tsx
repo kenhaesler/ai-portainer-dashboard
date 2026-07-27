@@ -348,15 +348,6 @@ function AnalysisSummaryCell({ action }: { action: ActionRecord }) {
 }
 
 /**
- * Who decided, why, and what happened when it ran.
- *
- * The backend has written `approved_by`, `rejected_by`, `rejection_reason` and
- * `execution_result` since the queue existed and none of them reached the
- * screen — a Failed row rendered the word "Failed" and nothing else. An
- * approval queue exists to carry accountability; without these four fields it
- * carries only state.
- */
-/**
  * Where a suggestion came from — the honesty mechanism this page gets right.
  *
  * A rule-derived rationale is fixed text chosen by a keyword match, not model
@@ -395,6 +386,15 @@ function SuggestedBy({ action }: { action: ActionRecord }) {
   return <span>{suggestedBy || 'Source unrecorded'}</span>;
 }
 
+/**
+ * Who decided, why, and what happened when it ran.
+ *
+ * The backend has written `approved_by`, `rejected_by`, `rejection_reason` and
+ * `execution_result` since the queue existed and none of them reached the
+ * screen — a Failed row rendered the word "Failed" and nothing else. An
+ * approval queue exists to carry accountability; without these four fields it
+ * carries only state.
+ */
 function DecisionCell({ action }: { action: ActionRecord }) {
   const approvedBy = action.approved_by || action.approvedBy;
   const rejectedBy = action.rejected_by || action.rejectedBy;
