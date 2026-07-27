@@ -15,35 +15,46 @@ export const REDACTED_SECRET = '••••••••';
  * - `security`    — changes who can reach the dashboard, or how credentials travel.
  * - `destructive` — *lowering* the value permanently deletes stored data.
  */
-export type SettingRisk = 'security' | 'destructive';
+/**
+ * How much attention a setting's consequence deserves.
+ *
+ * `security` used to cover every OIDC/TLS row and rendered an identical red
+ * chip reading "Security" on all fifteen of them — on a tab already named
+ * Security. Uniform emphasis is no emphasis: "Auth codes and tokens travel
+ * unencrypted … never enable this in production" ranked exactly level with
+ * "Client ID must match the client registered with your IdP", which is a typo
+ * warning. `danger` is reserved for the few settings that can expose
+ * credentials or lock everyone out, so red means something again.
+ */
+export type SettingRisk = 'danger' | 'security' | 'destructive';
 
 // Default settings definitions
 export const DEFAULT_SETTINGS = {
   monitoring: [
     { key: 'monitoring.polling_interval', label: 'Polling Interval', description: 'How often to fetch container metrics (seconds)', type: 'number', defaultValue: '30', min: 5, max: 300 },
     { key: 'monitoring.metric_retention_days', label: 'Metric Retention', description: 'How long to keep historical metrics (days)', type: 'number', defaultValue: '7', min: 1, max: 90, risk: 'destructive', consequence: 'Lowering this deletes stored metrics older than the new window. Deleted history does not come back if you raise it again.' },
-    { key: 'monitoring.enabled', label: 'Enable Monitoring', description: 'Enable background container monitoring', type: 'boolean', defaultValue: 'true' },
+    { key: 'monitoring.enabled', label: 'Enable Monitoring', description: 'Runs the detection cycle that produces insights, anomalies and notifications. Off means nothing is evaluated and no alerts fire.', type: 'boolean', defaultValue: 'true' },
     { key: 'monitoring.scheduler_interval_minutes', label: 'Scheduler Interval', description: 'How often the monitoring scheduler runs (minutes). Changes apply without restart.', type: 'number', defaultValue: '5', min: 1, max: 60 },
   ],
   anomaly: [
     { key: 'anomaly.cpu_threshold', label: 'CPU Threshold', description: 'CPU usage percentage to trigger anomaly alert', type: 'number', defaultValue: '85', min: 50, max: 100 },
     { key: 'anomaly.memory_threshold', label: 'Memory Threshold', description: 'Memory usage percentage to trigger anomaly alert', type: 'number', defaultValue: '85', min: 50, max: 100 },
     { key: 'anomaly.network_spike_threshold', label: 'Network Spike Threshold', description: 'Network traffic spike multiplier to trigger alert', type: 'number', defaultValue: '3', min: 1.5, max: 10 },
-    { key: 'anomaly.detection_enabled', label: 'Enable Anomaly Detection', description: 'Enable automatic anomaly detection', type: 'boolean', defaultValue: 'true' },
+    { key: 'anomaly.detection_enabled', label: 'Enable Anomaly Detection', description: 'Compares each container against its own recent baseline. Off leaves the fixed thresholds above as the only source of anomaly insights.', type: 'boolean', defaultValue: 'true' },
   ],
   notifications: [
-    { key: 'notifications.teams_enabled', label: 'Enable Teams Notifications', description: 'Send alerts to Microsoft Teams via webhook', type: 'boolean', defaultValue: 'false' },
+    { key: 'notifications.teams_enabled', label: 'Enable Teams Notifications', description: 'Posts every critical and warning insight to a Teams channel. One message per insight, rate-limited by the anomaly cooldown.', type: 'boolean', defaultValue: 'false' },
     { key: 'notifications.teams_webhook_url', label: 'Teams Webhook URL', description: 'Microsoft Teams incoming webhook URL', type: 'password', defaultValue: '' },
-    { key: 'notifications.email_enabled', label: 'Enable Email Notifications', description: 'Send alerts via SMTP email', type: 'boolean', defaultValue: 'false' },
+    { key: 'notifications.email_enabled', label: 'Enable Email Notifications', description: 'Emails every critical and warning insight to the recipients below. The SMTP host is set with the SMTP_HOST environment variable only — it cannot be pointed at an internal host from this page.', type: 'boolean', defaultValue: 'false' },
     // SMTP Host is intentionally env-only (SMTP_HOST) for SSRF protection.
     // The backend ignores DB overrides via getSafeSmtpHost().
-    { key: 'notifications.smtp_port', label: 'SMTP Port', description: 'SMTP server port', type: 'number', defaultValue: '587', min: 1, max: 65535 },
-    { key: 'notifications.smtp_user', label: 'SMTP Username', description: 'SMTP authentication username', type: 'string', defaultValue: '' },
-    { key: 'notifications.smtp_password', label: 'SMTP Password', description: 'SMTP authentication password', type: 'password', defaultValue: '' },
+    { key: 'notifications.smtp_port', label: 'SMTP Port', description: 'Usually 587 for STARTTLS or 465 for implicit TLS.', type: 'number', defaultValue: '587', min: 1, max: 65535 },
+    { key: 'notifications.smtp_user', label: 'SMTP Username', description: 'Leave blank if your relay accepts unauthenticated mail from this host.', type: 'string', defaultValue: '' },
+    { key: 'notifications.smtp_password', label: 'SMTP Password', description: 'Stored encrypted. Leave blank when the username is blank.', type: 'password', defaultValue: '' },
     { key: 'notifications.email_recipients', label: 'Email Recipients', description: 'Comma-separated list of recipient email addresses', type: 'string', defaultValue: '' },
-    { key: 'notifications.discord_enabled', label: 'Enable Discord Notifications', description: 'Send alerts to Discord via webhook', type: 'boolean', defaultValue: 'false' },
+    { key: 'notifications.discord_enabled', label: 'Enable Discord Notifications', description: 'Posts every critical and warning insight to a Discord channel. One message per insight, rate-limited by the anomaly cooldown.', type: 'boolean', defaultValue: 'false' },
     { key: 'notifications.discord_webhook_url', label: 'Discord Webhook URL', description: 'Discord channel incoming webhook URL (https://discord.com/api/webhooks/...)', type: 'password', defaultValue: '' },
-    { key: 'notifications.telegram_enabled', label: 'Enable Telegram Notifications', description: 'Send alerts via Telegram Bot API', type: 'boolean', defaultValue: 'false' },
+    { key: 'notifications.telegram_enabled', label: 'Enable Telegram Notifications', description: 'Sends every critical and warning insight to the chat below. One message per insight, rate-limited by the anomaly cooldown.', type: 'boolean', defaultValue: 'false' },
     { key: 'notifications.telegram_bot_token', label: 'Telegram Bot Token', description: 'Bot token from @BotFather (format: 123456:ABC-DEF...)', type: 'password', defaultValue: '' },
     { key: 'notifications.telegram_chat_id', label: 'Telegram Chat ID', description: 'Chat, group, or channel ID to receive notifications', type: 'string', defaultValue: '' },
   ],
@@ -67,12 +78,12 @@ export const DEFAULT_SETTINGS = {
     { key: 'oidc.client_secret', label: 'Client Secret', description: 'OIDC client secret for server-side authentication', type: 'password', defaultValue: '', risk: 'security', consequence: 'A wrong value fails every login. A leaked value lets someone else impersonate this dashboard to your IdP.' },
     { key: 'oidc.redirect_uri', label: 'Redirect URI', description: 'Callback URL registered with your IdP. Leave blank to inherit from DASHBOARD_EXTERNAL_URL — when that env var is set, it takes precedence and the value here is ignored.', type: 'string', defaultValue: '', risk: 'security', consequence: 'Must be registered verbatim with the IdP. A mismatch fails the callback after the user has already authenticated.' },
     { key: 'oidc.scopes', label: 'Scopes', description: 'Space-separated OIDC scopes to request', type: 'string', defaultValue: 'openid profile email', risk: 'security', consequence: 'Dropping a scope your mappings depend on (the groups scope, typically) leaves every login with no groups and no mapped role.' },
-    { key: 'oidc.local_auth_enabled', label: 'Keep Local Auth Enabled', description: 'Allow username/password login alongside SSO', type: 'boolean', defaultValue: 'true', risk: 'security', consequence: 'Turning this off removes the username/password fallback. If the IdP is unreachable, nobody can sign in.' },
+    { key: 'oidc.local_auth_enabled', label: 'Keep Local Auth Enabled', description: 'Allow username/password login alongside SSO', type: 'boolean', defaultValue: 'true', risk: 'danger', consequence: 'Turning this off removes the username/password fallback. If the IdP is unreachable, nobody can sign in.' },
     { key: 'oidc.groups_claim', label: 'Groups Claim', description: 'ID token claim name containing group membership. Supports dot-notation for nested claims (e.g., realm_access.roles)', type: 'string', defaultValue: 'groups', risk: 'security', consequence: 'A claim name your IdP does not send means no group ever matches, and every login falls through to the unmapped-user rule.' },
     { key: 'oidc.group_role_mappings', label: 'Group-to-Role Mappings', description: 'JSON mapping of IdP group names to dashboard roles. Use * as a wildcard fallback.', type: 'string', defaultValue: '{}', risk: 'security', consequence: 'This is what decides who gets admin. A downgrade revokes the affected users’ live sessions immediately.' },
-    { key: 'oidc.allow_unmapped_viewer', label: 'Grant viewer role to all IDP users', description: 'When on, IDP users whose groups match no mapping keep access — new users get viewer, existing users keep their current role. When off, only users in a defined group (or any user, if a * wildcard mapping is set) can sign in; everyone else is denied. Local auth is unaffected.', type: 'boolean', defaultValue: 'false', risk: 'security', consequence: 'On: anyone your IdP authenticates keeps access, mapped or not. Off: unmatched users are denied and their existing sessions are revoked.' },
+    { key: 'oidc.allow_unmapped_viewer', label: 'Grant viewer role to all IDP users', description: 'When on, IDP users whose groups match no mapping keep access — new users get viewer, existing users keep their current role. When off, only users in a defined group (or any user, if a * wildcard mapping is set) can sign in; everyone else is denied. Local auth is unaffected.', type: 'boolean', defaultValue: 'false', risk: 'danger', consequence: 'On: anyone your IdP authenticates keeps access, mapped or not. Off: unmatched users are denied and their existing sessions are revoked.' },
     { key: 'oidc.auto_provision', label: 'Auto-Provision OIDC Users', description: 'Automatically create user records for new OIDC-authenticated users', type: 'boolean', defaultValue: 'true', risk: 'security', consequence: 'Creates a dashboard account for every new IdP user who signs in, without an admin approving it.' },
-    { key: 'oidc.allow_insecure_transport', label: 'Allow Insecure Transport (HTTP)', description: 'Permit plain-HTTP OIDC discovery and token exchange. Intended only for local development against an HTTP-only IdP.', type: 'boolean', defaultValue: 'false', risk: 'security', consequence: 'Auth codes and tokens travel unencrypted. Anyone on the network path can capture and replay them. Never enable this in production.' },
+    { key: 'oidc.allow_insecure_transport', label: 'Allow Insecure Transport (HTTP)', description: 'Permit plain-HTTP OIDC discovery and token exchange. Intended only for local development against an HTTP-only IdP.', type: 'boolean', defaultValue: 'false', risk: 'danger', consequence: 'Auth codes and tokens travel unencrypted. Anyone on the network path can capture and replay them. Never enable this in production.' },
   ],
   webhooks: [
     { key: 'webhooks.enabled', label: 'Enable Webhooks', description: 'Enable outbound webhook event delivery', type: 'boolean', defaultValue: 'false' },
@@ -84,10 +95,10 @@ export const DEFAULT_SETTINGS = {
     { key: 'elasticsearch.endpoint', label: 'Elasticsearch URL', description: 'URL of your Elasticsearch cluster (e.g., https://localhost:9200)', type: 'string', defaultValue: '' },
     { key: 'elasticsearch.api_key', label: 'API Key', description: 'Elasticsearch API key for authentication (keep blank for no auth)', type: 'password', defaultValue: '' },
     { key: 'elasticsearch.index_pattern', label: 'Index Pattern', description: 'Index pattern for log searching (e.g., logs-* or filebeat-*)', type: 'string', defaultValue: 'logs-*' },
-    { key: 'elasticsearch.verify_ssl', label: 'Verify SSL', description: 'Verify SSL certificates when connecting', type: 'boolean', defaultValue: 'true', risk: 'security', consequence: 'Off accepts any certificate, including one presented by a man-in-the-middle holding your API key.' },
+    { key: 'elasticsearch.verify_ssl', label: 'Verify SSL', description: 'Verify SSL certificates when connecting', type: 'boolean', defaultValue: 'true', risk: 'danger', consequence: 'Off accepts any certificate, including one presented by a man-in-the-middle holding your API key.' },
   ],
   statusPage: [
-    { key: 'status.page.enabled', label: 'Enable Status Page', description: 'Serve a public status page at /status (no authentication required)', type: 'boolean', defaultValue: 'false', risk: 'security', consequence: 'Publishes /status to anyone who can reach this host, with no sign-in. Endpoint health and incident history become public.' },
+    { key: 'status.page.enabled', label: 'Enable Status Page', description: 'Serve a public status page at /status (no authentication required)', type: 'boolean', defaultValue: 'false', risk: 'danger', consequence: 'Publishes /status to anyone who can reach this host, with no sign-in. Endpoint health and incident history become public.' },
     { key: 'status.page.title', label: 'Page Title', description: 'Title displayed on the public status page', type: 'string', defaultValue: 'System Status' },
     { key: 'status.page.description', label: 'Page Description', description: 'Optional description shown below the title', type: 'string', defaultValue: '' },
     { key: 'status.page.show_incidents', label: 'Show Incidents', description: 'Display recent incidents on the status page', type: 'boolean', defaultValue: 'true' },
@@ -166,7 +177,7 @@ export const DEFAULT_SETTINGS = {
     { key: 'harbor.api_url', label: 'Harbor API URL', description: 'URL of your Harbor Registry (e.g., https://harbor.example.com)', type: 'string', defaultValue: '' },
     { key: 'harbor.robot_name', label: 'Robot Account Name', description: 'Harbor robot account username (e.g., robot$dashboard)', type: 'string', defaultValue: '' },
     { key: 'harbor.robot_secret', label: 'Robot Account Secret', description: 'Harbor robot account secret/password', type: 'password', defaultValue: '' },
-    { key: 'harbor.verify_ssl', label: 'Verify SSL', description: 'Verify SSL certificates when connecting to Harbor', type: 'boolean', defaultValue: 'true', risk: 'security', consequence: 'Off accepts any certificate, including one presented by a man-in-the-middle holding your robot account secret.' },
+    { key: 'harbor.verify_ssl', label: 'Verify SSL', description: 'Verify SSL certificates when connecting to Harbor', type: 'boolean', defaultValue: 'true', risk: 'danger', consequence: 'Off accepts any certificate, including one presented by a man-in-the-middle holding your robot account secret.' },
     { key: 'harbor.sync_interval_minutes', label: 'Sync Interval (minutes)', description: 'How often to sync vulnerabilities from Harbor', type: 'number', defaultValue: '30', min: 5, max: 1440 },
   ],
 } as const;
@@ -404,12 +415,22 @@ export function settingDomId(key: string): string {
   return `setting-${key.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
 }
 
-const RISK_CHROME: Record<SettingRisk, { rule: string; chip: string; label: string; text: string }> = {
-  security: {
+const RISK_CHROME: Record<SettingRisk, { rule: string; chip: string; label: string | null; text: string }> = {
+  danger: {
     rule: 'border-l-2 border-l-destructive/70 pl-3 -ml-px',
     chip: 'bg-destructive/10 text-destructive',
-    label: 'Security',
+    label: 'Weakens security',
     text: 'text-destructive',
+  },
+  security: {
+    // No chip: the tab is called Security, so a chip on every row repeats the
+    // heading fifteen times. The left rule still groups them, and the
+    // consequence line still explains what breaks — in muted text, so the
+    // genuinely dangerous rows above are the only red on the page.
+    rule: 'border-l-2 border-l-border pl-3 -ml-px',
+    chip: '',
+    label: null,
+    text: 'text-muted-foreground',
   },
   destructive: {
     rule: 'border-l-2 border-l-amber-500/70 pl-3 -ml-px',
@@ -446,7 +467,7 @@ export function SettingRow({ setting, value, onChange, hasChanges, disabled }: S
       <div className={cn('flex-1 pr-4', chrome?.rule)}>
         <div className="flex flex-wrap items-center gap-2">
           <label htmlFor={inputId} className="font-medium">{setting.label}</label>
-          {chrome && (
+          {chrome?.label && (
             <span className={cn('rounded px-1.5 py-0.5 text-xs font-medium', chrome.chip)}>
               {chrome.label}
             </span>

@@ -143,11 +143,19 @@ function OverviewSection() {
   const totalFeedback = stats?.reduce((sum, s) => sum + s.total, 0) ?? 0;
   const totalPositive = stats?.reduce((sum, s) => sum + s.positive, 0) ?? 0;
   const totalNegative = stats?.reduce((sum, s) => sum + s.negative, 0) ?? 0;
-  const overallRate = totalFeedback > 0 ? Math.round((totalPositive / totalFeedback) * 100) : 0;
+  // `null`, not 0, when nobody has rated anything. 0/0 rendered a confident
+  // "Satisfaction Rate 0%", which reads as "every user hates the AI output" —
+  // exactly the failure the repo's own design invariant names (`null * 100` is
+  // `0`, which prints a confident "Confidence: 0%").
+  const overallRate = totalFeedback > 0 ? Math.round((totalPositive / totalFeedback) * 100) : null;
 
   return (
     <div className="space-y-6">
-      {/* Summary KPIs */}
+      {/* Summary KPIs — omitted entirely with no feedback. Four zeroes above
+          an empty state already saying "No feedback yet" is the same fact
+          stated twice, and one of those zeroes was a fabricated
+          "Satisfaction Rate 0%". */}
+      {totalFeedback > 0 && (
       <div className="grid grid-cols-4 gap-4" data-testid="feedback-kpis">
         <KpiCard
           label="Total Feedback"
@@ -166,10 +174,11 @@ function OverviewSection() {
         />
         <KpiCard
           label="Satisfaction Rate"
-          value={`${overallRate}%`}
+          value={overallRate === null ? '—' : `${overallRate}%`}
           icon={<BarChart3 className="h-4 w-4 text-purple-500" />}
         />
       </div>
+      )}
 
       {/* Per-feature stats */}
       {stats && stats.length > 0 && (

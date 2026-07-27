@@ -171,6 +171,16 @@ export default function SecurityAuditPage() {
     ? filteredEntries
     : filteredEntries.filter(isException);
 
+  /**
+   * Containers that genuinely need review — independent of how many rows the
+   * table is currently showing. Expanding the clean list is a display choice,
+   * not a change in what was found.
+   */
+  const exceptionCount = useMemo(
+    () => filteredEntries.filter(isException).length,
+    [filteredEntries],
+  );
+
   const columns = useMemo<ColumnDef<SecurityAuditEntry, unknown>[]>(() => [
     {
       id: 'container',
@@ -450,10 +460,19 @@ export default function SecurityAuditPage() {
       <SpotlightCard>
       <section className="rounded-lg border bg-card p-6 shadow-sm">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
+          {/*
+            Count the containers that actually need review, not the rows on
+            screen. This read `visibleEntries.length`, which includes the clean
+            rows once "Show 20 clean containers" is expanded — so clicking to
+            confirm everything was fine flipped the counter from "0 containers
+            need a look" to "20 containers need a look" while the button beside
+            it said "Hide 20 clean containers". On a security page that
+            manufactured twenty findings out of nothing.
+          */}
           <span>
             {isFiltered
               ? `${filteredEntries.length} of ${entries.length} containers match the filters`
-              : `${visibleEntries.length} container${visibleEntries.length === 1 ? '' : 's'} need a look`}
+              : `${exceptionCount} container${exceptionCount === 1 ? '' : 's'} need a look`}
           </span>
           {!isFiltered && cleanEntries.length > 0 && (
             <button

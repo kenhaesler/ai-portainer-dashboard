@@ -115,8 +115,30 @@ describe('RemediationPage', () => {
   it('renders the actions inside the shared DataTable', () => {
     renderPage();
     expect(screen.getByTestId('data-table')).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: 'Action Type' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Container' })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: 'Actions' })).toBeInTheDocument();
+  });
+
+  it('carries action type and provenance under the container, not as their own columns', () => {
+    // On a queue where every row is an "Investigate" suggested by "Pattern
+    // match", those two columns held 64 identical cells and squeezed Analysis
+    // Summary — the only column that varies — to ~110px over eight lines.
+    renderPage();
+
+    expect(screen.queryByRole('columnheader', { name: 'Action Type' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'Suggested By' })).not.toBeInTheDocument();
+
+    // The information itself is still on the row: the fixture's rationale is
+    // structured LLM output, so it renders the stored `suggested_by`.
+    expect(screen.getAllByText('AI Monitor').length).toBeGreaterThan(0);
+  });
+
+  it('does not restate "Pending" as "Awaiting approval" in the next column', () => {
+    // Status and Decision said the same thing in two vocabularies, in adjacent
+    // columns, on every pending row.
+    renderPage();
+
+    expect(screen.queryByText('Awaiting approval')).not.toBeInTheDocument();
   });
 
   it('shows container name and hides action/container ids from row display', () => {

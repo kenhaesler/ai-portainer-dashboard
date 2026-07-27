@@ -27,14 +27,19 @@ function rowFor(key: string, overrides: Partial<Parameters<typeof SettingRow>[0]
 }
 
 describe('setting risk descriptors', () => {
-  it('marks the OIDC plaintext toggle as security-risk with a consequence', () => {
+  it('marks the OIDC plaintext toggle as the top risk tier with a consequence', () => {
+    // 'danger', not 'security'. Fifteen rows shared one red "Security" chip on
+    // a tab already called Security, so "auth codes travel unencrypted — never
+    // enable this in production" ranked level with a Client ID typo warning.
+    // The top tier is now reserved for settings that expose credentials or
+    // lock everyone out.
     const setting = SETTING_BY_KEY['oidc.allow_insecure_transport'];
-    expect(settingRisk(setting)).toBe('security');
+    expect(settingRisk(setting)).toBe('danger');
     expect(settingConsequence(setting)).toMatch(/unencrypted/i);
   });
 
-  it('marks the public status page as security-risk', () => {
-    expect(settingRisk(SETTING_BY_KEY['status.page.enabled'])).toBe('security');
+  it('marks the public status page as the top risk tier', () => {
+    expect(settingRisk(SETTING_BY_KEY['status.page.enabled'])).toBe('danger');
     expect(settingConsequence(SETTING_BY_KEY['status.page.enabled'])).toMatch(/no sign-in/i);
   });
 
@@ -88,8 +93,8 @@ describe('SettingRow', () => {
     render(rowFor('oidc.allow_insecure_transport'));
 
     const row = screen.getByTestId('setting-row-oidc.allow_insecure_transport');
-    expect(row).toHaveAttribute('data-risk', 'security');
-    expect(within(row).getByText('Security')).toBeInTheDocument();
+    expect(row).toHaveAttribute('data-risk', 'danger');
+    expect(within(row).getByText('Weakens security')).toBeInTheDocument();
     expect(row).toHaveTextContent(/Anyone on the network path can capture and replay them/i);
   });
 
@@ -106,7 +111,7 @@ describe('SettingRow', () => {
 
     const row = screen.getByTestId('setting-row-cache.image_ttl');
     expect(row).not.toHaveAttribute('data-risk');
-    expect(within(row).queryByText('Security')).not.toBeInTheDocument();
+    expect(within(row).queryByText('Weakens security')).not.toBeInTheDocument();
     expect(within(row).queryByText('Deletes data')).not.toBeInTheDocument();
   });
 
