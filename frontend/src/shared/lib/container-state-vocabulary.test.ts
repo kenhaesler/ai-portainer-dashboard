@@ -1,27 +1,27 @@
 import { describe, it, expect } from 'vitest';
-import type { ContainerState } from '@dashboard/contracts';
+import { CONTAINER_STATES, type ContainerState } from '@dashboard/contracts';
 import type { Container } from '@/features/containers/hooks/use-containers';
 import { calculateHealthStats, calculateNeedsAttention } from './health-score';
 
 /**
- * Guards the container-state vocabulary against the drift that produced #1610.
+ * Guards the container-state vocabulary that `calculateHealthStats` compares
+ * against. It once compared against `'exited'` — Docker's word, which
+ * `normalizeContainer` maps to `'stopped'` before any client sees it, so the
+ * branch was unreachable and `stats.stopped` stayed 0 (commit b9152cda).
+ * `health-score.test.ts` used `state: 'exited'` for its stopped-container
+ * fixtures, so those cases agreed with the bug; hence this file, driven from
+ * the contract instead.
  *
- * `calculateHealthStats` compared against `'exited'`. That is Docker's word;
- * `normalizeContainer` maps it to `'stopped'` before any client sees it, so the
- * branch was unreachable and the fleet-health tile reported "0 stopped" —
- * "No unhealthy or stopped containers", under a green check — while containers
- * were genuinely down. The live API said `stopped: 6` at the time it was found.
+ * Completeness is checked at runtime, not by the compiler. `HANDLED_STATES` is
+ * typed `Record<ContainerState, ...>`, but `frontend/tsconfig.json` excludes
+ * `src/**\/*.test.ts` from the program, so `npm run typecheck` never reads this
+ * file and the missing key would not be a compile error. The first case below
+ * compares the map's keys against `CONTAINER_STATES` directly, which vitest
+ * does run.
  *
- * The reason it survived is the interesting part, and it is what this file
- * exists to prevent: the tile's own test suite built every fixture with
- * `state: 'exited'`, so the tests agreed with the bug. A suite that invents its
- * own vocabulary cannot catch a vocabulary error. Both halves below are needed:
- *
- *  1. `HANDLED_STATES` is typed `Record<ContainerState, ...>`, so adding a state
- *     to `CONTAINER_STATES` in `@dashboard/contracts` and not deciding what it
- *     means here is a *compile* error, caught by `npm run typecheck`.
- *  2. The runtime cases below assert each state actually lands in the bucket it
- *     claims, driven from that same map rather than from hand-written literals.
+ * The wording the tile uses for the zero case is owned and asserted by
+ * `health-score-card.tsx` / `health-score-card.test.tsx`; it is not repeated
+ * here.
  */
 
 /** Which `HealthStats` bucket each contract state must increment. */
@@ -56,6 +56,13 @@ function makeContainer(state: ContainerState): Container {
 }
 
 describe('container state vocabulary', () => {
+  it('decides a bucket for every state in the contract', () => {
+    // The completeness half of this file's contract, as a runtime assertion
+    // because nothing typechecks it: adding a state to `CONTAINER_STATES` and
+    // not deciding what it means here fails right here.
+    expect(Object.keys(HANDLED_STATES).sort()).toEqual([...CONTAINER_STATES].sort());
+  });
+
   it('never counts Docker\'s raw "exited" — the normalizer maps it to "stopped"', () => {
     // The exact regression. `'exited'` is not in the contract vocabulary, so it
     // must fall through to no state bucket at all rather than silently counting.
@@ -99,11 +106,7 @@ describe('container state vocabulary', () => {
     expect(calculateNeedsAttention(stats).containers).toBe(0);
   });
 
-  it('agrees with the shape of /api/dashboard/summary.kpis', () => {
-    // The dashboard summary endpoint counts `running` and `stopped` over the
-    // same normalized containers. The two are rendered ~400px apart on Home, so
-    // a disagreement between them is visible to the operator; this pins that
-    // the client-side derivation produces the same two numbers for one fleet.
+  it('derives running, stopped and total for a mixed fleet', () => {
     const fleet = [
       makeContainer('running'),
       makeContainer('running'),
@@ -112,10 +115,12 @@ describe('container state vocabulary', () => {
       makeContainer('stopped'),
       makeContainer('paused'),
     ];
-    const apiKpis = { running: 2, stopped: 3, total: 6 };
-
     const stats = calculateHealthStats(fleet);
 
-    expect({ running: stats.running, stopped: stats.stopped, total: stats.total }).toEqual(apiKpis);
+    expect({ running: stats.running, stopped: stats.stopped, total: stats.total }).toEqual({
+      running: 2,
+      stopped: 3,
+      total: 6,
+    });
   });
 });
