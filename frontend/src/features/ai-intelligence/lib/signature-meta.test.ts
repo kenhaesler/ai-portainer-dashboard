@@ -53,7 +53,11 @@ describe('parseSignature', () => {
 
 describe('detectionMethodLabel', () => {
   it('returns human label for ml-anomaly', () => {
-    expect(detectionMethodLabel('ml-anomaly')).toBe('ML');
+    // "Metric anomaly", not "ML". The detector identifier covers both the
+    // adaptive z-score path and the isolation-forest path, so the stored value
+    // cannot support a claim about the technique. This file used to assert
+    // "ML" while the insight feed rendered "Metric anomaly" on the same page.
+    expect(detectionMethodLabel('ml-anomaly')).toBe('Metric anomaly');
   });
 
   it('returns human label for threshold', () => {
@@ -61,7 +65,7 @@ describe('detectionMethodLabel', () => {
   });
 
   it('returns human label for prediction', () => {
-    expect(detectionMethodLabel('prediction')).toBe('Prediction');
+    expect(detectionMethodLabel('prediction')).toBe('Forecast');
   });
 
   it('returns null for unrecognised methods', () => {

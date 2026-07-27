@@ -28,20 +28,10 @@ export function parseSignature(sig: string): ParsedSignature {
   return { category, detectionMethod, metricType };
 }
 
-const DETECTION_METHOD_LABELS: Record<string, string> = {
-  'ml-anomaly': 'ML',
-  threshold: 'Threshold',
-  prediction: 'Prediction',
-  'health-check': 'Health Check',
-  scan: 'Scan',
-  pattern: 'Pattern',
-  network: 'Network',
-};
-
-export function detectionMethodLabel(method: string | null): string | null {
-  if (!method) return null;
-  return DETECTION_METHOD_LABELS[method] ?? null;
-}
+// Re-exported from the shared map so the incident groups and the insight feed
+// cannot label one detector differently. This file used to keep its own copy,
+// which said "ML" where the feed said "Metric anomaly" — on the same screen.
+export { detectionMethodLabel } from './detection-method-labels';
 
 const CATEGORY_ICONS: Record<string, LucideIcon> = {
   anomaly: Activity,

@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { AnomalyDimension, Severity } from '@dashboard/contracts';
+import { detectionMethodLabel } from '@/features/ai-intelligence/lib/detection-method-labels';
 import { cn, formatDate } from '@/shared/lib/utils';
 import { safeParseJson } from '@/features/ai-intelligence/hooks/use-investigations';
 import type { Investigation, RecommendedAction } from '@/features/ai-intelligence/hooks/use-investigations';
@@ -252,17 +253,12 @@ export function SeverityBadge({ severity }: { severity: Severity }) {
  * an unrecognised or absent method renders nothing at all rather than
  * defaulting: a badge is a claim about what ran, and there is no honest default.
  */
-const DETECTION_METHOD_LABELS: Record<string, string> = {
-  threshold: 'Threshold',
-  'ml-anomaly': 'Metric anomaly',
-  prediction: 'Forecast',
-  'health-check': 'Healthcheck',
-  'log-pattern': 'Log pattern',
-  'security-scan': 'Security scan',
-};
+// The map now lives in `lib/detection-method-labels.ts` so the incident
+// groups on the same page cannot disagree with this badge. See that file for
+// why `ml-anomaly` must not render as "ML".
 
 export function DetectionMethodBadge({ method }: { method: string }) {
-  const label = DETECTION_METHOD_LABELS[method];
+  const label = detectionMethodLabel(method);
   if (!label) return null;
   return (
     <span

@@ -944,9 +944,16 @@ describe('monitoring-service', () => {
 
     // The statistical detector's description is unique ("... standard deviations
     // from the moving average") — isolates it from threshold / IF / predictive.
+    // Identify the statistical anomaly path structurally, by its persisted
+    // detector and its distinguishing description clause. This used to match
+    // the sentence "standard deviations from the moving average", which was a
+    // word-for-word restatement of the `z-score:` printed beside it and has
+    // been removed — a filter keyed on boilerplate breaks when the boilerplate
+    // is deleted, which is the wrong signal.
     const statAnomalies = () =>
       getInsertedInsights().filter((i) =>
-        i.description.includes('standard deviations from the moving average'),
+        i.detection_method === 'ml-anomaly'
+        && !i.description.includes('Isolation Forest'),
       );
 
     const persistCfg = {

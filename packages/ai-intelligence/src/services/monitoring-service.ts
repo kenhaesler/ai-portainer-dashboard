@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { formatAnomalyDescription } from './anomaly-description.js';
 import pLimit from 'p-limit';
 import type { Namespace } from 'socket.io';
 import { getConfig } from '@dashboard/core/config/index.js';
@@ -393,11 +394,13 @@ export function createMonitoringService(deps: MonitoringDeps) {
           severity: anomalySeverity,
           category: 'anomaly',
           title: `Anomalous ${item.metricType} usage on "${item.containerName}"`,
-          description:
-            `Current ${item.metricType}: ${anomaly.current_value.toFixed(1)}% ` +
-            `(mean: ${anomaly.mean.toFixed(1)}%, z-score: ${anomaly.z_score.toFixed(2)}, ` +
-            `method: ${anomaly.method ?? 'zscore'}, confidence: ${gate.confidence.toFixed(2)}). ` +
-            `This is ${Math.abs(anomaly.z_score).toFixed(1)} standard deviations from the moving average.`,
+          description: formatAnomalyDescription({
+            metricType: item.metricType,
+            currentValue: anomaly.current_value,
+            mean: anomaly.mean,
+            zScore: anomaly.z_score,
+            method: anomaly.method,
+          }),
           suggested_action: item.metricType === 'memory'
             ? 'Investigate memory usage patterns and check container configuration'
             : 'Investigate CPU usage patterns and check for process anomalies',
@@ -444,8 +447,7 @@ export function createMonitoringService(deps: MonitoringDeps) {
               title: `High ${metricType} usage on "${containerName}"`,
               description:
                 `Current ${metricType}: ${value.toFixed(1)}% ` +
-                `(threshold: ${monCfg.anomalyThresholdPct}%). ` +
-                `Value exceeds the configured warning threshold.`,
+                `(threshold: ${monCfg.anomalyThresholdPct}%).`,
               suggested_action: metricType === 'memory'
                 ? 'Check for memory leaks or increase memory limit'
                 : 'Check for runaway processes or increase CPU allocation',
@@ -512,12 +514,11 @@ export function createMonitoringService(deps: MonitoringDeps) {
               container_name: containerName,
               severity: ifAnomaly.z_score > 0.7 ? 'critical' : 'warning',
               category: 'anomaly',
-              title: `Anomalous ${metricType} usage on "${containerName}" (ML-detected)`,
+              title: `Anomalous ${metricType} usage on "${containerName}"`,
               description:
                 `Isolation Forest anomaly score: ${ifAnomaly.z_score.toFixed(2)} ` +
                 `(cpu: ${cpuValue.toFixed(1)}%, memory: ${memoryValue.toFixed(1)}%, ` +
-                `method: isolation-forest). ` +
-                `Multivariate analysis detected unusual resource usage pattern.`,
+                `method: isolation-forest).`,
               suggested_action: metricType === 'memory'
                 ? 'Check for memory leaks or increase memory limit'
                 : 'Check for runaway processes or increase CPU allocation',

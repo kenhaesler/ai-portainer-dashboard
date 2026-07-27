@@ -53,7 +53,7 @@ describe('getLlmStats aggregation', () => {
   });
 
   beforeEach(async () => {
-    await truncateTestTables(['llm_traces']);
+    await truncateTestTables('llm_traces');
   });
 
   afterAll(async () => {
