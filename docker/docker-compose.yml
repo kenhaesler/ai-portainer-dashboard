@@ -1,3 +1,5 @@
+name: container-insights
+
 services:
   backend:
     build:
@@ -350,9 +352,17 @@ services:
 
 volumes:
   backend-data:
+    name: docker_backend-data
+    external: true
   postgres-app-data:
+    name: docker_postgres-app-data
+    external: true
   timescale-data:
+    name: docker_timescale-data
+    external: true
   timescale-backups:
+    name: docker_timescale-backups
+    external: true
 
 networks:
   dashboard-net:
