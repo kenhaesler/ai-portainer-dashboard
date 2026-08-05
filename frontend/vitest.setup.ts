@@ -18,11 +18,16 @@ import type { AxeMatchers } from 'vitest-axe/matchers';
 // untyped in both and available at runtime in neither of the other 243.
 expect.extend(axeMatchers);
 declare module 'vitest' {
-  // `T = any` is not a preference — interface merging requires type parameters
-  // identical to vitest's own `Assertion<T = any>`.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars
+  // Empty bodies are the point: an interface that ONLY `extends` is how
+  // declaration merging adds members to vitest's own `Assertion`. A type alias
+  // would not merge, and a body would add members nobody wants — so
+  // no-empty-object-type is disabled here by name rather than worked around.
+  // `T = any` is likewise not a preference: merging requires type parameters
+  // identical to vitest's `Assertion<T = any>`.
+  /* eslint-disable @typescript-eslint/no-empty-object-type */
   interface Assertion<T = any> extends AxeMatchers {}
   interface AsymmetricMatchersContaining extends AxeMatchers {}
+  /* eslint-enable @typescript-eslint/no-empty-object-type */
 }
 
 // Mock ResizeObserver for components that depend on it (e.g. cmdk)

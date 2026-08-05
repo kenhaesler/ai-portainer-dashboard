@@ -8,7 +8,6 @@ import {
 import type { Endpoint } from '@/features/containers/hooks/use-endpoints';
 import { snapshotSourceFor } from '@/test/endpoint-fixture';
 
-
 function makeEndpoint(overrides: Partial<Endpoint> = {}): Endpoint {
   const base: Omit<Endpoint, 'snapshotSource'> = {
     id: 1,

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { ContainerState } from '@dashboard/contracts';
 import type { Container } from '@/features/containers/hooks/use-containers';
+import { withNonContractState } from '@/test/container-fixture';
 import { calculateHealthStats, calculateNeedsAttention } from './health-score';
 
 /**
@@ -63,26 +64,13 @@ function makeContainer(state: ContainerState): Container {
   };
 }
 
-/**
- * Builds a container whose state is **deliberately outside** the contract
- * vocabulary — a Docker-native word `normalizeContainer` maps away before any
- * client sees it.
- *
- * `Container.state` is `ContainerState`, so the compiler refuses `'exited'`
- * outright; that refusal is the invariant this file guards, not an obstacle to
- * it. Widening through a `string` parameter and asserting back is the narrowest
- * way to build the invalid value on purpose, and keeping it in one named helper
- * means no ordinary fixture can smuggle an out-of-contract state in by accident.
- */
-function makeContainerWithNonContractState(state: string): Container {
-  return { ...makeContainer('stopped'), state } as Container;
-}
-
 describe('container state vocabulary', () => {
   it('never counts Docker\'s raw "exited" — the normalizer maps it to "stopped"', () => {
     // The exact regression. `'exited'` is not in the contract vocabulary, so it
     // must fall through to no state bucket at all rather than silently counting.
-    const stats = calculateHealthStats([makeContainerWithNonContractState('exited')]);
+    // `withNonContractState` is the one place in the frontend tests allowed to
+    // build a state the compiler rejects — see its docblock.
+    const stats = calculateHealthStats([withNonContractState(makeContainer('stopped'), 'exited')]);
 
     expect(stats.stopped).toBe(0);
     expect(stats.running).toBe(0);

@@ -225,22 +225,46 @@ For detailed specs (animation durations, easing curves, glass override patterns,
   pattern as `ci-audit-gate.test.ts` (#1578) and `packages-boundaries.test.ts` (#1585).
 - **`npm run typecheck` covers frontend test files too (#1617).** The frontend twin of #1586, and
   worse: `frontend/tsconfig.json` excluded `src/**/*.test.ts(x)` and `frontend/package.json`'s
-  `typecheck` was a bare `tsc --noEmit`, with **no** sibling config adding them back, so all 245
+  `typecheck` was a bare `tsc --noEmit`, with **no** sibling config adding them back, so all 246
   frontend test files were compiled by nothing. `frontend/tsconfig.test.json` is that sibling —
-  same base config plus the tests, `vitest.setup.ts`, `scripts/`, and `types: ["node"]` — and
-  `typecheck` now runs both. Keep them two programs: the base one stays the *browser* program
-  (`npm run build` runs it, it has no node types, so `process.env` in a component is still an
-  error). **Matcher types belong with matcher registration:** `expect.extend(matchers)` types
+  same base config plus the tests, `vitest.setup.ts`, `scripts/`, and `types: ["node"]`. Keep
+  them separate programs: the base one stays the *browser* program (`npm run build` runs it, it
+  has no node types, so `process.env` in a component is still an error). A **third**,
+  `tsconfig.node.json`, holds `vite.config.ts` + `vitest.config.ts`; it existed but was reachable
+  only through `tsconfig.json`'s `references`, which a plain `tsc -p` does not follow and no
+  script here runs `tsc -b`, so those were compiled by nothing either — and that hid a live bug:
+  `configureServer`, a **plugin** hook, sat under `server:`, where vite silently ignores unknown
+  keys, so the `/__commit` middleware never registered and the dev build-ref fetch in
+  `header.tsx` had never once succeeded. `typecheck` now runs all three.
+  **Matcher types belong with matcher registration:** `expect.extend(matchers)` types
   nothing, which is why 2241 of the 2401 surfaced errors were `TS2339` on jest-dom matchers that
   do exist; `vitest.setup.ts` now uses `@testing-library/jest-dom/vitest` (one import, both
   halves) and declares vitest-axe's `toHaveNoViolations` beside its `expect.extend`, since
   vitest-axe 0.1.0 still augments the pre-vitest-2 `global.Vi` namespace. `frontend/src/typecheck-gate.test.ts`
-  asserts every `*.test.ts(x)` **discovered on disk** lands in a program the `typecheck` script
-  actually runs, expanding each config with `tsc --listFilesOnly` so an exclusion inherited via
-  `extends` cannot hide. It shells out to the **binary** rather than importing the compiler API
+  asserts every file **vitest's own `test.include` matches on disk** lands in a program the
+  `typecheck` script actually runs — it reads the patterns out of `vitest.config.ts` rather than
+  restating them, since a hardcoded copy would drift exactly the way the thing it guards did —
+  and expands each config with `tsc --listFilesOnly` so an exclusion inherited via `extends`
+  cannot hide. It shells out to the **binary** rather than importing the compiler API
   because frontend pins TypeScript 7, the native port, which ships no compiler API —
   `import ts from 'typescript'` there yields a version stub, not `ts.sys`. It does not assert the
   two-program layout — merging them is a legitimate design; coverage is the invariant.
+- **The frontend lint script and `eslint.config.js`'s `files:` glob must stay in step (#1617).**
+  They are independent lists, and a file in the config's `files:` but not in the CLI's path
+  arguments is linted by *nothing* — no error, just never visited. `frontend/vitest.setup.ts`
+  sat in that hole: loaded into all 246 test files, and carrying two live `no-empty-object-type`
+  violations plus a stale `eslint-disable` naming rules this config turns off globally. `lint`
+  now passes `src/ scripts/ vitest.setup.ts vite.config.ts vitest.config.ts` and `files:` covers
+  the same set; `eslint-boundaries.test.ts` fails in **both** directions (a governed file the CLI
+  never reaches, and a `files:` narrowed until it governs no non-`src` file at all). Note
+  `lintFiles([])` means "lint the cwd" to ESLint, so a reachability check that filters its
+  argument list down to empty passes vacuously — that check compares against the argument strings.
+- **Shared frontend test fixtures live in `frontend/src/test/`** — `endpoint-fixture.ts`
+  (`snapshotSourceFor`, mirroring `endpointSupportsLiveDockerInfo` on `status` + `type` **only**;
+  it must not be *stricter* than production either), `query-fixture.ts` (`mockQuery`, the one
+  place a `UseQueryResult` cast lives), `container-fixture.ts` (`withNonContractState`, the one
+  place a state outside `CONTAINER_STATES` can be built). One copy each, on purpose: a widening
+  cast duplicated across files is a widening cast nobody is counting.
 
 ## Git Workflow
 

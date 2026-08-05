@@ -15,7 +15,6 @@ import { snapshotSourceFor } from '@/test/endpoint-fixture';
 
 const mockApi = vi.mocked(api);
 
-
 function makeEndpoint(overrides: Partial<Endpoint> = {}): Endpoint {
   const base: Omit<Endpoint, 'snapshotSource'> = {
     id: 1,

@@ -2,28 +2,16 @@ import { describe, expect, it, vi } from 'vitest';
 import { render as rtlRender, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import type { ReactElement } from 'react';
-import type { UseQueryResult } from '@tanstack/react-query';
 import type {
   HarborStatus,
   VulnerabilityListResponse,
 } from '@/features/security/hooks/use-harbor-vulnerabilities';
+import { mockQuery } from '@/test/query-fixture';
 import HarborVulnerabilitiesPage from './harbor-vulnerabilities';
 
 // The page links into Settings, so it needs a router in scope.
 function render(ui: ReactElement) {
   return rtlRender(<MemoryRouter>{ui}</MemoryRouter>);
-}
-
-/**
- * Partial-mocks TanStack Query's `UseQueryResult`, a ~25-member observer union
- * a page test cannot meaningfully populate — only the fields the page reads are
- * supplied. Keeping the cast in one helper still typechecks each fixture's
- * `data` against the query's real payload type, which is where drift shows up.
- */
-function mockQuery<TData>(
-  partial: Partial<UseQueryResult<TData, Error>>,
-): UseQueryResult<TData, Error> {
-  return partial as unknown as UseQueryResult<TData, Error>;
 }
 
 vi.mock('@/features/security/hooks/use-harbor-vulnerabilities', () => ({

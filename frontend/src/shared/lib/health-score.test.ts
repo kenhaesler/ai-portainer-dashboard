@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Container } from '@/features/containers/hooks/use-containers';
+import { withNonContractState } from '@/test/container-fixture';
 import {
   calculateHealthcheckPassRate,
   calculateHealthStats,
@@ -21,25 +22,6 @@ function makeContainer(overrides: Partial<Container> = {}): Container {
     networks: ['bridge'],
     ...overrides,
   };
-}
-
-/**
- * Builds a container whose state is **deliberately outside** the contract
- * vocabulary (`CONTAINER_STATES` in `@dashboard/contracts`) — a Docker-native
- * word such as `created` or `restarting` that `normalizeContainer` never emits.
- *
- * `Container.state` is `ContainerState`, so the compiler refuses these values
- * outright; that refusal is exactly what the fall-through case below exercises,
- * so the value has to be built on purpose. Widening through a `string` parameter
- * and asserting back is the narrowest way to do it, and keeping it in one named
- * helper stops an ordinary fixture from carrying an out-of-contract state by
- * accident.
- */
-function makeContainerWithNonContractState(
-  state: string,
-  overrides: Partial<Container> = {},
-): Container {
-  return { ...makeContainer(overrides), state } as Container;
 }
 
 describe('calculateHealthStats', () => {
@@ -404,8 +386,8 @@ describe('calculateHealthStats', () => {
     // running/stopped/paused; `dead` is in it and lands in `stats.dead`. With no
     // healthStatus all three still reach unknown via the final `else` branch.
     const containers = [
-      makeContainerWithNonContractState('created', { id: '1', healthStatus: undefined }),
-      makeContainerWithNonContractState('restarting', { id: '2', healthStatus: undefined }),
+      withNonContractState(makeContainer({ id: '1', healthStatus: undefined }), 'created'),
+      withNonContractState(makeContainer({ id: '2', healthStatus: undefined }), 'restarting'),
       makeContainer({ id: '3', state: 'dead', healthStatus: undefined }),
     ];
 

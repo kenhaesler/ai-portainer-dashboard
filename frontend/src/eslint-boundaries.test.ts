@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { globSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ESLint } from 'eslint';
@@ -310,14 +310,73 @@ describe('frontend boundary gate config has not been quietly weakened (#1587)', 
   });
 
   it('frontend\'s own lint script still lints src/ with --max-warnings=0', () => {
-    const frontendPkg = JSON.parse(readFileSync(resolve(FRONTEND_DIR, 'package.json'), 'utf-8')) as {
-      scripts?: Record<string, string>;
-    };
-    const script = frontendPkg.scripts?.lint ?? '';
+    const script = frontendLintScript();
     expect(script).toContain('src/');
     // Raising this threshold, or dropping it, is how a boundary error gets
     // demoted from a failure to noise -- same escape hatch the audit gate
     // was neutered with once already (#1578).
     expect(script).toContain('--max-warnings=0');
   });
+
+  it('the lint script reaches every file this config claims to govern', async () => {
+    /**
+     * The `files:` glob on the boundaries block and the path arguments the CLI
+     * is invoked with are two independent lists, and a file in the first but
+     * not the second is linted by NOTHING -- it does not error, it is simply
+     * never visited. `vitest.setup.ts` sat in exactly that hole until #1617:
+     * loaded into all 246 test files, carrying two live rule violations, and
+     * invisible to `npm run lint -w frontend` because the script said `src/`.
+     *
+     * Everything under src/ is reached by the long-standing `src/` argument, so
+     * the candidates are the workspace's OTHER TypeScript files, found on disk.
+     * Which of them this config governs is not read out of the config's `files:`
+     * array -- it is asked of ESLint per file, so an `ignores` entry or a later
+     * block overriding the glob cannot make the two disagree.
+     */
+    const candidates = globSync(['*.ts', 'scripts/**/*.ts'], { cwd: FRONTEND_DIR });
+    const governed: string[] = [];
+    for (const file of candidates) {
+      const config = await frontendLinter.calculateConfigForFile(resolve(FRONTEND_DIR, file));
+      if (config.rules['boundaries/dependencies']) governed.push(file);
+    }
+    expect(
+      governed,
+      'this config governs no non-src TypeScript file, so the check below is vacuous -- '
+        + 'did `files:` get narrowed back to src/**?',
+    ).not.toEqual([]);
+
+    const args = lintScriptPathArgs();
+    expect(args, 'the lint script passes no paths to eslint at all').not.toEqual([]);
+
+    // Matched against the argument list directly rather than by calling
+    // `lintFiles`. ESLint treats `lintFiles([])` as "lint the cwd", so handing
+    // it a filtered-to-empty list reports every file as reached and the
+    // assertion below passes vacuously -- measured, not hypothetical: the first
+    // version of this test did exactly that and survived its own mutation.
+    const reaches = (file: string, arg: string) => {
+      const dir = arg.replace(/\/+$/, '');
+      return file === dir || file.startsWith(`${dir}/`);
+    };
+    const unreached = governed.filter((f) => !args.some((arg) => reaches(f, arg)));
+    expect(
+      unreached,
+      `${unreached.length} file(s) are governed by this config but are not passed to the lint `
+        + 'CLI, so nothing lints them. Add them to the `lint` script\'s arguments.',
+    ).toEqual([]);
+  });
 });
+
+function frontendLintScript(): string {
+  const frontendPkg = JSON.parse(readFileSync(resolve(FRONTEND_DIR, 'package.json'), 'utf-8')) as {
+    scripts?: Record<string, string>;
+  };
+  return frontendPkg.scripts?.lint ?? '';
+}
+
+/** The path arguments `eslint` is actually handed, flags dropped. */
+function lintScriptPathArgs(): string[] {
+  return frontendLintScript()
+    .split(/\s+/)
+    .slice(1) // drop the `eslint` binary itself
+    .filter((token) => !token.startsWith('-'));
+}

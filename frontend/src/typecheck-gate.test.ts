@@ -1,8 +1,9 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, globSync, readFileSync } from 'node:fs';
 import { dirname, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import vitestConfig from '../vitest.config';
 
 /**
  * Typecheck gate for frontend test files (#1617).
@@ -17,7 +18,7 @@ import { describe, expect, it } from 'vitest';
  * WHAT WENT WRONG. `frontend/tsconfig.json` carried
  * `"exclude": ["src/**\/*.test.ts", "src/**\/*.test.tsx"]` and
  * `frontend/package.json`'s typecheck script was a bare `tsc --noEmit`. There
- * was no second config adding the tests back, so not one of the 245 frontend
+ * was no second config adding the tests back, so not one of the 246 frontend
  * test files was typechecked by anything -- not `npm run typecheck`, not CI's
  * "Type Check" job. Two measured consequences: `ParsedLogEntry` literals in
  * log-viewer.test.ts were missing the required `levelSource` field and had
@@ -28,13 +29,24 @@ import { describe, expect, it } from 'vitest';
  * the files surfaced 2401 errors; 2289 were the config's own fault (untyped
  * jest-dom / vitest-axe matchers, unnamed @types/node) and 112 were real.
  *
+ * The same gap covered `vite.config.ts` and `vitest.config.ts`, reachable only
+ * through `tsconfig.json`'s `references` -- which a plain `tsc -p` does not
+ * follow, and no script here runs `tsc -b`. It was hiding a live bug:
+ * `configureServer`, a PLUGIN hook, sat under `server:`, where vite silently
+ * ignores unknown keys, so the `/__commit` middleware never registered and the
+ * dev-only build-ref fetch in header.tsx had never once succeeded.
+ *
  * WHAT THIS FILE ASSERTS. Not the individual errors fixed alongside it -- the
  * WIRING. A green `npm run typecheck` must keep meaning that every file vitest
- * will execute was also compiled. The assertion is deliberately phrased over
- * DISCOVERED test files rather than a hardcoded list or a reading of
- * `exclude`, because the failure to catch is the next file added under a path
- * some future `include` does not reach -- the same reason ci-audit-gate
- * discovers lockfiles instead of listing them.
+ * will execute was also compiled. Both sides of that claim are DISCOVERED
+ * rather than written down: the covered side by asking `tsc` to expand each
+ * config in the script, and the executed side by reading vitest's OWN
+ * `test.include` out of `vitest.config.ts` and globbing it. A hardcoded list,
+ * or a hardcoded copy of vitest's glob, would drift the moment vitest's
+ * `include` changed -- the exact failure mode this gate exists to catch, one
+ * level up. (That import also makes `vitest.config.ts`'s own type-health
+ * load-bearing here, which is a second reason the config files are asserted to
+ * be in a program below.)
  *
  * DELIBERATELY NOT ASSERTED:
  *   - That `tsconfig.json` keeps excluding tests. Splitting the browser
@@ -48,6 +60,13 @@ import { describe, expect, it } from 'vitest';
  */
 
 const FRONTEND_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+/**
+ * `defineConfig` is overloaded and its declared return type admits a callback
+ * and a promise, neither of which the object-literal call in vitest.config.ts
+ * can produce. Narrowed once, here, to the two fields this gate reads.
+ */
+const vitestOptions = (vitestConfig as { test?: { include?: string[]; setupFiles?: string[] } }).test ?? {};
 
 /**
  * The same `tsc` the typecheck script gets — frontend's own copy, falling back
@@ -114,11 +133,13 @@ function resolvedOptions(configPath: string): Record<string, unknown> {
   return shown.compilerOptions ?? {};
 }
 
-/** Every file vitest will execute, found on disk rather than listed here. */
-function discoverTestFiles(dir: string): string[] {
-  return readdirSync(dir, { withFileTypes: true, recursive: true })
-    .filter((entry) => entry.isFile() && /\.test\.tsx?$/.test(entry.name))
-    .map((entry) => resolve(entry.parentPath, entry.name));
+/** Absolute paths for a set of workspace-relative globs. */
+function expand(patterns: string[]): string[] {
+  return globSync(patterns, { cwd: FRONTEND_DIR }).map((file) => resolve(FRONTEND_DIR, file));
+}
+
+function rel(file: string): string {
+  return relative(FRONTEND_DIR, file).split(sep).join('/');
 }
 
 const frontendPkg = JSON.parse(readFileSync(resolve(FRONTEND_DIR, 'package.json'), 'utf-8')) as {
@@ -145,19 +166,21 @@ describe('npm run typecheck -w frontend covers the test files (#1617)', () => {
   });
 
   const covered = new Set(invocations.flatMap(({ configPath }) => programFiles(configPath)));
-  const testFiles = discoverTestFiles(resolve(FRONTEND_DIR, 'src'));
+  const testFiles = expand(vitestOptions.include ?? []);
 
-  it('discovers the test files it is meant to be checking, so the assertion below is not vacuous', () => {
-    // If a refactor moves the suite and this drops to zero, an empty `every`
-    // would pass silently -- the same shape as `npm audit --offline` exiting 0
-    // on an empty report.
+  it('reads vitest\'s own include patterns, so discovery cannot drift from execution', () => {
+    // The patterns are not restated here on purpose -- asserting they equal a
+    // literal would just move the drift. What must hold is that vitest declares
+    // some, and that they match real files: an empty `include`, or one whose
+    // glob matches nothing, would make the coverage assertion below pass
+    // vacuously -- the same shape as `npm audit --offline` exiting 0 on an
+    // empty report.
+    expect(vitestOptions.include ?? []).not.toEqual([]);
     expect(testFiles.length).toBeGreaterThanOrEqual(200);
   });
 
-  it('typechecks every frontend test file', () => {
-    const uncovered = testFiles
-      .filter((file) => !covered.has(file))
-      .map((file) => relative(FRONTEND_DIR, file).split(sep).join('/'));
+  it('typechecks every file vitest will execute', () => {
+    const uncovered = testFiles.filter((file) => !covered.has(file)).map(rel);
 
     expect(
       uncovered,
@@ -166,13 +189,33 @@ describe('npm run typecheck -w frontend covers the test files (#1617)', () => {
     ).toEqual([]);
   });
 
-  it('typechecks vitest.setup.ts, which is where the matcher types live', () => {
+  it('typechecks vitest\'s setup files, which is where the matcher types live', () => {
     // Not decorative. `toBeInTheDocument`, `toHaveAttribute` and
     // `toHaveNoViolations` are typed by `declare module 'vitest'` augmentations
-    // that only apply while this file is IN the program. Drop it and 2241 of
-    // the original 2401 errors come straight back -- as TS2339 on matchers
-    // that do in fact exist, which reads like the tests are wrong.
-    expect(covered.has(resolve(FRONTEND_DIR, 'vitest.setup.ts'))).toBe(true);
+    // that only apply while the setup file is IN the program. Drop it and 2241
+    // of the original 2401 errors come straight back -- as TS2339 on matchers
+    // that do in fact exist, which reads like the tests are wrong. Read from
+    // vitest's `setupFiles` rather than named, for the same reason `include` is.
+    const setupFiles = expand(vitestOptions.setupFiles ?? []);
+    expect(setupFiles.length).toBeGreaterThan(0);
+    expect(setupFiles.filter((file) => !covered.has(file)).map(rel)).toEqual([]);
+  });
+
+  it('typechecks the build-tooling configs vite and vitest load at startup', () => {
+    // `vite.config.ts` and `vitest.config.ts` were in no program until #1617 --
+    // `tsconfig.json` names tsconfig.node.json under `references`, which a
+    // plain `tsc -p` does not follow. That hid a misplaced `configureServer`
+    // for the life of the file. Discovered by glob, not listed, so a third
+    // root config does not have to be remembered here.
+    //
+    // Note this file's own `import ... from '../vitest.config'` drags
+    // vitest.config.ts into the test program transitively, so that one would
+    // read as covered even if tsconfig.node.json left the script. vite.config.ts
+    // has no such importer and is the load-bearing half of this assertion —
+    // confirmed by mutation: dropping the node config fails this test.
+    const configFiles = expand(['*.config.ts']);
+    expect(configFiles.length).toBeGreaterThan(0);
+    expect(configFiles.filter((file) => !covered.has(file)).map(rel)).toEqual([]);
   });
 
   it('gives each incremental invocation its own tsBuildInfoFile', () => {
@@ -182,7 +225,7 @@ describe('npm run typecheck -w frontend covers the test files (#1617)', () => {
     const buildInfoFiles = invocations
       .map(({ configPath }) => {
         const options = resolvedOptions(configPath);
-        if (!options.incremental) return null;
+        if (!options.incremental && !options.composite) return null;
         const declared = options.tsBuildInfoFile;
         // An incremental config with no explicit path derives one from the
         // config's own location, so the config path stands in for it.

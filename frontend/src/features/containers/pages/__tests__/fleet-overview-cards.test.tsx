@@ -48,7 +48,6 @@ import { snapshotSourceFor } from '@/test/endpoint-fixture';
 const mockUseEndpoints = vi.mocked(useEndpoints);
 const mockUseStacks = vi.mocked(useStacks);
 
-
 function makeEndpoint(overrides: Partial<Endpoint> = {}): Endpoint {
   const base: Omit<Endpoint, 'snapshotSource'> = {
     id: 1,
