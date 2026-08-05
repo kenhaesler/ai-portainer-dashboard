@@ -22,7 +22,7 @@
     "@dashboard/operations": "*",
     "@dashboard/infrastructure": "*",
     "fastify": "^5.10.0",
-    "p-limit": "^7.3.0",
+    "p-limit": "^7.3.1",
     "socket.io": "^4.8.1"
   },
   "devDependencies": {

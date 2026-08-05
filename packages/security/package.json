@@ -29,7 +29,7 @@
     "@dashboard/infrastructure": "*",
     "fastify": "^5.10.0",
     "fastify-type-provider-zod": "^7.0.0",
-    "p-limit": "^7.3.0",
+    "p-limit": "^7.3.1",
     "undici": "^8.9.0",
     "zod": "^4.3.6"
   },

@@ -87,7 +87,7 @@
     "fastify-type-provider-zod": "^7.0.0",
     "jose": "^6.2.5",
     "openid-client": "^6.8.4",
-    "p-limit": "^7.3.0",
+    "p-limit": "^7.3.1",
     "pg": "^8.22.0",
     "pino": "^10.3.1",
     "protobufjs": "^8.7.0",
