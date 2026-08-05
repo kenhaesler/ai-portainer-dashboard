@@ -236,9 +236,11 @@ For detailed specs (animation durations, easing curves, glass override patterns,
   halves) and declares vitest-axe's `toHaveNoViolations` beside its `expect.extend`, since
   vitest-axe 0.1.0 still augments the pre-vitest-2 `global.Vi` namespace. `frontend/src/typecheck-gate.test.ts`
   asserts every `*.test.ts(x)` **discovered on disk** lands in a program the `typecheck` script
-  actually runs, resolving each config through TypeScript's own API so an exclusion inherited via
-  `extends` cannot hide. It does not assert the two-program layout — merging them is a legitimate
-  design; coverage is the invariant.
+  actually runs, expanding each config with `tsc --listFilesOnly` so an exclusion inherited via
+  `extends` cannot hide. It shells out to the **binary** rather than importing the compiler API
+  because frontend pins TypeScript 7, the native port, which ships no compiler API —
+  `import ts from 'typescript'` there yields a version stub, not `ts.sys`. It does not assert the
+  two-program layout — merging them is a legitimate design; coverage is the invariant.
 
 ## Git Workflow
 

@@ -1,7 +1,7 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 /**
@@ -49,6 +49,30 @@ import { describe, expect, it } from 'vitest';
 
 const FRONTEND_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
+/**
+ * The same `tsc` the typecheck script gets — frontend's own copy, falling back
+ * to the hoisted one, exactly as npm resolves `.bin`.
+ *
+ * This gate asks `tsc` itself what a config expands to instead of importing the
+ * compiler API (`ts.getParsedCommandLineOfConfigFile`) because **TypeScript 7,
+ * which this workspace pins, is the native port and ships no compiler API** —
+ * `import ts from 'typescript'` there yields a version stub, not `ts.sys`. The
+ * CLI is also the more honest instrument for this particular gate: it is the
+ * binary the script actually runs, so a config the CLI reads differently from
+ * the API cannot hide between them.
+ */
+const TSC = [
+  resolve(FRONTEND_DIR, 'node_modules/.bin/tsc'),
+  resolve(FRONTEND_DIR, '../node_modules/.bin/tsc'),
+].find((candidate) => existsSync(candidate));
+
+function runTsc(args: string[]): string {
+  if (!TSC) throw new Error('no tsc binary found in frontend/ or the repo root');
+  // Throws on a non-zero exit, which is what a config that does not parse
+  // produces — the same failure the API version surfaced via `parsed.errors`.
+  return execFileSync(TSC, args, { cwd: FRONTEND_DIR, encoding: 'utf-8', maxBuffer: 64 * 1024 * 1024 });
+}
+
 /** The `tsc` invocations `npm run typecheck -w frontend` actually performs. */
 function parseTypecheckScript(script: string): { raw: string; configPath: string }[] {
   return script
@@ -70,18 +94,24 @@ function parseTypecheckScript(script: string): { raw: string; configPath: string
  * and exclude globs expanded against disk, by TypeScript itself. Reading
  * `exclude` out of the JSON would miss an exclusion that arrives through
  * `extends`, or an `include` that simply never reaches a directory.
+ *
+ * `--listFilesOnly` builds the program and stops before typechecking it, so
+ * this costs ~0.2s per config rather than a full check.
  */
 function programFiles(configPath: string): string[] {
-  const host: ts.ParseConfigFileHost = {
-    ...ts.sys,
-    onUnRecoverableConfigFileDiagnostic: (diagnostic) => {
-      throw new Error(ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n'));
-    },
+  return runTsc(['--noEmit', '--listFilesOnly', '-p', configPath])
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((file) => resolve(FRONTEND_DIR, file));
+}
+
+/** A config's fully-resolved compilerOptions, `extends` chain applied. */
+function resolvedOptions(configPath: string): Record<string, unknown> {
+  const shown = JSON.parse(runTsc(['--showConfig', '-p', configPath])) as {
+    compilerOptions?: Record<string, unknown>;
   };
-  const parsed = ts.getParsedCommandLineOfConfigFile(configPath, undefined, host);
-  if (!parsed) throw new Error(`could not parse ${configPath}`);
-  expect(parsed.errors.filter((e) => e.category === ts.DiagnosticCategory.Error)).toEqual([]);
-  return parsed.fileNames.map((f) => resolve(f));
+  return shown.compilerOptions ?? {};
 }
 
 /** Every file vitest will execute, found on disk rather than listed here. */
@@ -151,12 +181,12 @@ describe('npm run typecheck -w frontend covers the test files (#1617)', () => {
     // current config never looked at.
     const buildInfoFiles = invocations
       .map(({ configPath }) => {
-        const host: ts.ParseConfigFileHost = {
-          ...ts.sys,
-          onUnRecoverableConfigFileDiagnostic: () => {},
-        };
-        const parsed = ts.getParsedCommandLineOfConfigFile(configPath, undefined, host);
-        return parsed?.options.incremental ? (parsed.options.tsBuildInfoFile ?? configPath) : null;
+        const options = resolvedOptions(configPath);
+        if (!options.incremental) return null;
+        const declared = options.tsBuildInfoFile;
+        // An incremental config with no explicit path derives one from the
+        // config's own location, so the config path stands in for it.
+        return typeof declared === 'string' ? resolve(FRONTEND_DIR, declared) : configPath;
       })
       .filter((f): f is string => f !== null);
 
