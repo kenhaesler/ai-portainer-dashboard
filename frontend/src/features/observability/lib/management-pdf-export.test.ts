@@ -59,15 +59,20 @@ function buildInput(overrides: Partial<ManagementPdfInput> = {}): ManagementPdfI
         container_id: 'c1',
         container_name: 'api-service',
         endpoint_id: 1,
-        cpu: { avg: 50, min: 10, max: 90, p50: 45, p95: 85, p99: 89, samples: 42 },
-        memory: { avg: 60, min: 20, max: 88, p50: 55, p95: 82, p99: 86, samples: 42 },
+        // Non-null percentiles come from the raw `metrics` rows, so
+        // `percentileSamples` is the count those percentiles were computed
+        // over — the same 42 samples backing avg/min/max here.
+        cpu: { avg: 50, min: 10, max: 90, p50: 45, p95: 85, p99: 89, percentileSamples: 42, samples: 42 },
+        memory: { avg: 60, min: 20, max: 88, p50: 55, p95: 82, p99: 86, percentileSamples: 42, samples: 42 },
         memory_bytes: null,
+        service_type: 'application',
       },
     ],
     recommendations: [
       {
         container_id: 'c1',
         container_name: 'api-service',
+        service_type: 'application',
         issues: ['CPU over-utilized'],
       },
     ],

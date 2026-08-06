@@ -28,6 +28,8 @@ This file provides guidance to Google Gemini and Gemini-based coding tools worki
 
 **Tests required** — Every change needs tests. PRs without tests are blocked by CI. Backend: `backend/src/**/*.test.ts`, Packages: `packages/*/src/**/*.test.ts`, Frontend: `frontend/src/**/*.test.{ts,tsx}`, E2E: `e2e/*.spec.ts`. Both use Vitest; frontend uses jsdom + `@testing-library/react`. Never use `--no-verify`.
 
+**Test files are typechecked and linted — everywhere.** Packages' tests are covered by the per-package `typecheck` script (#1586); frontend's by `frontend/tsconfig.test.json`, and its `vite.config.ts`/`vitest.config.ts` by `frontend/tsconfig.node.json` — `npm run typecheck -w frontend` runs all three programs (#1617). All three gaps hid real errors for months, so do not "fix" a type error by reaching for `any`, `@ts-expect-error`, or a cast — correct the fixture. The same applies to lint scope: `frontend/vitest.setup.ts` is loaded into every test file and was linted by nothing until #1617, so the `lint` script's path arguments and `eslint.config.js`'s `files:` glob must be widened together. Shared frontend test fixtures (the only sanctioned casts) live in `frontend/src/test/`. `frontend/src/typecheck-gate.test.ts`, `frontend/src/eslint-boundaries.test.ts` and `backend/src/typecheck-gate.test.ts` fail if any program stops covering what it should. (Canonical: `CLAUDE.md` → Code Quality; issues #1586, #1617.)
+
 **Mocks are for CI only.** External services (Portainer API, LLM API, Redis) are unavailable in CI, so tests must mock those calls. But mocks should be minimal — only mock what CI cannot reach. Prefer real integrations wherever possible:
 
 - **Backend DB tests**: Use real PostgreSQL via `test-db-helper.ts` (port 5433). Never mock the database.

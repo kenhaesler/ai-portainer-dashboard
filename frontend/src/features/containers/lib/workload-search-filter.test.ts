@@ -207,7 +207,9 @@ describe('deriveSearchChips', () => {
   });
 
   it('omits the state chip when every container shares one state', () => {
-    const allRunning = fleet.map((c) => ({ ...c, state: 'running' }));
+    // Annotated: spreading a `Container` and overwriting `state` with a bare
+    // literal widens it back to `string`, losing the `ContainerState` union.
+    const allRunning: Container[] = fleet.map((c) => ({ ...c, state: 'running' }));
     const chips = deriveSearchChips(allRunning, knownStackNames);
     expect(chips.some((c) => c.startsWith('state:'))).toBe(false);
   });

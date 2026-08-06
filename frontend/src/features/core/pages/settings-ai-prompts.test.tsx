@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, type Mock } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
@@ -75,6 +75,9 @@ vi.mock('@/features/ai-intelligence/hooks/use-llm-models', () => ({
 
 import { AiPromptsTab } from './settings';
 
+/** The real prop signature, read off the component so the mock cannot drift from it. */
+type AiPromptsTabOnChange = React.ComponentProps<typeof AiPromptsTab>['onChange'];
+
 const MOCK_FEATURES = [
   {
     key: 'chat_assistant',
@@ -104,11 +107,11 @@ describe('AiPromptsTab', () => {
     'llm.ollama_url': 'http://host.docker.internal:11434',
     'llm.model': 'llama3.2',
   };
-  let onChange: ReturnType<typeof vi.fn>;
+  let onChange: Mock<AiPromptsTabOnChange>;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    onChange = vi.fn();
+    onChange = vi.fn<AiPromptsTabOnChange>();
     mockApiGet.mockResolvedValue({ features: MOCK_FEATURES });
     mockMutateAsync.mockResolvedValue({ success: true });
   });

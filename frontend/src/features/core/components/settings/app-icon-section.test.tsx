@@ -262,7 +262,9 @@ describe('AppIconSection — previews', () => {
     // Some engines stop resolving paint references into a display:none host.
     const { container } = render(<AppIconSection />);
 
-    const host = container.querySelector('svg.absolute');
+    // `className` on an SVG element is an SVGAnimatedString, not a string, so
+    // the query has to say which element type it found for `.baseVal` to typecheck.
+    const host = container.querySelector<SVGSVGElement>('svg.absolute');
     expect(host).not.toBeNull();
     expect(host!.className.baseVal ?? host!.getAttribute('class')).toContain('h-0');
     expect(host!.getAttribute('style') ?? '').not.toContain('display: none');

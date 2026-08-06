@@ -136,7 +136,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['src/**/*.{ts,tsx}'],
+    files: ['src/**/*.{ts,tsx}', 'scripts/**/*.ts', 'vitest.setup.ts', '*.config.ts'],
     plugins: { boundaries },
     settings: {
       'import/resolver': {
@@ -160,11 +160,15 @@ export default tseslint.config(
       // (a real on-disk file matching no element) and trips
       // no-unknown-dependencies on a legitimate same-workspace import --
       // measured, not hypothetical: that was this config's first failed
-      // `npm run lint -w frontend` run. What `files:` below actually LINTS
-      // stays scoped to src/**, matching the CLI invocation
-      // (`eslint --max-warnings=0 src/`); this pattern only widens what an
-      // import TARGET may resolve into and still count as an allowed
-      // same-element edge.
+      // `npm run lint -w frontend` run. `files:` above and the CLI invocation
+      // (`eslint --max-warnings=0 src/ scripts/ vitest.setup.ts
+      // vite.config.ts vitest.config.ts`) are kept in step with each other --
+      // a path the CLI lints but `files:` misses gets NONE of this block, and
+      // `vitest.setup.ts` sat in exactly that hole until #1617: it is loaded
+      // into all 246 test files and was linted by nothing, carrying two live
+      // rule violations. `eslint-boundaries.test.ts` asserts both directions.
+      // This element pattern additionally widens what an import TARGET may
+      // resolve into and still count as an allowed same-element edge.
       'boundaries/elements': [
         { type: 'frontend', pattern: ['frontend'], partialMatch: false },
         { type: 'contracts', pattern: ['packages/contracts/src'], partialMatch: false },

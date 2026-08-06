@@ -2,8 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ContainerOverview } from './container-overview';
+import type { Container } from '@/features/containers/hooks/use-containers';
 
-const baseContainer = {
+// Annotated rather than inferred: `state` is the `ContainerState` union, and a
+// bare literal in an object literal widens to `string`, which is how a
+// Docker-native word can slip into a fixture unnoticed (CONTAINER_STATES,
+// @dashboard/contracts). The annotation also fails here the next time
+// `Container` gains a required field, rather than letting a stale fixture pass.
+const baseContainer: Container = {
   id: 'abc123def456789',
   name: 'api-1',
   image: 'ghcr.io/example/api:latest',

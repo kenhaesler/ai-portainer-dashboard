@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { ContainerState } from '@dashboard/contracts';
 import type { Container } from '@/features/containers/hooks/use-containers';
+import { withNonContractState } from '@/test/container-fixture';
 import { calculateHealthStats, calculateNeedsAttention } from './health-score';
 
 /**
@@ -12,12 +13,13 @@ import { calculateHealthStats, calculateNeedsAttention } from './health-score';
  * fixtures, so those cases agreed with the bug; hence this file, driven from
  * the contract instead.
  *
- * Completeness is NOT currently enforced. `HANDLED_STATES` is typed
+ * Completeness IS enforced, as of #1617. `HANDLED_STATES` is typed
  * `Record<ContainerState, ...>`, so a state added to `CONTAINER_STATES` and not
- * handled here is meant to be a compile error — but `frontend/tsconfig.json`
- * excludes `src/**\/*.test.ts` from the program, so nothing typechecks this
- * file (#1617). Closing that issue makes the guard real; until then this file
- * covers only the behaviour asserted below.
+ * handled here is a compile error. That only became true when
+ * `frontend/tsconfig.test.json` put the test files into a real program —
+ * `frontend/tsconfig.json` still excludes `src/**\/*.test.ts` (it is the
+ * browser build program), and while that was the only program, nothing
+ * typechecked this file and the guard was decorative.
  *
  * Asserting completeness at runtime instead would need a *value* import of
  * `CONTAINER_STATES`. Every frontend import of `@dashboard/contracts` is
@@ -66,7 +68,9 @@ describe('container state vocabulary', () => {
   it('never counts Docker\'s raw "exited" — the normalizer maps it to "stopped"', () => {
     // The exact regression. `'exited'` is not in the contract vocabulary, so it
     // must fall through to no state bucket at all rather than silently counting.
-    const stats = calculateHealthStats([{ ...makeContainer('stopped'), state: 'exited' } as Container]);
+    // `withNonContractState` is the one place in the frontend tests allowed to
+    // build a state the compiler rejects — see its docblock.
+    const stats = calculateHealthStats([withNonContractState(makeContainer('stopped'), 'exited')]);
 
     expect(stats.stopped).toBe(0);
     expect(stats.running).toBe(0);

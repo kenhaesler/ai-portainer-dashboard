@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { useAiMetricsSummary } from './use-ai-metrics-summary';
 import { api } from '@/shared/lib/api';
@@ -34,12 +34,17 @@ function mockSseResponse(events: string[]) {
   } as unknown as Response;
 }
 
+// `typeof fetch` merges the DOM and @types/node declarations into an overload
+// set, and `Mock<T>` only carries T's last overload — so name the single
+// signature the hook actually calls.
+type FetchFn = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+
 describe('useAiMetricsSummary', () => {
-  let mockFetch: ReturnType<typeof vi.fn>;
+  let mockFetch: Mock<FetchFn>;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockFetch = vi.fn();
+    mockFetch = vi.fn<FetchFn>();
     global.fetch = mockFetch;
   });
 

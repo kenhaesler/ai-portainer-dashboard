@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Container } from '@/features/containers/hooks/use-containers';
+import { withNonContractState } from '@/test/container-fixture';
 import {
   calculateHealthcheckPassRate,
   calculateHealthStats,
@@ -380,12 +381,13 @@ describe('calculateHealthStats', () => {
   });
 
   it('unrecognised state values flow through to unknown without affecting other counters', () => {
-    // Docker exposes additional states (created, restarting, removing, dead).
-    // None of these match running/stopped/paused/dead; with no healthStatus they
-    // should still be counted as unknown via the final `else` branch.
+    // Docker exposes additional states (created, restarting, removing). None of
+    // these are in the contract vocabulary, so none matches
+    // running/stopped/paused; `dead` is in it and lands in `stats.dead`. With no
+    // healthStatus all three still reach unknown via the final `else` branch.
     const containers = [
-      makeContainer({ id: '1', state: 'created', healthStatus: undefined }),
-      makeContainer({ id: '2', state: 'restarting', healthStatus: undefined }),
+      withNonContractState(makeContainer({ id: '1', healthStatus: undefined }), 'created'),
+      withNonContractState(makeContainer({ id: '2', healthStatus: undefined }), 'restarting'),
       makeContainer({ id: '3', state: 'dead', healthStatus: undefined }),
     ];
 

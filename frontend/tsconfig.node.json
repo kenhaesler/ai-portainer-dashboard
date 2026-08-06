@@ -1,4 +1,17 @@
 {
+  // The build-tooling program: the config files vite and vitest load at
+  // startup. It is the THIRD program `npm run typecheck -w frontend` runs
+  // (#1617) — before that it was reachable only through `tsconfig.json`'s
+  // `references`, which nothing builds (a plain `tsc -p` does not follow
+  // references; only `tsc -b` does, and no script here runs one). So these
+  // files were compiled by nothing, the same gap #1617 closed for the test
+  // files, and it was hiding a real bug: `configureServer` — a PLUGIN hook —
+  // sat under `server:`, where vite silently ignores unknown keys, so the
+  // `/__commit` dev endpoint `header.tsx` fetches had never registered.
+  //
+  // Kept separate from the browser and test programs because these files are
+  // pure Node (`__dirname`, `process.env`, `node:child_process`) and must not
+  // pull the DOM lib in — the mirror of why tsconfig.json has no node types.
   "compilerOptions": {
     "target": "ES2022",
     "lib": ["ES2022"],
@@ -8,7 +21,12 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "composite": true,
-    "declaration": true
+    "declaration": true,
+    // Its own buildinfo, like the other two programs — sharing one file makes
+    // each run invalidate the others' cache. Under node_modules/.cache rather
+    // than the default sibling path so a `--noEmit` run leaves no stray file
+    // in the workspace root.
+    "tsBuildInfoFile": "./node_modules/.cache/tsbuildinfo.node"
   },
-  "include": ["vite.config.ts"]
+  "include": ["vite.config.ts", "vitest.config.ts"]
 }

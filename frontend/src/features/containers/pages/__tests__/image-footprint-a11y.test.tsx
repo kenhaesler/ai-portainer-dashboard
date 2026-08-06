@@ -3,14 +3,9 @@ import { render, screen, fireEvent, act, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router';
 import { axe } from 'vitest-axe';
-import * as axeMatchers from 'vitest-axe/matchers';
 import ImageFootprintPage from '../image-footprint';
 
-// Register vitest-axe matchers (toHaveNoViolations) in this test file.
-// Mirrors the pattern used by frontend/src/test/a11y-pages.test.tsx — the
-// shipped vitest-axe/extend-expect entry is empty in this version, and the
-// linter strips bare expect.extend() from vitest.setup.ts.
-expect.extend(axeMatchers);
+// `toHaveNoViolations` is registered and typed once in frontend/vitest.setup.ts.
 
 // Recharts ResponsiveContainer needs layout measurements unavailable in jsdom.
 vi.mock('recharts', async (importOriginal) => {

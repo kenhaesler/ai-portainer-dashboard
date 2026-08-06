@@ -2,6 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { render as rtlRender, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import type { ReactElement } from 'react';
+import type {
+  HarborStatus,
+  VulnerabilityListResponse,
+} from '@/features/security/hooks/use-harbor-vulnerabilities';
+import { mockQuery } from '@/test/query-fixture';
 import HarborVulnerabilitiesPage from './harbor-vulnerabilities';
 
 // The page links into Settings, so it needs a router in scope.
@@ -184,7 +189,7 @@ describe('HarborVulnerabilitiesPage', () => {
 
   it('renders server pagination controls when the filtered total exceeds one page (#1546)', async () => {
     const mod = await import('@/features/security/hooks/use-harbor-vulnerabilities');
-    vi.mocked(mod.useHarborVulnerabilities).mockReturnValueOnce({
+    vi.mocked(mod.useHarborVulnerabilities).mockReturnValueOnce(mockQuery<VulnerabilityListResponse>({
       data: {
         vulnerabilities: [
           {
@@ -204,7 +209,7 @@ describe('HarborVulnerabilitiesPage', () => {
       isError: false,
       error: null,
       refetch: vi.fn(),
-    } as ReturnType<typeof mod.useHarborVulnerabilities>);
+    }));
 
     render(<HarborVulnerabilitiesPage />);
     // 120 filtered rows / 50 per page = 3 pages, so the pager appears.
@@ -267,14 +272,13 @@ describe('HarborVulnerabilitiesPage', () => {
 describe('HarborVulnerabilitiesPage (not configured)', () => {
   it('shows configuration message when Harbor is not set up', async () => {
     const mod = await import('@/features/security/hooks/use-harbor-vulnerabilities');
-    vi.mocked(mod.useHarborStatus).mockReturnValueOnce({
+    vi.mocked(mod.useHarborStatus).mockReturnValueOnce(mockQuery<HarborStatus>({
       data: { configured: false, connected: false, lastSync: null },
       isLoading: false,
       isError: false,
       error: null,
       refetch: vi.fn(),
-      // Provide minimal required fields for useQuery return type
-    } as ReturnType<typeof mod.useHarborStatus>);
+    }));
 
     render(<HarborVulnerabilitiesPage />);
     expect(screen.getByText('Harbor Not Configured')).toBeInTheDocument();
@@ -282,13 +286,13 @@ describe('HarborVulnerabilitiesPage (not configured)', () => {
 
   it('states the consequence and ships a CTA to the page that fixes it', async () => {
     const mod = await import('@/features/security/hooks/use-harbor-vulnerabilities');
-    vi.mocked(mod.useHarborStatus).mockReturnValueOnce({
+    vi.mocked(mod.useHarborStatus).mockReturnValueOnce(mockQuery<HarborStatus>({
       data: { configured: false, connected: false, lastSync: null },
       isLoading: false,
       isError: false,
       error: null,
       refetch: vi.fn(),
-    } as ReturnType<typeof mod.useHarborStatus>);
+    }));
 
     render(<HarborVulnerabilitiesPage />);
 

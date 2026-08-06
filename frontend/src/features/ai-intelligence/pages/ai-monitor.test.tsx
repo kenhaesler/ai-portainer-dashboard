@@ -113,9 +113,16 @@ vi.mock('@/shared/hooks/use-force-refresh', () => ({
 
 import { useMonitoring } from '@/features/ai-intelligence/hooks/use-monitoring';
 import { useIncidents } from '@/features/ai-intelligence/hooks/use-incidents';
-import { useCorrelatedAnomalies } from '@/features/observability/hooks/use-correlated-anomalies';
+import {
+  useCorrelatedAnomalies,
+  type CorrelatedAnomaly,
+} from '@/features/observability/hooks/use-correlated-anomalies';
 import { useContainers } from '@/features/containers/hooks/use-containers';
+import { mockQuery } from '@/test/query-fixture';
 import AiMonitorPage from './ai-monitor';
+
+/** `IncidentsResponse` is internal to the hook module; name it via the hook. */
+type IncidentsData = NonNullable<ReturnType<typeof useIncidents>['data']>;
 
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -160,14 +167,16 @@ const baseInsights = [
 ];
 
 beforeEach(() => {
-  vi.mocked(useCorrelatedAnomalies).mockReturnValue({
+  vi.mocked(useCorrelatedAnomalies).mockReturnValue(mockQuery<CorrelatedAnomaly[]>({
     data: undefined,
     isLoading: false,
-  } as ReturnType<typeof useCorrelatedAnomalies>);
+  }));
 
-  vi.mocked(useIncidents).mockReturnValue({
-    data: null,
-  } as ReturnType<typeof useIncidents>);
+  // `undefined` is the "nothing loaded" value this query yields; `null` is not
+  // a state `UseQueryResult<IncidentsResponse>` can hold.
+  vi.mocked(useIncidents).mockReturnValue(mockQuery<IncidentsData>({
+    data: undefined,
+  }));
 
   vi.mocked(useContainers).mockReturnValue({
     data: [],
@@ -205,7 +214,7 @@ describe('AiMonitorPage', () => {
   });
 
   it('renders correlated anomalies section when data exists', () => {
-    vi.mocked(useCorrelatedAnomalies).mockReturnValue({
+    vi.mocked(useCorrelatedAnomalies).mockReturnValue(mockQuery<CorrelatedAnomaly[]>({
       data: [
         {
           containerId: 'c1',
@@ -232,7 +241,7 @@ describe('AiMonitorPage', () => {
         },
       ],
       isLoading: false,
-    } as ReturnType<typeof useCorrelatedAnomalies>);
+    }));
 
     renderPage();
 
@@ -257,10 +266,10 @@ describe('AiMonitorPage', () => {
   });
 
   it('hides correlated anomalies section when array is empty', () => {
-    vi.mocked(useCorrelatedAnomalies).mockReturnValue({
+    vi.mocked(useCorrelatedAnomalies).mockReturnValue(mockQuery<CorrelatedAnomaly[]>({
       data: [],
       isLoading: false,
-    } as ReturnType<typeof useCorrelatedAnomalies>);
+    }));
 
     renderPage();
     expect(screen.queryByText('Correlated metric deviations')).toBeNull();
@@ -356,7 +365,7 @@ describe('AiMonitorPage', () => {
   });
 
   it('renders the rule label and the z-scores it fired on, not a diagnosis', () => {
-    vi.mocked(useCorrelatedAnomalies).mockReturnValue({
+    vi.mocked(useCorrelatedAnomalies).mockReturnValue(mockQuery<CorrelatedAnomaly[]>({
       data: [
         {
           containerId: 'c2',
@@ -379,7 +388,7 @@ describe('AiMonitorPage', () => {
         },
       ],
       isLoading: false,
-    } as ReturnType<typeof useCorrelatedAnomalies>);
+    }));
 
     renderPage();
 
@@ -399,8 +408,15 @@ describe('AiMonitorPage', () => {
     expect(screen.queryByText('Memory Leak Suspected')).toBeNull();
   });
 
-  it('falls back to the pattern string when patternMatch is absent (stale server build)', () => {
-    vi.mocked(useCorrelatedAnomalies).mockReturnValue({
+  // Named for what it proves. Until #1617 the fixture OMITTED `patternMatch`
+  // and the name said "absent (stale server build)" — a wire shape
+  // `CorrelatedAnomaly` cannot express, since the field is declared required
+  // and nullable. `null` is the current server saying no rule fired. Both reach
+  // the same branch (`patternMatch?.summary ?? pattern`), so the assertions are
+  // unchanged; the stale-build variant would need `patternMatch?:` on the
+  // frontend type, which is app source and a separate decision.
+  it('falls back to the pattern string when no rule fired (patternMatch: null)', () => {
+    vi.mocked(useCorrelatedAnomalies).mockReturnValue(mockQuery<CorrelatedAnomaly[]>({
       data: [
         {
           containerId: 'c3',
@@ -414,7 +430,7 @@ describe('AiMonitorPage', () => {
         },
       ],
       isLoading: false,
-    } as ReturnType<typeof useCorrelatedAnomalies>);
+    }));
 
     renderPage();
 
@@ -548,10 +564,10 @@ describe('AiMonitorPage', () => {
   });
 
   it('surfaces unhealthy and stopped containers in the Anomalies & Health Issues section', () => {
-    vi.mocked(useCorrelatedAnomalies).mockReturnValue({
+    vi.mocked(useCorrelatedAnomalies).mockReturnValue(mockQuery<CorrelatedAnomaly[]>({
       data: [],
       isLoading: false,
-    } as unknown as ReturnType<typeof useCorrelatedAnomalies>);
+    }));
     vi.mocked(useContainers).mockReturnValue({
       data: [
         { id: '1', name: 'sick-api', state: 'running', healthStatus: 'unhealthy', image: 'node:20', status: 'Up', endpointId: 1, endpointName: 'local', ports: [], created: 0, networks: [], labels: {} },
@@ -742,7 +758,7 @@ describe('AiMonitorPage — IncidentGroupsView integration', () => {
 
 describe('AiMonitorPage — false-positive feedback (#1298)', () => {
   it('renders a "Mark as false positive" button on each CorrelatedAnomalyCard', () => {
-    vi.mocked(useCorrelatedAnomalies).mockReturnValue({
+    vi.mocked(useCorrelatedAnomalies).mockReturnValue(mockQuery<CorrelatedAnomaly[]>({
       data: [
         {
           containerId: 'c1',
@@ -750,12 +766,13 @@ describe('AiMonitorPage — false-positive feedback (#1298)', () => {
           metrics: [{ type: 'cpu', currentValue: 95, mean: 40, zScore: 3.5 }],
           compositeScore: 3.5,
           pattern: null,
+          patternMatch: null,
           severity: 'high' as const,
           timestamp: '2025-01-15T10:00:00Z',
         },
       ],
       isLoading: false,
-    } as ReturnType<typeof useCorrelatedAnomalies>);
+    }));
 
     renderPage();
     expect(screen.getByTestId('mark-false-positive')).toBeTruthy();
@@ -770,7 +787,7 @@ describe('AiMonitorPage — false-positive feedback (#1298)', () => {
       variables: undefined,
     } as unknown as ReturnType<typeof useMarkFalsePositive>);
 
-    vi.mocked(useCorrelatedAnomalies).mockReturnValue({
+    vi.mocked(useCorrelatedAnomalies).mockReturnValue(mockQuery<CorrelatedAnomaly[]>({
       data: [
         {
           containerId: 'c-abc',
@@ -778,12 +795,13 @@ describe('AiMonitorPage — false-positive feedback (#1298)', () => {
           metrics: [{ type: 'cpu', currentValue: 95, mean: 40, zScore: 3.5 }],
           compositeScore: 3.5,
           pattern: null,
+          patternMatch: null,
           severity: 'high' as const,
           timestamp: '2025-01-15T10:00:00Z',
         },
       ],
       isLoading: false,
-    } as ReturnType<typeof useCorrelatedAnomalies>);
+    }));
 
     renderPage();
 

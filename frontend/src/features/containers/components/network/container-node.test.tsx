@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import type { NodeProps } from '@xyflow/react';
 import { stripGroupPrefix, ContainerNode } from './container-node';
 
 // @xyflow/react's Handle needs a ReactFlow provider; the node's label logic
@@ -58,9 +59,30 @@ describe('ContainerNode', () => {
     usedHandles: [],
   };
 
+  /**
+   * NodeProps carries a large xyflow surface the component never reads, so the
+   * fields outside `data` are the values ReactFlow itself passes for a plain,
+   * un-dragged, unselected node at the canvas origin.
+   */
+  function nodeProps(nodeData: Record<string, unknown>): NodeProps {
+    return {
+      id: 'container-insights-backend',
+      type: 'container',
+      data: nodeData,
+      selected: false,
+      dragging: false,
+      draggable: true,
+      selectable: true,
+      deletable: true,
+      isConnectable: true,
+      zIndex: 0,
+      positionAbsoluteX: 0,
+      positionAbsoluteY: 0,
+    };
+  }
+
   function renderNode(overrides: Record<string, unknown> = {}) {
-    // NodeProps carries a large xyflow surface the component never reads.
-    return render(<ContainerNode {...({ data: { ...data, ...overrides } } as never)} />);
+    return render(<ContainerNode {...nodeProps({ ...data, ...overrides })} />);
   }
 
   it('renders the de-prefixed name, not the shared prefix', () => {

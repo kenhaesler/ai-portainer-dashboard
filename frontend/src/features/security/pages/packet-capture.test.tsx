@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { useCaptures, usePcapStatus, type Capture } from '@/features/security/hooks/use-pcap';
+import { useCaptures, usePcapStatus, type Capture, type PcapAnalysisResult } from '@/features/security/hooks/use-pcap';
 
 vi.mock('@/features/containers/hooks/use-endpoints', () => ({
   useEndpoints: vi.fn().mockReturnValue({
@@ -369,7 +369,7 @@ describe('PacketCapture', () => {
     // API sends an OBJECT. Using a JSON string here would test a shape the
     // server never returns — which is how a `JSON.parse` on the parsed object
     // went unnoticed while hiding this entire panel.
-    function analysisPayload(confidence: number | null) {
+    function analysisPayload(confidence: number | null): PcapAnalysisResult {
       return {
         health_status: 'degraded',
         summary: 'Retransmissions above baseline',

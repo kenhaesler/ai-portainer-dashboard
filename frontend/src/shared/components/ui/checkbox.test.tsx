@@ -60,14 +60,17 @@ describe('Checkbox', () => {
   });
 
   it('forwards refs to the underlying input', () => {
-    let captured: HTMLInputElement | null = null;
+    // Held in a box rather than a bare `let`: the only write happens inside the
+    // ref callback, which control-flow analysis does not follow, so a `let`
+    // stays narrowed to `null` and `captured?.tagName` checks nothing.
+    const captured: { current: HTMLInputElement | null } = { current: null };
     function Host() {
       const ref = useRef<HTMLInputElement>(null);
       return (
         <Checkbox
           ref={(el) => {
             ref.current = el;
-            captured = el;
+            captured.current = el;
           }}
           data-testid="cb"
           aria-label="row"
@@ -75,8 +78,8 @@ describe('Checkbox', () => {
       );
     }
     render(<Host />);
-    expect(captured).not.toBeNull();
-    expect(captured?.tagName).toBe('INPUT');
+    expect(captured.current).not.toBeNull();
+    expect(captured.current?.tagName).toBe('INPUT');
   });
 
   it('uses small dimensions when size="sm"', () => {

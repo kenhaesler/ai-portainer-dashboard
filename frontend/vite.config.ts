@@ -37,6 +37,20 @@ export default defineConfig({
     // compiler originally enabled in 397b44c2; this is the v6 opt-in path.
     babel({ presets: [reactCompilerPreset()] }),
     tailwindcss(),
+    // `configureServer` is a PLUGIN hook. It sat under `server:` until #1617
+    // put this file into a typechecked program — vite ignores unknown keys in
+    // `server`, so the middleware never registered and the dev-only
+    // `fetch('/__commit')` in header.tsx had been falling through to the SPA
+    // index.html (and failing its `res.json()`) since the day it was written.
+    {
+      name: 'dev-commit-endpoint',
+      configureServer(server) {
+        server.middlewares.use('/__commit', (_req, res) => {
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ commit: appCommit || 'dev' }));
+        });
+      },
+    },
     VitePWA({
       registerType: 'autoUpdate',
       workbox: {
@@ -90,12 +104,6 @@ export default defineConfig({
   },
   server: {
     port: 5273,
-    configureServer(server) {
-      server.middlewares.use('/__commit', (_req, res) => {
-        res.setHeader('Content-Type', 'application/json');
-        res.end(JSON.stringify({ commit: appCommit || 'dev' }));
-      });
-    },
     proxy: {
       '/api': {
         target: process.env.VITE_INTERNAL_API_URL || 'http://localhost:3051',

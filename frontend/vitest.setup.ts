@@ -1,7 +1,34 @@
-import { expect } from 'vitest';
-import * as matchers from '@testing-library/jest-dom/matchers';
+// Registers jest-dom's matchers on vitest's `expect` AND carries the
+// `declare module 'vitest'` augmentation that types them. The older
+// `expect.extend(matchers)` form registered them at runtime only, so
+// `toBeInTheDocument` & co. were untyped — which mattered the moment test
+// files entered the typecheck program (#1617): 2241 of the 2401 errors were
+// TS2339 on matchers that do exist.
+import '@testing-library/jest-dom/vitest';
 
-expect.extend(matchers);
+import { expect } from 'vitest';
+import * as axeMatchers from 'vitest-axe/matchers';
+import type { AxeMatchers } from 'vitest-axe/matchers';
+
+// vitest-axe 0.1.0 predates vitest 2's change of augmentation point: its
+// `extend-expect` entry declares `global.Vi.Assertion`, which vitest 4 no
+// longer reads (and its JS half is an empty file). So the registration and the
+// types are both done here — together, deliberately. Two test files used to
+// call `expect.extend(axeMatchers)` locally, which left `toHaveNoViolations`
+// untyped in both and available at runtime in neither of the other 243.
+expect.extend(axeMatchers);
+declare module 'vitest' {
+  // Empty bodies are the point: an interface that ONLY `extends` is how
+  // declaration merging adds members to vitest's own `Assertion`. A type alias
+  // would not merge, and a body would add members nobody wants — so
+  // no-empty-object-type is disabled here by name rather than worked around.
+  // `T = any` is likewise not a preference: merging requires type parameters
+  // identical to vitest's `Assertion<T = any>`.
+  /* eslint-disable @typescript-eslint/no-empty-object-type */
+  interface Assertion<T = any> extends AxeMatchers {}
+  interface AsymmetricMatchersContaining extends AxeMatchers {}
+  /* eslint-enable @typescript-eslint/no-empty-object-type */
+}
 
 // Mock ResizeObserver for components that depend on it (e.g. cmdk)
 global.ResizeObserver = class ResizeObserver {

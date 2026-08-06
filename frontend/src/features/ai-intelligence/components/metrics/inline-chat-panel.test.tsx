@@ -13,6 +13,7 @@ vi.mock('@/features/ai-intelligence/hooks/use-llm-chat', () => ({
     isStreaming: false,
     currentResponse: '',
     activeToolCalls: [],
+    statusMessage: null,
     sendMessage: (...args: unknown[]) => mockSendMessage(...args),
     cancelGeneration: (...args: unknown[]) => mockCancelGeneration(...args),
     clearHistory: (...args: unknown[]) => mockClearHistory(...args),
@@ -197,6 +198,7 @@ describe('InlineChatPanel', () => {
       isStreaming: false,
       currentResponse: '',
       activeToolCalls: [],
+      statusMessage: null,
       sendMessage: mockSendMessage,
       cancelGeneration: mockCancelGeneration,
       clearHistory: mockClearHistory,
@@ -219,6 +221,7 @@ describe('InlineChatPanel', () => {
       isStreaming: true,
       currentResponse: 'Analyzing the container...',
       activeToolCalls: [],
+      statusMessage: null,
       sendMessage: mockSendMessage,
       cancelGeneration: mockCancelGeneration,
       clearHistory: mockClearHistory,
@@ -255,10 +258,11 @@ describe('InlineChatPanel presentation', () => {
       isStreaming: false,
       currentResponse: '',
       activeToolCalls: [],
+      statusMessage: null,
       sendMessage: mockSendMessage,
       cancelGeneration: mockCancelGeneration,
       clearHistory: mockClearHistory,
-    } as unknown as ReturnType<typeof useLlmChat>);
+    });
   });
 
   it('states what it reads instead of claiming access in the first person', () => {
@@ -303,10 +307,11 @@ describe('InlineChatPanel presentation', () => {
       isStreaming: false,
       currentResponse: '',
       activeToolCalls: [],
+      statusMessage: null,
       sendMessage: mockSendMessage,
       cancelGeneration: mockCancelGeneration,
       clearHistory: mockClearHistory,
-    } as unknown as ReturnType<typeof useLlmChat>);
+    });
 
     render(
       <InlineChatPanel open={true} onClose={vi.fn()} context={defaultContext} />,

@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router';
 import InfrastructurePage from './fleet-overview';
+import type { AutoRefreshOptions, RefreshInterval } from '@/shared/hooks/use-auto-refresh';
 
 const mockNavigate = vi.fn();
 vi.mock('react-router', async () => {
@@ -25,15 +26,20 @@ vi.mock('@/features/kubernetes/hooks/use-kubernetes', () => ({
   useK8sNamespaces: vi.fn(() => ({ data: [] })),
 }));
 
-const mockUseAutoRefresh = vi.fn(() => ({
-  interval: 30,
-  setRefreshInterval: vi.fn(),
-  setInterval: vi.fn(),
-  enabled: true,
-}));
+// Declared with the real hook's parameter list: the auto-refresh test below
+// reads the options argument (`onTick`) back out of `mock.calls`, which a
+// zero-parameter mock records as an empty tuple.
+const mockUseAutoRefresh = vi.fn(
+  (_defaultInterval?: RefreshInterval, _opts?: AutoRefreshOptions) => ({
+    interval: 30,
+    setRefreshInterval: vi.fn(),
+    setInterval: vi.fn(),
+    enabled: true,
+  }),
+);
 
 vi.mock('@/shared/hooks/use-auto-refresh', () => ({
-  useAutoRefresh: (...args: unknown[]) => mockUseAutoRefresh(...(args as [])),
+  useAutoRefresh: (...args: Parameters<typeof mockUseAutoRefresh>) => mockUseAutoRefresh(...args),
 }));
 
 vi.mock('@/shared/lib/api', () => ({
@@ -54,12 +60,13 @@ import { useK8sPods } from '@/features/kubernetes/hooks/use-kubernetes';
 import type { Endpoint } from '@/features/containers/hooks/use-endpoints';
 import type { Stack } from '@/features/containers/hooks/use-stacks';
 import { useUiStore } from '@/stores/ui-store';
+import { snapshotSourceFor } from '@/test/endpoint-fixture';
 
 const mockUseEndpoints = vi.mocked(useEndpoints);
 const mockUseStacks = vi.mocked(useStacks);
 
 function makeEndpoint(overrides: Partial<Endpoint> = {}): Endpoint {
-  return {
+  const base: Omit<Endpoint, 'snapshotSource'> = {
     id: 1,
     name: 'test-endpoint',
     type: 1,
@@ -78,6 +85,7 @@ function makeEndpoint(overrides: Partial<Endpoint> = {}): Endpoint {
     capabilities: { exec: true, realtimeLogs: true, liveStats: true, immediateActions: true },
     ...overrides,
   };
+  return { ...base, snapshotSource: overrides.snapshotSource ?? snapshotSourceFor(base) };
 }
 
 function makeStack(overrides: Partial<Stack> = {}): Stack {
@@ -174,9 +182,7 @@ describe('InfrastructurePage — auto-refresh actually refreshes', () => {
 
     // The dropdown used to write a localStorage preference and schedule
     // nothing, while RefreshControls rendered a pulsing live dot.
-    const options = mockUseAutoRefresh.mock.calls.at(-1)?.[1] as
-      | { onTick?: () => void }
-      | undefined;
+    const options = mockUseAutoRefresh.mock.calls.at(-1)?.[1];
     expect(typeof options?.onTick).toBe('function');
 
     options!.onTick!();
