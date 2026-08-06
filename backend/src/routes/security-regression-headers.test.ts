@@ -221,8 +221,6 @@ describe('HSTS preload + CORS_ALLOWED_ORIGINS (#1108, #1115)', () => {
     // see the expected values.
     setConfigForTest({
       PORTAINER_API_URL: 'http://localhost:9000',
-      OLLAMA_BASE_URL: 'http://localhost:11434',
-      OLLAMA_MODEL: 'llama3.2',
       JWT_ALGORITHM: 'HS256',
       HTTP2_ENABLED: false,
     });

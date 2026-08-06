@@ -88,3 +88,13 @@ frontend/src/lib/impeccable/__runtime.js
 # Path-anchored: unanchored, `[0-9a-f]*/` also ignores `backend/`, `docs/`,
 # `e2e/` and `frontend/`.
 frontend/src/lib/impeccable/[0-9a-f]*/
+
+# Per-developer compose overrides — host port remaps and the like, layered on
+# with an explicit second `-f`. Machine-specific by definition, and a tracked
+# one is worse than none: it sits among the twelve real compose files reading
+# as supported, while remapping the host ports the documented workflows use
+# (backend tests reach PostgreSQL on 5433 — see docker-compose.dev.yml).
+# Prefer the env-var knobs the tracked files already expose (`REDIS_HOST_PORT`)
+# and add another when one is missing.
+docker/docker-compose.local.yml
+docker/docker-compose.*.local.yml

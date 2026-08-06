@@ -1,12 +1,21 @@
 {
+  // The TYPECHECK program (#1645): backend's src, its test files, and the
+  // vitest config that loads them. `npm run typecheck -w backend` drives this
+  // one, and nothing emits from it.
+  //
+  // `rootDir` and `composite` live in tsconfig.build.json instead, where the
+  // emit they constrain actually happens. Both were here, and between them
+  // they made it impossible for this program to contain a file outside `src/`
+  // — so `vitest.config.ts` could not be typechecked without moving them
+  // (TS6307 under composite, TS6059 under rootDir). It was compiled by
+  // nothing, exactly like vite.config.ts before #1617, where the same gap had
+  // been hiding a misplaced `configureServer` for the life of the file.
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
     "lib": ["ES2022"],
     "outDir": "dist",
-    "rootDir": "src",
-    "composite": true,
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -30,6 +39,10 @@
     { "path": "../packages/ai-intelligence/tsconfig.build.json" },
     { "path": "../packages/foundation/tsconfig.build.json" }
   ],
-  "include": ["src/**/*"],
+  // `vitest.config.ts` is named explicitly rather than left to arrive
+  // transitively through typecheck-gate.test.ts's import of it: a program a
+  // file enters only because some test happens to import it leaves again the
+  // moment that import does.
+  "include": ["src/**/*", "vitest.config.ts"],
   "exclude": ["node_modules", "dist", "tests"]
 }

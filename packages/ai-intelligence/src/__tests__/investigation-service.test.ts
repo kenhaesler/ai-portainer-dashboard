@@ -463,7 +463,6 @@ Hope this helps!`;
           INVESTIGATION_MAX_CONCURRENT: 2,
           INVESTIGATION_LOG_TAIL_LINES: 50,
           INVESTIGATION_METRICS_WINDOW_MINUTES: 60,
-          OLLAMA_MODEL: 'llama3.2',
         }),
       }));
     });

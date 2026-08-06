@@ -16,8 +16,12 @@ export default defineConfig({
       REDIS_URL: 'redis://localhost:6379',
       PORTAINER_API_URL: 'http://localhost:9000',
       PORTAINER_API_KEY: 'test-api-key-placeholder',
-      OLLAMA_BASE_URL: 'http://localhost:11434',
-      OLLAMA_MODEL: 'tinyllama',
+      // No OLLAMA_* here on purpose (#1645). They are not in the env schema, so
+      // they never reached getConfig(). OLLAMA_BASE_URL's only reader is
+      // src/test-utils/test-ollama-helper.ts via process.env, and its
+      // `?? 'http://localhost:11434'` default is the same value this used to
+      // pin — so setting it here only overrode a developer's own export with
+      // localhost. OLLAMA_MODEL has no reader in backend at all.
       CACHE_ENABLED: 'true',
     },
     coverage: {
