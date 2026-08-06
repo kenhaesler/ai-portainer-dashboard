@@ -1,8 +1,13 @@
 {
+  // The EMIT program: what actually ships to dist/. Everything that shapes
+  // that output lives here, including `rootDir` and `composite`, which moved
+  // down from tsconfig.json in #1645 — there they also constrained the
+  // typecheck program, which is why it could not reach vitest.config.ts.
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "composite": true,
     "noEmit": false,
+    "rootDir": "src",
     "outDir": "./dist",
     "declaration": true,
     "declarationMap": true,
@@ -19,5 +24,8 @@
     { "path": "../packages/ai-intelligence/tsconfig.build.json" },
     { "path": "../packages/foundation/tsconfig.build.json" }
   ],
-  "exclude": ["**/*.test.ts", "**/__tests__/**", "node_modules", "dist"]
+  // `vitest.config.ts` is inherited from tsconfig.json's include and dropped
+  // here for the same reason the test files are: it is tooling, not shipped
+  // code, and `rootDir: "src"` would reject it outright.
+  "exclude": ["**/*.test.ts", "**/__tests__/**", "vitest.config.ts", "node_modules", "dist"]
 }

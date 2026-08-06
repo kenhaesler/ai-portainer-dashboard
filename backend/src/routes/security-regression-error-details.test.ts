@@ -19,7 +19,7 @@
  * @see https://github.com/kenhaesler/ai-portainer-dashboard/issues/1518
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import Fastify from 'fastify';
+import Fastify, { type FastifyInstance } from 'fastify';
 import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
@@ -131,7 +131,7 @@ describe('5xx details masking — metrics route', () => {
     // errorDetails() reads NODE_ENV at request time — the masking decision
     // under test.
     mockMetricsQuery.mockRejectedValue(new Error(SENSITIVE_MESSAGE));
-    const app = await buildApp((a) => a.register((f) => metricsRoutes(f, {})));
+    const app = await buildApp((a) => a.register((f: FastifyInstance) => metricsRoutes(f, {})));
     vi.stubEnv('NODE_ENV', 'production');
 
     const res = await app.inject({ method: 'GET', url: '/api/metrics/1/abc123?metricType=cpu' });
@@ -148,7 +148,7 @@ describe('5xx details masking — metrics route', () => {
 
   it('keeps details in development for debuggability', async () => {
     mockMetricsQuery.mockRejectedValue(new Error(SENSITIVE_MESSAGE));
-    const app = await buildApp((a) => a.register((f) => metricsRoutes(f, {})));
+    const app = await buildApp((a) => a.register((f: FastifyInstance) => metricsRoutes(f, {})));
     vi.stubEnv('NODE_ENV', 'development');
 
     const res = await app.inject({ method: 'GET', url: '/api/metrics/1/abc123?metricType=cpu' });

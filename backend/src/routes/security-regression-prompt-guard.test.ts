@@ -103,8 +103,6 @@ beforeAll(async () => {
   await flushTestCache();
   setConfigForTest({
     PORTAINER_API_URL: 'http://localhost:9000',
-    OLLAMA_BASE_URL: 'http://localhost:11434',
-    OLLAMA_MODEL: 'llama3.2',
     JWT_ALGORITHM: 'HS256',
     LLM_RATE_LIMIT_PER_MINUTE: 1000, // High enough that injection tests never trip the limiter
     CACHE_ENABLED: false,

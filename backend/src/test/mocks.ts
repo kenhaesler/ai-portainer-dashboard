@@ -163,8 +163,6 @@ export function createMockConfig() {
     METRICS_RETENTION_DAYS: 7,
     BACKUP_RETENTION_DAYS: 30,
     BACKUP_DIR: '/tmp/backups',
-    OLLAMA_BASE_URL: 'http://localhost:11434',
-    OLLAMA_MODEL: 'llama3.2',
   };
 }
 

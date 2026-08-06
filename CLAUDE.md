@@ -249,6 +249,23 @@ For detailed specs (animation durations, easing curves, glass override patterns,
   because frontend pins TypeScript 7, the native port, which ships no compiler API —
   `import ts from 'typescript'` there yields a version stub, not `ts.sys`. It does not assert the
   two-program layout — merging them is a legitimate design; coverage is the invariant.
+- **`npm run typecheck` covers backend test files too (#1645).** Third and last instance of the
+  same bug, and the barest: `backend/tsconfig.json` already included the tests and
+  `backend/package.json` already had a working `"typecheck": "tsc --noEmit"`. Both halves existed.
+  The root script simply never said **`-w backend`** — so the only path reaching the workspace was
+  `tsconfig.build.json`'s reference to `backend/tsconfig.build.json`, which excludes
+  `**/*.test.ts`. Eight real errors sat behind it, all in `security-regression-*.test.ts`: dead
+  config keys (`OLLAMA_*`, `LLM_OPENAI_ENDPOINT`, `LLM_BEARER_TOKEN`) still being passed to
+  `setConfigForTest(partial: Partial<EnvConfig>)` long after the schema dropped them, and two
+  implicitly-`any` plugin parameters. **When adding a workspace, add it to the `typecheck` chain**
+  — `backend/src/typecheck-gate.test.ts` now fails if `-w backend` or `-w frontend` leaves it.
+  Note TS2353 reports only the *first* excess property per object literal, so removing one dead key
+  reveals the next: check the whole literal against the schema rather than iterating on `tsc`.
+  `rootDir` and `composite` moved from `backend/tsconfig.json` down to `tsconfig.build.json`, where
+  the emit they constrain happens. In the base config they made it impossible for the typecheck
+  program to hold any file outside `src/` (TS6307 / TS6059), which is why `backend/vitest.config.ts`
+  was compiled by nothing — the same gap that hid frontend's misplaced `configureServer`. The
+  build's emit is unchanged, verified by diffing a clean `dist/` before and after.
 - **The frontend lint script and `eslint.config.js`'s `files:` glob must stay in step (#1617).**
   They are independent lists, and a file in the config's `files:` but not in the CLI's path
   arguments is linted by *nothing* — no error, just never visited. `frontend/vitest.setup.ts`

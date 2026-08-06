@@ -1,0 +1,10 @@
+# Local-only override (untracked): remap DB/redis HOST ports to avoid colliding
+# with the unrelated compendiq project on 5433/6379. Internal networking is
+# unchanged (backend still reaches postgres-app:5432 / redis:6379 on the net).
+services:
+  postgres-app:
+    ports: !override
+      - "5434:5432"
+  redis:
+    ports: !override
+      - "127.0.0.1:6399:6379"
