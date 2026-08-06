@@ -145,3 +145,102 @@ describe('lightningcss override (#1631)', () => {
     }
   });
 });
+
+/**
+ * The `loadtests/` overrides (CVE-2026-69152).
+ *
+ * These three pin transitive deps **forward**, past advisories the `artillery` /
+ * `autocannon` trees had not picked up. They are the only thing holding those
+ * versions up, and nothing else checks them: CI does not install `loadtests/`
+ * (so `npm ls --all` cannot reach it) and CI runs no `npm audit` at all since
+ * #1623. `npm run audit:loadtests` exists but is on-demand and local.
+ *
+ * That left a gap with teeth, and it bit: `brace-expansion` was pinned `^5.0.8`
+ * for CVE-2026-14257, then CVE-2026-69152 found the 5.0.8 mitigation incomplete
+ * and moved the patched floor to 5.0.9. The override kept doing exactly what it
+ * said — hold at or above 5.0.8 — while the version it held was no longer the
+ * fixed one, and the only signal was a GitHub Dependabot alert no CI job reads.
+ *
+ * No test can know about an advisory that does not exist yet, so these do not
+ * try. They assert the two things that are checkable from the repo alone, and
+ * that were the difference between a one-line bump and a silent regression:
+ *
+ *   1. the override still applies — if someone raises a floor in the manifest
+ *      and forgets `npm install --package-lock-only`, the lockfile keeps
+ *      shipping the old version while the manifest reads as fixed. That is the
+ *      shape a security bump fails in.
+ *   2. the override is still needed — CLAUDE.md's "drop each override once the
+ *      upstream range moves past it" rule, which had no enforcement here. An
+ *      override that outlives its conflict pins *forward* silently:
+ *      `@opentelemetry/core: ^2.9.0` will block a future artillery needing 3.x
+ *      and surface as an unreadable resolution failure, not an obvious
+ *      stale-override error.
+ */
+describe('loadtests/ dependency overrides (CVE-2026-69152)', () => {
+  const manifest = readJson<RootManifest>('loadtests/package.json');
+  const lock = readJson<Lockfile>('loadtests/package-lock.json');
+
+  const overrides = Object.entries(manifest.overrides ?? {}).map(([name, range]) => ({
+    name,
+    range: String(range),
+  }));
+
+  /** Matches both `node_modules/x` and any nested `.../node_modules/@scope/x`. */
+  const copiesOf = (name: string) =>
+    Object.entries(lock.packages).filter(
+      ([path]) => path.split('node_modules/').slice(1).join('node_modules/') === name,
+    );
+
+  const declaredRangesFor = (name: string) =>
+    Object.entries(lock.packages).flatMap(([path, entry]) => {
+      const range = {
+        ...entry.dependencies,
+        ...entry.optionalDependencies,
+        ...entry.peerDependencies,
+      }[name];
+      return range ? [{ path, range }] : [];
+    });
+
+  it('declares the overrides this test is meant to cover', () => {
+    // Guards the it.each below: an empty overrides block would make every
+    // per-override assertion vacuous rather than failing.
+    expect(overrides.map((o) => o.name).sort()).toEqual([
+      '@opentelemetry/core',
+      'brace-expansion',
+      'uuid',
+    ]);
+  });
+
+  it.each(overrides)('$name — the override still applies to the lockfile', ({ name, range }) => {
+    const copies = copiesOf(name);
+
+    expect(
+      copies.map(([path]) => path),
+      `${name}: expected exactly one copy in loadtests/package-lock.json — ` +
+        'more than one means the override stopped collapsing the tree',
+    ).toHaveLength(1);
+
+    const resolved = copies[0]?.[1].version ?? '';
+    expect(
+      satisfies(resolved, range),
+      `loadtests/package-lock.json resolves ${name}@${resolved}, which the declared ` +
+        `override ${range} does not satisfy — run \`npm install --package-lock-only\` ` +
+        'in loadtests/ and commit the lockfile',
+    ).toBe(true);
+  });
+
+  it.each(overrides)('$name — the override is still needed', ({ name, range }) => {
+    const declared = declaredRangesFor(name);
+    expect(declared.length, `${name} is no longer in the loadtests tree`).toBeGreaterThan(0);
+
+    const resolved = copiesOf(name)[0]?.[1].version ?? '';
+    const conflicting = declared.filter(({ range: r }) => !satisfies(resolved, r));
+
+    expect(
+      conflicting.length,
+      `every declared ${name} range in loadtests/ now accepts ${resolved} — the tree agrees ` +
+        `without help, so delete "${name}": "${range}" from loadtests/package.json overrides, ` +
+        're-run npm install there, and drop its note from CLAUDE.md',
+    ).toBeGreaterThan(0);
+  });
+});
