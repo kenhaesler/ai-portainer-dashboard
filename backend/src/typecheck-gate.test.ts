@@ -242,11 +242,21 @@ describe('npm run typecheck -w backend covers the test files (#1645)', () => {
     expect(testFiles.length).toBeGreaterThanOrEqual(25);
   });
 
-  const covered = new Set(invocations.flatMap(({ configPath }) => programFiles(configPath)));
+  /**
+   * Resolved on first use, not at collection time. `programFiles` shells out to
+   * `tsc`, and a config it refuses to load throws — at collection that takes the
+   * whole file down with an unattributed error, discarding the messages the
+   * assertions below are written to produce. Memoized so the two consumers still
+   * share one `tsc` run per config.
+   */
+  let coveredCache: Set<string> | undefined;
+  const coveredFiles = () =>
+    (coveredCache ??= new Set(invocations.flatMap(({ configPath }) => programFiles(configPath))));
 
   const rel = (file: string) => relative(BACKEND_DIR, file).split(sep).join('/');
 
   it('typechecks every file vitest will execute', () => {
+    const covered = coveredFiles();
     const uncovered = testFiles.filter((file) => !covered.has(file)).map(rel);
 
     expect(
@@ -271,6 +281,7 @@ describe('npm run typecheck -w backend covers the test files (#1645)', () => {
       resolve(BACKEND_DIR, file),
     );
 
+    const covered = coveredFiles();
     expect(configFiles.length).toBeGreaterThan(0);
     expect(configFiles.filter((file) => !covered.has(file)).map(rel)).toEqual([]);
   });
