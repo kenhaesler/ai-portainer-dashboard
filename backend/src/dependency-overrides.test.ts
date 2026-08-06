@@ -175,6 +175,20 @@ describe('lightningcss override (#1631)', () => {
  *      `@opentelemetry/core: ^2.9.0` will block a future artillery needing 3.x
  *      and surface as an unreadable resolution failure, not an obvious
  *      stale-override error.
+ *
+ * Deliberately NOT covered here:
+ *   • whether the advisory that motivated an override is still live. That is
+ *     `npm audit`'s job, and no test can anticipate the next CVE.
+ *   • how far assertion 2 really reaches. It fires when every declared range
+ *     accepts the resolved version, which is the realistic drop signal for a
+ *     same-major pin like `@opentelemetry/core` (`2.7.1` and `2.9.0` declared,
+ *     `^2.9.0` pinned). It is close to inert for a cross-major one:
+ *     `brace-expansion`'s consumers declare `^1.1.7` and `^2.0.1` against a 5.x
+ *     pin and can never accept it, so that override is forcing a major upgrade
+ *     rather than breaking a tie, and only `npm audit` plus an autocannon smoke
+ *     run can say when it is safe to drop. `uuid` (`^8.3.2` against `^11.1.1`)
+ *     is the same shape. Assertion 1 is the one carrying this block's weight —
+ *     it is what caught the stale lockfile that motivated the whole PR.
  */
 describe('loadtests/ dependency overrides (CVE-2026-69152)', () => {
   const manifest = readJson<RootManifest>('loadtests/package.json');
@@ -185,11 +199,32 @@ describe('loadtests/ dependency overrides (CVE-2026-69152)', () => {
     range: String(range),
   }));
 
-  /** Matches both `node_modules/x` and any nested `.../node_modules/@scope/x`. */
+  /**
+   * True when a lockfile path is a copy of `name`, at any depth. Lockfile paths
+   * are always `.../node_modules/<name>`, and requiring the separator keeps
+   * `node_modules/@scope/uuid` from matching `uuid`.
+   *
+   * An earlier form split on `node_modules/` and rejoined the tail, which
+   * compared equal for hoisted paths only: a nested
+   * `node_modules/minimatch/node_modules/brace-expansion` rebuilt as
+   * `minimatch/node_modules/brace-expansion` and was silently skipped. That
+   * made the "exactly one copy" assertion below unable to fail for the second
+   * copy it exists to catch — the tripwire's own tripwire missing.
+   */
+  const isCopyOf = (name: string) => (path: string) => path.endsWith(`node_modules/${name}`);
+
   const copiesOf = (name: string) =>
-    Object.entries(lock.packages).filter(
-      ([path]) => path.split('node_modules/').slice(1).join('node_modules/') === name,
-    );
+    Object.entries(lock.packages).filter(([path]) => isCopyOf(name)(path));
+
+  /**
+   * `satisfies()` reads exact and caret ranges and throws on anything else
+   * rather than guessing — right for the lightningcss block above, which knows
+   * every range it will ever see. Here the ranges are whatever the whole
+   * loadtests tree declares, so an unreadable one is a real possibility, and a
+   * throw from inside a `filter` would surface as a bare
+   * `unsupported range shape: ~5.0.9` with no hint of what to do about it.
+   */
+  const isReadableRange = (range: string) => EXACT.test(range) || CARET.test(range);
 
   const declaredRangesFor = (name: string) =>
     Object.entries(lock.packages).flatMap(([path, entry]) => {
@@ -209,6 +244,22 @@ describe('loadtests/ dependency overrides (CVE-2026-69152)', () => {
       'brace-expansion',
       'uuid',
     ]);
+  });
+
+  it('sees nested copies, not just hoisted ones', () => {
+    // Guards the "exactly one copy" assertion below, which is worth nothing if
+    // a second, nested copy is invisible to the matcher — the bug this
+    // replaced. Synthetic paths on purpose: the real lockfile has one copy of
+    // each by construction, so it cannot exercise the case.
+    expect(isCopyOf('brace-expansion')('node_modules/brace-expansion')).toBe(true);
+    expect(
+      isCopyOf('brace-expansion')('node_modules/minimatch/node_modules/brace-expansion'),
+    ).toBe(true);
+    expect(
+      isCopyOf('@opentelemetry/core')('node_modules/artillery/node_modules/@opentelemetry/core'),
+    ).toBe(true);
+    // A different package whose name merely ends the same way.
+    expect(isCopyOf('uuid')('node_modules/@scope/uuid')).toBe(false);
   });
 
   it.each(overrides)('$name — the override still applies to the lockfile', ({ name, range }) => {
@@ -232,6 +283,14 @@ describe('loadtests/ dependency overrides (CVE-2026-69152)', () => {
   it.each(overrides)('$name — the override is still needed', ({ name, range }) => {
     const declared = declaredRangesFor(name);
     expect(declared.length, `${name} is no longer in the loadtests tree`).toBeGreaterThan(0);
+
+    const unreadable = declared.filter(({ range: r }) => !isReadableRange(r));
+    expect(
+      unreadable.map(({ path, range: r }) => `${path} declares ${r}`),
+      `these ${name} ranges use a shape satisfies() cannot read — teach it that shape ` +
+        'rather than dropping the assertion, since a range treated as satisfied by ' +
+        'default is how a stale override survives',
+    ).toEqual([]);
 
     const resolved = copiesOf(name)[0]?.[1].version ?? '';
     const conflicting = declared.filter(({ range: r }) => !satisfies(resolved, r));
