@@ -154,6 +154,8 @@ Premium glassmorphic dashboard: bento grids, backdrop blur cards, staggered anim
 
 For detailed specs (animation durations, easing curves, glass override patterns, layout patterns), see `@docs/ai-instructions/ui-design-system.md`.
 
+**`DESIGN.md` is the design system of record (#1647)** — tokens, type scale, radius scale, status-colour mapping, and the do's/don't's the design critiques produced. Four source files already cited it before it was tracked, so treat a claim in it as settled. Two things to know before editing it. **The radius utilities do not mean what Tailwind's defaults mean:** `index.css` overrides `--radius-sm/md/lg/xl` to 0.75/1/1.25/1.5rem and leaves `2xl`/`3xl` alone, so `rounded-2xl` (16px) is *smaller* than `rounded-lg` (20px) — stay inside `sm`–`xl`. **No webfont is shipped:** there is no `@font-face`, no `--font-*` token and no font asset, so type resolves to Tailwind v4's default stacks; a direction the app has not adopted belongs under DESIGN.md's "Considered and not adopted" heading, not stated as fact. `frontend/src/design-doc.test.ts` holds the checkable claims — product name, radius scale, font stack — against their real sources, because the untracked copies had drifted on all three.
+
 ## Testing & Mocks
 
 **Mocks are for CI only.** External services (Portainer API, LLM API, Redis) are unavailable in CI, so tests must mock those calls. But mocks should be minimal — only mock what CI cannot reach. Prefer real integrations wherever possible:
