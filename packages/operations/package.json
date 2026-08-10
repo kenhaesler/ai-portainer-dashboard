@@ -29,7 +29,7 @@
     "@dashboard/infrastructure": "*",
     "fastify": "^5.11.0",
     "fastify-type-provider-zod": "^7.0.0",
-    "nodemailer": "^9.0.3",
+    "nodemailer": "^9.0.4",
     "socket.io": "^4.8.1",
     "undici": "^8.10.0",
     "zod": "^4.3.6"
