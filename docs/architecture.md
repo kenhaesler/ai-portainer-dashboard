@@ -18,7 +18,11 @@ The npm workspace is kept on one root `package-lock.json`; after dependency roll
 `npm dedupe`, `npm ls --all --workspaces --include-workspace-root --omit=optional`, `npm outdated
 --workspaces --include-workspace-root`, and the full test/build gates. The August 2026 baseline has
 no outdated direct workspace dependency and no `npm audit` finding. `loadtests/` remains a separate
-lockfile with its own documented security overrides and is not part of this workspace baseline.
+lockfile with its own documented security overrides and is not part of this workspace baseline. Its
+Artillery tree resolves `js-yaml` at or above 3.15.1 and `nanoid` at or above 3.3.18, closing
+Dependabot alert IDs 238 and 241 without overrides because Artillery's declared ranges already admit
+both patches. A backend security-regression test reads every matching lockfile entry so these known
+vulnerable floors cannot return even though CI intentionally does not install the load-test tree.
 The local development engine range is `^22.22.2 || ^24.15.0 || >=26.0.0`, the intersection supported
 by the direct workspace toolchain; early Node 22 and Node 25 are not advertised as supported.
 
