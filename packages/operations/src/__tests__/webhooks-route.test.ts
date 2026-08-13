@@ -272,6 +272,35 @@ describe('webhookRoutes', () => {
 
   describe('POST /api/webhooks/:id/test', () => {
     testAdminOnly(() => app, (r) => setRole(r), 'POST', '/api/webhooks/wh-1/test');
+
+    it('refuses redirects so a public webhook cannot pivot to an internal target', async () => {
+      mockGetWebhookById.mockResolvedValue({
+        id: 'wh-1',
+        name: 'Test',
+        url: 'https://hooks.example.com/test',
+        secret: 'secretvalue123456',
+        events: ['*'],
+        enabled: true,
+        description: null,
+        created_at: '2025-01-01T00:00:00Z',
+        updated_at: '2025-01-01T00:00:00Z',
+      });
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+        new Response('{}', { status: 200 }),
+      );
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/webhooks/wh-1/test',
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(fetchSpy).toHaveBeenCalledWith(
+        'https://hooks.example.com/test',
+        expect.objectContaining({ redirect: 'error' }),
+      );
+      fetchSpy.mockRestore();
+    });
   });
 
   describe('GET /api/webhooks/:id/deliveries', () => {

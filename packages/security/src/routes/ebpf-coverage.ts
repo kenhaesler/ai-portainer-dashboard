@@ -371,7 +371,7 @@ export async function ebpfCoverageRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
       params: EndpointIdParamsSchema,
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request) => {
     const { endpointId } = request.params as z.infer<typeof EndpointIdParamsSchema>;
     const result = await verifyCoverage(endpointId);

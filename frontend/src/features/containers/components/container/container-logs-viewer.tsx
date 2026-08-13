@@ -4,6 +4,7 @@ import { Download, ScrollText, Clock, Search, AlertTriangle, Radio, WifiOff, Pla
 import { useContainerLogs, type ContainerLogsError } from '@/features/containers/hooks/use-container-logs';
 import { useEdgeAsyncLogs } from '@/features/operations/hooks/use-edge-async-logs';
 import { useStreamingLogs, type StreamStatus } from '@/features/observability/hooks/use-streaming-logs';
+import { useAuth } from '@/providers/auth-provider';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { SkeletonChart } from '@/shared/components/feedback/skeleton';
 
@@ -72,6 +73,15 @@ function VirtualizedContainerLogs({
             const line = displayLogs[virtualRow.index];
             const isMatch = searchTerm && line.toLowerCase().includes(searchLower);
             const logLevel = getLogLevel(line);
+            const logTextClass = isMatch
+              ? 'text-yellow-50'
+              : logLevel === 'error'
+                ? 'text-red-400'
+                : logLevel === 'warn'
+                  ? 'text-yellow-400'
+                  : logLevel === 'debug'
+                    ? 'text-slate-500'
+                    : 'text-slate-200';
             return (
               <div
                 key={virtualRow.key}
@@ -84,9 +94,9 @@ function VirtualizedContainerLogs({
                   width: '100%',
                   transform: `translateY(${virtualRow.start}px)`,
                 }}
-                className={`flex ${isMatch ? 'bg-yellow-500/30' : 'hover:bg-slate-800/50'} ${logLevel === 'error' ? 'text-red-400' : ''} ${logLevel === 'warn' ? 'text-yellow-400' : ''} ${logLevel === 'debug' ? 'text-slate-500' : ''} ${logLevel === 'info' || !logLevel ? 'text-slate-200' : ''}`}
+                className={`flex ${isMatch ? 'bg-yellow-500/30' : 'hover:bg-slate-800/50'} ${logTextClass}`}
               >
-                <span className="select-none px-3 py-0.5 text-right text-slate-600 text-xs w-12 shrink-0">
+                <span className={`select-none px-3 py-0.5 text-right text-xs w-12 shrink-0 ${isMatch ? 'text-yellow-200/70' : 'text-slate-600'}`}>
                   {virtualRow.index + 1}
                 </span>
                 <span className="px-3 py-0.5 whitespace-pre-wrap break-all leading-relaxed">
@@ -164,6 +174,7 @@ function EdgeAsyncLogCollector({
   endpointId: number;
   containerId: string;
 }) {
+  const { role } = useAuth();
   const { status, logs, durationMs, error, collect, reset } = useEdgeAsyncLogs(endpointId, containerId);
   const [searchTerm, setSearchTerm] = useState('');
   const [autoScroll, setAutoScroll] = useState(true);
@@ -176,6 +187,21 @@ function EdgeAsyncLogCollector({
     const searchLower = searchTerm.toLowerCase();
     return lines.filter(line => line.toLowerCase().includes(searchLower));
   }, [logs, searchTerm]);
+
+  if (role !== 'admin') {
+    return (
+      <div className="rounded-lg border border-amber-500/50 bg-amber-50 dark:bg-amber-900/20 p-8 text-center">
+        <WifiOff className="mx-auto h-10 w-10 text-amber-600 dark:text-amber-400" />
+        <p className="mt-4 font-medium text-amber-800 dark:text-amber-200">
+          Administrator access required
+        </p>
+        <p className="mt-1 text-sm text-amber-700/80 dark:text-amber-300/80">
+          Edge Async log collection creates and removes a Portainer Edge Job.
+          Ask an administrator to collect these logs.
+        </p>
+      </div>
+    );
+  }
 
   if (status === 'idle') {
     return (

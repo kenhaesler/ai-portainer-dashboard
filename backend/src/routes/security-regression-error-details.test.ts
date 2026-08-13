@@ -93,6 +93,9 @@ describe('5xx details reflection — source-level guard', () => {
     /details:\s*body\b/,
     /details:\s*err instanceof Error/,
     /details:\s*error instanceof Error/,
+    /error:\s*message\b/,
+    /error:\s*err instanceof Error/,
+    /error:\s*`[^`]*\$\{(?:message|err\b|error\b)/,
   ];
 
   // Matches `.code(5xx).send(` / `.status(5xx).send(` and captures the text
@@ -115,7 +118,7 @@ describe('5xx details reflection — source-level guard', () => {
       }
       expect(
         offenders,
-        `Raw error reflection found in a 5xx send — use errorDetails(err) from @dashboard/core/plugins/error-handler.js instead.`,
+        `Raw error reflection found in a 5xx send — use a stable error plus errorDetails(err) from @dashboard/core/plugins/error-handler.js instead.`,
       ).toEqual([]);
     });
   }

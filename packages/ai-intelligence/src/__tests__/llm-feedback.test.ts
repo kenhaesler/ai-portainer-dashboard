@@ -459,6 +459,29 @@ describe('LLM Feedback Routes', () => {
       expect(userMsg).not.toContain('Ignore all previous instructions');
       fetchSpy.mockRestore();
     });
+
+    it('uses a stable 5xx error and guarded development details', async () => {
+      mockGetNegativeFeedbackCount.mockReturnValue(10);
+      mockGetNegativeFeedbackForFeature.mockResolvedValue([
+        { id: 'f1', rating: 'negative', comment: 'The response was incomplete.' },
+      ]);
+      const fetchSpy = vi.spyOn(llmClient, 'llmFetch').mockRejectedValue(
+        new Error('LLM failed at http://llm.internal:1234'),
+      );
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/llm/feedback/generate-suggestion',
+        payload: { feature: 'chat_assistant' },
+      });
+
+      expect(res.statusCode).toBe(500);
+      expect(res.json()).toEqual({
+        error: 'Failed to generate suggestion',
+        details: 'LLM failed at http://llm.internal:1234',
+      });
+      fetchSpy.mockRestore();
+    });
   });
 
   // ── Suggestion List & Update ───────────────────────────────────

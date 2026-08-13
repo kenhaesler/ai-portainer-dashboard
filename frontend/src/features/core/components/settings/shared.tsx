@@ -92,7 +92,7 @@ export const DEFAULT_SETTINGS = {
   ],
   elasticsearch: [
     { key: 'elasticsearch.enabled', label: 'Enable Elasticsearch', description: 'Enable container-origin log forwarding and Elasticsearch search integration', type: 'boolean', defaultValue: 'false' },
-    { key: 'elasticsearch.endpoint', label: 'Elasticsearch URL', description: 'URL of your Elasticsearch cluster (e.g., https://localhost:9200)', type: 'string', defaultValue: '' },
+    { key: 'elasticsearch.endpoint', label: 'Elasticsearch URL', description: 'URL of your Elasticsearch cluster (e.g., https://logs.internal:9200). Localhost and literal private addresses are rejected.', type: 'string', defaultValue: '' },
     { key: 'elasticsearch.api_key', label: 'API Key', description: 'Elasticsearch API key for authentication (keep blank for no auth)', type: 'password', defaultValue: '' },
     { key: 'elasticsearch.index_pattern', label: 'Index Pattern', description: 'Index pattern for log searching (e.g., logs-* or filebeat-*)', type: 'string', defaultValue: 'logs-*' },
     { key: 'elasticsearch.verify_ssl', label: 'Verify SSL', description: 'Verify SSL certificates when connecting', type: 'boolean', defaultValue: 'true', risk: 'danger', consequence: 'Off accepts any certificate, including one presented by a man-in-the-middle holding your API key.' },

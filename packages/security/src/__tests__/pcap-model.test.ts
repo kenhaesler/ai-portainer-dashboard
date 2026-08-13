@@ -17,6 +17,15 @@ describe('StartCaptureRequestSchema filter validation', () => {
     expect(result.success).toBe(true);
   });
 
+  it('accepts grouped BPF expressions', () => {
+    const result = StartCaptureRequestSchema.safeParse({
+      ...basePayload,
+      filter: 'tcp and (port 80 or port 443)',
+    });
+
+    expect(result.success).toBe(true);
+  });
+
   it('rejects ampersand shell operators in filter input', () => {
     const result = StartCaptureRequestSchema.safeParse({
       ...basePayload,
@@ -30,6 +39,15 @@ describe('StartCaptureRequestSchema filter validation', () => {
     const result = StartCaptureRequestSchema.safeParse({
       ...basePayload,
       filter: 'tcp | port 443',
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects line breaks in filter input', () => {
+    const result = StartCaptureRequestSchema.safeParse({
+      ...basePayload,
+      filter: 'tcp\nuname -a',
     });
 
     expect(result.success).toBe(false);

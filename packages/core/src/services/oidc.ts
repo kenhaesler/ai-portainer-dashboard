@@ -407,7 +407,11 @@ function resolveNestedPath(
     if (current === null || current === undefined || typeof current !== 'object') {
       return undefined;
     }
-    current = (current as Record<string, unknown>)[part];
+    // Follow own data properties only. This prevents a configured claim path
+    // such as `__proto__.constructor` from traversing JavaScript prototypes.
+    const descriptor = Object.getOwnPropertyDescriptor(current, part);
+    if (!descriptor || !('value' in descriptor)) return undefined;
+    current = descriptor.value;
   }
   return current;
 }

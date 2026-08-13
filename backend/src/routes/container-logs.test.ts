@@ -63,6 +63,7 @@ function buildApp() {
   const app = Fastify();
   app.setValidatorCompiler(validatorCompiler);
   app.decorate('authenticate', async () => undefined);
+  app.decorate('requireRole', () => async () => undefined);
   app.register(containerLogsRoutes);
   return app;
 }
@@ -152,7 +153,8 @@ describe('container-logs routes', () => {
 
     expect(res.statusCode).toBe(504);
     const body = JSON.parse(res.body);
-    expect(body.error).toContain('tunnel did not establish');
+    expect(body.error).toBe('Edge agent tunnel timed out');
+    expect(body.details).toContain('tunnel did not establish');
     expect(body.code).toBe('EDGE_TUNNEL_TIMEOUT');
     await app.close();
   });
@@ -172,7 +174,8 @@ describe('container-logs routes', () => {
 
     expect(res.statusCode).toBe(502);
     const body = JSON.parse(res.body);
-    expect(body.error).toContain('Docker daemon');
+    expect(body.error).toBe('Failed to fetch container logs');
+    expect(body.details).toContain('Docker daemon');
     await app.close();
   });
 
@@ -322,7 +325,8 @@ describe('container-logs routes', () => {
 
     expect(res.statusCode).toBe(502);
     const body = JSON.parse(res.body);
-    expect(body.error).toContain('Log stream failed');
+    expect(body.error).toBe('Failed to open log stream');
+    expect(body.details).toContain('Log stream failed');
     await app.close();
   });
 

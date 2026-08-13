@@ -3,6 +3,18 @@ import { createChildLogger } from '@dashboard/core/utils/logger.js';
 
 const log = createChildLogger('edge-async-log-fetcher');
 
+const MAX_LOG_TAIL = 10_000;
+const SAFE_CONTAINER_REFERENCE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
+
+function validateLogCollectionInput(containerId: string, tail: number): void {
+  if (!Number.isSafeInteger(tail) || tail < 1 || tail > MAX_LOG_TAIL) {
+    throw new Error(`tail must be an integer between 1 and ${MAX_LOG_TAIL}`);
+  }
+  if (!SAFE_CONTAINER_REFERENCE.test(containerId)) {
+    throw new Error('containerId must be a Docker ID or container name');
+  }
+}
+
 export interface EdgeAsyncLogHandle {
   jobId: number;
   endpointId: number;
@@ -28,6 +40,7 @@ export async function initiateEdgeAsyncLogCollection(
   opts: EdgeAsyncLogOptions = {},
 ): Promise<EdgeAsyncLogHandle> {
   const tail = opts.tail ?? 100;
+  validateLogCollectionInput(containerId, tail);
   const script = `#!/bin/sh\ndocker logs --tail ${tail} --timestamps ${containerId} 2>&1`;
   const name = `ci-logs-${containerId.slice(0, 12)}-${Date.now()}`;
 

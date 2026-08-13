@@ -67,6 +67,7 @@ export async function sendBulk(
         },
         body,
         signal: AbortSignal.timeout(timeoutMs),
+        redirect: 'error',
       });
 
       if (response.ok) {

@@ -55,3 +55,14 @@ describe('DEFAULT_SETTINGS — oidc.allow_unmapped_viewer', () => {
     expect(SETTING_CATEGORY_BY_KEY['oidc.allow_unmapped_viewer']).toBe('authentication');
   });
 });
+
+describe('DEFAULT_SETTINGS — elasticsearch.endpoint', () => {
+  it('recommends a hostname accepted by the outbound URL policy', () => {
+    const setting = DEFAULT_SETTINGS.elasticsearch.find(
+      (candidate) => candidate.key === 'elasticsearch.endpoint',
+    );
+
+    expect(setting?.description).toContain('https://logs.internal:9200');
+    expect(setting?.description).not.toContain('https://localhost');
+  });
+});

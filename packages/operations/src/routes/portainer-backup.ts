@@ -13,6 +13,7 @@ import {
   deletePortainerBackup,
 } from '../services/portainer-backup.js';
 import { PortainerBackupFilenameParamsSchema } from '@dashboard/core/models/api-schemas.js';
+import { errorDetails } from '@dashboard/core/plugins/error-handler.js';
 
 const log = createChildLogger('portainer-backup-route');
 
@@ -48,7 +49,8 @@ export async function portainerBackupRoutes(fastify: FastifyInstance) {
     } catch (err) {
       log.error({ err }, 'Failed to create Portainer backup');
       return reply.code(502).send({
-        error: `Failed to create Portainer backup: ${err instanceof Error ? err.message : 'Unknown error'}`,
+        error: 'Failed to create Portainer backup',
+        details: errorDetails(err),
       });
     }
   });

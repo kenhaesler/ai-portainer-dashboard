@@ -124,6 +124,7 @@ async function indexBatch(esConfig: ElasticsearchConfig, docs: ContainerLogDoc[]
         body: bulkBody,
         dispatcher,
         signal: AbortSignal.timeout(getConfig().LOG_SHIP_HTTP_TIMEOUT_MS),
+        redirect: 'error',
       } as RequestInit);
 
       if (!response.ok) {

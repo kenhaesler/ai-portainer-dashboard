@@ -232,6 +232,9 @@ export async function webhookRoutes(fastify: FastifyInstance) {
         },
         body: testPayload,
         signal: AbortSignal.timeout(10000),
+        // A permitted public endpoint must not pivot this signed POST to an
+        // internal service or cloud metadata address.
+        redirect: 'error',
       });
 
       const body = await response.text().catch(() => '');

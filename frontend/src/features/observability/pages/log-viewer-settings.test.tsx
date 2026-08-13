@@ -86,6 +86,31 @@ describe('ElasticsearchSettingsSection', () => {
     expect(screen.getByRole('button', { name: /test connection/i })).toBeDisabled();
   });
 
+  it.each([
+    ['http://localhost:9200', 'Endpoint cannot target localhost. Use an authenticated network hostname.'],
+    ['http://192.168.1.10:9200', 'Endpoint cannot target a literal private or loopback address. Use an authenticated network hostname.'],
+    ['http://[::1]:9200', 'Endpoint cannot target a literal private or loopback address. Use an authenticated network hostname.'],
+  ])('blocks an endpoint rejected by the server policy: %s', async (endpoint, message) => {
+    const values = {
+      ...defaultValues,
+      'elasticsearch.endpoint': endpoint,
+    };
+
+    render(
+      <ElasticsearchSettingsSection
+        values={values}
+        originalValues={values}
+        onChange={onChange}
+      />,
+    );
+
+    const endpointInput = await screen.findByRole('textbox', { name: 'Elasticsearch Endpoint' });
+    expect(endpointInput).toHaveAttribute('aria-invalid', 'true');
+    expect(endpointInput).toHaveAccessibleDescription(message);
+    expect(screen.getByRole('button', { name: /test connection/i })).toBeDisabled();
+    expect(mockPost).not.toHaveBeenCalled();
+  });
+
   it('toggles enable switch through onChange', async () => {
     render(
       <ElasticsearchSettingsSection

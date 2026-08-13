@@ -145,8 +145,12 @@ export const ReadinessDetailResponseSchema = z.object({
 // hand-maintained copies that used to live here were removed in #1509; this
 // file keeps only the request param/query schemas actually attached to routes.
 export const ContainerParamsSchema = z.object({
-  endpointId: z.coerce.number(),
-  containerId: z.string(),
+  endpointId: z.coerce.number().int().positive(),
+  containerId: z
+    .string()
+    .min(1)
+    .max(128)
+    .regex(/^[A-Za-z0-9][A-Za-z0-9_.-]*$/, 'Invalid Docker container ID or name'),
 });
 
 export const EndpointIdQuerySchema = z.object({

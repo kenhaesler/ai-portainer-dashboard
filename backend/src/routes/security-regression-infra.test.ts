@@ -202,6 +202,98 @@ describe('Docker Non-Root User Enforcement', () => {
 });
 
 // =====================================================================
+//  OUTBOUND REQUEST AND COMMAND CONSTRUCTION HARDENING
+// =====================================================================
+describe('Outbound Request and Command Construction Hardening', () => {
+  const source = (...segments: string[]): string =>
+    readFileSync(path.resolve(process.cwd(), '..', ...segments), 'utf8');
+
+  it('should validate Edge Async log inputs before embedding them in a job script', () => {
+    const content = source(
+      'packages',
+      'infrastructure',
+      'src',
+      'services',
+      'edge-async-log-fetcher.ts',
+    );
+
+    const validation = content.indexOf('validateLogCollectionInput(containerId, tail)');
+    const scriptConstruction = content.indexOf('const script =');
+    expect(validation).toBeGreaterThan(-1);
+    expect(scriptConstruction).toBeGreaterThan(validation);
+    expect(content).toContain('Number.isSafeInteger(tail)');
+    expect(content).toContain('SAFE_CONTAINER_REFERENCE.test(containerId)');
+  });
+
+  it('should pass packet-capture filters as argv instead of shell source', () => {
+    const content = source('packages', 'security', 'src', 'services', 'pcap-service.ts');
+
+    expect(content).toContain('exec tcpdump "$@"');
+    expect(content).toContain("tcpdumpArgs.push(filter)");
+    expect(content).not.toMatch(/exec tcpdump \$\{tcpdumpArgs\}/);
+  });
+
+  it('should reject redirects and validate every Elasticsearch endpoint consumer', () => {
+    const config = source(
+      'packages',
+      'infrastructure',
+      'src',
+      'services',
+      'elasticsearch-config.ts',
+    );
+    const forwarder = source(
+      'packages',
+      'infrastructure',
+      'src',
+      'services',
+      'elasticsearch-log-forwarder.ts',
+    );
+    const routes = source('packages', 'operations', 'src', 'routes', 'logs.ts');
+    const pinoTransport = source(
+      'packages',
+      'core',
+      'src',
+      'utils',
+      'pino-elasticsearch-transport.ts',
+    );
+
+    expect(config).toContain("validateOutboundUrl(endpoint, 'Elasticsearch endpoint')");
+    expect(forwarder).toContain("redirect: 'error'");
+    expect(routes.match(/redirect: 'error'/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(pinoTransport).toContain("redirect: 'error'");
+  });
+
+  it('should reject redirects when testing and delivering webhooks', () => {
+    const routes = source('packages', 'operations', 'src', 'routes', 'webhooks.ts');
+    const service = source('packages', 'operations', 'src', 'services', 'webhook-service.ts');
+
+    expect(routes).toContain("redirect: 'error'");
+    expect(service).toContain("redirect: 'error'");
+  });
+
+  it('should reject redirects when requesting a Portainer backup', () => {
+    const service = source(
+      'packages',
+      'operations',
+      'src',
+      'services',
+      'portainer-backup.ts',
+    );
+
+    expect(service).toContain("redirect: 'error'");
+  });
+
+  it('should parameterize Timescale retention table names and intervals', () => {
+    const content = source('packages', 'core', 'src', 'db', 'timescale.ts');
+
+    expect(content).toContain('remove_retention_policy($1::regclass');
+    expect(content).toContain('make_interval(days => $2)');
+    expect(content).not.toMatch(/retention_policy\(`[^`]*\$\{table\}/);
+    expect(content).not.toMatch(/INTERVAL [^\n]*\$\{days\}/);
+  });
+});
+
+// =====================================================================
 //  VULNERABLE DEPENDENCY FLOORS
 // =====================================================================
 describe('Vulnerable Dependency Floors', () => {

@@ -24,6 +24,7 @@ import { getAuthHeaders, llmFetch, resolveChatCompletionsUrl } from '../services
 import { isPromptInjection } from '../services/prompt-guard.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { extractLlmJson } from '@dashboard/core/utils/llm-json.js';
+import { errorDetails } from '@dashboard/core/plugins/error-handler.js';
 
 const log = createChildLogger('llm-feedback-routes');
 
@@ -355,9 +356,11 @@ export async function llmFeedbackRoutes(fastify: FastifyInstance) {
 
       return reply.code(201).send(suggestion);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
       log.error({ err, feature }, 'Failed to generate prompt suggestion');
-      return reply.code(500).send({ error: `Failed to generate suggestion: ${message}` });
+      return reply.code(500).send({
+        error: 'Failed to generate suggestion',
+        details: errorDetails(err),
+      });
     }
   });
 

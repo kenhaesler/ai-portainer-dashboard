@@ -43,6 +43,28 @@ the optional HTTP/2 runtime behavior without weakening types or duplicating plug
 same baseline replaces Fastify's deprecated top-level `disableRequestLogging` flag with a
 `LogController`; the custom request-logging plugin and its route exclusions are unchanged.
 
+## Semgrep security hardening (2026-08-13)
+
+A repository-wide Semgrep review tightened the boundaries where validated API data becomes a
+shell command, outbound request, database call, or administrative state change:
+
+- Edge Async log collection and polling are admin-only. Container references are restricted to
+  Docker IDs/names, `tail` is a bounded integer, and the infrastructure service validates both
+  again immediately before constructing the Portainer Edge Job script.
+- PCAP BPF expressions are passed to `tcpdump` as a single positional argument through `"$@"`,
+  not concatenated into shell source. Newlines are rejected at the Zod boundary.
+- Elasticsearch endpoints are checked with the shared outbound-URL guard both when Settings are
+  saved and whenever configuration is consumed, covering legacy rows. Elasticsearch, webhook,
+  and Portainer-backup requests reject redirects so an allowed origin cannot redirect into a
+  private target.
+- Handler-caught 5xx responses use stable client-facing errors and put diagnostics through
+  `errorDetails()`, which omits them in production. Timescale retention calls bind table and
+  interval values, and OIDC nested-claim reads follow own data properties only.
+
+The eBPF coverage verification POST is also admin-only because it persists verification state.
+These invariants are covered by domain unit tests plus the mandatory backend
+`security-regression-{rbac,infra,error-details,auth}.test.ts` suites.
+
 ## Portainer Integration & Live Data Source
 
 All per-endpoint container counts, host CPU/memory, and stack totals are obtained by calling the Docker API directly via live `/docker/info` requests — Portainer's per-endpoint `Snapshots[]` array is **no longer read**. The pipeline is implemented in `packages/core/src/portainer/live-fleet.ts` and exposes four functions used by foundation routes and the scheduler:

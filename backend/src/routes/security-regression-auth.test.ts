@@ -930,6 +930,14 @@ describe('OIDC Group-to-Role Mapping Security', () => {
     expect(groups).toEqual([]);
   });
 
+  it('should not traverse inherited properties while resolving a nested group claim', () => {
+    const claims = Object.create({
+      realm_access: { roles: ['InheritedAdmins'] },
+    }) as Record<string, unknown>;
+
+    expect(extractGroups(claims, 'realm_access.roles')).toEqual([]);
+  });
+
   it('should ensure highest-privilege-wins is deterministic regardless of input order', () => {
     const mappings = {
       'Viewers': 'viewer' as const,

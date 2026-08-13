@@ -29,7 +29,7 @@ function makeConfig(overrides: Partial<Config> = {}): Config {
   } as Config;
 }
 
-function makePool(queryImpl?: (sql: string) => Promise<unknown>) {
+function makePool(queryImpl?: (sql: string, values?: unknown[]) => Promise<unknown>) {
   const query = vi.fn(queryImpl ?? (async () => ({ rows: [] })));
   return { pool: { query } as unknown as pg.Pool, query };
 }
@@ -55,14 +55,19 @@ describe('applyRetentionPolicies', () => {
 
     await applyRetentionPolicies(pool, makeConfig());
 
-    const sql = query.mock.calls.map((call) => call[0] as string);
-    const added = sql.filter((s) => s.includes('add_retention_policy'));
+    const added = query.mock.calls.filter((call) =>
+      (call[0] as string).includes('add_retention_policy'),
+    );
     expect(added).toHaveLength(5);
-    expect(added.find((s) => s.includes("'metrics'"))).toContain("INTERVAL '7 days'");
-    expect(added.find((s) => s.includes("'kpi_snapshots'"))).toContain("INTERVAL '7 days'");
-    expect(added.find((s) => s.includes("'metrics_5min'"))).toContain("INTERVAL '30 days'");
-    expect(added.find((s) => s.includes("'metrics_1hour'"))).toContain("INTERVAL '90 days'");
-    expect(added.find((s) => s.includes("'metrics_1day'"))).toContain("INTERVAL '365 days'");
+    expect(added.map((call) => call[1])).toEqual([
+      ['metrics', 7],
+      ['kpi_snapshots', 7],
+      ['metrics_5min', 30],
+      ['metrics_1hour', 90],
+      ['metrics_1day', 365],
+    ]);
+    expect(added.every((call) => (call[0] as string).includes('$1::regclass'))).toBe(true);
+    expect(added.every((call) => (call[0] as string).includes('make_interval(days => $2)'))).toBe(true);
   });
 
   it('removes any pre-existing policy before adding the configured one', async () => {
@@ -70,9 +75,12 @@ describe('applyRetentionPolicies', () => {
 
     await applyRetentionPolicies(pool, makeConfig());
 
-    const sql = query.mock.calls.map((call) => call[0] as string);
-    const removeIdx = sql.findIndex((s) => s.includes("remove_retention_policy('metrics'"));
-    const addIdx = sql.findIndex((s) => s.includes("add_retention_policy('metrics'"));
+    const removeIdx = query.mock.calls.findIndex((call) =>
+      (call[0] as string).includes('remove_retention_policy') && call[1]?.[0] === 'metrics',
+    );
+    const addIdx = query.mock.calls.findIndex((call) =>
+      (call[0] as string).includes('add_retention_policy') && call[1]?.[0] === 'metrics',
+    );
     expect(removeIdx).toBeGreaterThanOrEqual(0);
     expect(addIdx).toBeGreaterThan(removeIdx);
   });
@@ -82,15 +90,19 @@ describe('applyRetentionPolicies', () => {
 
     await applyRetentionPolicies(pool, makeConfig({ METRICS_RETENTION_DAYS: 14 }));
 
-    const sql = query.mock.calls.map((call) => call[0] as string);
-    expect(sql.find((s) => s.includes("add_retention_policy('metrics'"))).toContain("INTERVAL '14 days'");
-    expect(sql.find((s) => s.includes("add_retention_policy('kpi_snapshots'"))).toContain("INTERVAL '14 days'");
+    const addedParams = query.mock.calls
+      .filter((call) => (call[0] as string).includes('add_retention_policy'))
+      .map((call) => call[1]);
+    expect(addedParams).toContainEqual(['metrics', 14]);
+    expect(addedParams).toContainEqual(['kpi_snapshots', 14]);
   });
 
   it('marks tables as policy-owned only on success', async () => {
-    const { pool } = makePool(async (sql: string) => {
+    const { pool } = makePool(async (sql: string, values?: unknown[]) => {
       // Simulate the rollup views not existing yet
-      if (sql.includes('metrics_5min')) throw new Error('relation does not exist');
+      if (sql.includes('add_retention_policy') && values?.[0] === 'metrics_5min') {
+        throw new Error('relation does not exist');
+      }
       return { rows: [] };
     });
 

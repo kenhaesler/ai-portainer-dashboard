@@ -525,6 +525,46 @@ describe('Edge Jobs Admin RBAC Enforcement', () => {
 });
 
 // =====================================================================
+//  EDGE-DERIVED MUTATIONS ADMIN RBAC ENFORCEMENT
+// =====================================================================
+describe('Edge-derived mutation routes require admin RBAC', () => {
+  function routeRegistration(sourcePath: string, route: string): string {
+    const source = readFileSync(path.resolve(process.cwd(), '..', sourcePath), 'utf8');
+    const routeIndex = source.indexOf(route);
+    expect(routeIndex, `${route} must remain registered`).toBeGreaterThanOrEqual(0);
+    return source.slice(routeIndex, routeIndex + 700);
+  }
+
+  it('admin-gates Edge Async log collection and validates its body', () => {
+    const block = routeRegistration(
+      'packages/foundation/src/routes/container-logs.ts',
+      "fastify.post('/api/containers/:endpointId/:containerId/logs/collect'",
+    );
+
+    expect(block).toContain('body: EdgeAsyncLogCollectionBodySchema');
+    expect(block).toContain("fastify.requireRole('admin')");
+  });
+
+  it('admin-gates Edge Async log polling because completion deletes the Edge Job', () => {
+    const block = routeRegistration(
+      'packages/foundation/src/routes/container-logs.ts',
+      "fastify.get('/api/containers/:endpointId/:containerId/logs/collect/:jobId'",
+    );
+
+    expect(block).toContain("fastify.requireRole('admin')");
+  });
+
+  it('admin-gates eBPF coverage verification because it updates coverage state', () => {
+    const block = routeRegistration(
+      'packages/security/src/routes/ebpf-coverage.ts',
+      "fastify.post('/api/ebpf/coverage/:endpointId/verify'",
+    );
+
+    expect(block).toContain("fastify.requireRole('admin')");
+  });
+});
+
+// =====================================================================
 //  OPERATIONAL TRIGGERS ADMIN RBAC ENFORCEMENT
 // =====================================================================
 describe('Operational Triggers Admin RBAC Enforcement', () => {
