@@ -3,7 +3,7 @@
 *Intelligent container monitoring that extends Portainer with AI-powered insights, anomaly detection, and a real-time chat assistant.*
 
 [![CI](https://github.com/kenhaesler/ai-portainer-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/kenhaesler/ai-portainer-dashboard/actions/workflows/ci.yml)
-[![Node](https://img.shields.io/badge/node-%3E%3D22.0.0-brightgreen)](https://nodejs.org)
+[![Node](https://img.shields.io/badge/node-22.22.2%2B%20%7C%2024.15.0%2B%20%7C%2026%2B-brightgreen)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0-blue)](https://www.typescriptlang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -62,7 +62,7 @@ See [Architecture](docs/ai-instructions/architecture.md) for the dependency grap
 | Layer | Technologies |
 |-------|--------------|
 | Frontend | React 19.2 (+ React Compiler), Vite 8, TypeScript 6, Tailwind CSS 4, TanStack Query/Table/Virtual, Zustand, Radix UI, Recharts, Framer Motion, Socket.IO client |
-| Backend | Node ≥ 22, Fastify 5.8, Socket.IO 4.8, `jose` (JWT), `openid-client` v6 (OIDC/PKCE), `pg` 8 |
+| Backend | Node 22.22.2+ (22.x), 24.15.0+ (24.x), or 26+, Fastify 5.12, Socket.IO 4.8, `jose` (JWT), `openid-client` v6 (OIDC/PKCE), `pg` 8 |
 | Storage | PostgreSQL (app), TimescaleDB (metrics hypertables + continuous aggregates), Redis (cache + sessions) |
 | Testing | Vitest 4 (unit/integration), Playwright 1.61 (E2E) |
 
@@ -72,7 +72,7 @@ See [Architecture](docs/ai-instructions/architecture.md) for the dependency grap
 
 ### Prerequisites
 
-- **Docker & Docker Compose** (recommended) or **Node.js >= 22**
+- **Docker & Docker Compose** (recommended) or **Node.js 22.22.2+ (22.x), 24.15.0+ (24.x), or 26+**
 - A **Portainer** instance with an API key ([how to create one](https://docs.portainer.io/api/access))
 
 ### 1. Clone and configure

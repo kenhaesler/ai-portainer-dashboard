@@ -19,6 +19,8 @@ The npm workspace is kept on one root `package-lock.json`; after dependency roll
 --workspaces --include-workspace-root`, and the full test/build gates. The August 2026 baseline has
 no outdated direct workspace dependency and no `npm audit` finding. `loadtests/` remains a separate
 lockfile with its own documented security overrides and is not part of this workspace baseline.
+The local development engine range is `^22.22.2 || ^24.15.0 || >=26.0.0`, the intersection supported
+by the direct workspace toolchain; early Node 22 and Node 25 are not advertised as supported.
 
 TanStack Table 9 makes features part of the table's type. The shared
 `frontend/src/shared/components/tables/data-table.tsx` wrapper therefore owns the explicit feature
