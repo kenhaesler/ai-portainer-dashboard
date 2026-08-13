@@ -1,6 +1,5 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
-import { type ColumnDef } from '@tanstack/react-table';
 import * as Tabs from '@radix-ui/react-tabs';
 import {
   Server, Layers, LayoutGrid, List, AlertTriangle,
@@ -11,7 +10,7 @@ import { toast } from 'sonner';
 import { useEndpoints, type Endpoint } from '@/features/containers/hooks/use-endpoints';
 import { useStacks } from '@/features/containers/hooks/use-stacks';
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
-import { DataTable } from '@/shared/components/tables/data-table';
+import { DataTable, type ColumnDef } from '@/shared/components/tables/data-table';
 import { StatusBadge } from '@/shared/components/feedback/status-badge';
 import { RefreshControls } from '@/shared/components/ui/refresh-controls';
 import { RefreshButton } from '@/shared/components/ui/refresh-button';

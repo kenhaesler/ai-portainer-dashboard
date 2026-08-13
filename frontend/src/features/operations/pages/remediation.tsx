@@ -1,7 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
-import { type ColumnDef } from '@tanstack/react-table';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -30,7 +29,7 @@ import { RefreshControls } from '@/shared/components/ui/refresh-controls';
 import { ConfirmDialog } from '@/shared/components/feedback/confirm-dialog';
 import { SkeletonChart } from '@/shared/components/feedback/skeleton';
 import { EmptyState } from '@/shared/components/feedback/empty-state';
-import { DataTable } from '@/shared/components/tables/data-table';
+import { DataTable, type ColumnDef } from '@/shared/components/tables/data-table';
 import { PageHeader } from '@/shared/components/layout/page-header';
 import { useSockets } from '@/providers/socket-provider';
 import { useAuth } from '@/providers/auth-provider';

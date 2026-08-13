@@ -1,6 +1,5 @@
 import { useMemo } from 'react';
 import { useQueries } from '@tanstack/react-query';
-import { type ColumnDef } from '@tanstack/react-table';
 import {
   BarChart,
   Bar,
@@ -12,7 +11,7 @@ import {
   YAxis,
 } from 'recharts';
 import { api } from '@/shared/lib/api';
-import { DataTable } from '@/shared/components/tables/data-table';
+import { DataTable, type ColumnDef } from '@/shared/components/tables/data-table';
 import { NoTraceDataCallout } from '@/features/observability/components/no-trace-data-callout';
 
 /**

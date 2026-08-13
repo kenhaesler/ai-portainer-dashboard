@@ -1,17 +1,33 @@
 import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
 import {
-  useReactTable,
-  getCoreRowModel,
-  getSortedRowModel,
-  getFilteredRowModel,
-  getPaginationRowModel,
+  useTable,
+  tableFeatures,
+  columnFilteringFeature,
+  createFilteredRowModel,
+  filterFn_arrIncludes,
+  filterFn_equals,
+  filterFn_inDateRange,
+  filterFn_inNumberRange,
+  filterFn_includesString,
+  filterFn_weakEquals,
+  rowSortingFeature,
+  createSortedRowModel,
+  sortFn_alphanumeric,
+  sortFn_datetime,
+  sortFn_text,
+  rowPaginationFeature,
+  createPaginatedRowModel,
+  rowSelectionFeature,
+  columnSizingFeature,
+  columnVisibilityFeature,
   flexRender,
-  type ColumnDef,
+  type ColumnDef as TanStackColumnDef,
   type SortingState,
   type OnChangeFn,
   type ColumnFiltersState,
   type RowSelectionState,
   type Row,
+  type RowData,
   type PaginationState,
   type Updater,
 } from '@tanstack/react-table';
@@ -30,6 +46,40 @@ const AUTO_FIT_HEADER_PX = 40; // sticky header row (h-10)
 const AUTO_FIT_FOOTER_PX = 56; // pagination footer reserve
 const AUTO_FIT_MARGIN_PX = 24; // breathing room above the viewport bottom
 const MIN_AUTO_ROWS = 5; // never page smaller than this
+
+/**
+ * The shared table's explicit TanStack v9 feature set. Keeping this beside the
+ * wrapper gives every caller one feature type while avoiding the kitchen-sink
+ * `stockFeatures` bundle.
+ */
+export const dataTableFeatures = tableFeatures({
+  columnFilteringFeature,
+  filteredRowModel: createFilteredRowModel(),
+  filterFns: {
+    arrIncludes: filterFn_arrIncludes,
+    equals: filterFn_equals,
+    inDateRange: filterFn_inDateRange,
+    inNumberRange: filterFn_inNumberRange,
+    includesString: filterFn_includesString,
+    weakEquals: filterFn_weakEquals,
+  },
+  rowSortingFeature,
+  sortedRowModel: createSortedRowModel(),
+  sortFns: {
+    alphanumeric: sortFn_alphanumeric,
+    datetime: sortFn_datetime,
+    text: sortFn_text,
+  },
+  rowPaginationFeature,
+  paginatedRowModel: createPaginatedRowModel(),
+  rowSelectionFeature,
+  columnSizingFeature,
+  columnVisibilityFeature,
+});
+
+export type DataTableFeatures = typeof dataTableFeatures;
+export type ColumnDef<TData extends RowData, TValue = unknown> =
+  TanStackColumnDef<DataTableFeatures, TData, TValue>;
 
 /** Nearest ancestor that scrolls vertically (overflow-y auto/scroll), or null. */
 function getVerticalScrollParent(node: HTMLElement): HTMLElement | null {
@@ -64,8 +114,8 @@ export interface ServerPaginationProps {
   onPageChange: (page: number) => void;
 }
 
-interface DataTableBaseProps<T> {
-  columns: ColumnDef<T, any>[];
+interface DataTableBaseProps<T extends RowData> {
+  columns: ColumnDef<T>[];
   data: T[];
   searchKey?: string;
   searchPlaceholder?: string;
@@ -147,7 +197,7 @@ type DataTableSortingProps =
   | { sorting?: undefined; onSortingChange?: undefined }
   | { sorting: SortingState; onSortingChange: OnChangeFn<SortingState> };
 
-type DataTableProps<T> = DataTableBaseProps<T> & DataTableSortingProps;
+type DataTableProps<T extends RowData> = DataTableBaseProps<T> & DataTableSortingProps;
 
 /**
  * `frontend/tsconfig.json` excludes every `.test.ts`/`.test.tsx` under `src/`,
@@ -158,10 +208,11 @@ type DataTableProps<T> = DataTableBaseProps<T> & DataTableSortingProps;
  * shares no property with the union's all-optional first member, so probing that
  * union directly reports the plain `<DataTable columns data />` call as rejected.
  */
-type AcceptedByDataTable<P> = P extends DataTableProps<unknown> ? true : false;
+type SortProbeRow = Record<string, unknown>;
+type AcceptedByDataTable<P> = P extends DataTableProps<SortProbeRow> ? true : false;
 type AssertTrue<T extends true> = T;
 type AssertFalse<T extends false> = T;
-type SortProbeBase = { columns: ColumnDef<unknown, any>[]; data: unknown[] };
+type SortProbeBase = { columns: ColumnDef<SortProbeRow>[]; data: SortProbeRow[] };
 export type DataTableSortingUnionChecks = [
   AssertFalse<AcceptedByDataTable<SortProbeBase & { sorting: SortingState }>>,
   AssertFalse<AcceptedByDataTable<SortProbeBase & { onSortingChange: OnChangeFn<SortingState> }>>,
@@ -173,7 +224,7 @@ export type DataTableSortingUnionChecks = [
   AssertTrue<AcceptedByDataTable<SortProbeBase>>,
 ];
 
-export function DataTable<T>({
+export function DataTable<T extends RowData>({
   columns,
   data,
   searchKey,
@@ -253,7 +304,7 @@ export function DataTable<T>({
   const useClientPagination = !useVirtual && !useWindowScroll && !isServerPaginated;
 
   // Build the checkbox column when row selection is enabled
-  const selectionColumn = useMemo<ColumnDef<T, any> | null>(() => {
+  const selectionColumn = useMemo<ColumnDef<T> | null>(() => {
     if (!enableRowSelection) return null;
     return {
       id: '_selection',
@@ -300,18 +351,16 @@ export function DataTable<T>({
     };
   }, [enableRowSelection, maxSelection, rowSelection]);
 
-  const allColumns = useMemo<ColumnDef<T, any>[]>(() => {
+  const allColumns = useMemo<ColumnDef<T>[]>(() => {
     if (!selectionColumn) return columns;
     return [selectionColumn, ...columns];
   }, [selectionColumn, columns]);
 
-  const table = useReactTable<T>({
+  const table = useTable({
+    features: dataTableFeatures,
     data,
     columns: allColumns,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    ...(useClientPagination ? { getPaginationRowModel: getPaginationRowModel() } : {}),
+    manualPagination: !useClientPagination,
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     ...(useAutoFit
@@ -329,7 +378,7 @@ export function DataTable<T>({
       : {}),
     ...(enableRowSelection
       ? {
-          enableRowSelection: (row) => {
+          enableRowSelection: (row: Row<DataTableFeatures, T>) => {
             if (maxSelection === undefined) return true;
             const selectedCount = Object.keys(rowSelection).filter((k) => rowSelection[k]).length;
             return row.getIsSelected() || selectedCount < maxSelection;
@@ -343,7 +392,9 @@ export function DataTable<T>({
       ...(enableRowSelection ? { rowSelection } : {}),
       ...(useAutoFit ? { pagination: { pageIndex, pageSize: autoPageSize } } : {}),
     },
-    ...(useClientPagination && !useAutoFit ? { initialState: { pagination: { pageSize } } } : {}),
+    ...(useClientPagination && !useAutoFit
+      ? { initialState: { pagination: { pageIndex: 0, pageSize } } }
+      : {}),
     ...(getRowIdProp ? { getRowId: (row: T) => getRowIdProp(row) } : {}),
   });
 
@@ -510,7 +561,7 @@ export function DataTable<T>({
     return (
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()} ({data.length} total)
+          Page {table.state.pagination.pageIndex + 1} of {table.getPageCount()} ({data.length} total)
         </p>
         <div className="flex items-center gap-2">
           <button
@@ -534,7 +585,7 @@ export function DataTable<T>({
     );
   };
 
-  const renderRow = (row: Row<T>) => {
+  const renderRow = (row: Row<DataTableFeatures, T>) => {
     const href = rowHref?.(row.original);
     const cells = row.getVisibleCells();
     // The anchor goes on the first *data* cell — the selection checkbox column

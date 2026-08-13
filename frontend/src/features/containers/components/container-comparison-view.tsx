@@ -8,11 +8,10 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
-import { type ColumnDef } from '@tanstack/react-table';
 import { X, BarChart3, GitCompareArrows, Info, Clock } from 'lucide-react';
 import { type Container } from '@/features/containers/hooks/use-containers';
 import { useComparisonMetrics, type ComparisonTarget } from '@/features/containers/hooks/use-container-comparison';
-import { DataTable } from '@/shared/components/tables/data-table';
+import { DataTable, type ColumnDef } from '@/shared/components/tables/data-table';
 import { formatDate, cn } from '@/shared/lib/utils';
 import { containerStateTone } from '@/shared/lib/container-state';
 

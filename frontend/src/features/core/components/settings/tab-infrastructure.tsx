@@ -1,5 +1,4 @@
 import { useCallback, useMemo, useState } from 'react';
-import { type ColumnDef } from '@tanstack/react-table';
 import {
   Archive,
   BarChart3,
@@ -24,7 +23,7 @@ import {
   downloadPortainerBackup,
   type PortainerBackupFile,
 } from '@/features/core/hooks/use-portainer-backups';
-import { DataTable } from '@/shared/components/tables/data-table';
+import { DataTable, type ColumnDef } from '@/shared/components/tables/data-table';
 import { ConfirmDialog } from '@/shared/components/feedback/confirm-dialog';
 import { formatBytes } from '@/shared/lib/utils';
 import { toast } from 'sonner';

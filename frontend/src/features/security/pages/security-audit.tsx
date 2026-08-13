@@ -1,11 +1,10 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router';
-import { type ColumnDef } from '@tanstack/react-table';
 import { ChevronDown, ChevronRight, Search, ShieldAlert, SlidersHorizontal } from 'lucide-react';
 import { useSecurityAudit, type SecurityAuditEntry } from '@/features/security/hooks/use-security-audit';
 import { useEndpoints } from '@/features/containers/hooks/use-endpoints';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
-import { DataTable } from '@/shared/components/tables/data-table';
+import { DataTable, type ColumnDef } from '@/shared/components/tables/data-table';
 import { SkeletonTableRow } from '@/shared/components/feedback/skeleton';
 import { PageHeader } from '@/shared/components/layout/page-header';
 import { cn } from '@/shared/lib/utils';
@@ -289,7 +288,7 @@ export default function SecurityAuditPage() {
       id: 'severity',
       accessorKey: 'severity',
       header: 'Severity',
-      sortingFn: (a, b) => severityRank(a.original.severity) - severityRank(b.original.severity),
+      sortFn: (a, b) => severityRank(a.original.severity) - severityRank(b.original.severity),
       cell: ({ row }) => {
         const entry = row.original;
         // A coloured badge for the ABSENCE of a finding is noise. Badges are

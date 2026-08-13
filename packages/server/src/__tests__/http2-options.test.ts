@@ -39,8 +39,9 @@ describe('getHttp2Options (#1492)', () => {
     setConfigForTest({ HTTP2_ENABLED: true, TLS_CERT_PATH: certPath, TLS_KEY_PATH: keyPath });
 
     const options = getHttp2Options();
-    expect(options).toMatchObject({ http2: true });
-    const https = (options as { https: { key: Buffer; cert: Buffer; allowHTTP1: true } }).https;
+    expect(options.http2).toBe(true);
+    if (options.http2 !== true) throw new Error('expected HTTP/2 options');
+    const { https } = options;
     expect(https.allowHTTP1).toBe(true);
     expect(https.cert.toString()).toBe('dummy-cert');
     expect(https.key.toString()).toBe('dummy-key');

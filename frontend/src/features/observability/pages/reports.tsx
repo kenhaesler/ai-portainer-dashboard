@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { type ColumnDef, type SortingState } from '@tanstack/react-table';
+import { type SortingState } from '@tanstack/react-table';
 import {
   FileBarChart,
   Download,
@@ -28,7 +28,7 @@ import { useEndpoints } from '@/features/containers/hooks/use-endpoints';
 import { useContainers } from '@/features/containers/hooks/use-containers';
 import type { Container } from '@/features/containers/hooks/use-containers';
 import { MetricsLineChart } from '@/shared/components/charts/metrics-line-chart';
-import { DataTable } from '@/shared/components/tables/data-table';
+import { DataTable, type ColumnDef } from '@/shared/components/tables/data-table';
 import { SkeletonKpi } from '@/shared/components/feedback/skeleton';
 import { EmptyState } from '@/shared/components/feedback/empty-state';
 import { PageHeader } from '@/shared/components/layout/page-header';

@@ -1,5 +1,4 @@
 import { useState, useMemo, lazy, Suspense } from 'react';
-import type { ColumnDef } from '@tanstack/react-table';
 import {
   Bot,
   CheckCircle2,
@@ -18,7 +17,7 @@ import {
 import { SettingsSection, SettingRow, DEFAULT_SETTINGS, REDACTED_SECRET, type SettingsTabProps } from '../shared';
 import { useLlmModels, useLlmTestConnection, type LlmModel } from '@/features/ai-intelligence/hooks/use-llm-models';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
-import { DataTable } from '@/shared/components/tables/data-table';
+import { DataTable, type ColumnDef } from '@/shared/components/tables/data-table';
 import { cn, formatBytes } from '@/shared/lib/utils';
 import { api } from '@/shared/lib/api';
 import { toast } from 'sonner';

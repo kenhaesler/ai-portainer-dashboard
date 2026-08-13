@@ -1,7 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
-import { type ColumnDef } from '@tanstack/react-table';
 import { LlmLatencyBreakdown, formatWindowLabel } from '@/features/ai-intelligence/components/llm-latency-breakdown';
 import { useLlmTraces, useLlmStats, type LlmTrace } from '@/features/ai-intelligence/hooks/use-llm-observability';
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
@@ -10,7 +9,7 @@ import { PageHeader } from '@/shared/components/layout/page-header';
 import { DataFreshness } from '@/shared/components/feedback/data-freshness';
 import { KpiCard } from '@/shared/components/data-display/kpi-card';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
-import { DataTable } from '@/shared/components/tables/data-table';
+import { DataTable, type ColumnDef } from '@/shared/components/tables/data-table';
 import { SkeletonKpi, SkeletonList } from '@/shared/components/feedback/skeleton';
 import { EmptyState } from '@/shared/components/feedback/empty-state';
 import { cn, formatDate } from '@/shared/lib/utils';

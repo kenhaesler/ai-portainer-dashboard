@@ -12,6 +12,31 @@ For detailed diagrams and data flow, see:
 - [Security Checklist](ai-instructions/security-checklist.md)
 - [UI Design System](ai-instructions/ui-design-system.md)
 
+## Dependency baseline and shared table architecture (2026-08-13)
+
+The npm workspace is kept on one root `package-lock.json`; after dependency roll-ups, run
+`npm dedupe`, `npm ls --all --workspaces --include-workspace-root --omit=optional`, `npm outdated
+--workspaces --include-workspace-root`, and the full test/build gates. The August 2026 baseline has
+no outdated direct workspace dependency and no `npm audit` finding. `loadtests/` remains a separate
+lockfile with its own documented security overrides and is not part of this workspace baseline.
+The local development engine range is `^22.22.2 || ^24.15.0 || >=26.0.0`, the intersection supported
+by the direct workspace toolchain; early Node 22 and Node 25 are not advertised as supported.
+
+TanStack Table 9 makes features part of the table's type. The shared
+`frontend/src/shared/components/tables/data-table.tsx` wrapper therefore owns the explicit feature
+registry for filtering, sorting, pagination, row selection, column sizing, and visibility. It also
+exports the feature-aware `ColumnDef` used by every caller. Do not import `ColumnDef` directly from
+`@tanstack/react-table` for a `DataTable`: doing so loses the wrapper's feature type. Pagination is
+always registered, while `manualPagination` bypasses the client row model for server-paginated,
+virtual, and window-scroll tables.
+
+Fastify 5.12 distinguishes HTTP/1 (`http2?: false`) and HTTP/2 (`http2: true`) factory overloads.
+`packages/server/src/app.ts` narrows the validated TLS/HTTP2 options before calling Fastify, then
+passes either instance to the protocol-generic `finishBuild()` registration path. This preserves
+the optional HTTP/2 runtime behavior without weakening types or duplicating plugin wiring. The
+same baseline replaces Fastify's deprecated top-level `disableRequestLogging` flag with a
+`LogController`; the custom request-logging plugin and its route exclusions are unchanged.
+
 ## Portainer Integration & Live Data Source
 
 All per-endpoint container counts, host CPU/memory, and stack totals are obtained by calling the Docker API directly via live `/docker/info` requests — Portainer's per-endpoint `Snapshots[]` array is **no longer read**. The pipeline is implemented in `packages/core/src/portainer/live-fleet.ts` and exposes four functions used by foundation routes and the scheduler:

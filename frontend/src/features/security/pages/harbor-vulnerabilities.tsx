@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router';
-import { type ColumnDef } from '@tanstack/react-table';
 import {
   Shield, ShieldAlert, ShieldCheck, Search, RefreshCw, ArrowRight,
   ExternalLink, AlertTriangle, CheckCircle2, Package, Bug,
@@ -8,7 +7,7 @@ import {
 import { cn } from '@/shared/lib/utils';
 import { formatRelativeTime } from '@/shared/lib/format-relative-time';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
-import { DataTable } from '@/shared/components/tables/data-table';
+import { DataTable, type ColumnDef } from '@/shared/components/tables/data-table';
 import { PageHeader } from '@/shared/components/layout/page-header';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 import {

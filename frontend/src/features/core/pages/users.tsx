@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { type ColumnDef } from '@tanstack/react-table';
 import { Loader2, ShieldAlert, UserPlus, Users as UsersIcon, Trash2, UserCog } from 'lucide-react';
 import { useAuth } from '@/providers/auth-provider';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { ConfirmDialog } from '@/shared/components/feedback/confirm-dialog';
-import { DataTable } from '@/shared/components/tables/data-table';
+import { DataTable, type ColumnDef } from '@/shared/components/tables/data-table';
 import { useCreateUser, useDeleteUser, useUpdateUser, useUsers, type UserRecord, type UserRole } from '@/features/core/hooks/use-users';
 import { cn, formatDate } from '@/shared/lib/utils';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';

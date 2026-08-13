@@ -1,6 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { type ColumnDef } from '@tanstack/react-table';
 import {
   AlertTriangle,
   Bot,
@@ -34,7 +33,7 @@ import { PageHeader } from '@/shared/components/layout/page-header';
 import { DataFreshness } from '@/shared/components/feedback/data-freshness';
 import { EmptyState } from '@/shared/components/feedback/empty-state';
 import { SkeletonText, SkeletonChart, SkeletonTableRow } from '@/shared/components/feedback/skeleton';
-import { DataTable } from '@/shared/components/tables/data-table';
+import { DataTable, type ColumnDef } from '@/shared/components/tables/data-table';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 import { useLlmModels } from '@/features/ai-intelligence/hooks/use-llm-models';
 import { cn } from '@/shared/lib/utils';

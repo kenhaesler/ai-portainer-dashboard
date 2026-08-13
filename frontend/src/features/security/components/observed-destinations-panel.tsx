@@ -1,10 +1,9 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { type ColumnDef } from '@tanstack/react-table';
 import { Globe } from 'lucide-react';
 import { api } from '@/shared/lib/api';
 import { cn } from '@/shared/lib/utils';
-import { DataTable } from '@/shared/components/tables/data-table';
+import { DataTable, type ColumnDef } from '@/shared/components/tables/data-table';
 import { SkeletonTableRow } from '@/shared/components/feedback/skeleton';
 import { NoTraceDataCallout } from '@/features/observability/components/no-trace-data-callout';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';

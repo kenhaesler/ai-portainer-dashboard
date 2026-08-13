@@ -1,6 +1,5 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { type ColumnDef } from '@tanstack/react-table';
 import { AnimatePresence, m } from 'framer-motion';
 import { HardDrive, Layers, Tag, AlertTriangle, X, Server, CheckCircle2, Copy, Check } from 'lucide-react';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
@@ -14,7 +13,7 @@ import { RefreshControls } from '@/shared/components/ui/refresh-controls';
 import { DataFreshness } from '@/shared/components/feedback/data-freshness';
 import { useForceRefresh } from '@/shared/hooks/use-force-refresh';
 import { SkeletonChart } from '@/shared/components/feedback/skeleton';
-import { DataTable } from '@/shared/components/tables/data-table';
+import { DataTable, type ColumnDef } from '@/shared/components/tables/data-table';
 import { KpiCard } from '@/shared/components/data-display/kpi-card';
 import { PageHeader } from '@/shared/components/layout/page-header';
 import { MotionPage, MotionReveal, MotionStagger } from '@/shared/components/layout/motion-page';
@@ -152,7 +151,7 @@ export default function ImageFootprintPage() {
     setStatusFilter((prev) => (prev === next ? 'all' : next));
   }, []);
 
-  const imageColumns: ColumnDef<DockerImage, any>[] = useMemo(() => [
+  const imageColumns: ColumnDef<DockerImage>[] = useMemo(() => [
     {
       accessorKey: 'name',
       header: 'Image',
@@ -238,7 +237,7 @@ export default function ImageFootprintPage() {
           </span>
         );
       },
-    } satisfies ColumnDef<DockerImage, any>] : []),
+    } satisfies ColumnDef<DockerImage>] : []),
   ], [stalenessMap, selectedEndpoint]);
 
   if (isError) {

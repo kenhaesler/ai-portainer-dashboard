@@ -1,5 +1,4 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import { type ColumnDef } from '@tanstack/react-table';
 import {
   Box,
   Info,
@@ -13,7 +12,7 @@ import {
 } from 'lucide-react';
 import { type Container } from '@/features/containers/hooks/use-containers';
 import { StatusBadge } from '@/shared/components/feedback/status-badge';
-import { DataTable } from '@/shared/components/tables/data-table';
+import { DataTable, type ColumnDef } from '@/shared/components/tables/data-table';
 import { formatDate } from '@/shared/lib/utils';
 import {
   UNSPECIFIED_BIND_ADDRESSES,

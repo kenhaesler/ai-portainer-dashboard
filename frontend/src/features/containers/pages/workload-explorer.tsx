@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useNavigate, Link } from 'react-router';
-import { type ColumnDef, type RowSelectionState } from '@tanstack/react-table';
+import { type RowSelectionState } from '@tanstack/react-table';
 import { AnimatePresence, m, useReducedMotion } from 'framer-motion';
 import { AlertTriangle, Boxes, Download, GitCompareArrows, X } from 'lucide-react';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
@@ -8,7 +8,7 @@ import { useContainers, type Container } from '@/features/containers/hooks/use-c
 import { useEndpoints } from '@/features/containers/hooks/use-endpoints';
 import { useStacks } from '@/features/containers/hooks/use-stacks';
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
-import { DataTable } from '@/shared/components/tables/data-table';
+import { DataTable, type ColumnDef } from '@/shared/components/tables/data-table';
 import { StatusBadge } from '@/shared/components/feedback/status-badge';
 import { RefreshControls } from '@/shared/components/ui/refresh-controls';
 import { useForceRefresh } from '@/shared/hooks/use-force-refresh';
@@ -359,7 +359,7 @@ export default function WorkloadExplorerPage() {
     setSearchParams(next, { replace: true });
   }, [searchParams, setSearchParams]);
 
-  const columns: ColumnDef<Container, any>[] = useMemo(() => [
+  const columns: ColumnDef<Container>[] = useMemo(() => [
     {
       accessorKey: 'name',
       // The whole cell is wrapped in the row's `<a href>` by DataTable

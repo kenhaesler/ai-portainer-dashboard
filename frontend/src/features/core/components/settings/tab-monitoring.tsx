@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo } from 'react';
-import { type ColumnDef } from '@tanstack/react-table';
 import {
   Activity,
   AlertTriangle,
@@ -11,7 +10,7 @@ import {
 } from 'lucide-react';
 import { SettingsSection, DEFAULT_SETTINGS, type SettingsTabProps } from './shared';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
-import { DataTable } from '@/shared/components/tables/data-table';
+import { DataTable, type ColumnDef } from '@/shared/components/tables/data-table';
 import { cn } from '@/shared/lib/utils';
 import { api } from '@/shared/lib/api';
 import { toast } from 'sonner';

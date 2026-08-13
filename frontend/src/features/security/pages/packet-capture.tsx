@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { type ColumnDef } from '@tanstack/react-table';
 import {
   Radio,
   Play,
@@ -17,7 +16,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { StatusBadge } from '@/shared/components/feedback/status-badge';
-import { DataTable } from '@/shared/components/tables/data-table';
+import { DataTable, type ColumnDef } from '@/shared/components/tables/data-table';
 import { RefreshButton } from '@/shared/components/ui/refresh-button';
 import { useEndpoints } from '@/features/containers/hooks/use-endpoints';
 import { useContainers } from '@/features/containers/hooks/use-containers';
