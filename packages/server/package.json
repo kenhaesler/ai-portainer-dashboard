@@ -21,16 +21,16 @@
     "@dashboard/security": "*",
     "@dashboard/operations": "*",
     "@dashboard/infrastructure": "*",
-    "fastify": "^5.11.0",
+    "fastify": "^5.12.0",
     "p-limit": "^7.3.1",
     "socket.io": "^4.8.1"
   },
   "devDependencies": {
-    "@types/node": "^26.1.2",
+    "@types/node": "^26.2.0",
     "@vitest/coverage-v8": "^4.1.10",
     "pino-pretty": "^13.0.0",
-    "redis": "^6.1.0",
-    "tsx": "^4.23.1",
+    "redis": "^6.2.1",
+    "tsx": "^4.23.12",
     "typescript": "^7.0.2",
     "vitest": "^4.0.18"
   }

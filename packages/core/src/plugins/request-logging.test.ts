@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { LogController, type FastifyInstance } from 'fastify';
 import requestLogging from './request-logging.js';
 import { resetConfig, setConfigForTest } from '../config/index.js';
 
 /**
  * Tests for the access-log replacement (#1552).
  *
- * The production server is built with `disableRequestLogging: true` and this
- * plugin, so the test app mirrors that exact combination: excluded paths
+ * The production server is built with a `LogController` that disables request
+ * logging and this plugin, so the test app mirrors that exact combination: excluded paths
  * (health probes, Socket.IO, assets) must produce ZERO log lines, normal
  * routes exactly one, and LOG_HTTP_SUCCESS=false demotes 2xx/3xx to debug
  * while 4xx/5xx keep warn/error.
@@ -33,7 +33,7 @@ function buildApp(level: 'debug' | 'info' = 'debug') {
   // logger on, built-in request logging off.
   const app = Fastify({
     logger: { level, stream },
-    disableRequestLogging: true,
+    logController: new LogController({ disableRequestLogging: true }),
   });
   return { app, lines };
 }

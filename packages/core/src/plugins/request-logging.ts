@@ -7,7 +7,8 @@ import { getConfig } from '../config/index.js';
  *
  * Fastify's built-in per-request logging (an "incoming request" plus a
  * "request completed" line at info level for EVERY request) is disabled via
- * `disableRequestLogging: true` in the server factory options. This plugin
+ * a `LogController` with `disableRequestLogging: true` in the server factory
+ * options. This plugin
  * replaces it with a single deliberate access-log line per request:
  *
  *   - 5xx → error, 4xx → warn (always logged)

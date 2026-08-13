@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
-import { DataTable } from './data-table';
-import type { ColumnDef, OnChangeFn, SortingState } from '@tanstack/react-table';
+import { DataTable, type ColumnDef } from './data-table';
+import type { OnChangeFn, SortingState } from '@tanstack/react-table';
 import type { ReactElement } from 'react';
 
 // Mock @tanstack/react-virtual
@@ -27,7 +27,7 @@ interface TestRow {
   status: string;
 }
 
-const testColumns: ColumnDef<TestRow, any>[] = [
+const testColumns: ColumnDef<TestRow>[] = [
   { accessorKey: 'id', header: 'ID' },
   { accessorKey: 'name', header: 'Name' },
   { accessorKey: 'status', header: 'Status' },
@@ -910,7 +910,7 @@ describe('DataTable', () => {
 
     it('ignores Enter originating from controls inside a cell', () => {
       const onRowClick = vi.fn();
-      const columns: ColumnDef<TestRow, any>[] = [
+      const columns: ColumnDef<TestRow>[] = [
         ...testColumns,
         {
           id: 'actions',
@@ -1158,7 +1158,7 @@ describe('DataTable', () => {
      * it stands in for the callers that guard is for: JS consumers, and casts.
      */
     const HalfControlledDataTable = DataTable as unknown as (props: {
-      columns: ColumnDef<TestRow, any>[];
+      columns: ColumnDef<TestRow>[];
       data: TestRow[];
       sorting?: SortingState;
       onSortingChange?: OnChangeFn<SortingState>;

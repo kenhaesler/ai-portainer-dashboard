@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { type ColumnDef } from '@tanstack/react-table';
 import { Loader2, PlugZap, Plus, TestTube2, Trash2, Activity, Radio, RefreshCw, Webhook as WebhookIcon } from 'lucide-react';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { ConfirmDialog } from '@/shared/components/feedback/confirm-dialog';
 import { EmptyState } from '@/shared/components/feedback/empty-state';
 import { SkeletonText } from '@/shared/components/feedback/skeleton';
-import { DataTable } from '@/shared/components/tables/data-table';
+import { DataTable, type ColumnDef } from '@/shared/components/tables/data-table';
 import {
   useCreateWebhook,
   useDeleteWebhook,

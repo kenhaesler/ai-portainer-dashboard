@@ -1,4 +1,4 @@
-import Fastify from 'fastify';
+import Fastify, { LogController, type FastifyInstance, type RawServerBase } from 'fastify';
 import { readFileSync } from 'node:fs';
 import { getConfig } from '@dashboard/core/config/index.js';
 import requestTracing from '@dashboard/core/plugins/request-tracing.js';
@@ -87,7 +87,9 @@ import { buildLlmAdapter, buildMetricsAdapter } from './wiring.js';
  * the schema and meant the validated HTTP2_ENABLED value was never consumed.
  * Exported for unit tests.
  */
-export function getHttp2Options(): { http2: true; https: { key: Buffer; cert: Buffer; allowHTTP1: true } } | Record<string, never> {
+export function getHttp2Options():
+  | { http2: true; https: { key: Buffer; cert: Buffer; allowHTTP1: true } }
+  | { http2?: false; https?: never } {
   const config = getConfig();
   const enabled = config.HTTP2_ENABLED;
   const certPath = config.TLS_CERT_PATH;
@@ -199,8 +201,7 @@ export function readProductVersion(): string {
 
 export async function buildApp() {
   const isDev = process.env.NODE_ENV !== 'production';
-  const app = Fastify({
-    ...getHttp2Options(),
+  const commonOptions = {
     // #1099: Trust X-Forwarded-* headers from upstream proxies so `request.ip`,
     // `request.ips`, and `request.protocol` reflect the real client. Critical for
     // per-client rate limiting (`packages/core/src/plugins/rate-limit.ts`) and audit
@@ -225,10 +226,22 @@ export async function buildApp() {
     // "request completed" at info for every request, including the 30s
     // /health liveness probe) is replaced by the request-logging plugin,
     // which skips probe/static paths and honors LOG_HTTP_SUCCESS.
-    disableRequestLogging: true,
+    logController: new LogController({ disableRequestLogging: true }),
     requestIdHeader: 'x-request-id',
     genReqId: () => crypto.randomUUID(),
-  });
+  };
+
+  // Fastify 5.12 narrows its HTTP/1 overload to `http2?: false`, so a union of
+  // HTTP/1 and HTTP/2 option objects can no longer be spread into one factory
+  // call. Narrow first and let TypeScript select the matching overload.
+  const http2Options = getHttp2Options();
+  if (http2Options.http2 === true) {
+    return finishBuild(Fastify({ ...commonOptions, ...http2Options }));
+  }
+  return finishBuild(Fastify(commonOptions));
+}
+
+async function finishBuild<RawServer extends RawServerBase>(app: FastifyInstance<RawServer>) {
 
   // Core plugins
   await app.register(requestTracing);
