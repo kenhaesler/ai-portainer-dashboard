@@ -81,6 +81,72 @@ interface ElasticsearchSettingsSectionProps {
   disabled?: boolean;
 }
 
+function isPrivateIpv4(hostname: string): boolean {
+  const octets = hostname.split('.').map((part) => Number.parseInt(part, 10));
+  if (octets.length !== 4 || octets.some((value) => Number.isNaN(value) || value < 0 || value > 255)) {
+    return false;
+  }
+
+  const first = octets[0]!;
+  const second = octets[1]!;
+  return first === 0
+    || first === 10
+    || first === 127
+    || (first === 169 && second === 254)
+    || (first === 172 && second >= 16 && second <= 31)
+    || (first === 192 && second === 168)
+    || (first === 100 && second >= 64 && second <= 127);
+}
+
+function extractEmbeddedIpv4(hostname: string): string | null {
+  const dotted = hostname.match(/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
+  if (dotted) return dotted[1] ?? null;
+
+  const hexadecimal = hostname.match(/^::(?:ffff:)?([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i);
+  if (!hexadecimal) return null;
+
+  const high = Number.parseInt(hexadecimal[1]!, 16);
+  const low = Number.parseInt(hexadecimal[2]!, 16);
+  return `${(high >> 8) & 0xff}.${high & 0xff}.${(low >> 8) & 0xff}.${low & 0xff}`;
+}
+
+function isPrivateIpv6(hostname: string): boolean {
+  const normalized = hostname.toLowerCase();
+  if (normalized === '::' || normalized === '::1') return true;
+  if (normalized.startsWith('fc') || normalized.startsWith('fd')) return true;
+  if (/^fe[89ab]/.test(normalized)) return true;
+
+  const embeddedIpv4 = extractEmbeddedIpv4(normalized);
+  return embeddedIpv4 !== null && isPrivateIpv4(embeddedIpv4);
+}
+
+function validateElasticsearchEndpoint(endpoint: string): string | null {
+  if (!endpoint.trim()) return 'Endpoint is required.';
+
+  try {
+    const parsed = new URL(endpoint);
+    if (!/^https?:$/.test(parsed.protocol)) {
+      return 'Endpoint must start with http:// or https://';
+    }
+
+    let hostname = parsed.hostname.toLowerCase();
+    if (hostname.startsWith('[') && hostname.endsWith(']')) {
+      hostname = hostname.slice(1, -1);
+    }
+
+    if (hostname === 'localhost' || hostname.endsWith('.localhost')) {
+      return 'Endpoint cannot target localhost. Use an authenticated network hostname.';
+    }
+    if (isPrivateIpv4(hostname) || (hostname.includes(':') && isPrivateIpv6(hostname))) {
+      return 'Endpoint cannot target a literal private or loopback address. Use an authenticated network hostname.';
+    }
+
+    return null;
+  } catch {
+    return 'Enter a valid URL (for example: https://logs.internal:9200)';
+  }
+}
+
 export function ElasticsearchSettingsSection({
   values,
   originalValues,
@@ -107,18 +173,10 @@ export function ElasticsearchSettingsSection({
     'elasticsearch.verify_ssl',
   ].some((key) => values[key] !== originalValues[key]);
 
-  const endpointValidationError = useMemo(() => {
-    if (!endpoint.trim()) return 'Endpoint is required.';
-    try {
-      const parsed = new URL(endpoint);
-      if (!/^https?:$/.test(parsed.protocol)) {
-        return 'Endpoint must start with http:// or https://';
-      }
-      return null;
-    } catch {
-      return 'Enter a valid URL (for example: https://logs.internal:9200)';
-    }
-  }, [endpoint]);
+  const endpointValidationError = useMemo(
+    () => validateElasticsearchEndpoint(endpoint),
+    [endpoint],
+  );
 
   useEffect(() => {
     let active = true;
@@ -231,6 +289,8 @@ export function ElasticsearchSettingsSection({
               onChange={(e) => onChange('elasticsearch.endpoint', e.target.value)}
               placeholder="https://logs.internal:9200"
               disabled={disabled}
+              aria-invalid={endpointValidationError ? 'true' : undefined}
+              aria-describedby={endpointValidationError ? 'elasticsearch-endpoint-error' : undefined}
             />
           </label>
 
@@ -278,7 +338,12 @@ export function ElasticsearchSettingsSection({
         </label>
 
         {endpointValidationError && (
-          <p className="text-xs text-amber-600 dark:text-amber-400">{endpointValidationError}</p>
+          <p
+            id="elasticsearch-endpoint-error"
+            className="text-xs text-amber-600 dark:text-amber-400"
+          >
+            {endpointValidationError}
+          </p>
         )}
 
         <div className="flex items-center gap-2">
