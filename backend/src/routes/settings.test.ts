@@ -393,6 +393,35 @@ describe('settings security', () => {
     await app.close();
   });
 
+  it('rejects private Elasticsearch endpoints before persisting them', async () => {
+    const app = Fastify({ logger: false });
+    app.setValidatorCompiler(validatorCompiler);
+    app.setSerializerCompiler(serializerCompiler);
+    app.decorate('authenticate', async () => undefined);
+    app.decorate('requireRole', () => async () => undefined);
+    app.decorateRequest('user', undefined);
+    app.addHook('preHandler', async (request) => {
+      request.user = { sub: 'u1', username: 'admin', sessionId: 's1', role: 'admin' as const };
+    });
+    await app.register(settingsRoutes);
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'PUT',
+      url: '/api/settings/elasticsearch.endpoint',
+      headers: { authorization: 'Bearer test' },
+      payload: { value: 'http://169.254.169.254/latest/meta-data', category: 'logs' },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({
+      error: 'Elasticsearch endpoint cannot target private or loopback IP ranges',
+    });
+    expect(mockExecute).not.toHaveBeenCalled();
+
+    await app.close();
+  });
+
   it('DELETE /api/settings/:key returns { success: true } (#1545)', async () => {
     const app = Fastify({ logger: false });
     app.setValidatorCompiler(validatorCompiler);

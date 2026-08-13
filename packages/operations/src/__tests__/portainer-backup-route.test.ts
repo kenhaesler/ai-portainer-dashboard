@@ -69,6 +69,7 @@ describe('portainer-backup routes', () => {
   afterEach(async () => {
     await app.close();
     fs.rmSync(tempDir, { recursive: true, force: true });
+    vi.unstubAllEnvs();
     vi.clearAllMocks();
   });
 
@@ -129,8 +130,26 @@ describe('portainer-backup routes', () => {
 
       expect(response.statusCode).toBe(502);
       expect(response.json()).toEqual({
-        error: expect.stringContaining('Failed to create Portainer backup'),
+        error: 'Failed to create Portainer backup',
+        details: 'Portainer backup failed: HTTP 500',
       });
+    });
+
+    it('masks the upstream failure details in production', async () => {
+      vi.stubEnv('NODE_ENV', 'production');
+      mockCreatePortainerBackup.mockRejectedValueOnce(
+        new Error('Portainer backup failed at http://portainer.internal:9000'),
+      );
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/portainer-backup',
+        payload: {},
+      });
+
+      expect(response.statusCode).toBe(502);
+      expect(response.json()).toEqual({ error: 'Failed to create Portainer backup' });
+      expect(response.body).not.toContain('portainer.internal');
     });
 
     testAdminOnly(() => app, (r) => { currentRole = r; }, 'POST', '/api/portainer-backup', {});

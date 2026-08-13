@@ -232,6 +232,10 @@ describe('MCP Routes', () => {
 
       const res = await app.inject({ method: 'POST', url: '/api/mcp/servers/1/connect' });
       expect(res.statusCode).toBe(502);
+      expect(res.json()).toEqual({
+        error: 'Failed to connect to MCP server',
+        details: 'Connection refused',
+      });
     });
   });
 

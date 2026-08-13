@@ -53,6 +53,38 @@ describe('edge-async-log-fetcher', () => {
         }),
       );
     });
+
+    it('rejects a non-numeric tail before creating an Edge Job', async () => {
+      const createJob = vi.spyOn(portainer, 'createEdgeJob');
+
+      await expect(Reflect.apply(initiateEdgeAsyncLogCollection, undefined, [
+        1,
+        'container1',
+        { tail: '100; uname -a' },
+      ])).rejects.toThrow('tail must be an integer');
+
+      expect(createJob).not.toHaveBeenCalled();
+    });
+
+    it('rejects shell metacharacters in a container reference', async () => {
+      const createJob = vi.spyOn(portainer, 'createEdgeJob');
+
+      await expect(
+        initiateEdgeAsyncLogCollection(1, 'container1;uname', { tail: 100 }),
+      ).rejects.toThrow('containerId must be a Docker ID or container name');
+
+      expect(createJob).not.toHaveBeenCalled();
+    });
+
+    it('rejects out-of-range tail values before creating an Edge Job', async () => {
+      const createJob = vi.spyOn(portainer, 'createEdgeJob');
+
+      await expect(
+        initiateEdgeAsyncLogCollection(1, 'container1', { tail: 10_001 }),
+      ).rejects.toThrow('tail must be an integer');
+
+      expect(createJob).not.toHaveBeenCalled();
+    });
   });
 
   describe('checkEdgeJobStatus', () => {

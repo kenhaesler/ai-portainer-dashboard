@@ -13,6 +13,7 @@ import {
   isConnected,
   type McpServerConfig,
 } from '../services/mcp-manager.js';
+import { errorDetails } from '@dashboard/core/plugins/error-handler.js';
 
 // ─── Zod Schemas ────────────────────────────────────────────────────────
 
@@ -268,8 +269,10 @@ export async function mcpRoutes(fastify: FastifyInstance) {
       await connectServer(server);
       return { success: true, name: server.name, connected: true };
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Connection failed';
-      return reply.code(502).send({ error: message });
+      return reply.code(502).send({
+        error: 'Failed to connect to MCP server',
+        details: errorDetails(err),
+      });
     }
   });
 

@@ -107,9 +107,14 @@ describe('elasticsearch-log-forwarder', () => {
     );
 
     expect(mockFetch).toHaveBeenCalledTimes(1);
-    const [url, options] = mockFetch.mock.calls[0] as [string, { body: string; headers: Record<string, string> }];
+    const [url, options] = mockFetch.mock.calls[0] as [string, {
+      body: string;
+      headers: Record<string, string>;
+      redirect: string;
+    }];
     expect(url).toBe('https://logs.internal:9200/_bulk');
     expect(options.headers.Authorization).toBe('ApiKey abc123');
+    expect(options.redirect).toBe('error');
 
     const lines = options.body.trim().split('\n');
     const firstDoc = JSON.parse(lines[1]);

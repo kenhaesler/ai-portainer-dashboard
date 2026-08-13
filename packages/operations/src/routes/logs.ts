@@ -7,7 +7,7 @@ import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { errorDetails } from '@dashboard/core/plugins/error-handler.js';
 import { LogsSearchQuerySchema, LogsTestBodySchema } from '@dashboard/core/models/api-schemas.js';
 import { getElasticsearchConfig } from '@dashboard/infrastructure';
-import { validateOutboundWebhookUrl } from '@dashboard/core/utils/network-security.js';
+import { validateOutboundUrl } from '@dashboard/core/utils/network-security.js';
 
 const log = createChildLogger('logs-route');
 
@@ -50,6 +50,8 @@ export async function logsRoutes(fastify: FastifyInstance) {
     },
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {
+    // getElasticsearchConfig validates the endpoint on every read, so legacy
+    // unsafe rows cannot reach this request path.
     const esConfig = await getElasticsearchConfig();
 
     if (!esConfig) {
@@ -106,6 +108,7 @@ export async function logsRoutes(fastify: FastifyInstance) {
         body: JSON.stringify(esQuery),
         signal: controller.signal,
         dispatcher: esConfig.verifySsl ? undefined : getInsecureDispatcher(),
+        redirect: 'error',
       } as RequestInit);
       clearTimeout(timeout);
 
@@ -144,7 +147,7 @@ export async function logsRoutes(fastify: FastifyInstance) {
   }, async (request, reply) => {
     const { endpoint, apiKey, verifySsl = true } = request.body as { endpoint: string; apiKey?: string; verifySsl?: boolean };
 
-    const urlError = validateOutboundWebhookUrl(endpoint);
+    const urlError = validateOutboundUrl(endpoint, 'Elasticsearch endpoint');
     if (urlError) {
       return reply.code(400).send({ error: urlError });
     }
@@ -165,6 +168,7 @@ export async function logsRoutes(fastify: FastifyInstance) {
         headers,
         signal: controller.signal,
         dispatcher: verifySsl ? undefined : getInsecureDispatcher(),
+        redirect: 'error',
       } as RequestInit);
       clearTimeout(timeout);
 

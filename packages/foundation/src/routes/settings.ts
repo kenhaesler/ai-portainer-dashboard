@@ -27,6 +27,7 @@ import {
 } from '@dashboard/core/models/api-schemas.js';
 import { SettingSchema } from '@dashboard/core/models/settings.js';
 import { getUserDefaultLandingPage, setUserDefaultLandingPage } from '@dashboard/core/services/user-store.js';
+import { validateOutboundUrl } from '@dashboard/core/utils/network-security.js';
 import { PROMPT_FEATURES, DEFAULT_PROMPTS, getEffectivePrompt, createPromptVersion, getPromptHistory, getPromptVersionById } from '@dashboard/ai';
 
 const SENSITIVE_KEYS = new Set([
@@ -40,7 +41,12 @@ const SENSITIVE_KEYS = new Set([
   'portainer_backup.password',
   'harbor.robot_secret',
 ]);
-const SECURITY_CRITICAL_URL_KEYS = new Set(['llm.api_url', 'oidc.issuer_url', 'harbor.api_url']);
+const SECURITY_CRITICAL_URL_KEYS = new Set([
+  'llm.api_url',
+  'oidc.issuer_url',
+  'harbor.api_url',
+  'elasticsearch.endpoint',
+]);
 
 const REDACTED = '••••••••';
 const LANDING_PAGE_OPTIONS = new Set([
@@ -97,6 +103,10 @@ function validateSecurityCriticalUrl(key: string, value: string): string | null 
 
   if (!['http:', 'https:'].includes(parsed.protocol)) {
     return `${key} must use http:// or https://`;
+  }
+
+  if (key === 'elasticsearch.endpoint') {
+    return validateOutboundUrl(value, 'Elasticsearch endpoint');
   }
 
   if (key === 'oidc.issuer_url' && process.env.NODE_ENV === 'production' && parsed.protocol !== 'https:') {

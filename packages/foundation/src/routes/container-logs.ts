@@ -1,5 +1,8 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod/v4';
+import '@dashboard/core/plugins/auth.js';
+import '@dashboard/core/plugins/request-tracing.js';
+import '@fastify/swagger';
 import * as portainer from '@dashboard/core/portainer/portainer-client.js';
 import { ContainerParamsSchema, ContainerLogsQuerySchema, ContainerLogStreamQuerySchema } from '@dashboard/core/models/api-schemas.js';
 import {
@@ -17,14 +20,19 @@ import {
 import { consumeStreamTicket } from '@dashboard/core/services/stream-tickets.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { getErrorStatusCode } from '@dashboard/core/utils/http-error.js';
+import { errorDetails } from '@dashboard/core/plugins/error-handler.js';
 
 const log = createChildLogger('container-logs-route');
 
 const CollectJobIdParamsSchema = z.object({
-  endpointId: z.coerce.number(),
-  containerId: z.string(),
-  jobId: z.coerce.number(),
+  endpointId: z.coerce.number().int().positive(),
+  containerId: z.string().min(1).max(128).regex(/^[A-Za-z0-9][A-Za-z0-9_.-]*$/),
+  jobId: z.coerce.number().int().positive(),
 });
+
+const EdgeAsyncLogCollectionBodySchema = z.object({
+  tail: z.number().int().min(1).max(10_000).optional(),
+}).strict();
 
 export async function containerLogsRoutes(fastify: FastifyInstance) {
   // Existing: GET live container logs (rejects Edge Async with 422)
@@ -69,16 +77,18 @@ export async function containerLogsRoutes(fastify: FastifyInstance) {
         });
       }
       if (statusCode === 504) {
-        const message = err instanceof Error ? err.message : 'Edge agent tunnel timed out';
         log.warn({ err, endpointId, containerId }, 'Edge tunnel warmup timed out');
         return reply.status(504).send({
-          error: message,
+          error: 'Edge agent tunnel timed out',
           code: 'EDGE_TUNNEL_TIMEOUT',
+          details: errorDetails(err),
         });
       }
-      const message = err instanceof Error ? err.message : 'Failed to fetch container logs';
       log.error({ err, endpointId, containerId }, 'Failed to fetch container logs');
-      return reply.status(502).send({ error: message });
+      return reply.status(502).send({
+        error: 'Failed to fetch container logs',
+        details: errorDetails(err),
+      });
     }
   });
 
@@ -89,14 +99,16 @@ export async function containerLogsRoutes(fastify: FastifyInstance) {
       summary: 'Initiate async log collection for Edge Async endpoints',
       security: [{ bearerAuth: [] }],
       params: ContainerParamsSchema,
+      // Fastify represents an absent request body as null at validation time.
+      body: EdgeAsyncLogCollectionBodySchema.nullable().optional(),
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
     const { endpointId, containerId } = request.params as {
       endpointId: number;
       containerId: string;
     };
-    const body = request.body as { tail?: number } | undefined;
+    const body = request.body as { tail?: number } | null | undefined;
 
     try {
       const edgeAsync = await isEdgeAsync(endpointId);
@@ -115,9 +127,11 @@ export async function containerLogsRoutes(fastify: FastifyInstance) {
         status: 'collecting',
       });
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to initiate log collection';
       log.error({ err, endpointId, containerId }, 'Failed to initiate async log collection');
-      return reply.status(502).send({ error: message });
+      return reply.status(502).send({
+        error: 'Failed to initiate log collection',
+        details: errorDetails(err),
+      });
     }
   });
 
@@ -129,7 +143,7 @@ export async function containerLogsRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
       params: CollectJobIdParamsSchema,
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
     const { endpointId, containerId, jobId } = request.params as {
       endpointId: number;
@@ -161,9 +175,11 @@ export async function containerLogsRoutes(fastify: FastifyInstance) {
         source: 'edge-job',
       });
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to retrieve logs';
       log.error({ err, endpointId, containerId, jobId }, 'Failed to check/retrieve async logs');
-      return reply.status(502).send({ error: message });
+      return reply.status(502).send({
+        error: 'Failed to retrieve logs',
+        details: errorDetails(err),
+      });
     }
   });
 
@@ -241,11 +257,11 @@ export async function containerLogsRoutes(fastify: FastifyInstance) {
       } catch (err) {
         const statusCode = getErrorStatusCode(err);
         if (statusCode === 504) {
-          const message = err instanceof Error ? err.message : 'Edge agent tunnel timed out';
           log.warn({ err, endpointId, containerId }, 'Edge tunnel warmup timed out for stream');
           return reply.status(504).send({
-            error: message,
+            error: 'Edge agent tunnel timed out',
             code: 'EDGE_TUNNEL_TIMEOUT',
+            details: errorDetails(err),
           });
         }
         throw err;
@@ -260,9 +276,11 @@ export async function containerLogsRoutes(fastify: FastifyInstance) {
         timestamps,
       });
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to open log stream';
       log.error({ err, endpointId, containerId }, 'Failed to open log stream');
-      return reply.status(502).send({ error: message });
+      return reply.status(502).send({
+        error: 'Failed to open log stream',
+        details: errorDetails(err),
+      });
     }
 
     // 4. Hijack response for SSE (bypasses Fastify compression/serialization)

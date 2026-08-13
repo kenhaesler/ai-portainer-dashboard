@@ -154,6 +154,7 @@ describe('Logs Routes', () => {
       expect(mockFetch).toHaveBeenCalledOnce();
       const [url, opts] = mockFetch.mock.calls[0];
       expect(url).toContain('logs-*/_search');
+      expect(opts.redirect).toBe('error');
       const body = JSON.parse(opts.body);
       expect(body.query.bool.must).toContainEqual(expect.objectContaining({ query_string: expect.objectContaining({ query: 'error' }) }));
       expect(body.query.bool.must).toContainEqual({ match: { 'host.name': 'server-01' } });
@@ -232,6 +233,9 @@ describe('Logs Routes', () => {
       expect(body.success).toBe(true);
       expect(body.cluster_name).toBe('my-cluster');
       expect(body.status).toBe('green');
+      expect(mockFetch.mock.calls[0]?.[1]).toEqual(
+        expect.objectContaining({ redirect: 'error' }),
+      );
     });
 
     it('returns 400 when cluster health check fails', async () => {

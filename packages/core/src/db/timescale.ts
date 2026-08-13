@@ -170,9 +170,13 @@ export async function applyRetentionPolicies(
   for (const { table, days } of policies) {
     try {
       // Remove existing policy first (if any), then add the configured one
-      await db.query(`SELECT remove_retention_policy('${table}', if_exists => true)`);
       await db.query(
-        `SELECT add_retention_policy('${table}', INTERVAL '${days} days', if_not_exists => true)`,
+        'SELECT remove_retention_policy($1::regclass, if_exists => true)',
+        [table],
+      );
+      await db.query(
+        'SELECT add_retention_policy($1::regclass, make_interval(days => $2), if_not_exists => true)',
+        [table, days],
       );
       installedRetentionPolicies.add(table);
       log.info({ table, retentionDays: days }, 'Retention policy applied');

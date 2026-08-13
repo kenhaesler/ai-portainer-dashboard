@@ -56,6 +56,15 @@ describe('api-schemas', () => {
         expect(result.data.endpointId).toBe(5);
       }
     });
+
+    it('should reject shell syntax in a container reference', () => {
+      const result = ContainerParamsSchema.safeParse({
+        endpointId: '5',
+        containerId: 'abc123;uname',
+      });
+
+      expect(result.success).toBe(false);
+    });
   });
 
   describe('EndpointIdQuerySchema', () => {

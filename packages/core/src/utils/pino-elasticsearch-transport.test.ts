@@ -125,6 +125,7 @@ describe('pino-elasticsearch-transport', () => {
 
       const opts = fetchMock.mock.calls[0][1] as RequestInit;
       expect(opts.signal).toBeInstanceOf(AbortSignal);
+      expect(opts.redirect).toBe('error');
     });
 
     it('aborts and retries when a request exceeds the timeout (#1514)', async () => {

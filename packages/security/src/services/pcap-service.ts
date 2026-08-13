@@ -52,20 +52,23 @@ export function buildSidecarCmd(
   filter?: string,
   maxPackets?: number,
 ): string[] {
-  let tcpdumpArgs = `-i any -w /tmp/capture_${captureId}.pcap -U`;
+  const tcpdumpArgs = ['-i', 'any', '-w', `/tmp/capture_${captureId}.pcap`, '-U'];
 
   if (maxPackets) {
-    tcpdumpArgs += ` -c ${maxPackets}`;
+    tcpdumpArgs.push('-c', String(maxPackets));
   }
 
   if (filter) {
-    tcpdumpArgs += ` ${filter}`;
+    tcpdumpArgs.push(filter);
   }
 
   // Install tcpdump if not present (covers plain alpine:3.21 default image).
   // Custom pcap-agent images already have tcpdump, so `command -v` succeeds immediately.
   const install = 'command -v tcpdump >/dev/null 2>&1 || apk add --no-cache tcpdump >/dev/null 2>&1 || true';
-  return ['sh', '-c', `${install}; exec tcpdump ${tcpdumpArgs}`];
+  // Values after the command string become positional arguments. `"$@"`
+  // preserves each value as one argv entry, so a BPF expression is never
+  // reparsed by the shell even when a caller bypasses the route schema.
+  return ['sh', '-c', `${install}; exec tcpdump "$@"`, 'tcpdump', ...tcpdumpArgs];
 }
 
 export function extractFromTar(tarBuffer: Buffer): Buffer | null {
@@ -160,8 +163,8 @@ export async function startCapture(params: StartCaptureRequest): Promise<Capture
       params.endpointId,
       {
         Image: config.PCAP_CAPTURE_IMAGE,
-        Entrypoint: ['sh', '-c'],
-        Cmd: [cmd[2]], // the script string from buildSidecarCmd
+        Entrypoint: cmd.slice(0, 2),
+        Cmd: cmd.slice(2),
         Labels: {
           'ai-dash.pcap': 'true',
           'ai-dash.pcap.capture-id': captureId,

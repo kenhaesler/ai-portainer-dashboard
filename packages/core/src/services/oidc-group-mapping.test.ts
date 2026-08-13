@@ -351,6 +351,17 @@ describe('extractGroups - nested claim paths', () => {
     expect(extractGroups(claims as Record<string, unknown>, 'realm_access.roles')).toEqual([]);
   });
 
+  it('does not traverse Object.prototype through a configured claim path', () => {
+    expect(extractGroups({}, '__proto__.roles')).toEqual([]);
+    expect(extractGroups({}, 'constructor.prototype.roles')).toEqual([]);
+  });
+
+  it('does not read inherited nested claims', () => {
+    const claims = Object.create({ realm_access: { roles: ['InheritedAdmin'] } });
+
+    expect(extractGroups(claims, 'realm_access.roles')).toEqual([]);
+  });
+
   it('should fall back to realm_access.roles only when flat groups is not an array', () => {
     const claims = { groups: 'not-an-array', realm_access: { roles: ['FallbackGroup'] } };
     expect(extractGroups(claims, 'groups')).toEqual(['FallbackGroup']);

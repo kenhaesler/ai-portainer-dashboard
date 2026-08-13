@@ -74,23 +74,31 @@ describe('pcap-service', () => {
       const script = cmd[2];
       expect(script).toContain('command -v tcpdump');
       expect(script).toContain('apk add');
-      expect(script).toContain('exec tcpdump -i any -w /tmp/capture_test-id-123.pcap -U');
+      expect(script).toContain('exec tcpdump "$@"');
+      expect(cmd.slice(3)).toEqual([
+        'tcpdump',
+        '-i',
+        'any',
+        '-w',
+        '/tmp/capture_test-id-123.pcap',
+        '-U',
+      ]);
     });
 
-    it('should include filter in command', () => {
-      const cmd = buildSidecarCmd('test-id', 'port 80');
-      expect(cmd[2]).toContain('port 80');
+    it('should pass the filter as one positional argument, not shell source', () => {
+      const cmd = buildSidecarCmd('test-id', 'tcp and (port 80)');
+      expect(cmd[2]).not.toContain('port 80');
+      expect(cmd.at(-1)).toBe('tcp and (port 80)');
     });
 
     it('should include max packets flag', () => {
       const cmd = buildSidecarCmd('test-id', undefined, 1000);
-      expect(cmd[2]).toContain('-c 1000');
+      expect(cmd.slice(-2)).toEqual(['-c', '1000']);
     });
 
     it('should combine filter and maxPackets', () => {
       const cmd = buildSidecarCmd('test-id', 'tcp', 500);
-      expect(cmd[2]).toContain('-c 500');
-      expect(cmd[2]).toContain('tcp');
+      expect(cmd.slice(-3)).toEqual(['-c', '500', 'tcp']);
     });
   });
 

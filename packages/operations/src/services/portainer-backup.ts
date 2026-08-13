@@ -57,6 +57,7 @@ export async function createPortainerBackup(password?: string): Promise<{ filena
       body,
       signal: controller.signal,
       dispatcher: getDispatcher(),
+      redirect: 'error',
     } as RequestInit);
     clearTimeout(timer);
 
