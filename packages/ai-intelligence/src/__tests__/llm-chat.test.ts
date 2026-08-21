@@ -982,8 +982,8 @@ describe('setupLlmNamespace — routed through the global LLM concurrency limite
     // assertion throws — otherwise a failure leaves the module-level
     // limiter permanently saturated and hangs every later test in this
     // file that touches chatStream/runWithLlmLimit.
-    let emitted: Array<{ event: string; args: any[] }> = [];
-    let chatPromise: Promise<unknown> = Promise.resolve();
+    let emitted: Array<{ event: string; args: any[] }>;
+    let chatPromise: Promise<unknown>;
     try {
       await waitForQueueSize((s) => s.active === 2);
       expect(getLlmQueueSize()).toEqual({ pending: 0, active: 2 });
