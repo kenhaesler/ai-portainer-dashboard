@@ -978,26 +978,40 @@ describe('setupLlmNamespace — routed through the global LLM concurrency limite
       runWithLlmLimit(() => gate),
     ];
 
-    await waitForQueueSize((s) => s.active === 2);
-    expect(getLlmQueueSize()).toEqual({ pending: 0, active: 2 });
+    // Everything from here on must release the blockers even if an
+    // assertion throws — otherwise a failure leaves the module-level
+    // limiter permanently saturated and hangs every later test in this
+    // file that touches chatStream/runWithLlmLimit.
+    let emitted: Array<{ event: string; args: any[] }> = [];
+    let chatPromise: Promise<unknown> = Promise.resolve();
+    try {
+      await waitForQueueSize((s) => s.active === 2);
+      expect(getLlmQueueSize()).toEqual({ pending: 0, active: 2 });
 
-    const { ns, socketHandlers, emitted, connect } = createMockSocketPair();
-    setupLlmNamespace(ns, mockInfraLogs);
-    connect();
+      const pair = createMockSocketPair();
+      emitted = pair.emitted;
+      setupLlmNamespace(pair.ns, mockInfraLogs);
+      pair.connect();
 
-    const chatHandler = socketHandlers.get('chat:message');
-    const chatPromise = chatHandler!({ text: 'Hi' });
+      const chatHandler = pair.socketHandlers.get('chat:message');
+      chatPromise = chatHandler!({ text: 'Hi' });
 
-    // The chat socket's LLM call must be queued (pending), not running
-    // (active), while the limiter's two slots are held by the blockers —
-    // proof that streamLlmCall is gated through the shared limiter (#1667).
-    const duringBlock = await waitForQueueSize((s) => s.pending >= 1);
-    expect(duringBlock.active).toBe(2);
-    expect(duringBlock.pending).toBeGreaterThanOrEqual(1);
+      // The chat socket's LLM call must be queued (pending), not running
+      // (active), while the limiter's two slots are held by the blockers —
+      // proof that streamLlmCall is gated through the shared limiter (#1667).
+      const duringBlock = await waitForQueueSize((s) => s.pending >= 1);
+      expect(duringBlock.active).toBe(2);
+      expect(duringBlock.pending).toBeGreaterThanOrEqual(1);
+      // Queued status is surfaced on the same chat:status channel while the
+      // limiter's slots are held (#1667 F2).
+      const statusEvents = emitted.filter((e) => e.event === 'chat:status');
+      expect(statusEvents.some((e) => /Queued behind/.test((e.args[0] as { message?: string }).message ?? ''))).toBe(true);
+    } finally {
+      // Release the blockers so the chat call can acquire a slot and complete.
+      releaseBlockers();
+      await Promise.all(blockedTasks);
+    }
 
-    // Release the blockers so the chat call can acquire a slot and complete.
-    releaseBlockers();
-    await Promise.all(blockedTasks);
     await chatPromise;
 
     expect(getLlmQueueSize()).toEqual({ pending: 0, active: 0 });

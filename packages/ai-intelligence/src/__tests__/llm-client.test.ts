@@ -8,6 +8,7 @@ import {
   getFetchErrorMessage,
   getLlmDispatcher,
   getLlmQueueSize,
+  runWithLlmLimit,
   extractApiError,
   resolveChatCompletionsUrl,
   resolveModelsUrl,
@@ -356,6 +357,22 @@ describe('llm-client', () => {
       ).rejects.toThrow(/429/);
       expect(mockInsertLlmTrace).toHaveBeenCalledWith(expect.objectContaining({ status: 'error' }));
     });
+
+    it('throws on a 200 response carrying an { error } body and records an error trace', async () => {
+      mockJsonResponse({ error: { message: 'model not found' } });
+      await expect(
+        chatStream([{ role: 'user', content: 'q' }], 'sys', () => {}, undefined, { stream: false }),
+      ).rejects.toThrow(/model not found/);
+      expect(mockInsertLlmTrace).toHaveBeenCalledWith(expect.objectContaining({ status: 'error' }));
+    });
+
+    it('accepts the Ollama-native message.content shape with no choices array', async () => {
+      mockJsonResponse({ message: { content: 'Native answer' } });
+      const result = await chatStream(
+        [{ role: 'user', content: 'q' }], 'sys', () => {}, undefined, { stream: false },
+      );
+      expect(result).toBe('Native answer');
+    });
   });
 
   describe('chatStream streaming default', () => {
@@ -379,7 +396,6 @@ describe('llm-client', () => {
 
   describe('runWithLlmLimit', () => {
     it('shares the pLimit(2) gate with chatStream', async () => {
-      const { runWithLlmLimit } = await import('../services/llm-client.js');
       let release!: () => void;
       const blocker = new Promise<void>((r) => { release = r; });
       const a = runWithLlmLimit(() => blocker);

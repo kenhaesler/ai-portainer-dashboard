@@ -76,6 +76,14 @@ config, and upstream `usage` token counts are preferred over local estimates whe
 `llm_traces`. The chat socket's direct calls run inside the same global `pLimit(2)` gate via
 `runWithLlmLimit`, so a buffered caller cannot starve a live chat session of a concurrency slot.
 
+**Trade-off:** the gate is FIFO with no priority lane — a background analysis can hold both
+`pLimit(2)` slots for up to `LLM_REQUEST_TIMEOUT` each, so an interactive chat message issued while
+both slots are busy queues behind them rather than preempting. The chat socket emits a `chat:status`
+"Queued behind N AI request(s)…" event when this happens so the wait is visible to the user instead
+of looking hung. Three direct `llmFetch` call sites remain outside both the limiter and the
+`max_tokens` gating — `packages/ai-intelligence/src/routes/llm.ts` (`/api/llm/query`,
+`/api/llm/test-prompt`) and `routes/llm-feedback.ts` — tracked as a follow-up issue.
+
 ## Portainer Integration & Live Data Source
 
 All per-endpoint container counts, host CPU/memory, and stack totals are obtained by calling the Docker API directly via live `/docker/info` requests — Portainer's per-endpoint `Snapshots[]` array is **no longer read**. The pipeline is implemented in `packages/core/src/portainer/live-fleet.ts` and exposes four functions used by foundation routes and the scheduler:

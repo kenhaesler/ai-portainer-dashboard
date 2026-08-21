@@ -39,6 +39,10 @@ vi.mock('../services/pcap-store.js', () => ({
 }));
 
 // Stub out tcpdump execution (#1667) — extractPcapSummary shells out via execFile.
+// TRAP: this mock stubs ONLY `execFile` and is file-wide (applies to every test
+// in this file, not just PCAP analysis ones). A future test that needs
+// `spawn`/`exec` from `child_process` will get `undefined` here, not the real
+// module — extend this mock rather than adding a second one.
 vi.mock('child_process', () => ({
   execFile: (
     _file: string,

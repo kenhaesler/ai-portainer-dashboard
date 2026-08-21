@@ -6,7 +6,7 @@ import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { getConfig } from '@dashboard/core/config/index.js';
 import { getEffectiveLlmConfig, estimateTokens, type PromptFeature } from './prompt-store.js';
 import { insertLlmTrace } from './llm-trace-store.js';
-import { streamOpenAiContent } from './sse-stream.js';
+import { streamOpenAiContent, extractApiError } from './sse-stream.js';
 import { isPromptInjection, sanitizeLlmOutput } from './prompt-guard.js';
 
 // Re-exported for backward compatibility: extractApiError now lives with the
@@ -286,10 +286,19 @@ async function chatStreamInner(
       }
     } else {
       const data = (await response.json()) as {
-        choices?: Array<{ message?: { content?: string } }>;
+        choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;
+        message?: { content?: string };
         usage?: { prompt_tokens?: number; completion_tokens?: number };
       };
-      fullResponse = data.choices?.[0]?.message?.content ?? '';
+      const apiError = extractApiError(data);
+      if (apiError) throw new Error(`LLM endpoint returned an error: ${apiError}`);
+      fullResponse = data.choices?.[0]?.message?.content ?? data.message?.content ?? '';
+      if (!fullResponse) {
+        log.warn({ feature, correlation_id: correlationId }, 'Non-streaming LLM response carried no content');
+      }
+      if (data.choices?.[0]?.finish_reason === 'length') {
+        log.warn({ feature, correlation_id: correlationId }, 'LLM completion truncated by max_tokens (finish_reason=length)');
+      }
       if (typeof data.usage?.prompt_tokens === 'number') usagePromptTokens = data.usage.prompt_tokens;
       if (typeof data.usage?.completion_tokens === 'number') usageCompletionTokens = data.usage.completion_tokens;
     }

@@ -10,7 +10,7 @@ import { getToolSystemPrompt, parseToolCalls, type ToolCallResult } from '../ser
 import { collectAllTools, routeToolCalls, getMcpToolPrompt, type OllamaToolCall } from '../services/mcp-tool-bridge.js';
 import type { InfrastructureLogsInterface } from '@dashboard/contracts';
 import { isPromptInjection, sanitizeLlmOutput, stripThinkingBlocks, registerCanary, clearCanary, getCanary } from '../services/prompt-guard.js';
-import { getAuthHeaders, getFetchErrorMessage, llmFetch, resolveChatCompletionsUrl, runWithLlmLimit } from '../services/llm-client.js';
+import { getAuthHeaders, getFetchErrorMessage, getLlmQueueSize, llmFetch, resolveChatCompletionsUrl, runWithLlmLimit } from '../services/llm-client.js';
 import { getConfig } from '@dashboard/core/config/index.js';
 import { createSocketThrottle } from '@dashboard/core/utils/socket-throttle.js';
 
@@ -545,6 +545,24 @@ export function formatChatContext(ctx: Record<string, unknown>): string {
 const CHAT_THROTTLE_MS = 2_000; // minimum 2 seconds between messages per user
 const chatThrottle = createSocketThrottle(CHAT_THROTTLE_MS);
 
+/**
+ * Surface the shared LLM concurrency gate to the user before an interactive
+ * chat message queues behind it. Background analyses (investigations,
+ * remediation, incident summaries, …) can hold both `runWithLlmLimit(2)`
+ * slots for up to LLM_REQUEST_TIMEOUT each, so a chat message can sit
+ * queued with no visible progress — this reuses the existing chat:status
+ * channel rather than adding a new event (#1667).
+ */
+function emitQueuedStatusIfLimited(socket: { emit: (event: string, payload: unknown) => void }): void {
+  const { pending, active } = getLlmQueueSize();
+  if (active >= 2) {
+    socket.emit('chat:status', {
+      message: `Queued behind ${pending + active} AI request(s)…`,
+      phase: 'model',
+    });
+  }
+}
+
 /** Exported for testing — gives tests a way to reset state and to assert the cooldown. */
 export { chatThrottle, CHAT_THROTTLE_MS };
 
@@ -732,6 +750,7 @@ export function setupLlmNamespace(ns: Namespace, infraLogs: InfrastructureLogsIn
           let iterationResponse = '';
 
           try {
+            emitQueuedStatusIfLimited(socket);
             iterationResponse = await streamLlmCall(
               llmConfig,
               selectedModel,
@@ -876,6 +895,7 @@ export function setupLlmNamespace(ns: Namespace, infraLogs: InfrastructureLogsIn
                 content: 'You have run out of tool calls. Summarize the information you have gathered so far into a clear, helpful answer for the user. Do not attempt any more tool calls. Do not output tool_calls JSON.',
               },
             ];
+            emitQueuedStatusIfLimited(socket);
             finalResponse = await streamLlmCall(
               llmConfig,
               selectedModel,
