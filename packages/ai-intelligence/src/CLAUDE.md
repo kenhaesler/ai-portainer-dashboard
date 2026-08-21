@@ -60,5 +60,6 @@ All wiring happens in `@dashboard/server/src/wiring.ts`.
 
 - **Never add imports from other domain packages** — use DI via `initInvestigationDeps()` or `createMonitoringService(deps)`
 - All LLM queries must pass through prompt guard before reaching the model — enforced centrally in `chatStream()` (`services/llm-client.ts`): user-role messages are guarded and the returned response is sanitized. Consume `chatStream`'s return value; do not re-accumulate raw `onChunk` chunks
+- Buffered internal callers pass `{ stream: false }` so the shared gateway is not held on SSE slots nobody consumes; only true live-stream consumers (chat socket, metrics ai-summary SSE) stream, and the chat socket's direct calls go through `runWithLlmLimit` (#1667)
 - Cooldown sweep prevents alert spam (configurable per anomaly type)
 - MCP tools auto-connect at server startup; manually configurable via routes

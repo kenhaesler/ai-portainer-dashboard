@@ -322,6 +322,7 @@ export async function analyzeCapture(captureId: string, llm: LLMInterface): Prom
     await llm.getEffectivePrompt('pcap_analyzer'),
     () => {},
     'pcap_analyzer',
+    { stream: false },
   );
 
   // Phase 3: Parse and store

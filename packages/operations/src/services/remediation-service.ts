@@ -338,6 +338,7 @@ async function enrichActionWithLlmAnalysis(
       systemPrompt,
       () => {},
       'remediation',
+      { stream: false },
     );
 
     let parsed = tryParseRemediationAnalysis(rawResponse);
@@ -354,6 +355,7 @@ async function enrichActionWithLlmAnalysis(
         RETRY_SYSTEM_PROMPT,
         () => {},
         'remediation',
+        { stream: false },
       );
       parsed = tryParseRemediationAnalysis(retryResponse);
 

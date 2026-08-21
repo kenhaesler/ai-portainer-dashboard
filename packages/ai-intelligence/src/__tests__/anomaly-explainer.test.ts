@@ -55,6 +55,7 @@ describe('anomaly-explainer', () => {
         expect.any(String),
         expect.any(Function),
         'anomaly_explainer',
+        expect.objectContaining({ stream: false }),
       );
     });
 

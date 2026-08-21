@@ -29,6 +29,25 @@ vi.mock('../services/pcap-analysis-service.js', () => ({
   analyzeCapture: (...args: unknown[]) => mockAnalyzeCapture(...args),
 }));
 
+// Used only by the unmocked-service test below (#1667) — the real analyzeCapture
+// still needs a capture row and an updateCaptureAnalysis sink.
+const mockGetCapture = vi.fn();
+const mockUpdateCaptureAnalysis = vi.fn();
+vi.mock('../services/pcap-store.js', () => ({
+  getCapture: (...args: unknown[]) => mockGetCapture(...args),
+  updateCaptureAnalysis: (...args: unknown[]) => mockUpdateCaptureAnalysis(...args),
+}));
+
+// Stub out tcpdump execution (#1667) — extractPcapSummary shells out via execFile.
+vi.mock('child_process', () => ({
+  execFile: (
+    _file: string,
+    _args: string[],
+    _opts: unknown,
+    callback: (err: unknown, result: { stdout: string; stderr: string }) => void,
+  ) => callback(null, { stdout: '', stderr: '' }),
+}));
+
 // Kept: infrastructure module mock — no Portainer API in CI
 vi.mock('@dashboard/infrastructure', () => ({
   assertCapability: (...args: unknown[]) => mockAssertCapability(...args),
@@ -399,6 +418,57 @@ describe('PCAP Routes', () => {
     });
 
     testAdminOnly(() => app, (r) => { currentRole = r; }, 'POST', '/api/pcap/captures/c1/analyze');
+
+    it('the real analyzeCapture service requests a non-streaming completion (#1667)', async () => {
+      const { setConfigForTest } = await import('@dashboard/core/config/index.js');
+      setConfigForTest({ PCAP_ENABLED: true });
+
+      mockGetCapture.mockResolvedValue({
+        id: 'c1',
+        endpoint_id: 1,
+        container_id: 'abc',
+        container_name: 'web',
+        status: 'complete',
+        filter: null,
+        duration_seconds: null,
+        max_packets: null,
+        capture_file: 'c1.pcap',
+        file_size_bytes: 100,
+        packet_count: 0,
+        protocol_stats: null,
+        exec_id: null,
+        error_message: null,
+        started_at: null,
+        completed_at: null,
+        created_at: new Date().toISOString(),
+      });
+      mockGetCaptureFilePath.mockResolvedValue('/tmp/c1.pcap');
+
+      const realLlm: LLMInterface = {
+        isAvailable: vi.fn().mockResolvedValue(true),
+        chatStream: vi.fn().mockResolvedValue(
+          JSON.stringify({ health_status: 'healthy', summary: 'ok', findings: [], confidence_score: 0.9 }),
+        ),
+        getEffectivePrompt: vi.fn().mockResolvedValue('You are a PCAP analyst.'),
+        buildInfrastructureContext: vi.fn(),
+      };
+
+      // Bypass this file's top-level mock of pcap-analysis-service.js to exercise
+      // the real chatStream call site.
+      const { analyzeCapture: realAnalyzeCapture } = await vi.importActual<
+        typeof import('../services/pcap-analysis-service.js')
+      >('../services/pcap-analysis-service.js');
+
+      await realAnalyzeCapture('c1', realLlm);
+
+      expect(realLlm.chatStream).toHaveBeenCalledWith(
+        expect.arrayContaining([expect.objectContaining({ role: 'user' })]),
+        expect.any(String),
+        expect.any(Function),
+        'pcap_analyzer',
+        expect.objectContaining({ stream: false }),
+      );
+    });
   });
 
   describe('DELETE /api/pcap/captures/:id', () => {

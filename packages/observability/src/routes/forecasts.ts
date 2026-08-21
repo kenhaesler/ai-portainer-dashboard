@@ -209,6 +209,7 @@ export async function forecastRoutes(fastify: FastifyInstance, opts: { llm?: LLM
         systemPrompt,
         () => {}, // no streaming needed for this endpoint
         'capacity_forecast',
+        { stream: false },
       );
 
       const trimmed = narrative.trim();

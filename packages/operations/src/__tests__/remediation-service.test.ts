@@ -283,6 +283,9 @@ describe('remediation-service', () => {
     const retryMessages = retryCall[0] as Array<{ role: string; content: string }>;
     expect(retryMessages.some((m: any) => m.role === 'assistant')).toBe(true);
     expect(retryMessages.some((m: any) => m.content.includes('not valid JSON'))).toBe(true);
+    // Both buffered calls opt out of streaming (#1667)
+    expect(mockLlm.chatStream.mock.calls[0][4]).toEqual(expect.objectContaining({ stream: false }));
+    expect(retryCall[4]).toEqual(expect.objectContaining({ stream: false }));
 
     // Should have updated rationale with the structured response
     expect(mockUpdateActionRationale).toHaveBeenCalledTimes(1);

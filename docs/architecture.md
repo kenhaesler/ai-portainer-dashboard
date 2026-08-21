@@ -65,6 +65,17 @@ The eBPF coverage verification POST is also admin-only because it persists verif
 These invariants are covered by domain unit tests plus the mandatory backend
 `security-regression-{rbac,infra,error-details,auth}.test.ts` suites.
 
+## LLM gateway efficiency (#1667)
+
+Buffered internal flows — anomaly explanation, incident summaries, investigations, log analysis,
+monitoring insights, correlation insights, remediation, PCAP analysis, and capacity forecast
+narratives — request non-streaming completions (`{ stream: false }`) from `chatStream()`, since
+nothing on those paths consumes SSE chunks; only true live-stream consumers (the chat socket and
+the metrics ai-summary SSE) stream. Every request carries `max_tokens` from the effective LLM
+config, and upstream `usage` token counts are preferred over local estimates when persisting
+`llm_traces`. The chat socket's direct calls run inside the same global `pLimit(2)` gate via
+`runWithLlmLimit`, so a buffered caller cannot starve a live chat session of a concurrency slot.
+
 ## Portainer Integration & Live Data Source
 
 All per-endpoint container counts, host CPU/memory, and stack totals are obtained by calling the Docker API directly via live `/docker/info` requests — Portainer's per-endpoint `Snapshots[]` array is **no longer read**. The pipeline is implemented in `packages/core/src/portainer/live-fleet.ts` and exposes four functions used by foundation routes and the scheduler:

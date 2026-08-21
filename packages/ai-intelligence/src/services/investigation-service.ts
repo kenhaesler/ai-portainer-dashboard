@@ -401,6 +401,7 @@ async function runInvestigation(investigationId: string, insight: Insight): Prom
       await getEffectivePrompt('root_cause'),
       () => {},
       'root_cause',
+      { stream: false },
     );
 
     // Phase 3: Parse and store

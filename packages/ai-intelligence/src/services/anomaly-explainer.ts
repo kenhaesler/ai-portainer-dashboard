@@ -36,6 +36,7 @@ export async function explainAnomaly(
         await getEffectivePrompt('anomaly_explainer'),
         () => {},
         'anomaly_explainer',
+        { stream: false },
       );
 
       const trimmed = response.trim();
@@ -134,6 +135,7 @@ export async function explainAnomalies(
       await getEffectivePrompt('anomaly_explainer'),
       () => {},
       'anomaly_explainer',
+      { stream: false },
     );
 
     const parsed = parseBatchResponse(response.trim(), toExplain.length);
