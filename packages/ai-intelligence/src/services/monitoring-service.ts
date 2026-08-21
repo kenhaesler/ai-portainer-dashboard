@@ -682,6 +682,7 @@ export function createMonitoringService(deps: MonitoringDeps) {
               systemPrompt,
               () => {},
               'monitoring_analysis',
+              { stream: false },
             );
 
             if (aiResponse.trim()) {

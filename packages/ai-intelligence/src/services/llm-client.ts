@@ -6,7 +6,7 @@ import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { getConfig } from '@dashboard/core/config/index.js';
 import { getEffectiveLlmConfig, estimateTokens, type PromptFeature } from './prompt-store.js';
 import { insertLlmTrace } from './llm-trace-store.js';
-import { streamOpenAiContent } from './sse-stream.js';
+import { streamOpenAiContent, extractApiError } from './sse-stream.js';
 import { isPromptInjection, sanitizeLlmOutput } from './prompt-guard.js';
 
 // Re-exported for backward compatibility: extractApiError now lives with the
@@ -32,6 +32,16 @@ const llmLimit = pLimit(LLM_MAX_CONCURRENCY);
 /** Expose current pending/active count for observability and testing. */
 export function getLlmQueueSize(): { pending: number; active: number } {
   return { pending: llmLimit.pendingCount, active: llmLimit.activeCount };
+}
+
+/**
+ * Run an arbitrary LLM-bound operation through the same global concurrency
+ * gate as chatStream. Exists for callers that manage their own request
+ * lifecycle (the chat socket's tool loop) so interactive traffic cannot
+ * exceed the gateway budget the limiter exists to enforce (#1667).
+ */
+export function runWithLlmLimit<T>(fn: () => Promise<T>): Promise<T> {
+  return llmLimit(fn);
 }
 
 /** Read custom CA certificate from NODE_EXTRA_CA_CERTS if set */
@@ -166,11 +176,19 @@ export interface ChatMessage {
   content: string;
 }
 
+/** Options for chatStream. `stream` defaults to true (SSE). Buffered callers
+ *  that never consume chunks pass { stream: false } so the gateway can hand
+ *  off a single JSON completion instead of holding a streaming slot (#1667). */
+export interface ChatStreamOptions {
+  stream?: boolean;
+}
+
 export async function chatStream(
   messages: ChatMessage[],
   systemPrompt: string,
   onChunk: (chunk: string) => void,
   feature?: PromptFeature,
+  options?: ChatStreamOptions,
 ): Promise<string> {
   // Choke-point prompt guard: every chatStream caller funnels through here,
   // including internal flows (log analysis, anomaly explanation, incident
@@ -193,7 +211,7 @@ export async function chatStream(
 
   return llmLimit(() =>
     withSpan('LLM chat', 'llm-service', 'client', () =>
-      chatStreamInner(messages, systemPrompt, onChunk, feature),
+      chatStreamInner(messages, systemPrompt, onChunk, feature, options),
     ),
   );
 }
@@ -203,6 +221,7 @@ async function chatStreamInner(
   systemPrompt: string,
   onChunk: (chunk: string) => void,
   feature?: PromptFeature,
+  options?: ChatStreamOptions,
 ): Promise<string> {
   const llmConfig = await getEffectiveLlmConfig(feature);
   const config = getConfig();
@@ -232,6 +251,7 @@ async function chatStreamInner(
   // as `x-trace-correlation-id` so the Beyla-captured client span and the
   // llm_traces row can be joined for the LLM latency-breakdown panel.
   const correlationId = randomUUID();
+  const streaming = options?.stream !== false;
 
   try {
     const response = await llmFetch(chatUrl, {
@@ -244,7 +264,8 @@ async function chatStreamInner(
       body: JSON.stringify({
         model: llmConfig.model,
         messages: fullMessages,
-        stream: true,
+        stream: streaming,
+        ...(llmConfig.maxTokens ? { max_tokens: llmConfig.maxTokens } : {}),
         ...(llmConfig.temperature !== undefined ? { temperature: llmConfig.temperature } : {}),
       }),
       signal: AbortSignal.timeout(requestTimeoutMs),
@@ -254,16 +275,37 @@ async function chatStreamInner(
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
 
-    // Shared buffered SSE reader (#1510): reassembles `data:` lines split
-    // across reads and surfaces `{ error }` bodies via extractApiError.
-    for await (const content of streamOpenAiContent(response)) {
-      fullResponse += content;
-      onChunk(content);
+    let usagePromptTokens: number | undefined;
+    let usageCompletionTokens: number | undefined;
+    if (streaming) {
+      // Shared buffered SSE reader (#1510): reassembles `data:` lines split
+      // across reads and surfaces `{ error }` bodies via extractApiError.
+      for await (const content of streamOpenAiContent(response)) {
+        fullResponse += content;
+        onChunk(content);
+      }
+    } else {
+      const data = (await response.json()) as {
+        choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;
+        message?: { content?: string };
+        usage?: { prompt_tokens?: number; completion_tokens?: number };
+      };
+      const apiError = extractApiError(data);
+      if (apiError) throw new Error(`LLM endpoint returned an error: ${apiError}`);
+      fullResponse = data.choices?.[0]?.message?.content ?? data.message?.content ?? '';
+      if (!fullResponse) {
+        log.warn({ feature, correlation_id: correlationId }, 'Non-streaming LLM response carried no content');
+      }
+      if (data.choices?.[0]?.finish_reason === 'length') {
+        log.warn({ feature, correlation_id: correlationId }, 'LLM completion truncated by max_tokens (finish_reason=length)');
+      }
+      if (typeof data.usage?.prompt_tokens === 'number') usagePromptTokens = data.usage.prompt_tokens;
+      if (typeof data.usage?.completion_tokens === 'number') usageCompletionTokens = data.usage.completion_tokens;
     }
 
     const latencyMs = Date.now() - startTime;
-    const promptTokens = estimateTokens(fullMessages.map((m) => m.content).join(''));
-    const completionTokens = estimateTokens(fullResponse);
+    const promptTokens = usagePromptTokens ?? estimateTokens(fullMessages.map((m) => m.content).join(''));
+    const completionTokens = usageCompletionTokens ?? estimateTokens(fullResponse);
 
     // Choke-point output sanitization: strip thinking blocks, leaked
     // tool-call JSON, and system-prompt leak patterns before the response

@@ -185,6 +185,13 @@ describe('Forecast Routes', () => {
       const body = res.json();
       expect(body.narrative).toBe('CPU is rising steadily. Consider scaling soon.');
       expect(mockChatStream).toHaveBeenCalledTimes(1);
+      expect(mockChatStream).toHaveBeenCalledWith(
+        expect.arrayContaining([expect.objectContaining({ role: 'user' })]),
+        expect.any(String),
+        expect.any(Function),
+        'capacity_forecast',
+        expect.objectContaining({ stream: false }),
+      );
     });
 
     it('returns null narrative when forecast data is insufficient', async () => {

@@ -41,6 +41,7 @@ export async function analyzeContainerLogs(
       await getEffectivePrompt('log_analyzer'),
       () => {},
       'log_analyzer',
+      { stream: false },
     );
 
     const trimmed = response.trim();

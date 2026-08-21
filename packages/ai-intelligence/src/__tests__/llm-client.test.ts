@@ -8,6 +8,7 @@ import {
   getFetchErrorMessage,
   getLlmDispatcher,
   getLlmQueueSize,
+  runWithLlmLimit,
   extractApiError,
   resolveChatCompletionsUrl,
   resolveModelsUrl,
@@ -297,6 +298,114 @@ describe('llm-client', () => {
 
       const allResults = await Promise.all(results);
       expect(allResults).toEqual(['ok', 'ok', 'ok', 'ok']);
+    });
+  });
+
+  describe('chatStream non-streaming mode', () => {
+    function mockJsonResponse(payload: unknown) {
+      mockUndiciFetch.mockResolvedValue(
+        new Response(JSON.stringify(payload), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+      );
+    }
+
+    it('sends stream:false and max_tokens, returns the buffered completion', async () => {
+      mockJsonResponse({
+        choices: [{ message: { content: 'Buffered answer' } }],
+        usage: { prompt_tokens: 11, completion_tokens: 7 },
+      });
+      const onChunk = vi.fn();
+      const result = await chatStream(
+        [{ role: 'user', content: 'analyze' }], 'sys', onChunk, undefined, { stream: false },
+      );
+      expect(result).toBe('Buffered answer');
+      expect(onChunk).not.toHaveBeenCalled();
+      const body = JSON.parse(mockUndiciFetch.mock.calls[0][1].body as string);
+      expect(body.stream).toBe(false);
+      expect(body.max_tokens).toBe(2048);
+    });
+
+    it('records the upstream usage token counts in the trace when present', async () => {
+      mockJsonResponse({
+        choices: [{ message: { content: 'ok' } }],
+        usage: { prompt_tokens: 11, completion_tokens: 7 },
+      });
+      await chatStream([{ role: 'user', content: 'q' }], 'sys', () => {}, undefined, { stream: false });
+      expect(mockInsertLlmTrace).toHaveBeenCalledWith(expect.objectContaining({
+        status: 'success', prompt_tokens: 11, completion_tokens: 7, total_tokens: 18,
+      }));
+    });
+
+    it('falls back to estimated tokens when usage is absent', async () => {
+      mockJsonResponse({ choices: [{ message: { content: 'ok' } }] });
+      await chatStream([{ role: 'user', content: 'q' }], 'sys', () => {}, undefined, { stream: false });
+      const trace = mockInsertLlmTrace.mock.calls[0][0];
+      expect(trace.status).toBe('success');
+      expect(trace.prompt_tokens).toBeGreaterThan(0);
+    });
+
+    it('sanitizes the buffered response through the central chokepoint', async () => {
+      mockJsonResponse({ choices: [{ message: { content: '<think>secret</think>Visible' } }] });
+      const result = await chatStream([{ role: 'user', content: 'q' }], 'sys', () => {}, undefined, { stream: false });
+      expect(result).not.toContain('secret');
+      expect(result).toContain('Visible');
+    });
+
+    it('throws and records an error trace on a non-OK response', async () => {
+      mockUndiciFetch.mockResolvedValue(new Response('{"error":"rate limited"}', { status: 429, statusText: 'Too Many Requests' }));
+      await expect(
+        chatStream([{ role: 'user', content: 'q' }], 'sys', () => {}, undefined, { stream: false }),
+      ).rejects.toThrow(/429/);
+      expect(mockInsertLlmTrace).toHaveBeenCalledWith(expect.objectContaining({ status: 'error' }));
+    });
+
+    it('throws on a 200 response carrying an { error } body and records an error trace', async () => {
+      mockJsonResponse({ error: { message: 'model not found' } });
+      await expect(
+        chatStream([{ role: 'user', content: 'q' }], 'sys', () => {}, undefined, { stream: false }),
+      ).rejects.toThrow(/model not found/);
+      expect(mockInsertLlmTrace).toHaveBeenCalledWith(expect.objectContaining({ status: 'error' }));
+    });
+
+    it('accepts the Ollama-native message.content shape with no choices array', async () => {
+      mockJsonResponse({ message: { content: 'Native answer' } });
+      const result = await chatStream(
+        [{ role: 'user', content: 'q' }], 'sys', () => {}, undefined, { stream: false },
+      );
+      expect(result).toBe('Native answer');
+    });
+  });
+
+  describe('chatStream streaming default', () => {
+    it('still sends stream:true plus max_tokens when options are omitted', async () => {
+      const body = new ReadableStream({
+        start(controller) {
+          controller.enqueue(
+            new TextEncoder().encode(JSON.stringify({ choices: [{ delta: { content: 'hi' } }] }) + '\n'),
+          );
+          controller.close();
+        },
+      });
+      mockUndiciFetch.mockResolvedValue(new Response(body, { status: 200 }));
+
+      await chatStream([{ role: 'user', content: 'q' }], 'sys', () => {});
+      const body2 = JSON.parse(mockUndiciFetch.mock.calls[0][1].body as string);
+      expect(body2.stream).toBe(true);
+      expect(body2.max_tokens).toBe(2048);
+    });
+  });
+
+  describe('runWithLlmLimit', () => {
+    it('shares the pLimit(2) gate with chatStream', async () => {
+      let release!: () => void;
+      const blocker = new Promise<void>((r) => { release = r; });
+      const a = runWithLlmLimit(() => blocker);
+      const b = runWithLlmLimit(() => blocker);
+      const c = runWithLlmLimit(async () => 'third');
+      // Two slots busy, third queued behind them.
+      expect(getLlmQueueSize()).toEqual({ pending: 1, active: 2 });
+      release();
+      await Promise.all([a, b, c]);
+      expect(getLlmQueueSize()).toEqual({ pending: 0, active: 0 });
     });
   });
 

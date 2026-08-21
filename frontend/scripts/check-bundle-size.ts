@@ -95,7 +95,12 @@ export function collectEagerChunkFiles(distDir: string): string[] {
     }
   }
 
-  return [...seen].sort();
+  // Emitted paths are used both in human-readable failure messages and
+  // compared against posix-style chunk names, so normalize separators here
+  // rather than at every call site: `path.join`/`path.normalize` above
+  // produce backslashes on Windows, which would otherwise never match a
+  // `chunks/...` comparison.
+  return [...seen].map((p) => p.replaceAll('\\', '/')).sort();
 }
 
 /**

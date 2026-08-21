@@ -30,6 +30,7 @@ export async function generateLlmIncidentSummary(
       await getEffectivePrompt('incident_summarizer'),
       () => {},
       'incident_summarizer',
+      { stream: false },
     );
 
     const trimmed = response.trim();

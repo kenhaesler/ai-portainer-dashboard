@@ -10,7 +10,7 @@ import { getToolSystemPrompt, parseToolCalls, type ToolCallResult } from '../ser
 import { collectAllTools, routeToolCalls, getMcpToolPrompt, type OllamaToolCall } from '../services/mcp-tool-bridge.js';
 import type { InfrastructureLogsInterface } from '@dashboard/contracts';
 import { isPromptInjection, sanitizeLlmOutput, stripThinkingBlocks, registerCanary, clearCanary, getCanary } from '../services/prompt-guard.js';
-import { getAuthHeaders, getFetchErrorMessage, llmFetch, resolveChatCompletionsUrl } from '../services/llm-client.js';
+import { getAuthHeaders, getFetchErrorMessage, getLlmQueueSize, llmFetch, resolveChatCompletionsUrl, runWithLlmLimit } from '../services/llm-client.js';
 import { getConfig } from '@dashboard/core/config/index.js';
 import { createSocketThrottle } from '@dashboard/core/utils/socket-throttle.js';
 
@@ -435,65 +435,67 @@ async function streamLlmCall(
     throw new Error('LLM is not configured. Set LLM_API_URL or configure Settings → AI & LLM → API Endpoint URL.');
   }
 
-  let fullResponse = '';
-  const chatUrl = resolveChatCompletionsUrl(llmConfig.apiUrl);
-  // Bound the stream even when the client never cancels: combine the caller's
-  // abort signal (frontend cancel button) with a server-side ceiling so a hung
-  // upstream can't hold the socket open indefinitely (#1514).
-  const timeoutSignal = AbortSignal.timeout(getConfig().LLM_STREAM_TIMEOUT_MS);
-  const effectiveSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
-  const response = await llmFetch(chatUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...getAuthHeaders(llmConfig.apiToken, llmConfig.authType),
-    },
-    body: JSON.stringify({
-      model: selectedModel,
-      messages,
-      stream: true,
-      max_tokens: llmConfig.maxTokens,
-      ...(llmConfig.temperature !== undefined ? { temperature: llmConfig.temperature } : {}),
-    }),
-    signal: effectiveSignal,
-  });
+  return runWithLlmLimit(async () => {
+    let fullResponse = '';
+    const chatUrl = resolveChatCompletionsUrl(llmConfig.apiUrl);
+    // Bound the stream even when the client never cancels: combine the caller's
+    // abort signal (frontend cancel button) with a server-side ceiling so a hung
+    // upstream can't hold the socket open indefinitely (#1514).
+    const timeoutSignal = AbortSignal.timeout(getConfig().LLM_STREAM_TIMEOUT_MS);
+    const effectiveSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+    const response = await llmFetch(chatUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(llmConfig.apiToken, llmConfig.authType),
+      },
+      body: JSON.stringify({
+        model: selectedModel,
+        messages,
+        stream: true,
+        max_tokens: llmConfig.maxTokens,
+        ...(llmConfig.temperature !== undefined ? { temperature: llmConfig.temperature } : {}),
+      }),
+      signal: effectiveSignal,
+    });
 
-  if (!response.ok) {
-    let bodyText = '';
-    try {
-      const bodyBuf = await response.arrayBuffer();
-      if (bodyBuf.byteLength > 0) {
-        bodyText = new TextDecoder().decode(bodyBuf);
+    if (!response.ok) {
+      let bodyText = '';
+      try {
+        const bodyBuf = await response.arrayBuffer();
+        if (bodyBuf.byteLength > 0) {
+          bodyText = new TextDecoder().decode(bodyBuf);
+        }
+      } catch {
+        // Ignore body read failures — fall back to statusText
       }
-    } catch {
-      // Ignore body read failures — fall back to statusText
+      const bodyError = bodyText
+        ? (() => {
+            try {
+              const json = JSON.parse(bodyText);
+              const apiErr = json.error;
+              if (typeof apiErr === 'string') return apiErr;
+              if (apiErr && typeof apiErr === 'object' && 'message' in apiErr) return (apiErr as { message?: unknown }).message;
+              return bodyText.substring(0, 500);
+            } catch {
+              return bodyText.substring(0, 500);
+            }
+          })()
+        : response.statusText;
+      throw new Error(`HTTP ${response.status}: ${bodyError}`);
     }
-    const bodyError = bodyText
-      ? (() => {
-          try {
-            const json = JSON.parse(bodyText);
-            const apiErr = json.error;
-            if (typeof apiErr === 'string') return apiErr;
-            if (apiErr && typeof apiErr === 'object' && 'message' in apiErr) return (apiErr as { message?: unknown }).message;
-            return bodyText.substring(0, 500);
-          } catch {
-            return bodyText.substring(0, 500);
-          }
-        })()
-      : response.statusText;
-    throw new Error(`HTTP ${response.status}: ${bodyError}`);
-  }
 
-  // Shared buffered SSE reader (#1510): reassembles `data:` lines split across
-  // reads and surfaces `{ error }` bodies via extractApiError. The caller's
-  // abort signal is polled between reads; the #1514 stream-timeout ceiling is
-  // already enforced on the fetch above via `effectiveSignal`.
-  for await (const text of streamOpenAiContent(response, { signal })) {
-    fullResponse += text;
-    onChunk(text);
-  }
+    // Shared buffered SSE reader (#1510): reassembles `data:` lines split across
+    // reads and surfaces `{ error }` bodies via extractApiError. The caller's
+    // abort signal is polled between reads; the #1514 stream-timeout ceiling is
+    // already enforced on the fetch above via `effectiveSignal`.
+    for await (const text of streamOpenAiContent(response, { signal })) {
+      fullResponse += text;
+      onChunk(text);
+    }
 
-  return fullResponse;
+    return fullResponse;
+  });
 }
 
 /**
@@ -542,6 +544,24 @@ export function formatChatContext(ctx: Record<string, unknown>): string {
 // monitoring and remediation namespaces with their own cooldown values.
 const CHAT_THROTTLE_MS = 2_000; // minimum 2 seconds between messages per user
 const chatThrottle = createSocketThrottle(CHAT_THROTTLE_MS);
+
+/**
+ * Surface the shared LLM concurrency gate to the user before an interactive
+ * chat message queues behind it. Background analyses (investigations,
+ * remediation, incident summaries, …) can hold both `runWithLlmLimit(2)`
+ * slots for up to LLM_REQUEST_TIMEOUT each, so a chat message can sit
+ * queued with no visible progress — this reuses the existing chat:status
+ * channel rather than adding a new event (#1667).
+ */
+function emitQueuedStatusIfLimited(socket: { emit: (event: string, payload: unknown) => void }): void {
+  const { pending, active } = getLlmQueueSize();
+  if (active >= 2) {
+    socket.emit('chat:status', {
+      message: `Queued behind ${pending + active} AI request(s)…`,
+      phase: 'model',
+    });
+  }
+}
 
 /** Exported for testing — gives tests a way to reset state and to assert the cooldown. */
 export { chatThrottle, CHAT_THROTTLE_MS };
@@ -730,6 +750,7 @@ export function setupLlmNamespace(ns: Namespace, infraLogs: InfrastructureLogsIn
           let iterationResponse = '';
 
           try {
+            emitQueuedStatusIfLimited(socket);
             iterationResponse = await streamLlmCall(
               llmConfig,
               selectedModel,
@@ -874,6 +895,7 @@ export function setupLlmNamespace(ns: Namespace, infraLogs: InfrastructureLogsIn
                 content: 'You have run out of tool calls. Summarize the information you have gathered so far into a clear, helpful answer for the user. Do not attempt any more tool calls. Do not output tool_calls JSON.',
               },
             ];
+            emitQueuedStatusIfLimited(socket);
             finalResponse = await streamLlmCall(
               llmConfig,
               selectedModel,

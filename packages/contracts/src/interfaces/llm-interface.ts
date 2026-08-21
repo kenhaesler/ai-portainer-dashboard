@@ -42,6 +42,14 @@ export interface LLMInterface {
     systemPrompt: string,
     onChunk: (chunk: string) => void,
     feature?: string,
+    options?: {
+      /**
+       * Default true (SSE streaming). Buffered callers that pass a no-op
+       * onChunk set false so the gateway serves one JSON completion instead
+       * of holding a streaming slot for the whole generation (#1667).
+       */
+      stream?: boolean;
+    },
   ): Promise<string>;
   /**
    * Create a fresh streaming filter for one live chunk stream (strips

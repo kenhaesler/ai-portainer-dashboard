@@ -80,16 +80,33 @@ const vitestOptions = (vitestConfig as { test?: { include?: string[]; setupFiles
  * binary the script actually runs, so a config the CLI reads differently from
  * the API cannot hide between them.
  */
+// On win32, npm's `.bin/tsc` shim is a `.cmd` file (or, for a package that
+// ships a native `.exe`, that instead); the extensionless POSIX shell script
+// that also lives alongside it cannot be exec'd directly by `execFileSync`,
+// which produces ENOENT rather than following the shim. Resolve the binary
+// name per platform so this still runs the exact `.bin/tsc` npm would run,
+// on either OS.
+const TSC_NAME = process.platform === 'win32' ? 'tsc.cmd' : 'tsc';
 const TSC = [
-  resolve(FRONTEND_DIR, 'node_modules/.bin/tsc'),
-  resolve(FRONTEND_DIR, '../node_modules/.bin/tsc'),
+  resolve(FRONTEND_DIR, 'node_modules/.bin', TSC_NAME),
+  resolve(FRONTEND_DIR, '../node_modules/.bin', TSC_NAME),
 ].find((candidate) => existsSync(candidate));
 
 function runTsc(args: string[]): string {
   if (!TSC) throw new Error('no tsc binary found in frontend/ or the repo root');
   // Throws on a non-zero exit, which is what a config that does not parse
   // produces — the same failure the API version surfaced via `parsed.errors`.
-  return execFileSync(TSC, args, { cwd: FRONTEND_DIR, encoding: 'utf-8', maxBuffer: 64 * 1024 * 1024 });
+  // `shell: true` on win32 is required to execute the `.cmd` shim (cmd.exe
+  // resolves PATHEXT-style invocation); `execFileSync` quotes each argv
+  // entry itself when `shell` is set, so a TSC path containing spaces is
+  // still handled correctly. Posix behavior (`shell: false`, direct exec of
+  // the `tsc` script) is unchanged.
+  return execFileSync(TSC, args, {
+    cwd: FRONTEND_DIR,
+    encoding: 'utf-8',
+    maxBuffer: 64 * 1024 * 1024,
+    shell: process.platform === 'win32',
+  });
 }
 
 /** The `tsc` invocations `npm run typecheck -w frontend` actually performs. */
