@@ -10,7 +10,7 @@ import { getToolSystemPrompt, parseToolCalls, type ToolCallResult } from '../ser
 import { collectAllTools, routeToolCalls, getMcpToolPrompt, type OllamaToolCall } from '../services/mcp-tool-bridge.js';
 import type { InfrastructureLogsInterface } from '@dashboard/contracts';
 import { isPromptInjection, sanitizeLlmOutput, stripThinkingBlocks, registerCanary, clearCanary, getCanary } from '../services/prompt-guard.js';
-import { getAuthHeaders, getFetchErrorMessage, llmFetch, resolveChatCompletionsUrl } from '../services/llm-client.js';
+import { getAuthHeaders, getFetchErrorMessage, llmFetch, resolveChatCompletionsUrl, runWithLlmLimit } from '../services/llm-client.js';
 import { getConfig } from '@dashboard/core/config/index.js';
 import { createSocketThrottle } from '@dashboard/core/utils/socket-throttle.js';
 
@@ -435,65 +435,67 @@ async function streamLlmCall(
     throw new Error('LLM is not configured. Set LLM_API_URL or configure Settings → AI & LLM → API Endpoint URL.');
   }
 
-  let fullResponse = '';
-  const chatUrl = resolveChatCompletionsUrl(llmConfig.apiUrl);
-  // Bound the stream even when the client never cancels: combine the caller's
-  // abort signal (frontend cancel button) with a server-side ceiling so a hung
-  // upstream can't hold the socket open indefinitely (#1514).
-  const timeoutSignal = AbortSignal.timeout(getConfig().LLM_STREAM_TIMEOUT_MS);
-  const effectiveSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
-  const response = await llmFetch(chatUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...getAuthHeaders(llmConfig.apiToken, llmConfig.authType),
-    },
-    body: JSON.stringify({
-      model: selectedModel,
-      messages,
-      stream: true,
-      max_tokens: llmConfig.maxTokens,
-      ...(llmConfig.temperature !== undefined ? { temperature: llmConfig.temperature } : {}),
-    }),
-    signal: effectiveSignal,
-  });
+  return runWithLlmLimit(async () => {
+    let fullResponse = '';
+    const chatUrl = resolveChatCompletionsUrl(llmConfig.apiUrl);
+    // Bound the stream even when the client never cancels: combine the caller's
+    // abort signal (frontend cancel button) with a server-side ceiling so a hung
+    // upstream can't hold the socket open indefinitely (#1514).
+    const timeoutSignal = AbortSignal.timeout(getConfig().LLM_STREAM_TIMEOUT_MS);
+    const effectiveSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+    const response = await llmFetch(chatUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(llmConfig.apiToken, llmConfig.authType),
+      },
+      body: JSON.stringify({
+        model: selectedModel,
+        messages,
+        stream: true,
+        max_tokens: llmConfig.maxTokens,
+        ...(llmConfig.temperature !== undefined ? { temperature: llmConfig.temperature } : {}),
+      }),
+      signal: effectiveSignal,
+    });
 
-  if (!response.ok) {
-    let bodyText = '';
-    try {
-      const bodyBuf = await response.arrayBuffer();
-      if (bodyBuf.byteLength > 0) {
-        bodyText = new TextDecoder().decode(bodyBuf);
+    if (!response.ok) {
+      let bodyText = '';
+      try {
+        const bodyBuf = await response.arrayBuffer();
+        if (bodyBuf.byteLength > 0) {
+          bodyText = new TextDecoder().decode(bodyBuf);
+        }
+      } catch {
+        // Ignore body read failures — fall back to statusText
       }
-    } catch {
-      // Ignore body read failures — fall back to statusText
+      const bodyError = bodyText
+        ? (() => {
+            try {
+              const json = JSON.parse(bodyText);
+              const apiErr = json.error;
+              if (typeof apiErr === 'string') return apiErr;
+              if (apiErr && typeof apiErr === 'object' && 'message' in apiErr) return (apiErr as { message?: unknown }).message;
+              return bodyText.substring(0, 500);
+            } catch {
+              return bodyText.substring(0, 500);
+            }
+          })()
+        : response.statusText;
+      throw new Error(`HTTP ${response.status}: ${bodyError}`);
     }
-    const bodyError = bodyText
-      ? (() => {
-          try {
-            const json = JSON.parse(bodyText);
-            const apiErr = json.error;
-            if (typeof apiErr === 'string') return apiErr;
-            if (apiErr && typeof apiErr === 'object' && 'message' in apiErr) return (apiErr as { message?: unknown }).message;
-            return bodyText.substring(0, 500);
-          } catch {
-            return bodyText.substring(0, 500);
-          }
-        })()
-      : response.statusText;
-    throw new Error(`HTTP ${response.status}: ${bodyError}`);
-  }
 
-  // Shared buffered SSE reader (#1510): reassembles `data:` lines split across
-  // reads and surfaces `{ error }` bodies via extractApiError. The caller's
-  // abort signal is polled between reads; the #1514 stream-timeout ceiling is
-  // already enforced on the fetch above via `effectiveSignal`.
-  for await (const text of streamOpenAiContent(response, { signal })) {
-    fullResponse += text;
-    onChunk(text);
-  }
+    // Shared buffered SSE reader (#1510): reassembles `data:` lines split across
+    // reads and surfaces `{ error }` bodies via extractApiError. The caller's
+    // abort signal is polled between reads; the #1514 stream-timeout ceiling is
+    // already enforced on the fetch above via `effectiveSignal`.
+    for await (const text of streamOpenAiContent(response, { signal })) {
+      fullResponse += text;
+      onChunk(text);
+    }
 
-  return fullResponse;
+    return fullResponse;
+  });
 }
 
 /**

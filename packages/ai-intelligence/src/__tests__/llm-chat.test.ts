@@ -110,7 +110,7 @@ import {
   INFRA_TRUNCATION_MARKER,
   __resetInfraContextCacheForTest,
 } from '../sockets/llm-chat.js';
-import { getAuthHeaders } from '../services/llm-client.js';
+import { getAuthHeaders, getLlmQueueSize, runWithLlmLimit } from '../services/llm-client.js';
 import { getCanary, clearCanary } from '../services/prompt-guard.js';
 import type { InfrastructureLogsInterface } from '@dashboard/contracts';
 
@@ -932,6 +932,77 @@ describe('setupLlmNamespace — infrastructure context from live fleet data', ()
     // Per-endpoint summary still rendered from the (now-enriched) endpoints
     expect(observedSystemPrompt!).toContain('prod (up): 5 running, 2 stopped');
     expect(observedSystemPrompt!).toContain('staging (up): 2 running, 1 stopped');
+  });
+});
+
+// ── Global LLM concurrency limiter (#1667) ──
+
+/** Poll `getLlmQueueSize()` until `predicate` is satisfied or the timeout elapses. */
+async function waitForQueueSize(
+  predicate: (size: { pending: number; active: number }) => boolean,
+  timeoutMs = 2000,
+): Promise<{ pending: number; active: number }> {
+  const start = Date.now();
+  for (;;) {
+    const size = getLlmQueueSize();
+    if (predicate(size)) return size;
+    if (Date.now() - start > timeoutMs) {
+      throw new Error(`Timed out waiting for queue size condition; last size: ${JSON.stringify(size)}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
+describe('setupLlmNamespace — routed through the global LLM concurrency limiter', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    chatThrottle.clearByUserId('test-user');
+    clearCanary('test-socket-id');
+    __resetInfraContextCacheForTest();
+    mockCollectAllTools.mockReturnValue([]);
+    mockRouteToolCalls.mockResolvedValue([]);
+    mockParseToolCalls.mockReturnValue(null);
+    mockCollectFleetOverview.mockResolvedValue({ endpoints: [], containers: [], stacks: [], totals: {} });
+  });
+
+  it('queues chat:message LLM calls behind other callers already holding the 2 limiter slots', async () => {
+    mockGetEffectiveLlmConfig.mockReturnValue(baseLlmConfig());
+    mockUndiciFetch.mockResolvedValue(sseResponse('Hello!'));
+
+    // Saturate the global limiter (max concurrency 2) with two blocked tasks
+    // that do not resolve until we explicitly release them.
+    let releaseBlockers: () => void = () => {};
+    const gate = new Promise<void>((resolve) => { releaseBlockers = resolve; });
+    const blockedTasks = [
+      runWithLlmLimit(() => gate),
+      runWithLlmLimit(() => gate),
+    ];
+
+    await waitForQueueSize((s) => s.active === 2);
+    expect(getLlmQueueSize()).toEqual({ pending: 0, active: 2 });
+
+    const { ns, socketHandlers, emitted, connect } = createMockSocketPair();
+    setupLlmNamespace(ns, mockInfraLogs);
+    connect();
+
+    const chatHandler = socketHandlers.get('chat:message');
+    const chatPromise = chatHandler!({ text: 'Hi' });
+
+    // The chat socket's LLM call must be queued (pending), not running
+    // (active), while the limiter's two slots are held by the blockers —
+    // proof that streamLlmCall is gated through the shared limiter (#1667).
+    const duringBlock = await waitForQueueSize((s) => s.pending >= 1);
+    expect(duringBlock.active).toBe(2);
+    expect(duringBlock.pending).toBeGreaterThanOrEqual(1);
+
+    // Release the blockers so the chat call can acquire a slot and complete.
+    releaseBlockers();
+    await Promise.all(blockedTasks);
+    await chatPromise;
+
+    expect(getLlmQueueSize()).toEqual({ pending: 0, active: 0 });
+    const endEvents = emitted.filter((e) => e.event === 'chat:end');
+    expect(endEvents.length).toBe(1);
   });
 });
 
