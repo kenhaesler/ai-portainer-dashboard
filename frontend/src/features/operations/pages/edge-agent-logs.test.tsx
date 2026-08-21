@@ -272,7 +272,12 @@ describe('EdgeAgentLogsPage', () => {
       renderPage();
 
       await waitFor(() => {
-        expect(screen.getByText('1 of 4,212 lines')).toBeInTheDocument();
+        // Built with the same locale-dependent formatter the component uses
+        // (`toLocaleString()`) rather than a hardcoded en-US literal, so this
+        // assertion holds on any machine locale, not just en-US.
+        expect(
+          screen.getByText(`1 of ${(4212).toLocaleString()} lines`),
+        ).toBeInTheDocument();
       });
       // debug is neutral, never a green pass indicator
       expect(screen.getByText('1 debug')).toHaveClass('text-muted-foreground');

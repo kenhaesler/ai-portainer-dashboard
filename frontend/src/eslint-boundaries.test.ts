@@ -1,5 +1,5 @@
 import { globSync, readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { dirname, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ESLint } from 'eslint';
 import { describe, expect, it } from 'vitest';
@@ -243,12 +243,12 @@ describe('frontend boundary gate cwd behavior (#1587, the crux of this issue)', 
       config.settings['import/resolver'] as { typescript: { project: string } }
     ).typescript.project;
 
-    expect(rootPath.startsWith('/'), `boundaries/root-path is not absolute: ${rootPath}`).toBe(
+    expect(isAbsolute(rootPath), `boundaries/root-path is not absolute: ${rootPath}`).toBe(
       true,
     );
     expect(rootPath).toBe(REPO_ROOT);
     expect(
-      resolverProject.startsWith('/'),
+      isAbsolute(resolverProject),
       `resolver project path is not absolute: ${resolverProject}`,
     ).toBe(true);
     expect(resolverProject).toBe(resolve(REPO_ROOT, 'tsconfig.eslint.json'));
@@ -357,7 +357,14 @@ describe('frontend boundary gate config has not been quietly weakened (#1587)', 
       const dir = arg.replace(/\/+$/, '');
       return file === dir || file.startsWith(`${dir}/`);
     };
-    const unreached = governed.filter((f) => !args.some((arg) => reaches(f, arg)));
+    // `globSync` returns platform-native separators (backslashes on
+    // Windows); the lint CLI's path arguments are always forward-slash. The
+    // comparison must normalize at this boundary rather than change what is
+    // compared, or a governed file found via a backslash path would appear
+    // unreached on Windows even though the same file is in fact linted.
+    const unreached = governed
+      .map((f) => f.replaceAll('\\', '/'))
+      .filter((f) => !args.some((arg) => reaches(f, arg)));
     expect(
       unreached,
       `${unreached.length} file(s) are governed by this config but are not passed to the lint `
