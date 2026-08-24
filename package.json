@@ -42,8 +42,8 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.62.1",
-    "@testing-library/user-event": "^14.6.3",
-    "@vitest/coverage-v8": "^4.1.10",
+    "@testing-library/user-event": "^14.6.5",
+    "@vitest/coverage-v8": "^4.1.11",
     "concurrently": "^10.0.4",
     "eslint": "^10.8.1",
     "eslint-import-resolver-typescript": "^4.4.5",
