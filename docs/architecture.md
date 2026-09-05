@@ -1,5 +1,18 @@
 # Architecture
 
+## Portainer 2.45 compatibility
+
+Endpoint discovery skips stored snapshots and accepts Portainer's omitted zero-valued
+status without rejecting the entire fleet. The Zod Docker boundary accepts null
+labels, mounts, added capabilities and image tags while retaining strict identity
+validation. Live fleet enrichment shares the main client's pooled TLS dispatcher,
+including custom CA and explicit verification configuration. Stack status values
+3/4 survive normalization as deploying/error through fleet badges, counts and
+filters; the shared vocabulary is in `@dashboard/contracts`.
+
+See [compatibility analysis](portainer-2.45-compatibility.md) for upstream changes,
+regressions, and the remaining live-deployment verification checklist.
+
 This project's architecture documentation is maintained in [docs/ai-instructions/architecture.md](ai-instructions/architecture.md).
 
 For detailed diagrams and data flow, see:

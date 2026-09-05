@@ -1,12 +1,13 @@
 import { useResource } from '@/shared/hooks/use-resource';
 import { STALE_TIMES } from '@/shared/lib/query-constants';
+import type { StackStatus } from '@dashboard/contracts';
 
 export interface Stack {
   id: number;
   name: string;
   type: number;
   endpointId: number;
-  status: 'active' | 'inactive';
+  status: StackStatus;
   createdAt?: number;
   updatedAt?: number;
   envCount: number;

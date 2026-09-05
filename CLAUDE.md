@@ -36,6 +36,14 @@ npm run test -w frontend   # Frontend only
 
 ## Architecture
 
+**Portainer 2.45 compatibility:** Endpoint reads exclude unused snapshots (list:
+`excludeSnapshots=true`; inspect: `excludeSnapshot=true`). Omitted endpoint `Status`
+is Portainer's zero/unknown value, not an up signal. Docker nil collections are
+normalized at the Zod boundary. Live `/docker/info` uses the shared TLS dispatcher.
+Stack lifecycle vocabulary lives in `@dashboard/contracts` (`STACK_STATUSES`):
+1/2/3/4 map to active/inactive/deploying/error; unknown values remain unknown.
+See `docs/portainer-2.45-compatibility.md` for upstream evidence and verification.
+
 Backend uses npm workspaces under `packages/` with a `core/` kernel (`@dashboard/core`). See `@docs/ai-instructions/architecture.md` for complete directory structure. See `@packages/core/src/CLAUDE.md` for kernel boundaries and security-critical files.
 
 **Portainer data source:** All endpoint container counts, host CPU/memory, and stack totals come from live `/docker/info` calls — Portainer's per-endpoint `Snapshots[]` is **not read**. The pipeline lives in `packages/core/src/portainer/live-fleet.ts` (`enrichEndpointsWithLiveDockerInfo`, `attachStackCounts`, `computeFleetTotals`, `collectFleetOverview`). Up Docker endpoints are `live`; Edge Async (Type 7) and any down or non-Docker endpoint are `unavailable`. `EDGE_LIVE_QUERY_ENABLED=false` is a hard kill-switch — all endpoints become `unavailable` with no fallback. Our `kpi_snapshots`/`monitoring_snapshots` history tables are unchanged; only their inputs are now live.

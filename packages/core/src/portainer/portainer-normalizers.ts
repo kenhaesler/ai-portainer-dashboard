@@ -1,4 +1,4 @@
-import type { ContainerState } from '@dashboard/contracts';
+import type { ContainerState, StackStatus } from '@dashboard/contracts';
 import type { Endpoint, Container, Stack, Network, K8sPod, K8sDeployment, K8sService, K8sNamespace } from '../models/portainer.js';
 import { isKubernetesEndpoint, isDockerEndpoint } from '../models/portainer.js';
 import { createChildLogger } from '../utils/logger.js';
@@ -80,7 +80,7 @@ export interface NormalizedStack {
   name: string;
   type: number;
   endpointId: number;
-  status: 'active' | 'inactive';
+  status: StackStatus;
   createdAt?: number;
   updatedAt?: number;
   envCount: number;
@@ -366,12 +366,13 @@ export function normalizeContainer(
 }
 
 export function normalizeStack(s: Stack): NormalizedStack {
+  const statuses: Record<number, StackStatus> = { 1: 'active', 2: 'inactive', 3: 'deploying', 4: 'error' };
   return {
     id: s.Id,
     name: s.Name,
     type: s.Type,
     endpointId: s.EndpointId,
-    status: s.Status === 1 ? 'active' : 'inactive',
+    status: statuses[s.Status] ?? 'unknown',
     createdAt: s.CreationDate,
     updatedAt: s.UpdateDate,
     envCount: s.Env?.length || 0,

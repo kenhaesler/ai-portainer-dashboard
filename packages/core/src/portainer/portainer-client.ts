@@ -51,7 +51,7 @@ function getCustomCaCert(): Buffer | undefined {
 
 // Connection-pooled dispatcher (used for both SSL-bypass and normal connections)
 let pooledDispatcher: Agent | undefined;
-function getDispatcher(): Agent | undefined {
+export function getPortainerDispatcher(): Agent {
   const config = getConfig();
   if (pooledDispatcher) return pooledDispatcher;
   const ca = getCustomCaCert();
@@ -310,7 +310,7 @@ async function sleep(ms: number) {
 export async function checkPortainerReachable(timeoutMs = 5000): Promise<{ reachable: boolean; ok: boolean }> {
   const url = buildApiUrl('/api/status');
   const headers = buildApiHeaders(false);
-  const dispatcher = getDispatcher();
+  const dispatcher = getPortainerDispatcher();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -400,7 +400,7 @@ async function portainerFetchInner<T>(
         headers,
         body: body ? JSON.stringify(body) : undefined,
         signal: controller.signal,
-        dispatcher: getDispatcher(),
+        dispatcher: getPortainerDispatcher(),
       });
       clearTimeout(timer);
 
@@ -449,12 +449,13 @@ async function portainerFetchInner<T>(
 
 // Endpoints
 export async function getEndpoints(): Promise<Endpoint[]> {
-  const raw = await portainerFetch<unknown[]>('/api/endpoints');
+  // All fleet measurements come from live Docker reads, not stored snapshots.
+  const raw = await portainerFetch<unknown[]>('/api/endpoints?excludeSnapshots=true');
   return EndpointArraySchema.parse(raw);
 }
 
 export async function getEndpoint(id: number): Promise<Endpoint> {
-  const raw = await portainerFetch<unknown>(`/api/endpoints/${id}`);
+  const raw = await portainerFetch<unknown>(`/api/endpoints/${id}?excludeSnapshot=true`);
   return EndpointSchema.parse(raw);
 }
 
@@ -472,7 +473,7 @@ export async function pingEndpointDocker(endpointId: number): Promise<{ ok: bool
   try {
     const res = await undiciFetch(url, {
       headers,
-      dispatcher: getDispatcher(),
+      dispatcher: getPortainerDispatcher(),
       signal: controller.signal,
     });
     clearTimeout(timer);
@@ -673,7 +674,7 @@ export async function pullImage(endpointId: number, image: string, tag = 'latest
     res = await undiciFetch(url, {
       method: 'POST',
       headers,
-      dispatcher: getDispatcher(),
+      dispatcher: getPortainerDispatcher(),
       signal: controller.signal,
     });
   } catch (err) {
@@ -784,7 +785,7 @@ export async function getContainerLogs(
   try {
     const res = await undiciFetch(url, {
       headers,
-      dispatcher: getDispatcher(),
+      dispatcher: getPortainerDispatcher(),
       signal: controller.signal,
     });
     clearTimeout(timer);
@@ -847,7 +848,7 @@ export async function streamContainerLogs(
   const controller = new AbortController();
   const res = await undiciFetch(url, {
     headers,
-    dispatcher: getDispatcher(),
+    dispatcher: getPortainerDispatcher(),
     signal: controller.signal,
   });
 
@@ -983,7 +984,7 @@ export async function startExec(endpointId: number, execId: string): Promise<voi
     method: 'POST',
     headers,
     body: JSON.stringify({ Detach: true, Tty: false }),
-    dispatcher: getDispatcher(),
+    dispatcher: getPortainerDispatcher(),
   });
 
   if (!res.ok) {
@@ -1020,7 +1021,7 @@ export async function getArchive(
   const url = buildApiUrl(`/api/endpoints/${endpointId}/docker/containers/${containerId}/archive?path=${encodeURIComponent(containerPath)}`);
   const headers = buildApiHeaders();
 
-  const res = await undiciFetch(url, { headers, dispatcher: getDispatcher() });
+  const res = await undiciFetch(url, { headers, dispatcher: getPortainerDispatcher() });
   if (!res.ok) {
     const errorBody = await readErrorBody(res);
     throw new PortainerError(errorBody || `Archive fetch failed: ${res.status}`, classifyError(res.status), res.status);
@@ -1080,7 +1081,7 @@ export async function getEdgeJobTaskLogs(jobId: number, taskId: string): Promise
   const url = buildApiUrl(`/api/edge_jobs/${jobId}/tasks/${taskId}/logs`);
   const headers = buildApiHeaders();
 
-  const res = await undiciFetch(url, { headers, dispatcher: getDispatcher() });
+  const res = await undiciFetch(url, { headers, dispatcher: getPortainerDispatcher() });
   if (!res.ok) {
     const errorBody = await readErrorBody(res);
     throw new PortainerError(errorBody || `Edge job task logs fetch failed: ${res.status}`, classifyError(res.status), res.status);
@@ -1152,7 +1153,7 @@ export async function getPodLogs(
   try {
     const res = await undiciFetch(url, {
       headers,
-      dispatcher: getDispatcher(),
+      dispatcher: getPortainerDispatcher(),
       signal: controller.signal,
     });
     clearTimeout(timer);

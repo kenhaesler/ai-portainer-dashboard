@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mock undici fetch — the only external boundary this module crosses.
-vi.mock('undici', () => ({
+vi.mock('undici', async (importOriginal) => ({
+  ...await importOriginal<typeof import('undici')>(),
   fetch: vi.fn(),
 }));
 
@@ -18,6 +19,7 @@ import {
 } from './edge-live-query.js';
 import { cache, waitForInFlight } from './portainer-cache.js';
 import { resetConfig, setConfigForTest } from '../config/index.js';
+import { _resetClientState, getPortainerDispatcher } from './portainer-client.js';
 
 const mockFetch = vi.mocked(undiciFetch);
 
@@ -37,6 +39,7 @@ beforeEach(() => {
   // would hide call-count assertions here.
   setConfigForTest({ CACHE_ENABLED: false, PORTAINER_API_URL: 'http://test.local' });
   _resetEdgeLiveQueryState();
+  _resetClientState();
   mockFetch.mockReset();
 });
 
@@ -49,6 +52,14 @@ function cfg(overrides: Partial<EdgeLiveQueryConfig> = {}): EdgeLiveQueryConfig 
 }
 
 describe('fetchLiveDockerInfo', () => {
+  it.each([true, false])('shares the configured Portainer TLS dispatcher (verify=%s)', async (verify) => {
+    setConfigForTest({ PORTAINER_VERIFY_SSL: verify });
+    const dispatcher = getPortainerDispatcher();
+    mockFetch.mockResolvedValueOnce(mockJsonResponse({ Containers: 1 }));
+    await fetchLiveDockerInfo(7, cfg());
+    expect(mockFetch.mock.calls[0][1]?.dispatcher).toBe(dispatcher);
+  });
+
   it('returns null when disabled and never touches the network', async () => {
     const result = await fetchLiveDockerInfo(7, cfg({ enabled: false }));
     expect(result).toBeNull();

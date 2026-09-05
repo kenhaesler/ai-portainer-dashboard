@@ -24,6 +24,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
+      '@dashboard/contracts': path.resolve(__dirname, '../packages/contracts/src/index.ts'),
       '@': path.resolve(__dirname, './src'),
     },
   },
