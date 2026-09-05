@@ -48,6 +48,9 @@ they are not all newly introduced upstream in 2.45.
 - HTTP 401/403 regressions verify that the client preserves permission denials,
   makes no alternative-path retries, and does not trip other environments' breakers.
 - Targeted frontend fleet/search/status/hook suites: 144 tests pass.
+- The shared stack vocabulary is a runtime import. Vite and Vitest resolve
+  `@dashboard/contracts` to its source entry so clean-checkout dev/tests do not
+  depend on an untracked `dist/` build. A regression loads both actual configs.
 - Production frontend exercised in Chromium at 1440px and 390px with HTTP-boundary
   fixtures: all five lifecycle statuses render; selecting Error shows only the
   matching stack. This is a UI smoke check, not a live Portainer test.
