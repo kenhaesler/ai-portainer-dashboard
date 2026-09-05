@@ -46,6 +46,10 @@ function makeStack(overrides: Partial<StackWithEndpoint> = {}): StackWithEndpoin
 }
 
 describe('parseFleetSearchQuery', () => {
+  it.each(['deploying', 'error', 'unknown'] as const)('can search the %s stack lifecycle state', (status) => {
+    const stack = makeStack({ status });
+    expect(filterStacks([stack, makeStack({ id: 2 })], `status:${status}`)).toEqual([stack]);
+  });
   it('returns empty array for empty string', () => {
     expect(parseFleetSearchQuery('')).toEqual([]);
     expect(parseFleetSearchQuery('   ')).toEqual([]);

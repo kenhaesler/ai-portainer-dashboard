@@ -1,3 +1,4 @@
+import { STACK_STATUSES } from '@dashboard/contracts';
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import * as Tabs from '@radix-ui/react-tabs';
@@ -633,26 +634,14 @@ export default function InfrastructurePage() {
   }, [endpoints, activeEndpointStatusPill, handleEndpointStatusPillChange]);
 
   const stackStatusKpiPills = useMemo<StatusKpiPill[]>(() => {
-    const active = stacksWithEndpoints.filter((s) => s.status === 'active').length;
-    const inactive = stacksWithEndpoints.filter((s) => s.status === 'inactive').length;
-    return [
-      {
-        key: 'active',
-        label: 'Active',
-        count: active,
-        isActive: activeStackStatusPill === 'active',
-        colors: STACK_STATUS_COLORS.active,
-        onClick: () => handleStackStatusPillChange(activeStackStatusPill === 'active' ? undefined : 'active'),
-      },
-      {
-        key: 'inactive',
-        label: 'Inactive',
-        count: inactive,
-        isActive: activeStackStatusPill === 'inactive',
-        colors: STACK_STATUS_COLORS.inactive,
-        onClick: () => handleStackStatusPillChange(activeStackStatusPill === 'inactive' ? undefined : 'inactive'),
-      },
-    ];
+    return STACK_STATUSES.map((status) => ({
+      key: status,
+      label: status.charAt(0).toUpperCase() + status.slice(1),
+      count: stacksWithEndpoints.filter((s) => s.status === status).length,
+      isActive: activeStackStatusPill === status,
+      colors: STACK_STATUS_COLORS[status],
+      onClick: () => handleStackStatusPillChange(activeStackStatusPill === status ? undefined : status),
+    })).filter((pill) => pill.count > 0 || pill.isActive || pill.key === 'active' || pill.key === 'inactive');
   }, [stacksWithEndpoints, activeStackStatusPill, handleStackStatusPillChange]);
 
   // Search-filtered endpoints (dropdown filters applied upstream, then smart search)
@@ -683,11 +672,11 @@ export default function InfrastructurePage() {
   // Dynamic filter options for stacks
   const stackStatusOptions = useMemo(() => {
     if (stacksWithEndpoints.length === 0) return [];
-    const activeCount = stacksWithEndpoints.filter(s => s.status === 'active').length;
-    const inactiveCount = stacksWithEndpoints.filter(s => s.status === 'inactive').length;
     const options = [{ value: ALL_FILTER, label: `All statuses (${stacksWithEndpoints.length})` }];
-    if (activeCount > 0) options.push({ value: 'active', label: `Active (${activeCount})` });
-    if (inactiveCount > 0) options.push({ value: 'inactive', label: `Inactive (${inactiveCount})` });
+    for (const status of STACK_STATUSES) {
+      const count = stacksWithEndpoints.filter((s) => s.status === status).length;
+      if (count > 0) options.push({ value: status, label: `${status.charAt(0).toUpperCase() + status.slice(1)} (${count})` });
+    }
     return options;
   }, [stacksWithEndpoints]);
 

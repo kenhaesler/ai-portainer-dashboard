@@ -33,7 +33,7 @@ import { fetch as undiciFetch } from 'undici';
 import { getConfig } from '../config/index.js';
 import { createChildLogger } from '../utils/logger.js';
 import { cache, cachedFetchSWR, getCacheKey } from './portainer-cache.js';
-import { buildApiUrl, buildApiHeaders } from './portainer-client.js';
+import { buildApiUrl, buildApiHeaders, getPortainerDispatcher } from './portainer-client.js';
 
 const log = createChildLogger('edge-live-query');
 
@@ -140,7 +140,7 @@ async function fetchDockerInfoOnce(endpointId: number, timeoutMs: number): Promi
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await undiciFetch(url, { headers, signal: controller.signal });
+    const res = await undiciFetch(url, { headers, signal: controller.signal, dispatcher: getPortainerDispatcher() });
     if (!res.ok) {
       throw new Error(`HTTP ${res.status} ${res.statusText}`);
     }

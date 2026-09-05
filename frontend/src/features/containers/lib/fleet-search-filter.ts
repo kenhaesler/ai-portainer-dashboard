@@ -1,11 +1,12 @@
 import type { Endpoint } from '@/features/containers/hooks/use-endpoints';
+import type { StackStatus } from '@dashboard/contracts';
 
 export interface StackWithEndpoint {
   id: number;
   name: string;
   type: number;
   endpointId: number;
-  status: 'active' | 'inactive';
+  status: StackStatus;
   endpointName: string;
   containerCount?: number;
   envCount: number;

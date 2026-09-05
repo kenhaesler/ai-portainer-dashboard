@@ -5,7 +5,7 @@ type Status = 'running' | 'stopped' | 'paused' | 'unhealthy' | 'healthy' | 'unkn
   'pending' | 'approved' | 'rejected' | 'executing' | 'completed' | 'failed' | 'succeeded' |
   'critical' | 'warning' | 'info' | 'ok' | 'error' |
   'capturing' | 'processing' |
-  'deployed' | 'planned' | 'excluded' |
+  'deployed' | 'deploying' | 'planned' | 'excluded' |
   'not_deployed' | 'unreachable' | 'incompatible';
 
 const statusColors: Record<string, string> = {
@@ -34,6 +34,7 @@ const statusColors: Record<string, string> = {
   capturing: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
   processing: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400',
   deployed: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400',
+  deploying: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
   planned: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
   excluded: 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400',
   not_deployed: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
@@ -67,6 +68,7 @@ const statusDotColors: Record<string, string> = {
   capturing: 'bg-blue-500',
   processing: 'bg-purple-500',
   deployed: 'bg-emerald-500',
+  deploying: 'bg-blue-500',
   planned: 'bg-blue-500',
   excluded: 'bg-gray-500',
   not_deployed: 'bg-blue-500',

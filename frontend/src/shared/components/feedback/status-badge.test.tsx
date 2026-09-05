@@ -3,6 +3,10 @@ import { render, screen } from '@testing-library/react';
 import { StatusBadge } from './status-badge';
 
 describe('StatusBadge', () => {
+  it('shows deployment progress as informational, not inactive', () => {
+    render(<StatusBadge status="deploying" />);
+    expect(screen.getByText('deploying')).toHaveClass('bg-blue-100');
+  });
   it('should render the status text', () => {
     render(<StatusBadge status="running" />);
     expect(screen.getByText('running')).toBeInTheDocument();

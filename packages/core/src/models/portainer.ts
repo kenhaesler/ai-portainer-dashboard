@@ -5,14 +5,15 @@ export const EndpointSchema = z.object({
   Name: z.string(),
   Type: z.number(),
   URL: z.string(),
-  Status: z.number(),
+  // Portainer 2.45 uses omitempty: absent means Go's zero/unknown, never up.
+  Status: z.number().optional().default(0),
   Snapshots: z.array(z.object({
     DockerSnapshotRaw: z.object({
-      Containers: z.number().nullish(),
+      Containers: z.union([z.number(), z.array(z.record(z.string(), z.unknown()))]).nullish(),
       ContainersRunning: z.number().nullish(),
       ContainersStopped: z.number().nullish(),
       ContainersPaused: z.number().nullish(),
-      Images: z.number().nullish(),
+      Images: z.union([z.number(), z.array(z.record(z.string(), z.unknown()))]).nullish(),
     }).passthrough().nullish(),
     TotalCPU: z.number().nullish(),
     TotalMemory: z.number().nullish(),
@@ -22,8 +23,8 @@ export const EndpointSchema = z.object({
     UnhealthyContainerCount: z.number().nullish(),
     StackCount: z.number().nullish(),
     Time: z.number().nullish(),
-  })).optional().default([]),
-  TagIds: z.array(z.number()).optional().default([]),
+  })).nullish().transform((value) => value ?? []),
+  TagIds: z.array(z.number()).nullish().transform((value) => value ?? []),
   EdgeID: z.string().optional(),
   EdgeKey: z.string().optional(),
   LastCheckInDate: z.number().optional(),
@@ -47,7 +48,7 @@ export const ContainerSchema = z.object({
     PublicPort: z.number().optional(),
     Type: z.string().optional(),
   })).nullish().default([]),
-  Labels: z.record(z.string(), z.string()).optional().default({}),
+  Labels: z.record(z.string(), z.string()).nullish().transform((value) => value ?? {}),
   NetworkSettings: z.object({
     Networks: z.record(z.string(), z.object({
       NetworkID: z.string().optional(),
@@ -62,11 +63,11 @@ export const ContainerSchema = z.object({
     Destination: z.string().optional(),
     Mode: z.string().optional(),
     RW: z.boolean().optional(),
-  })).optional().default([]),
+  })).nullish().transform((value) => value ?? []),
   HostConfig: z.object({
     NetworkMode: z.string().optional(),
     Privileged: z.boolean().optional(),
-    CapAdd: z.array(z.string()).optional(),
+    CapAdd: z.array(z.string()).nullable().transform((value) => value ?? []).optional(),
     PidMode: z.string().optional(),
   }).optional(),
 }).passthrough();
@@ -279,7 +280,7 @@ export const NetworkSchema = z.object({
 
 export const ImageSchema = z.object({
   Id: z.string(),
-  RepoTags: z.array(z.string()).optional().default([]),
+  RepoTags: z.array(z.string()).nullish().transform((value) => value ?? []),
   Size: z.number().optional(),
   Created: z.number().optional(),
 }).passthrough();

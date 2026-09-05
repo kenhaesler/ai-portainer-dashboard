@@ -964,6 +964,24 @@ describe('InfrastructurePage — endpoint dropdown filters', () => {
 });
 
 describe('InfrastructurePage — stack dropdown filters', () => {
+  it('counts and filters Portainer deployment/error states without merging them into inactive', () => {
+    mockEndpoints([makeEndpoint()]);
+    mockStacks([
+      makeStack({ id: 1, name: 'deploying-app', status: 'deploying' }),
+      makeStack({ id: 2, name: 'failed-app', status: 'error' }),
+      makeStack({ id: 3, name: 'stopped-app', status: 'inactive' }),
+    ]);
+    renderPageWithInitialParams('/infrastructure?tab=stacks');
+    expect(screen.getByTestId('status-pill-deploying')).toHaveTextContent('Deploying(1)');
+    expect(screen.getByTestId('status-pill-error')).toHaveTextContent('Error(1)');
+    expect(screen.getByTestId('status-pill-inactive')).toHaveTextContent('Inactive(1)');
+    fireEvent.click(screen.getByTestId('status-pill-error'));
+    expect(screen.getByText('failed-app')).toBeInTheDocument();
+    expect(screen.queryByText('deploying-app')).not.toBeInTheDocument();
+    expect(screen.queryByText('stopped-app')).not.toBeInTheDocument();
+    expect(screen.getByTestId('stacks-filtered-count')).toHaveTextContent('1 of 3');
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     useUiStore.setState({ pageViewModes: {} });

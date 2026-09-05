@@ -10,6 +10,9 @@ export const ENDPOINT_STATUS_COLORS: Record<string, { dot: string; text: string 
 export const STACK_STATUS_COLORS: Record<string, { dot: string; text: string }> = {
   active: { dot: 'bg-emerald-500', text: 'text-emerald-700 dark:text-emerald-400' },
   inactive: { dot: 'bg-gray-500', text: 'text-gray-700 dark:text-gray-400' },
+  deploying: { dot: 'bg-blue-500', text: 'text-blue-700 dark:text-blue-400' },
+  error: { dot: 'bg-red-500', text: 'text-red-700 dark:text-red-400' },
+  unknown: { dot: 'bg-gray-500', text: 'text-gray-700 dark:text-gray-400' },
 };
 
 export interface StatusKpiPill {
@@ -78,7 +81,7 @@ export function StatusKpi({ pills, ariaLabel }: StatusKpiProps) {
     <div
       role="group"
       aria-label={ariaLabel}
-      className="flex items-center gap-2"
+      className="flex flex-wrap items-center gap-2"
       data-testid="status-kpi"
     >
       <AnimatePresence mode="popLayout">
