@@ -45,12 +45,12 @@
     "@testing-library/user-event": "^14.6.3",
     "@vitest/coverage-v8": "^4.1.10",
     "concurrently": "^10.0.4",
-    "eslint": "^10.8.1",
+    "eslint": "^10.9.1",
     "eslint-import-resolver-typescript": "^4.4.5",
-    "eslint-plugin-boundaries": "^7.1.0",
+    "eslint-plugin-boundaries": "^7.2.0",
     "husky": "^9.1.7",
     "jsdom": "^30.0.1",
-    "typescript-eslint": "^8.67.0",
+    "typescript-eslint": "^8.69.0",
     "vitest": "^4.1.0"
   },
   "dependencies": {
