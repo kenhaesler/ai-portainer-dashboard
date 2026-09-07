@@ -31,8 +31,8 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@types/node": "^26.2.0",
-    "@types/pg": "^8.21.0",
+    "@types/node": "^26.4.1",
+    "@types/pg": "^8.23.1",
     "@vitest/coverage-v8": "^4.1.10",
     "protobufjs": "^8.7.2",
     "typescript": "^7.0.2",
