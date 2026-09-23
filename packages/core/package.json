@@ -86,7 +86,7 @@
     "fastify-plugin": "^6.0.0",
     "fastify-type-provider-zod": "^7.0.0",
     "jose": "^6.2.8",
-    "openid-client": "^6.8.5",
+    "openid-client": "^6.8.7",
     "p-limit": "^7.3.1",
     "pg": "^8.23.0",
     "pino": "^10.3.1",
