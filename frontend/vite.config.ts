@@ -3,6 +3,7 @@ import react, { reactCompilerPreset } from '@vitejs/plugin-react';
 import babel from '@rolldown/plugin-babel';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
+import { PRODUCT_NAME } from './src/shared/lib/product';
 import path from 'path';
 import { execSync } from 'node:child_process';
 
@@ -55,15 +56,18 @@ export default defineConfig({
       registerType: 'autoUpdate',
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        // Never serve an /api or /socket.io request as a navigation fallback.
+        navigateFallbackDenylist: [/^\/api\//, /^\/socket\.io\//],
+        // Deletes the legacy `api-cache` left by earlier builds (#1705).
+        importScripts: ['/pwa-cache-migration.js'],
         runtimeCaching: [
           {
-            urlPattern: /^\/api\//,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'api-cache',
-              expiration: { maxEntries: 100, maxAgeSeconds: 300 },
-              networkTimeoutSeconds: 5,
-            },
+            // Workbox tests RegExp routes against the full URL (`https://host/api/..`),
+            // so the old anchored `/^\/api\//` never matched, and a "fixed" version of
+            // it would have started caching authenticated fleet data. State the intent
+            // explicitly. This rule must stay first: the first matching route wins.
+            urlPattern: /^https?:\/\/[^/]+\/(?:api|socket\.io)\//,
+            handler: 'NetworkOnly',
           },
           {
             urlPattern: /\.(?:png|jpg|jpeg|svg|gif|webp|ico)$/,
@@ -84,8 +88,8 @@ export default defineConfig({
         ],
       },
       manifest: {
-        name: 'Docker Insights powered by AI',
-        short_name: 'Docker Insights',
+        name: PRODUCT_NAME,
+        short_name: PRODUCT_NAME,
         description: 'AI-powered container monitoring dashboard',
         theme_color: '#0f172a',
         background_color: '#0f172a',
