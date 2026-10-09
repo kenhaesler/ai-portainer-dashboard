@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { IncidentGroupsView } from './incident-groups-view';
@@ -15,7 +15,15 @@ const wrap = (c: React.ReactNode) => (
   </QueryClientProvider>
 );
 
+// The view debounces `search` by 250ms. Fake timers make that deterministic
+// instead of racing a real sleep against machine load (#1716).
+const DEBOUNCE_MS = 250;
+const flushDebounce = () => act(async () => { await vi.advanceTimersByTimeAsync(DEBOUNCE_MS); });
+
 describe('IncidentGroupsView — search', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
   it('hides groups whose label and all_container_names do not match', async () => {
     (useIncidentGroups as ReturnType<typeof vi.fn>).mockReturnValue({
       data: {
@@ -36,8 +44,7 @@ describe('IncidentGroupsView — search', () => {
       isLoading: false,
     });
     render(wrap(<IncidentGroupsView search="banana" />));
-    // Wait for debounce (250ms)
-    await new Promise((r) => setTimeout(r, 300));
+    await flushDebounce();
     expect(screen.getByText('Banana')).toBeInTheDocument();
     expect(screen.queryByText('Apple')).not.toBeInTheDocument();
   });
@@ -57,7 +64,7 @@ describe('IncidentGroupsView — search', () => {
       isLoading: false,
     });
     render(wrap(<IncidentGroupsView search="matchme" />));
-    await new Promise((r) => setTimeout(r, 300));
+    await flushDebounce();
     expect(screen.getByText('matchme')).toBeInTheDocument();
   });
 
@@ -81,7 +88,7 @@ describe('IncidentGroupsView — search', () => {
       counts: { active: 0, resolved: 0, total: 0 }, limit: 50, offset: 0,
     });
     render(wrap(<IncidentGroupsView search="cn-700" />));
-    await new Promise((r) => setTimeout(r, 300));
+    await flushDebounce();
     expect(api.get).toHaveBeenCalledWith('/api/incidents', expect.objectContaining({
       params: expect.objectContaining({ signature: 'big', q: 'cn-700' }),
     }));
