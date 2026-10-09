@@ -56,13 +56,17 @@ export function AiLlmTab({
 }: AiLlmTabProps) {
   const [llmSaving, setLlmSaving] = useState(false);
   const [llmSaveSuccess, setLlmSaveSuccess] = useState(false);
+  const [llmSaveError, setLlmSaveError] = useState<string | null>(null);
 
   const handleSaveLlm = async () => {
     setLlmSaving(true);
     setLlmSaveSuccess(false);
+    setLlmSaveError(null);
     try {
       await saveLlmSettings();
       setLlmSaveSuccess(true);
+    } catch (error) {
+      setLlmSaveError(error instanceof Error ? error.message : 'unknown error');
     } finally {
       setLlmSaving(false);
     }
@@ -77,6 +81,12 @@ export function AiLlmTab({
         onChange={onChange}
         disabled={isSaving || llmSaving}
       />
+
+      {llmSaveError && (
+        <p role="alert" className="border-l-2 border-destructive pl-3 text-sm text-destructive">
+          Some LLM settings were not saved: {llmSaveError}. Successful fields remain saved; the rest are still unsaved so you can retry.
+        </p>
+      )}
 
       {/* LLM Save Bar */}
       {(hasLlmChanges || llmSaveSuccess) && (

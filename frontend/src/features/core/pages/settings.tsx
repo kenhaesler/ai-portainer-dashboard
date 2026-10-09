@@ -294,6 +294,20 @@ function GuardedChangesBar({
 
 // ─── Page component ──────────────────────────────────────────────────
 
+interface SaveChangedResult {
+  applied: string[];
+  failed: string[];
+}
+
+const SETTING_LABEL_BY_KEY: Record<string, string> = Object.fromEntries(
+  Object.values(DEFAULT_SETTINGS).flat().map((setting) => [setting.key, setting.label]),
+);
+
+/** Human labels for a list of setting keys, falling back to the raw key. */
+function describeSettingKeys(keys: readonly string[]): string {
+  return keys.map((key) => SETTING_LABEL_BY_KEY[key] ?? key).join(', ');
+}
+
 export default function SettingsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { role } = useAuth();
@@ -434,25 +448,32 @@ export default function SettingsPage() {
     setSaveError(null);
   };
 
-  /** Persist a set of changed keys to the API. */
+  /**
+   * Persist a set of changed keys to the API.
+   *
+   * Never throws: a key that fails stays dirty (it is not folded into
+   * `originalValues`) and is reported in `failed` so the caller can decide how
+   * to present a partial save. Callers must not treat a resolved promise as
+   * success (#1710).
+   */
   const saveChangedSettings = useCallback(async (
     editedSnapshot: Record<string, string>,
     originalSnapshot: Record<string, string>,
     /** When set, only save keys in this list. */
     filterKeys?: readonly string[],
-  ) => {
+  ): Promise<SaveChangedResult> => {
     const changedKeys = Object.keys(editedSnapshot).filter((key) => {
       if (editedSnapshot[key] === originalSnapshot[key]) return false;
       if (filterKeys && !filterKeys.includes(key)) return false;
       return true;
     });
-    if (changedKeys.length === 0) return;
+    if (changedKeys.length === 0) return { applied: [], failed: [] };
 
     setIsSaving(true);
     setSaveSuccess(false);
     setSaveError(null);
 
-    let hadFailure = false;
+    const failed: string[] = [];
     const appliedValues: Record<string, string> = {};
     let appliedRestartSetting = false;
 
@@ -469,7 +490,7 @@ export default function SettingsPage() {
           appliedRestartSetting = true;
         }
       } catch {
-        hadFailure = true;
+        failed.push(key);
       }
     }
 
@@ -479,19 +500,22 @@ export default function SettingsPage() {
       // longer one.
       originalValuesRef.current = { ...originalValuesRef.current, ...appliedValues };
       setOriginalValues((prev) => ({ ...prev, ...appliedValues }));
-      setSaveSuccess(true);
+      // A partial save is not a success: the header must not claim one.
+      setSaveSuccess(failed.length === 0);
       setSavedKeys(new Set(Object.keys(appliedValues)));
       if (appliedRestartSetting) {
         setRestartPending(true);
       }
     }
 
-    if (hadFailure) {
-      setSaveError('Failed to auto-save some settings');
-      toast.error('Failed to auto-save some settings');
+    if (failed.length > 0) {
+      const message = `Failed to save: ${describeSettingKeys(failed)}`;
+      setSaveError(message);
+      toast.error(message);
     }
 
     setIsSaving(false);
+    return { applied: Object.keys(appliedValues), failed };
   }, [restartKeys, updateSetting]);
 
   // ── Auto-save ───────────────────────────────────────────────────
@@ -557,7 +581,12 @@ export default function SettingsPage() {
   );
 
   const saveLlmSettings = useCallback(async () => {
-    await saveChangedSettings({ ...editedValues }, { ...originalValues }, LLM_SETTING_KEYS);
+    const { failed } = await saveChangedSettings({ ...editedValues }, { ...originalValues }, LLM_SETTING_KEYS);
+    if (failed.length > 0) {
+      // Throw so AiLlmTab shows its inline alert instead of the saved state.
+      // Fields that did save stay saved; the failed ones stay dirty to retry.
+      throw new Error(describeSettingKeys(failed));
+    }
     toast.success('LLM settings saved');
   }, [editedValues, originalValues, saveChangedSettings]);
 
