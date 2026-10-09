@@ -369,7 +369,7 @@ describe('Dashboard Routes', () => {
       await app.close();
     });
 
-    it('returns 0% usage when no running containers', async () => {
+    it('returns null (not 0) fleet and stack percentages when no running containers (invariant #7)', async () => {
       const endpoints = [makeEndpoint(1, 'ep-1')];
       const containers = [
         makeContainer('c-1', 1000, 'stopped', { 'com.docker.compose.project': 'web' }),
@@ -385,9 +385,11 @@ describe('Dashboard Routes', () => {
       expect(res.statusCode).toBe(200);
       const data = res.json();
 
-      expect(data.fleetCpuPercent).toBe(0);
-      expect(data.fleetMemoryPercent).toBe(0);
+      expect(data.fleetCpuPercent).toBeNull();
+      expect(data.fleetMemoryPercent).toBeNull();
       expect(data.topStacks).toHaveLength(1);
+      expect(data.topStacks[0].cpuPercent).toBeNull();
+      expect(data.topStacks[0].memoryPercent).toBeNull();
       expect(data.topStacks[0].name).toBe('web');
       expect(data.topStacks[0].runningCount).toBe(0);
       expect(data.topStacks[0].stoppedCount).toBe(1);
@@ -468,6 +470,63 @@ describe('Dashboard Routes', () => {
       await app.close();
     });
 
+    it('reports null per-stack percentages for a stack with no samples and sorts it after stacks with data (invariant #7)', async () => {
+      const endpoints = [makeEndpoint(1, 'ep-1')];
+      const containers = [
+        makeContainer('c-1', 1000, 'running', { 'com.docker.compose.project': 'unknown-stack' }),
+        makeContainer('c-2', 1001, 'running', { 'com.docker.compose.project': 'cpu-only' }),
+        makeContainer('c-3', 1002, 'running', { 'com.docker.compose.project': 'busy' }),
+      ];
+
+      mockGetEndpoints.mockResolvedValue(endpoints);
+      mockGetContainers.mockResolvedValue(containers);
+      mockGetLatestMetricsBatch.mockResolvedValue(new Map([
+        // c-1: no stored metrics at all.
+        ['c-2', { cpu: 5.0, memory_bytes: 100 }],
+        ['c-3', { cpu: 70.0, memory: 60.0, memory_bytes: 900 }],
+      ]));
+
+      const app = await buildApp();
+      const res = await app.inject({ method: 'GET', url: '/api/dashboard/resources' });
+
+      expect(res.statusCode).toBe(200);
+      const data = res.json();
+      const byName = (n: string) => data.topStacks.find((s: any) => s.name === n);
+
+      expect(byName('unknown-stack').cpuPercent).toBeNull();
+      expect(byName('unknown-stack').memoryPercent).toBeNull();
+      // Independent qualifiers: known CPU, unknown memory.
+      expect(byName('cpu-only').cpuPercent).toBe(5);
+      expect(byName('cpu-only').memoryPercent).toBeNull();
+      expect(byName('busy').cpuPercent).toBe(70);
+      expect(byName('busy').memoryPercent).toBe(60);
+      // Unknown sorts last: never ranked as if it were an idle 0%.
+      expect(data.topStacks.map((s: any) => s.name)).toEqual(['busy', 'cpu-only', 'unknown-stack']);
+
+      await app.close();
+    });
+
+    it('serialises null fleet percentages through /api/dashboard/full when no samples exist (invariant #7)', async () => {
+      const endpoints = [makeEndpoint(1, 'ep-1')];
+      mockGetEndpoints.mockResolvedValue(endpoints);
+      mockGetContainers.mockResolvedValue([
+        makeContainer('c-1', 1000, 'running', { 'com.docker.compose.project': 'web' }),
+      ]);
+      mockGetLatestMetricsBatch.mockResolvedValue(new Map());
+
+      const app = await buildApp();
+      const res = await app.inject({ method: 'GET', url: '/api/dashboard/full' });
+
+      expect(res.statusCode).toBe(200);
+      const data = res.json();
+      expect(data.resources.fleetCpuPercent).toBeNull();
+      expect(data.resources.fleetMemoryPercent).toBeNull();
+      expect(data.resources.topStacks[0].cpuPercent).toBeNull();
+      expect(data.resources.topStacks[0].memoryPercent).toBeNull();
+
+      await app.close();
+    });
+
     it('keeps known memory bytes when both percentage samples are unknown (#1567)', async () => {
       const endpoints = [makeEndpoint(1, 'ep-1')];
       const containers = [
@@ -511,9 +570,9 @@ describe('Dashboard Routes', () => {
       expect(res.statusCode).toBe(200);
       const data = res.json();
 
-      // Should degrade gracefully with 0% usage
-      expect(data.fleetCpuPercent).toBe(0);
-      expect(data.fleetMemoryPercent).toBe(0);
+      // Should degrade gracefully: unknown, not a confident 0%
+      expect(data.fleetCpuPercent).toBeNull();
+      expect(data.fleetMemoryPercent).toBeNull();
       expect(data.topStacks).toHaveLength(1);
 
       await app.close();

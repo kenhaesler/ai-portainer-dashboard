@@ -158,7 +158,7 @@ export async function metricsRoutes(fastify: FastifyInstance, opts: { llm?: LLMI
         TTL.STATS,
         () => getContainerStats(endpointId, containerId),
       );
-      const usage = stats.memory_stats.usage ?? 0;
+      const usage = stats.memory_stats.usage;
       const cache =
         stats.memory_stats.stats?.cache ??
         stats.memory_stats.stats?.total_cache ??
@@ -169,7 +169,9 @@ export async function metricsRoutes(fastify: FastifyInstance, opts: { llm?: LLMI
         // `if (memoryLimit > 0)` guard so we never render a "/ 0 MB" label downstream.
         memoryLimitBytes: stats.memory_stats.limit || null,
         onlineCpus: stats.cpu_stats.online_cpus ?? null,
-        usedBytes: Math.max(0, usage - cache),
+        // Missing/non-positive usage is "unknown" (null), matching the collector's
+        // #1567 rule — never a confident 0 bytes used (invariant #7).
+        usedBytes: typeof usage === 'number' && usage > 0 ? Math.max(0, usage - cache) : null,
       };
     } catch (err) {
       log.debug({ err, endpointId, containerId }, 'Container meta unavailable');

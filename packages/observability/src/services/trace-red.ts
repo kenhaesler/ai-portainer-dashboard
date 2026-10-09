@@ -30,11 +30,12 @@ export interface RedQuery {
 
 export interface RedRow {
   group: string;
-  rate: number;        // req/s
-  errorRate: number;   // 0..1
-  p50Ms: number;
-  p95Ms: number;
-  p99Ms: number;
+  // null = not measurable for this group (invariant #7); never a coerced 0.
+  rate: number | null;        // req/s
+  errorRate: number | null;   // 0..1
+  p50Ms: number | null;       // null when no span in the group carries a duration
+  p95Ms: number | null;
+  p99Ms: number | null;
   callCount: number;
 }
 
@@ -78,6 +79,11 @@ interface AggRow {
   p50: number | string | null;
   p95: number | string | null;
   p99: number | string | null;
+}
+
+/** SQL NULL stays null — `Number(null)` would silently become a confident 0. */
+function toNullableNumber(value: number | string | null): number | null {
+  return value === null || value === undefined ? null : Number(value);
 }
 
 export async function computeRed(q: RedQuery): Promise<RedResult> {
@@ -153,11 +159,11 @@ export async function computeRed(q: RedQuery): Promise<RedResult> {
     }
     list.push({
       group: r.grp ?? '',
-      rate: Number(r.rate ?? 0),
-      errorRate: Number(r.error_rate ?? 0),
-      p50Ms: Number(r.p50 ?? 0),
-      p95Ms: Number(r.p95 ?? 0),
-      p99Ms: Number(r.p99 ?? 0),
+      rate: toNullableNumber(r.rate),
+      errorRate: toNullableNumber(r.error_rate),
+      p50Ms: toNullableNumber(r.p50),
+      p95Ms: toNullableNumber(r.p95),
+      p99Ms: toNullableNumber(r.p99),
       callCount: Number(r.call_count ?? 0),
     });
     byBucket.set(key, list);

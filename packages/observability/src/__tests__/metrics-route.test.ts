@@ -652,6 +652,23 @@ describe('metrics routes', () => {
       expect(body.usedBytes).toBe(100 * 1024 * 1024);
     });
 
+    it('reports null usedBytes (not 0) when Docker omits memory usage (invariant #7)', async () => {
+      mockGetContainerStats.mockResolvedValue({
+        cpu_stats: { cpu_usage: { total_usage: 0 }, system_cpu_usage: 0, online_cpus: 2 },
+        precpu_stats: { cpu_usage: { total_usage: 0 }, system_cpu_usage: 0 },
+        memory_stats: { limit: 512 * 1024 * 1024, stats: { cache: 0 } },
+      } as unknown as ContainerStats);
+
+      const response = await app.inject({ method: 'GET', url: '/api/metrics/1/abc123/meta' });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+      expect(body.usedBytes).toBeNull();
+      // The ceilings that ARE known still come through.
+      expect(body.memoryLimitBytes).toBe(512 * 1024 * 1024);
+      expect(body.onlineCpus).toBe(2);
+    });
+
     it('degrades to nulls when stats are unavailable', async () => {
       mockGetContainerStats.mockRejectedValue(new Error('endpoint down'));
 

@@ -320,6 +320,27 @@ describe('traces routes', () => {
     expect(body.sourceCounts).toEqual({ http: 1, ebpf: 1, scheduler: 1, unknown: 0 });
   });
 
+  it('GET /api/traces/summary returns null avgDuration/errorRate for an empty window (invariant #7)', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/traces/summary?from=2026-02-12T00:00:00.000Z',
+      headers: { authorization: 'Bearer test' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as {
+      totalTraces: number;
+      avgDuration: number | null;
+      errorRate: number | null;
+      services: number;
+    };
+    // Counts are real zeros; the statistics over zero traces are unknown.
+    expect(body.totalTraces).toBe(0);
+    expect(body.services).toBe(0);
+    expect(body.avgDuration).toBeNull();
+    expect(body.errorRate).toBeNull();
+  });
+
   it('GET /api/traces/summary applies the same *Match modes as the list route (#1538)', async () => {
     const recent = new Date(Date.now() - 60_000).toISOString();
     const from = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();

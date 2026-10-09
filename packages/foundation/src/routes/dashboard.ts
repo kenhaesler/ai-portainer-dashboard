@@ -62,14 +62,16 @@ interface FleetStackResources {
   containerCount: number;
   runningCount: number;
   stoppedCount: number;
-  cpuPercent: number;
-  memoryPercent: number;
+  /** null = no known sample for this stack (invariant #7). */
+  cpuPercent: number | null;
+  memoryPercent: number | null;
   memoryBytes: number;
 }
 
 interface FleetResources {
-  fleetCpuPercent: number;
-  fleetMemoryPercent: number;
+  /** null = no running container has a known sample (invariant #7). */
+  fleetCpuPercent: number | null;
+  fleetMemoryPercent: number | null;
   topStacks: FleetStackResources[];
   /** Per-endpoint container-fetch failures, formatted as "<name>: <message>". */
   errors: string[];
@@ -169,8 +171,9 @@ async function buildFleetResources(
     }
   }
 
-  const fleetCpuPercent = cpuCount > 0 ? Math.round((cpuSum / cpuCount) * 100) / 100 : 0;
-  const fleetMemoryPercent = memoryCount > 0 ? Math.round((memorySum / memoryCount) * 100) / 100 : 0;
+  // Invariant #7: no known sample means "unknown" (null), never a fabricated 0%.
+  const fleetCpuPercent = cpuCount > 0 ? Math.round((cpuSum / cpuCount) * 100) / 100 : null;
+  const fleetMemoryPercent = memoryCount > 0 ? Math.round((memorySum / memoryCount) * 100) / 100 : null;
 
   // Group containers by stack and aggregate. Same #1567 fix as the fleet
   // totals above: cpu/memory get their own sample counts per stack so an
@@ -231,13 +234,20 @@ async function buildFleetResources(
       stoppedCount: stats.stoppedCount,
       cpuPercent: stats.cpuCount > 0
         ? Math.round((stats.cpuSum / stats.cpuCount) * 100) / 100
-        : 0,
+        : null,
       memoryPercent: stats.memoryCount > 0
         ? Math.round((stats.memorySum / stats.memoryCount) * 100) / 100
-        : 0,
+        : null,
       memoryBytes: stats.memoryBytes,
     }))
-    .sort((a, b) => (b.cpuPercent + b.memoryPercent) - (a.cpuPercent + a.memoryPercent))
+    // Unknown metrics contribute nothing to the rank, and a stack with no known
+    // sample at all sorts after every stack that has one (never as an idle 0%).
+    .sort((a, b) => {
+      const aKnown = a.cpuPercent !== null || a.memoryPercent !== null;
+      const bKnown = b.cpuPercent !== null || b.memoryPercent !== null;
+      if (aKnown !== bKnown) return aKnown ? -1 : 1;
+      return ((b.cpuPercent ?? 0) + (b.memoryPercent ?? 0)) - ((a.cpuPercent ?? 0) + (a.memoryPercent ?? 0));
+    })
     .slice(0, topN);
 
   return { fleetCpuPercent, fleetMemoryPercent, topStacks, errors, containers: allContainers };
