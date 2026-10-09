@@ -298,7 +298,7 @@ For detailed specs (animation durations, easing curves, glass override patterns,
 
 ## Git Workflow
 
-Branch: `dev` → `feature/<issue#>-<desc>`. PRs: `feature/* → dev` (CI runs). `dev → main` for releases. Always link PRs to issues (`Closes #<issue>`). Commits: concise, describe "why" not "what". Never ignore CI failures.
+Branch: `dev` → `feature/<issue#>-<desc>`. PRs: `feature/* → dev` (CI runs). `dev → main` for releases. Always link PRs to issues (`Closes #<issue>`). Commits: concise, describe "why" not "what". Never ignore CI failures. **Line endings are LF everywhere (#1670):** the root `.gitattributes` (`* text=auto eol=lf`) overrides `core.autocrlf`; byte-sensitive tests depend on it (`backend/src/gitattributes-gate.test.ts` guards it). A Windows clone predating it needs a one-time re-checkout (`git rm -r --cached . && git reset --hard`, after committing/stashing work).
 
 ## Environment
 

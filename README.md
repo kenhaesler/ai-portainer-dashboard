@@ -249,6 +249,10 @@ GitHub Actions runs on every push to `main` and all pull requests:
 - Branch naming: `feature/<issue#>-<short-description>` (e.g., `feature/42-add-log-export`)
 - CI must pass before merge
 
+### Line endings (Windows)
+
+A root `.gitattributes` forces LF in the working tree (`* text=auto eol=lf`), regardless of `core.autocrlf`; several tests read file bytes and fail on CRLF. If your Windows clone predates this file, re-checkout once (commit or stash your work first, then `git rm -r --cached . && git reset --hard`) or make a fresh clone.
+
 ---
 
 ## License
