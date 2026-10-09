@@ -178,9 +178,13 @@ describe('npm run typecheck -w backend covers the test files (#1645)', () => {
    * the CLI reads differently from the API cannot hide between them. Resolved
    * the way npm resolves `.bin` — backend's own copy, then the hoisted one.
    */
+  // On win32 the extensionless POSIX shim in `.bin` cannot be exec'd by
+  // `execFileSync` (ENOENT); the real shim is `tsc.cmd`, which needs
+  // `shell: true`. Same approach as frontend/src/typecheck-gate.test.ts (#1718).
+  const TSC_NAME = process.platform === 'win32' ? 'tsc.cmd' : 'tsc';
   const TSC = [
-    resolve(BACKEND_DIR, 'node_modules/.bin/tsc'),
-    resolve(BACKEND_DIR, '../node_modules/.bin/tsc'),
+    resolve(BACKEND_DIR, 'node_modules/.bin', TSC_NAME),
+    resolve(BACKEND_DIR, '../node_modules/.bin', TSC_NAME),
   ].find((candidate) => existsSync(candidate));
 
   /** The `tsc` invocations `npm run typecheck -w backend` actually performs. */
@@ -207,6 +211,7 @@ describe('npm run typecheck -w backend covers the test files (#1645)', () => {
       cwd: BACKEND_DIR,
       encoding: 'utf-8',
       maxBuffer: 64 * 1024 * 1024,
+      shell: process.platform === 'win32',
     })
       .split('\n')
       .map((line) => line.trim())
