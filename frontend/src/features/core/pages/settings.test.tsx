@@ -463,6 +463,80 @@ describe('SettingsPage — auto-save boundary', () => {
     expect(await screen.findByTestId('setting-saved-monitoring.polling_interval', {}, { timeout: 3000 }))
       .toHaveTextContent('Saved');
   });
+
+  it('does not auto-retry a rejected value in a loop, but retries once when the field is edited again', async () => {
+    mockPut.mockRejectedValue(new Error('400'));
+    await renderSettings();
+
+    const input = await screen.findByLabelText('Polling Interval');
+    fireEvent.change(input, { target: { value: '45' } });
+    await waitFor(() => expect(mockPut).toHaveBeenCalledTimes(1), { timeout: 3000 });
+
+    // Several debounce windows (700 ms each): a looping effect would have PUT again.
+    await new Promise((resolve) => setTimeout(resolve, 2200));
+    expect(mockPut).toHaveBeenCalledTimes(1);
+    expect(mockError).toHaveBeenCalledTimes(1);
+
+    fireEvent.change(input, { target: { value: '46' } });
+    await waitFor(() => expect(mockPut).toHaveBeenCalledTimes(2), { timeout: 3000 });
+    await new Promise((resolve) => setTimeout(resolve, 1600));
+    expect(mockPut).toHaveBeenCalledTimes(2);
+  }, 15000);
+
+  // #1710: saveChangedSettings used to swallow per-key failures, so a partial
+  // LLM save toasted "LLM settings saved" over a field that never persisted.
+  describe('LLM partial save (#1710)', () => {
+    async function editTwoLlmFields() {
+      // The AI tab also mounts the prompt editor and MCP list, which read
+      // their own endpoints; /api/settings/prompt-features must not fall
+      // through to the bare-array settings payload.
+      mockGet.mockImplementation((url: string) => {
+        if (url.includes('prompt-features')) return Promise.resolve({ features: [] });
+        if (url.includes('/api/mcp/servers')) return Promise.resolve([]);
+        if (url.includes('/api/settings')) return Promise.resolve([]);
+        return Promise.resolve([]);
+      });
+      await renderSettings('/settings?tab=ai');
+      fireEvent.change(await screen.findByDisplayValue('0.7'), { target: { value: '0.4' } });
+      fireEvent.change(await screen.findByDisplayValue('20000'), { target: { value: '4096' } });
+      fireEvent.click(await screen.findByRole('button', { name: /Save LLM Settings/i }));
+    }
+
+    it('does not report success when one of the writes fails, and names the failed setting', async () => {
+      mockPut.mockImplementation((url: string) =>
+        url.endsWith('llm.max_tokens') ? Promise.reject(new Error('rejected')) : Promise.resolve(undefined));
+
+      await editTwoLlmFields();
+
+      const alert = await screen.findByRole('alert');
+      expect(alert).toHaveTextContent(/Some LLM settings were not saved/i);
+      expect(alert).toHaveTextContent('Max Tokens');
+      expect(alert).not.toHaveTextContent('Temperature');
+      expect(mockSuccess).not.toHaveBeenCalledWith('LLM settings saved');
+      expect(screen.queryByText('LLM settings saved')).not.toBeInTheDocument();
+    });
+
+    it('keeps the failed value unsaved so it can be retried', async () => {
+      mockPut.mockImplementation((url: string) =>
+        url.endsWith('llm.max_tokens') ? Promise.reject(new Error('rejected')) : Promise.resolve(undefined));
+
+      await editTwoLlmFields();
+      await screen.findByRole('alert');
+
+      expect(screen.getByDisplayValue('4096')).toBeInTheDocument();
+      expect(screen.getByText('LLM settings have unsaved changes')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Save LLM Settings/i })).toBeInTheDocument();
+    });
+
+    it('still toasts success when every write succeeds', async () => {
+      mockPut.mockResolvedValue(undefined);
+
+      await editTwoLlmFields();
+
+      await waitFor(() => expect(mockSuccess).toHaveBeenCalledWith('LLM settings saved'));
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+  });
 });
 
 describe('SettingsPage — finding one of 107 keys', () => {
