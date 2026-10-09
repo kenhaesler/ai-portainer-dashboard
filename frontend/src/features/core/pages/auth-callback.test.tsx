@@ -1,5 +1,6 @@
+import { StrictMode } from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import AuthCallbackPage from './auth-callback';
 
@@ -207,6 +208,87 @@ describe('AuthCallbackPage', () => {
       vi.advanceTimersByTime(3000);
 
       expect(mockNavigate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('single-use code exchange (#1709)', () => {
+    const okPayload = { token: 'tok', username: 'alice', expiresAt: '2099-01-01T00:00:00Z' };
+
+    function renderStrict(search: string) {
+      currentSearch = search;
+      return render(
+        <StrictMode>
+          <MemoryRouter>
+            <AuthCallbackPage />
+          </MemoryRouter>
+        </StrictMode>,
+      );
+    }
+
+    it('sends the exchange once under StrictMode and logs in and navigates once', async () => {
+      mockApiPost.mockResolvedValue(okPayload);
+
+      renderStrict('?code=c1&state=s1');
+
+      await waitFor(() => expect(mockLoginWithToken).toHaveBeenCalledTimes(1));
+      expect(mockApiPost).toHaveBeenCalledTimes(1);
+      expect(mockLoginWithToken).toHaveBeenCalledWith('tok', 'alice');
+      expect(mockNavigate).toHaveBeenCalledTimes(1);
+      expect(mockNavigate).toHaveBeenCalledWith('/', { replace: true });
+      expect(screen.queryByTestId('auth-callback-error')).not.toBeInTheDocument();
+    });
+
+    it('does not navigate to /login when an unmounted exchange later fails', async () => {
+      vi.useFakeTimers();
+      let reject!: (e: Error) => void;
+      mockApiPost.mockReturnValue(new Promise((_, r) => { reject = r; }));
+
+      const { unmount } = renderPage('?code=c2&state=s2');
+      unmount();
+      await act(async () => {
+        reject(new Error('late failure'));
+        await Promise.resolve();
+      });
+      vi.advanceTimersByTime(3000);
+
+      expect(mockNavigate).not.toHaveBeenCalled();
+      expect(mockLoginWithToken).not.toHaveBeenCalled();
+    });
+
+    it('does not log in when the unmounted exchange later succeeds', async () => {
+      let resolve!: (v: unknown) => void;
+      mockApiPost.mockReturnValue(new Promise(r => { resolve = r; }));
+
+      const { unmount } = renderPage('?code=c3&state=s3');
+      unmount();
+      await act(async () => {
+        resolve(okPayload);
+        await Promise.resolve();
+      });
+
+      expect(mockLoginWithToken).not.toHaveBeenCalled();
+      expect(mockNavigate).not.toHaveBeenCalled();
+    });
+
+    it('rejects a response missing token or username', async () => {
+      mockApiPost.mockResolvedValue({ token: '', username: 'alice' });
+
+      renderPage('?code=c4&state=s4');
+
+      expect(await screen.findByTestId('auth-callback-error')).toBeInTheDocument();
+      expect(mockLoginWithToken).not.toHaveBeenCalled();
+    });
+
+    it('allows a genuine retry with the same code after a failed exchange', async () => {
+      mockApiPost.mockRejectedValueOnce(new Error('boom')).mockResolvedValueOnce(okPayload);
+
+      const first = renderPage('?code=c5&state=s5');
+      expect(await screen.findByText('boom')).toBeInTheDocument();
+      first.unmount();
+
+      renderPage('?code=c5&state=s5');
+      await waitFor(() => expect(mockLoginWithToken).toHaveBeenCalledTimes(1));
+      expect(mockApiPost).toHaveBeenCalledTimes(2);
     });
   });
 });
