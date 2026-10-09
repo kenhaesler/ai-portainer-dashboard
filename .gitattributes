@@ -1,0 +1,19 @@
+# Normalise line endings so every checkout (incl. Windows with core.autocrlf=true)
+# materialises LF, matching the committed blobs and CI. Byte-sensitive tests
+# (frontmatter regexes, CSV fixtures, docker-compose regexes) depend on this.
+* text=auto eol=lf
+
+# Binary assets: never touch.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.pdf binary
+*.gz binary
+*.zip binary
