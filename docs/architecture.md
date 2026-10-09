@@ -189,6 +189,17 @@ Worth knowing when fixing this class of error: **TS2353 reports only the first e
 
 Both halves were verified by fault injection rather than by a passing run: removing `-w backend` from the root script fails the wiring assertion, and adding `src/**/*.test.ts` back to `backend/tsconfig.json`'s `exclude` fails the coverage assertion with "32 test file(s) are executed by vitest but compiled by nothing" — the original bug's exact shape.
 
+## PWA service worker never caches API traffic (#1705)
+
+The service worker (`VitePWA` in `frontend/vite.config.ts`) used to declare a 5-minute `NetworkFirst` `api-cache` for `/api/`. It was latent, not live: Workbox tests `RegExp` routes against the full URL (`https://host/api/...`), so the anchored `/^\/api\//` never matched. A tidy-up of that regex would have started serving authenticated fleet state from a cache, stale and presented as live, so the intent is now stated explicitly instead of resting on a pattern that happens not to match:
+
+- The first runtime route matches `/api` and `/socket.io` on the full URL with `NetworkOnly`. It stays first because the first matching route wins; otherwise `/api/.../x.png` would fall into the `CacheFirst` image rule.
+- `navigateFallbackDenylist` excludes `/api` and `/socket.io` so they are never answered with the cached `index.html`.
+- `frontend/public/pwa-cache-migration.js` is pulled in with `importScripts` and deletes the legacy `api-cache` on `activate`, for clients that still hold one.
+- The manifest `name` and `short_name` come from `PRODUCT_NAME` (`shared/lib/product.ts`), not a literal. `tsconfig.node.json` therefore includes that file, and `tsconfig.json` no longer lists it under `references` (a composite referenced project cannot be consumed by the no-emit browser program, and nothing runs `tsc -b`).
+
+`frontend/src/shared/lib/pwa.test.ts` imports the real `vite.config.ts` with `VitePWA` mocked to capture its options, then asserts that no `/api` or `/socket.io` URL resolves to anything but `NetworkOnly`, the denylist, the migration script's behaviour, and the manifest name.
+
 ## UI notes
 
 - Global themed scrollbar styling lives in `frontend/src/index.css` (see the comment block `GLOBAL THEMED SCROLLBAR`). It applies to `html`/`body` and any element with the `.scrollbar-themed` opt-in class, reading `--color-foreground` via `color-mix` so all 16 themes share one rule. The sidebar (`aside nav`) keeps its hover-reveal behavior via cascade order.
