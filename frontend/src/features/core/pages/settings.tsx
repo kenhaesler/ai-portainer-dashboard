@@ -324,6 +324,13 @@ export default function SettingsPage() {
    * to tell "the operator changed this" from "the server changed this".
    */
   const originalValuesRef = useRef<Record<string, string>>({});
+  /**
+   * key -> the value whose save last failed. Auto-save skips a key while its
+   * edited value is still that value; otherwise a rejected write stays dirty,
+   * flips isSaving, and re-arms the debounce forever. Editing the key again
+   * changes the value and so retries once.
+   */
+  const failedValuesRef = useRef<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -486,11 +493,13 @@ export default function SettingsPage() {
           showToast: false,
         });
         appliedValues[key] = editedSnapshot[key];
+        delete failedValuesRef.current[key];
         if (restartKeys.includes(key)) {
           appliedRestartSetting = true;
         }
       } catch {
         failed.push(key);
+        failedValuesRef.current[key] = editedSnapshot[key];
       }
     }
 
@@ -533,13 +542,16 @@ export default function SettingsPage() {
 
   useEffect(() => {
     const autoSaveChanged = Object.keys(editedValues).some(
-      (key) => editedValues[key] !== originalValues[key] && isAutoSaveKey(key),
+      (key) => editedValues[key] !== originalValues[key] && isAutoSaveKey(key)
+        && failedValuesRef.current[key] !== editedValues[key],
     );
     if (isSaving || !autoSaveChanged) return;
 
     const editedSnapshot = { ...editedValues };
     const originalSnapshot = { ...originalValues };
-    const autoSaveKeys = Object.keys(editedSnapshot).filter(isAutoSaveKey);
+    const autoSaveKeys = Object.keys(editedSnapshot).filter(
+      (key) => isAutoSaveKey(key) && failedValuesRef.current[key] !== editedSnapshot[key],
+    );
 
     const timeout = window.setTimeout(() => {
       void saveChangedSettings(editedSnapshot, originalSnapshot, autoSaveKeys);

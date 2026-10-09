@@ -464,6 +464,25 @@ describe('SettingsPage — auto-save boundary', () => {
       .toHaveTextContent('Saved');
   });
 
+  it('does not auto-retry a rejected value in a loop, but retries once when the field is edited again', async () => {
+    mockPut.mockRejectedValue(new Error('400'));
+    await renderSettings();
+
+    const input = await screen.findByLabelText('Polling Interval');
+    fireEvent.change(input, { target: { value: '45' } });
+    await waitFor(() => expect(mockPut).toHaveBeenCalledTimes(1), { timeout: 3000 });
+
+    // Several debounce windows (700 ms each): a looping effect would have PUT again.
+    await new Promise((resolve) => setTimeout(resolve, 2200));
+    expect(mockPut).toHaveBeenCalledTimes(1);
+    expect(mockError).toHaveBeenCalledTimes(1);
+
+    fireEvent.change(input, { target: { value: '46' } });
+    await waitFor(() => expect(mockPut).toHaveBeenCalledTimes(2), { timeout: 3000 });
+    await new Promise((resolve) => setTimeout(resolve, 1600));
+    expect(mockPut).toHaveBeenCalledTimes(2);
+  }, 15000);
+
   // #1710: saveChangedSettings used to swallow per-key failures, so a partial
   // LLM save toasted "LLM settings saved" over a field that never persisted.
   describe('LLM partial save (#1710)', () => {
