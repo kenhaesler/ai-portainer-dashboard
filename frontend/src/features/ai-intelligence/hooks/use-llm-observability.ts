@@ -31,8 +31,9 @@ export interface LlmStats {
   /**
    * Already a percentage (0-100), not a fraction. The tile multiplied it by
    * 100 a second time and rendered a single failed call as "10000.0%".
+   * null when the payload carries none — unknown, not 0% (invariant #7).
    */
-  errorRate: number;
+  errorRate: number | null;
   avgFeedbackScore: number | null;
   feedbackCount: number;
   modelBreakdown: Array<{ model: string; count: number; tokens: number }>;
@@ -76,7 +77,7 @@ function normalizeLlmStats(payload: unknown): LlmStats {
     succeededQueries: asNumber(raw.succeededQueries, totalQueries - failedQueries),
     totalTokens: asNumber(raw.totalTokens),
     avgLatencyMs: asNumber(raw.avgLatencyMs),
-    errorRate: asNumber(raw.errorRate),
+    errorRate: asNullableNumber(raw.errorRate),
     avgFeedbackScore: asNullableNumber(raw.avgFeedbackScore),
     feedbackCount: asNumber(raw.feedbackCount),
     modelBreakdown,

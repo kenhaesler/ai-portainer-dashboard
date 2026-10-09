@@ -33,6 +33,29 @@ describe('ResourceOverviewCard', () => {
       expect(bars[1]).toHaveStyle({ width: '0%' });
     });
 
+    it('renders a dash plus a qualifier, never 0%, when a percentage is unknown (invariant #7)', () => {
+      render(<ResourceOverviewCard cpuPercent={null} memoryPercent={62.3} />);
+      const cpu = screen.getByText('Overall CPU Usage').closest('div.rounded-xl') as HTMLElement;
+      expect(cpu).toHaveTextContent('—');
+      expect(cpu).toHaveTextContent('no samples in range');
+      expect(cpu).not.toHaveTextContent('0%');
+      // The known sibling is unaffected.
+      expect(screen.getByText('62.3%')).toBeInTheDocument();
+    });
+
+    it('draws no measurement bar for an unknown value', () => {
+      render(<ResourceOverviewCard cpuPercent={null} memoryPercent={null} />);
+      expect(screen.queryAllByRole('progressbar')).toHaveLength(0);
+      expect(screen.queryByText('0%')).not.toBeInTheDocument();
+      expect(screen.getAllByText('—')).toHaveLength(2);
+    });
+
+    it('gives each progress bar an accessible name', () => {
+      render(<ResourceOverviewCard cpuPercent={45.5} memoryPercent={62.3} />);
+      expect(screen.getByRole('progressbar', { name: 'Overall CPU Usage' })).toBeInTheDocument();
+      expect(screen.getByRole('progressbar', { name: 'Overall Memory Usage' })).toBeInTheDocument();
+    });
+
     it('clamps values at 100%', () => {
       render(<ResourceOverviewCard cpuPercent={100} memoryPercent={100} />);
       const bars = screen.getAllByRole('progressbar');

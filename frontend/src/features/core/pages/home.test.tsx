@@ -88,7 +88,15 @@ vi.mock('@/shared/components/charts/fleet-summary-card', () => ({
   FleetSummaryCard: () => <div data-testid="mock-fleet">Fleet</div>,
 }));
 vi.mock('@/shared/components/charts/resource-overview-card', () => ({
-  ResourceOverviewCard: () => <div data-testid="mock-resource">Resource</div>,
+  ResourceOverviewCard: ({ cpuPercent, memoryPercent }: { cpuPercent?: number | null; memoryPercent?: number | null }) => (
+    <div
+      data-testid="mock-resource"
+      data-cpu={cpuPercent === null ? 'null' : String(cpuPercent)}
+      data-memory={memoryPercent === null ? 'null' : String(memoryPercent)}
+    >
+      Resource
+    </div>
+  ),
 }));
 vi.mock('@/shared/components/data-display/spotlight-card', () => ({
   SpotlightCard: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -278,6 +286,64 @@ describe('HomePage', () => {
       'href',
       '/security/audit',
     );
+  });
+
+  it('hands unknown fleet CPU/memory to the resource card as null, not 0 (invariant #7)', () => {
+    const full = makeDashboardData();
+    mockUseDashboardFull.mockReturnValue({
+      data: { ...full, resources: { ...full.resources, fleetCpuPercent: null, fleetMemoryPercent: null } },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+      isFetching: false,
+    } as any);
+
+    renderPage();
+
+    const card = screen.getByTestId('mock-resource');
+    expect(card).toHaveAttribute('data-cpu', 'null');
+    expect(card).toHaveAttribute('data-memory', 'null');
+  });
+
+  it('shows a dash plus a qualifier for Security Findings when the summary is unavailable, not 0 (invariant #7)', () => {
+    const full = makeDashboardData();
+    mockUseDashboardFull.mockReturnValue({
+      data: { resources: full.resources, endpoints: full.endpoints },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+      isFetching: false,
+    } as any);
+    mockUseContainers.mockReturnValue({
+      data: [makeContainer({ id: 'r1', name: 'r1', healthStatus: 'healthy' })],
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as any);
+
+    renderPage();
+
+    const tile = screen.getByTestId('fleet-tile-link-Security Findings');
+    expect(tile).toHaveTextContent('—');
+    expect(tile).toHaveTextContent('not loaded');
+    expect(tile).not.toHaveTextContent(/\b0\b/);
+  });
+
+  it('still shows a real 0 for Security Findings when the audit reports none flagged', () => {
+    mockUseDashboardFull.mockReturnValue({
+      data: makeDashboardData(),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+      isFetching: false,
+    } as any);
+
+    renderPage();
+
+    expect(screen.getByTestId('fleet-tile-link-Security Findings')).toHaveTextContent('0');
   });
 
   it('links the Stopped tile into a filtered Workload Explorer', () => {

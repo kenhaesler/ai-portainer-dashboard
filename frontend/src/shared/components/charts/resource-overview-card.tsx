@@ -1,5 +1,6 @@
 import { memo } from 'react';
 import { Cpu, MemoryStick } from 'lucide-react';
+import { NO_VALUE, NO_SAMPLES_QUALIFIER } from '@/shared/lib/missing-value';
 
 export interface Endpoint {
   name: string;
@@ -8,8 +9,9 @@ export interface Endpoint {
 }
 
 export interface ResourceOverviewCardProps {
-  cpuPercent?: number;
-  memoryPercent?: number;
+  /** `undefined` = not provided; `null` = provided but unknown (no samples). */
+  cpuPercent?: number | null;
+  memoryPercent?: number | null;
   endpoints?: Endpoint[];
   isLoading?: boolean;
 }
@@ -23,16 +25,31 @@ export interface ResourceOverviewCardProps {
  * not a status. Two intensities of the theme accent separate the two series
  * without borrowing a meaning from somewhere else; each bar is labelled anyway.
  */
-function ProgressBar({ percent, variant }: { percent: number; variant: 'cpu' | 'memory' }) {
-  const clamped = Math.min(100, Math.max(0, percent));
+function ProgressBar({
+  percent,
+  variant,
+  label,
+}: {
+  percent: number | null;
+  variant: 'cpu' | 'memory';
+  label: string;
+}) {
   const fill = variant === 'cpu' ? 'bg-primary' : 'bg-primary/60';
 
+  // Unknown is an empty track with no progressbar role: a bar at 0 would be a
+  // measurement of "nothing used", which is the claim we cannot make (#7).
+  if (percent === null) {
+    return <div className="h-3 w-full overflow-hidden rounded-full bg-muted/50" aria-hidden="true" />;
+  }
+
+  const clamped = Math.min(100, Math.max(0, percent));
   return (
     <div className="h-3 w-full overflow-hidden rounded-full bg-muted/50">
       <div
         className={`h-full ${fill} transition-all duration-500`}
         style={{ width: `${clamped}%` }}
         role="progressbar"
+        aria-label={label}
         aria-valuenow={clamped}
         aria-valuemin={0}
         aria-valuemax={100}
@@ -48,7 +65,8 @@ function SingleResourceCard({
   icon,
 }: {
   label: string;
-  percent: number;
+  /** null = no sample in range: rendered as a dash plus a qualifier, never 0%. */
+  percent: number | null;
   variant: 'cpu' | 'memory';
   icon: React.ReactNode;
 }) {
@@ -59,9 +77,16 @@ function SingleResourceCard({
           <div className="text-muted-foreground">{icon}</div>
           <span className="text-sm font-medium text-muted-foreground">{label}</span>
         </div>
-        <span className="text-2xl font-semibold tabular-nums">{percent}%</span>
+        {percent === null ? (
+          <span className="flex flex-col items-end">
+            <span className="text-2xl font-semibold tabular-nums">{NO_VALUE}</span>
+            <span className="text-xs text-muted-foreground">{NO_SAMPLES_QUALIFIER}</span>
+          </span>
+        ) : (
+          <span className="text-2xl font-semibold tabular-nums">{percent}%</span>
+        )}
       </div>
-      <ProgressBar percent={percent} variant={variant} />
+      <ProgressBar percent={percent} variant={variant} label={label} />
     </div>
   );
 }

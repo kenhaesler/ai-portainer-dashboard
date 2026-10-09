@@ -729,8 +729,9 @@ export const StackResourceUsageSchema = z.object({
   containerCount: z.number(),
   runningCount: z.number(),
   stoppedCount: z.number(),
-  cpuPercent: z.number(),
-  memoryPercent: z.number(),
+  // null = no sample in the window (invariant #7 / #1567) — never a coerced 0.
+  cpuPercent: z.number().nullable(),
+  memoryPercent: z.number().nullable(),
   memoryBytes: z.number(),
 });
 
@@ -762,8 +763,9 @@ export const DashboardSummaryResponseSchema = z.object({
 // GET /api/dashboard/resources — partial/failedEndpoints appear only on
 // per-endpoint container-fetch failures.
 export const DashboardResourcesResponseSchema = z.object({
-  fleetCpuPercent: z.number(),
-  fleetMemoryPercent: z.number(),
+  // null = no running container has a known sample (invariant #7 / #1567).
+  fleetCpuPercent: z.number().nullable(),
+  fleetMemoryPercent: z.number().nullable(),
   topStacks: z.array(StackResourceUsageSchema),
   partial: z.boolean().optional(),
   failedEndpoints: z.array(z.string()).optional(),
@@ -773,8 +775,8 @@ export const DashboardResourcesResponseSchema = z.object({
 export const DashboardFullResponseSchema = z.object({
   summary: DashboardSummaryResponseSchema,
   resources: z.object({
-    fleetCpuPercent: z.number(),
-    fleetMemoryPercent: z.number(),
+    fleetCpuPercent: z.number().nullable(),
+    fleetMemoryPercent: z.number().nullable(),
     topStacks: z.array(StackResourceUsageSchema),
   }),
   endpoints: z.array(LiveEndpointSchema),
@@ -851,11 +853,12 @@ export const ServiceMapResponseSchema = z.object({
   })),
 });
 
-// GET /api/traces/summary — KPI aggregates (all defaulted to 0 in the handler).
+// GET /api/traces/summary — KPI aggregates. Counts default to 0; `avgDuration`
+// and `errorRate` are null when the window holds no measurement (invariant #7).
 export const TraceSummaryResponseSchema = z.object({
   totalTraces: z.number(),
-  avgDuration: z.number(),
-  errorRate: z.number(),
+  avgDuration: z.number().nullable(),
+  errorRate: z.number().nullable(),
   services: z.number(),
   sourceCounts: z.object({
     http: z.number(),
@@ -894,20 +897,19 @@ export const TraceDetailResponseSchema = z.object({
   spans: z.array(SpanRowSchema),
 });
 
-// GET /api/traces/red — RED (rate/errors/duration) aggregate. All numeric
-// fields are coerced with `Number(x ?? 0)` in computeRed(), so none are
-// nullable here even though the underlying percentile_cont() can be NULL for
-// an empty group.
+// GET /api/traces/red — RED (rate/errors/duration) aggregate. SQL NULLs (e.g.
+// percentile_cont() over a group where no span carries a duration) stay null —
+// computeRed() no longer coerces them to 0 (invariant #7).
 export const RedResponseSchema = z.object({
   buckets: z.array(z.object({
     bucketStart: z.string(),
     rows: z.array(z.object({
       group: z.string(),
-      rate: z.number(),
-      errorRate: z.number(),
-      p50Ms: z.number(),
-      p95Ms: z.number(),
-      p99Ms: z.number(),
+      rate: z.number().nullable(),
+      errorRate: z.number().nullable(),
+      p50Ms: z.number().nullable(),
+      p95Ms: z.number().nullable(),
+      p99Ms: z.number().nullable(),
       callCount: z.number(),
     })),
   })),

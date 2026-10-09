@@ -53,6 +53,7 @@ import {
   ReferenceLine,
 } from 'recharts';
 import { formatDate } from '@/shared/lib/utils';
+import { NO_SAMPLES_QUALIFIER, formatOrNoValue } from '@/shared/lib/missing-value';
 
 const TIME_RANGES = [
   { value: '15m', label: '15 min' },
@@ -82,6 +83,13 @@ const LazyInlineChatPanel = lazy(() =>
   import('@/features/ai-intelligence/components/metrics/inline-chat-panel').then((module) => ({ default: module.InlineChatPanel })),
 );
 const DEFAULT_MAX_POINTS = 240;
+
+/** Summary statistics over one series; the whole object is null when the range has no samples. */
+interface SeriesStats {
+  avg: number;
+  max: number;
+  min: number;
+}
 
 function formatBytes(bytes: number): string {
   const mb = bytes / (1024 * 1024);
@@ -490,8 +498,10 @@ export default function MetricsDashboardPage() {
 
   // Calculate statistics
   const stats = useMemo(() => {
-    const calcStats = (data: Array<{ value: number }>) => {
-      if (!data.length) return { avg: 0, max: 0, min: 0 };
+    // No samples in range => null stats, never zeros (invariant #7): a 0.0%
+    // average / 0.0 MB peak would be a measurement of an idle container.
+    const calcStats = (data: Array<{ value: number }>): SeriesStats | null => {
+      if (!data.length) return null;
       const values = data.map((d) => d.value);
       return {
         avg: values.reduce((a, b) => a + b, 0) / values.length,
@@ -515,9 +525,11 @@ export default function MetricsDashboardPage() {
   const cpuCoresLabel = useMemo(() => {
     const cores = containerMeta?.onlineCpus ?? selectedEndpointData?.totalCpu ?? null;
     if (!cores) return null;
-    const used = stats.cpu.avg / 100;
-    return `≈${used.toFixed(1)} of ${cores} core${cores === 1 ? '' : 's'} (max ${cores * 100}%)`;
-  }, [containerMeta, selectedEndpointData, stats.cpu.avg]);
+    const coreCeiling = `of ${cores} core${cores === 1 ? '' : 's'} (max ${cores * 100}%)`;
+    // Without a CPU average there is no "≈N used" to state — only the ceiling.
+    if (stats.cpu === null) return coreCeiling;
+    return `≈${(stats.cpu.avg / 100).toFixed(1)} ${coreCeiling}`;
+  }, [containerMeta, selectedEndpointData, stats.cpu]);
 
   const memoryDenominatorLabel = useMemo(() => {
     const resolved = resolveMemoryLimit(
@@ -527,7 +539,7 @@ export default function MetricsDashboardPage() {
     // Numerator matches the "Avg Memory %" headline above this label: use the
     // range-average used bytes (memoryBytesData is in MB → ×1MiB) when the series
     // has data, falling back to the live `/meta` sample only when it's empty.
-    const avgUsedBytes = memoryBytesData.length > 0
+    const avgUsedBytes = stats.memoryBytes !== null
       ? stats.memoryBytes.avg * 1024 * 1024
       : null;
     const used = avgUsedBytes ?? containerMeta?.usedBytes ?? null;
@@ -535,7 +547,7 @@ export default function MetricsDashboardPage() {
     return resolved.isHostTotal
       ? `${formatMemSize(used)} / ${formatMemSize(resolved.limit)} host (no limit set)`
       : `${formatMemSize(used)} / ${formatMemSize(resolved.limit)} limit`;
-  }, [containerMeta, selectedEndpointData, stats.memoryBytes.avg, memoryBytesData]);
+  }, [containerMeta, selectedEndpointData, stats.memoryBytes]);
 
   // The reasoning behind each percentage used to live in a native `title=` on
   // the KPI sub-label: no keyboard access, no touch access, ~1s hover delay, and
@@ -983,7 +995,12 @@ export default function MetricsDashboardPage() {
               <SpotlightCard>
                 <div className="rounded-lg border bg-card p-6 shadow-sm">
                   <p className="text-sm font-medium text-muted-foreground">Avg CPU</p>
-                  <p className="mt-2 text-3xl font-bold tracking-tight">{stats.cpu.avg.toFixed(1)}%</p>
+                  <p className="mt-2 text-3xl font-bold tracking-tight">
+                    {formatOrNoValue(stats.cpu?.avg, (v) => `${v.toFixed(1)}%`)}
+                  </p>
+                  {stats.cpu === null && (
+                    <p className="text-xs text-muted-foreground mt-1">{NO_SAMPLES_QUALIFIER}</p>
+                  )}
                   {cpuCoresLabel && (
                     <p className="text-xs text-muted-foreground mt-1">{cpuCoresLabel}</p>
                   )}
@@ -997,7 +1014,12 @@ export default function MetricsDashboardPage() {
               <SpotlightCard>
                 <div className="rounded-lg border bg-card p-6 shadow-sm">
                   <p className="text-sm font-medium text-muted-foreground">Avg Memory</p>
-                  <p className="mt-2 text-3xl font-bold tracking-tight">{stats.memory.avg.toFixed(1)}%</p>
+                  <p className="mt-2 text-3xl font-bold tracking-tight">
+                    {formatOrNoValue(stats.memory?.avg, (v) => `${v.toFixed(1)}%`)}
+                  </p>
+                  {stats.memory === null && (
+                    <p className="text-xs text-muted-foreground mt-1">{NO_SAMPLES_QUALIFIER}</p>
+                  )}
                   {memoryDenominatorLabel && (
                     <p className="text-xs text-muted-foreground mt-1">{memoryDenominatorLabel}</p>
                   )}
@@ -1011,9 +1033,13 @@ export default function MetricsDashboardPage() {
               <SpotlightCard>
                 <div className="rounded-lg border bg-card p-6 shadow-sm">
                   <p className="text-sm font-medium text-muted-foreground">Peak Memory</p>
-                  <p className="mt-2 text-3xl font-bold tracking-tight">{stats.memoryBytes.max.toFixed(1)} MB</p>
+                  <p className="mt-2 text-3xl font-bold tracking-tight">
+                    {formatOrNoValue(stats.memoryBytes?.max, (v) => `${v.toFixed(1)} MB`)}
+                  </p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Min: {stats.memoryBytes.min.toFixed(1)} MB
+                    {stats.memoryBytes === null
+                      ? NO_SAMPLES_QUALIFIER
+                      : `Min: ${stats.memoryBytes.min.toFixed(1)} MB`}
                   </p>
                 </div>
               </SpotlightCard>
@@ -1342,8 +1368,9 @@ export default function MetricsDashboardPage() {
             endpointId: selectedEndpoint,
             endpointName: endpoints?.find((ep) => ep.id === selectedEndpoint)?.name,
             timeRange,
-            cpuAvg: stats.cpu.avg,
-            memoryAvg: stats.memory.avg,
+            // undefined, not 0, when unknown — this goes to the LLM as a fact.
+            cpuAvg: stats.cpu?.avg,
+            memoryAvg: stats.memory?.avg,
           }}
         />
         </Suspense>

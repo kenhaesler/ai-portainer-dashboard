@@ -14,7 +14,7 @@ interface TestSpanOptions {
   id?: string;
   trace_id?: string;
   service_name: string;
-  duration_ms: number;
+  duration_ms: number | null;
   start_time: Date;
   status: 'ok' | 'error' | 'unset';
   container_name?: string | null;
@@ -86,6 +86,50 @@ describe('computeRed', () => {
     expect(row.errorRate).toBe(0);
     // 100 calls within a 1h bucket = 100 / 3600 ≈ 0.0278 req/s.
     expect(row.rate).toBeCloseTo(100 / 3600, 3);
+  });
+
+  it('returns null percentiles (not 0 ms) when no span in the group has a duration (invariant #7)', async () => {
+    const now = new Date('2026-05-14T12:00:00Z');
+    await insertTestSpan({ service_name: 'api', duration_ms: null, start_time: now, status: 'ok' });
+    await insertTestSpan({ service_name: 'api', duration_ms: null, start_time: now, status: 'error' });
+    const result = await computeRed({
+      from: new Date('2026-05-14T11:00:00Z'),
+      to: new Date('2026-05-14T13:00:00Z'),
+      bucket: '1h',
+      groupBy: 'service',
+    });
+    const row = result.buckets.flatMap((b) => b.rows).find((r) => r.group === 'api')!;
+    expect(row.callCount).toBe(2);
+    // Counts are real, the unmeasurable durations are unknown.
+    expect(row.rate).toBeGreaterThan(0);
+    expect(row.errorRate).toBeCloseTo(0.5);
+    expect(row.p50Ms).toBeNull();
+    expect(row.p95Ms).toBeNull();
+    expect(row.p99Ms).toBeNull();
+  });
+
+  it('computes percentiles from the spans that do carry a duration, ignoring null ones', async () => {
+    const now = new Date('2026-05-14T12:00:00Z');
+    await insertTestSpan({ service_name: 'api', duration_ms: 40, start_time: now, status: 'ok' });
+    await insertTestSpan({ service_name: 'api', duration_ms: null, start_time: now, status: 'ok' });
+    const result = await computeRed({
+      from: new Date('2026-05-14T11:00:00Z'),
+      to: new Date('2026-05-14T13:00:00Z'),
+      bucket: '1h',
+      groupBy: 'service',
+    });
+    const row = result.buckets.flatMap((b) => b.rows).find((r) => r.group === 'api')!;
+    expect(row.p50Ms).toBe(40);
+  });
+
+  it('returns no buckets (not zero rows) for an empty window', async () => {
+    const result = await computeRed({
+      from: new Date('2026-05-14T11:00:00Z'),
+      to: new Date('2026-05-14T13:00:00Z'),
+      bucket: '1h',
+      groupBy: 'service',
+    });
+    expect(result.buckets).toEqual([]);
   });
 
   it('rate is per-bucket, not per-window — independent of window length', async () => {

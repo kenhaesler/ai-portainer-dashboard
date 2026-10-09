@@ -293,6 +293,36 @@ prefers the level a log record declares (pino JSON, `LEVEL:` prefix) and falls b
 grep with `levelSource: 'guessed'`, rendered dimmed with a `?`. The grep badged
 `module: "trace-store"` as DEBUG for containing the word "trace" — on the field operators triage on.
 
+## Unknown is `null`, not `0` (#1707)
+
+A follow-up audit found the round-2 rule (invariant #7, and #1567's "unknown samples are excluded")
+still broken at eleven render sites that coerced "no sample" to a confident zero. The fix moves the
+gap into the API and contract so the UI has something honest to render:
+
+| Surface | Before | Now |
+| --- | --- | --- |
+| `GET /api/dashboard/{resources,full}` `fleetCpuPercent` / `fleetMemoryPercent` / per-stack `cpuPercent` / `memoryPercent` | `0` when no running container had a sample | `number \| null` (`DashboardResourcesResponseSchema`, `StackResourceUsageSchema`); stacks with no known sample sort **after** stacks that have one |
+| `GET /api/traces/summary` `avgDuration` / `errorRate` | `0` on an empty window | `null`; `totalTraces` / `services` stay real counts |
+| `GET /api/traces/red` row `rate` / `errorRate` / `p50Ms` / `p95Ms` / `p99Ms` | `Number(x ?? 0)` — a SQL NULL percentile (no span in the group carries a duration) became `0 ms` | SQL NULL stays `null` (`computeRed`) |
+| `GET /api/metrics/:e/:c/meta` `usedBytes` | `Math.max(0, (usage ?? 0) - cache)` — a missing Docker `memory_stats.usage` reported 0 bytes used | `null` when usage is missing/non-positive, the same rule the collector applies (#1567) |
+
+Frontend: `frontend/src/shared/lib/missing-value.ts` is the one spelling of the gap (`NO_VALUE` "—",
+`NO_SAMPLES_QUALIFIER` "no samples in range", `formatOrNoValue`). Do not add a per-page copy.
+`ResourceOverviewCard` draws an empty, role-less track (no `progressbar` claiming 0) and its bars now
+carry an accessible name; `FleetHealthSummary` extra tiles accept `value: number | null` plus a
+`qualifier`; the `/metrics` summary tiles compute `null` stats for a series with no samples (and no
+longer print "≈0.0 of N cores", nor send `cpuAvg: 0` to the chat panel's LLM context);
+`ContainerTracesTab` plots null percentiles as chart gaps and no longer falls back to
+`b.rows[0]` — another container's row — when the container has no row in a bucket
+(`buildSparklineSeries`); the Trace Explorer stat line renders "— errors (no samples in range)" and
+"p95 — · p50 —" for an empty window; LLM Observability's Error Rate tile renders "—" when the stats
+payload carries no rate (`LlmStats.errorRate` is `number | null`).
+
+Not changed, on purpose: `core`'s `getTraceSummary` (LLM tool input, pinned numeric by #1526) and the
+dashboard's `security` fallback `{ totalAudited: 0, flagged: 0 }` when the audit fetch fails — the
+Home tile now shows "—" only while the summary itself is absent; a failed audit inside a loaded
+summary still reads 0 and is the next place this invariant needs applying.
+
 ## Design-critique remediation (2026-07-26)
 
 A whole-application design review produced 173 findings; the fixes are grouped below by the

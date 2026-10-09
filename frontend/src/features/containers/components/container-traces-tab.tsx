@@ -9,9 +9,10 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from 'recharts';
-import { useRed } from '@/features/observability/hooks/use-red';
+import { useRed, type RedResult } from '@/features/observability/hooks/use-red';
 import { useTraces } from '@/features/observability/hooks/use-traces';
 import { NoTraceDataCallout } from '@/features/observability/components/no-trace-data-callout';
+import { NO_SAMPLES_QUALIFIER, formatOrNoValue } from '@/shared/lib/missing-value';
 
 interface ContainerTracesTabProps {
   containerName: string;
@@ -31,6 +32,60 @@ export const LATENCY_SERIES = [
   { dataKey: 'p95', yAxisId: 'left', stroke: 'var(--color-chart-2)' },
   { dataKey: 'errorRate', yAxisId: 'right', stroke: 'var(--color-destructive)' },
 ] as const;
+
+interface SparklinePoint {
+  time: string;
+  /** null = no sample in this bucket: plotted as a gap, never as 0 ms / 0%. */
+  p50: number | null;
+  p95: number | null;
+  errorRate: number | null;
+}
+
+/**
+ * Timeline series for one container from the 1m-bucketed RED result.
+ *
+ * A bucket without a row for THIS container is dropped — it used to fall back
+ * to `rows[0]`, plotting an arbitrary neighbour's latency as this container's.
+ * Unknown statistics stay null so the chart breaks the line instead of drawing
+ * a confident zero (invariant #7).
+ */
+export function buildSparklineSeries(
+  buckets: RedResult['buckets'],
+  containerName: string,
+): SparklinePoint[] {
+  return buckets
+    .slice()
+    .sort((a, b) => a.bucketStart.localeCompare(b.bucketStart))
+    .flatMap((b) => {
+      const row = b.rows.find((r) => r.group === containerName);
+      if (!row) return [];
+      return [{
+        time: new Date(b.bucketStart).toLocaleTimeString(),
+        p50: row.p50Ms,
+        p95: row.p95Ms,
+        errorRate: row.errorRate === null ? null : row.errorRate * 100,
+      }];
+    });
+}
+
+/** One RED summary figure; an unknown value is a dash plus a qualifier. */
+function RedStat({
+  label,
+  value,
+  format,
+}: {
+  label: string;
+  value: number | null;
+  format: (n: number) => string;
+}) {
+  return (
+    <div>
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd className="mt-1 font-mono text-base">{formatOrNoValue(value, format)}</dd>
+      {value === null && <dd className="text-xs text-muted-foreground">{NO_SAMPLES_QUALIFIER}</dd>}
+    </div>
+  );
+}
 
 // Rounds a Date down to the start of its current minute, then forward
 // `offsetMs` — used to keep RED window edges stable across renders for the
@@ -93,23 +148,12 @@ export function ContainerTracesTab({ containerName }: ContainerTracesTabProps) {
   });
 
   // Build sparkline series from the 1m-bucketed RED result.
-  const sparklineData = useMemo(() => {
-    if (!redSparkline?.buckets) return [] as { time: string; p50: number; p95: number; errorRate: number }[];
-    return redSparkline.buckets
-      .slice()
-      .sort((a, b) => a.bucketStart.localeCompare(b.bucketStart))
-      .map((b) => {
-        const row = b.rows.find((r) => r.group === containerName) ?? b.rows[0];
-        return {
-          time: new Date(b.bucketStart).toLocaleTimeString(),
-          p50: row?.p50Ms ?? 0,
-          p95: row?.p95Ms ?? 0,
-          errorRate: (row?.errorRate ?? 0) * 100,
-        };
-      });
-  }, [redSparkline, containerName]);
+  const sparklineData = useMemo(
+    () => (redSparkline?.buckets ? buildSparklineSeries(redSparkline.buckets, containerName) : []),
+    [redSparkline, containerName],
+  );
 
-  const summaryRow = redSummary?.buckets[0]?.rows[0];
+  const summaryRow = redSummary?.buckets[0]?.rows.find((r) => r.group === containerName);
   const hasAnyData = (redSummary?.buckets.length ?? 0) > 0
     || (calls?.length ?? 0) > 0;
 
@@ -128,26 +172,11 @@ export function ContainerTracesTab({ containerName }: ContainerTracesTabProps) {
         <h3 className="text-lg font-semibold">RED summary (last 1h)</h3>
         {summaryRow ? (
           <dl className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-5">
-            <div>
-              <dt className="text-xs text-muted-foreground">Rate</dt>
-              <dd className="mt-1 font-mono text-base">{summaryRow.rate.toFixed(2)} /s</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-muted-foreground">Error rate</dt>
-              <dd className="mt-1 font-mono text-base">{(summaryRow.errorRate * 100).toFixed(2)}%</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-muted-foreground">p50</dt>
-              <dd className="mt-1 font-mono text-base">{summaryRow.p50Ms.toFixed(0)} ms</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-muted-foreground">p95</dt>
-              <dd className="mt-1 font-mono text-base">{summaryRow.p95Ms.toFixed(0)} ms</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-muted-foreground">p99</dt>
-              <dd className="mt-1 font-mono text-base">{summaryRow.p99Ms.toFixed(0)} ms</dd>
-            </div>
+            <RedStat label="Rate" value={summaryRow.rate} format={(v) => `${v.toFixed(2)} /s`} />
+            <RedStat label="Error rate" value={summaryRow.errorRate} format={(v) => `${(v * 100).toFixed(2)}%`} />
+            <RedStat label="p50" value={summaryRow.p50Ms} format={(v) => `${v.toFixed(0)} ms`} />
+            <RedStat label="p95" value={summaryRow.p95Ms} format={(v) => `${v.toFixed(0)} ms`} />
+            <RedStat label="p99" value={summaryRow.p99Ms} format={(v) => `${v.toFixed(0)} ms`} />
           </dl>
         ) : (
           <NoTraceDataCallout className="mt-4" />

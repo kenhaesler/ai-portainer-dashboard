@@ -6,11 +6,12 @@ export type RedGroupBy = 'service' | 'route' | 'container' | 'namespace';
 
 export interface RedRow {
   group: string;
-  rate: number;       // req/s
-  errorRate: number;  // 0..1
-  p50Ms: number;
-  p95Ms: number;
-  p99Ms: number;
+  // null = not measurable for this group (invariant #7); render "—", never 0.
+  rate: number | null;       // req/s
+  errorRate: number | null;  // 0..1
+  p50Ms: number | null;
+  p95Ms: number | null;
+  p99Ms: number | null;
   callCount: number;
 }
 

@@ -642,10 +642,12 @@ export async function tracesRoutes(fastify: FastifyInstance) {
 
     return {
       totalTraces: summary?.totalTraces ?? 0,
-      avgDuration: Math.round((summary?.avgDuration ?? 0) * 100) / 100,
+      // null = no measurement in the window (invariant #7): AVG over zero
+      // traces and a failure ratio over zero spans are undefined, not 0.
+      avgDuration: summary?.avgDuration == null ? null : Math.round(summary.avgDuration * 100) / 100,
       // Span-scoped, so a service reached only as a callee is counted and its
       // failures reach the header.
-      errorRate: Math.round((spanScope?.errorRate ?? 0) * 10000) / 10000,
+      errorRate: spanScope?.errorRate == null ? null : Math.round(spanScope.errorRate * 10000) / 10000,
       services: spanScope?.services ?? 0,
       sourceCounts,
     };

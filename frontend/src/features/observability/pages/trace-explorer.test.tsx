@@ -243,6 +243,36 @@ describe('TraceExplorerPage', () => {
     expect(screen.queryByText(/Avg Duration/)).toBeNull();
   });
 
+  it('renders a dash, not "0.0% errors" or "p95 0ms", when the window has no measurements (invariant #7)', () => {
+    mockUseTraceSummary.mockReturnValue({
+      data: {
+        totalTraces: 0,
+        avgDuration: null,
+        errorRate: null,
+        services: 0,
+        sourceCounts: { http: 0, ebpf: 0, scheduler: 0, unknown: 0 },
+      },
+    });
+    mockUseTraces.mockReturnValue({
+      data: [],
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+      isFetching: false,
+      dataUpdatedAt: Date.now(),
+    });
+
+    renderWithRouter(<TraceExplorerPage />);
+
+    const subtitle = screen.getByTestId('page-header-subtitle');
+    expect(subtitle).toHaveTextContent('— errors');
+    expect(subtitle).toHaveTextContent('no samples in range');
+    expect(subtitle).toHaveTextContent('p95 — · p50 —');
+    expect(subtitle.textContent).not.toMatch(/0\.0%/);
+    expect(subtitle.textContent).not.toMatch(/p95 0/);
+  });
+
   it('drops the three "you can filter" sentences', () => {
     renderWithRouter(<TraceExplorerPage />);
 

@@ -67,6 +67,28 @@ describe('FleetHealthSummary', () => {
     expect(within(hero).queryByRole('button', { name: /Security Findings/i })).not.toBeInTheDocument();
   });
 
+  it('renders a dash and a qualifier, never 0, for an extraTile whose value is unknown (invariant #7)', () => {
+    renderSummary(
+      <FleetHealthSummary
+        stats={stats}
+        isLoading={false}
+        statusColumns={3}
+        extraTiles={[
+          { icon: ShieldAlert, label: 'Security Findings', value: null, qualifier: 'audit not loaded' },
+          { icon: PackageOpen, label: 'Stopped', value: null },
+        ]}
+      />,
+    );
+    const hero = screen.getByTestId('fleet-health-hero');
+    const security = within(hero).getByText('Security Findings').closest('div.flex-1') as HTMLElement;
+    expect(security).toHaveTextContent('—');
+    expect(security).toHaveTextContent('audit not loaded');
+    expect(security.textContent).not.toMatch(/\b0\b/);
+    // A tile with no qualifier supplied falls back to the shared wording.
+    const stopped = within(hero).getByText('Stopped').closest('div.flex-1') as HTMLElement;
+    expect(stopped).toHaveTextContent('no samples in range');
+  });
+
   it('renders an extraTile with onClick as a button and fires the handler', () => {
     const onClick = vi.fn();
     renderSummary(

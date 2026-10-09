@@ -608,6 +608,72 @@ describe('MetricsDashboardPage', () => {
     expect(kpiGrid.className).toContain('md:grid-cols-3');
   });
 
+  describe('summary tiles with no samples (invariant #7)', () => {
+    function selectWorker() {
+      renderPage();
+      fireEvent.click(screen.getAllByRole('combobox')[0]);
+      fireEvent.click(screen.getByRole('option', { name: 'local' }));
+      fireEvent.click(screen.getAllByRole('combobox')[2]);
+      fireEvent.click(screen.getByRole('option', { name: 'worker-1' }));
+    }
+    const tile = (label: string) =>
+      screen.getByText(label).closest('div.rounded-lg') as HTMLElement;
+
+    it('renders a dash and a qualifier, never 0.0% / 0.0 MB, when the range holds no samples', () => {
+      selectWorker();
+
+      for (const label of ['Avg CPU', 'Avg Memory', 'Peak Memory']) {
+        const t = tile(label);
+        expect(t).toHaveTextContent('—');
+        expect(t).toHaveTextContent('no samples in range');
+        expect(t.textContent).not.toMatch(/0\.0/);
+      }
+    });
+
+    it('does not fabricate an "≈0.0 of N cores" figure from the missing CPU average', () => {
+      selectWorker();
+      expect(screen.queryByText(/≈0\.0/)).toBeNull();
+      // The core count itself is real and stays.
+      expect(screen.getByText(/of 4 cores/)).toBeInTheDocument();
+    });
+
+    it('renders real values, with no qualifier, once samples exist', () => {
+      vi.mocked(useContainerMetrics).mockImplementation(
+        (_endpointId, _containerId, metricType) =>
+          ({
+            data: {
+              data: [
+                { timestamp: '2024-01-01T00:00:00Z', value: metricType === 'memory_bytes' ? 268435456 : 20 },
+                { timestamp: '2024-01-01T00:01:00Z', value: metricType === 'memory_bytes' ? 536870912 : 40 },
+              ],
+            },
+            isLoading: false,
+            isError: false,
+          }) as never,
+      );
+      selectWorker();
+
+      expect(tile('Avg CPU')).toHaveTextContent('30.0%');
+      expect(tile('Avg CPU')).not.toHaveTextContent('no samples in range');
+      expect(tile('Peak Memory')).toHaveTextContent('512.0 MB');
+      expect(tile('Peak Memory')).toHaveTextContent('Min: 256.0 MB');
+    });
+
+    it('treats only the empty metric as unknown when another has data', () => {
+      vi.mocked(useContainerMetrics).mockImplementation(
+        (_endpointId, _containerId, metricType) =>
+          (metricType === 'cpu'
+            ? { data: { data: [{ timestamp: '2024-01-01T00:00:00Z', value: 12 }] }, isLoading: false, isError: false }
+            : { data: null, isLoading: false, isError: false }) as never,
+      );
+      selectWorker();
+
+      expect(tile('Avg CPU')).toHaveTextContent('12.0%');
+      expect(tile('Avg Memory')).toHaveTextContent('—');
+      expect(tile('Avg Memory')).toHaveTextContent('no samples in range');
+    });
+  });
+
   it('shows the CPU core-count clarification sub-label', () => {
     renderPage();
     const endpointSelect = screen.getAllByRole('combobox')[0];

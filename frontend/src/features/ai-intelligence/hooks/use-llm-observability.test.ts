@@ -50,7 +50,8 @@ describe('useLlmStats', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data?.totalQueries).toBe(12);
     expect(result.current.data?.modelBreakdown).toEqual([]);
-    expect(result.current.data?.errorRate).toBe(0);
+    // Absent in the payload => unknown (null), not a confident 0% (invariant #7).
+    expect(result.current.data?.errorRate).toBeNull();
   });
 });
 
