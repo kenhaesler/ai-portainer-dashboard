@@ -9,14 +9,16 @@ export interface StackResourceUsage {
   containerCount: number;
   runningCount: number;
   stoppedCount: number;
-  cpuPercent: number;
-  memoryPercent: number;
+  /** null = no sample in the window; render "—", never 0%. */
+  cpuPercent: number | null;
+  memoryPercent: number | null;
   memoryBytes: number;
 }
 
 export interface DashboardResources {
-  fleetCpuPercent: number;
-  fleetMemoryPercent: number;
+  /** null = no running container has a known sample; render "—", never 0%. */
+  fleetCpuPercent: number | null;
+  fleetMemoryPercent: number | null;
   topStacks: StackResourceUsage[];
 }
 

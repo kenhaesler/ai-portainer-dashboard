@@ -24,6 +24,7 @@ import { EmptyState } from '@/shared/components/feedback/empty-state';
 import { DataFreshness } from '@/shared/components/feedback/data-freshness';
 import { SkeletonChart, SkeletonList } from '@/shared/components/feedback/skeleton';
 import { cn, formatDate } from '@/shared/lib/utils';
+import { NO_VALUE, NO_SAMPLES_QUALIFIER, formatOrNoValue } from '@/shared/lib/missing-value';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { PageHeader } from '@/shared/components/layout/page-header';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
@@ -999,10 +1000,17 @@ export default function TraceExplorerPage() {
       <span aria-hidden="true">·</span>
       <span>{summary.services} {summary.services === 1 ? 'service' : 'services'}</span>
       <span aria-hidden="true">·</span>
-      <span>{(summary.errorRate * 100).toFixed(1)}% errors</span>
+      {/* `errorRate` is null when the window holds no spans: `null * 100` is 0,
+          which would print a confident "0.0% errors" (invariant #7). */}
+      <span>
+        {formatOrNoValue(summary.errorRate, (v) => `${(v * 100).toFixed(1)}%`)} errors
+        {summary.errorRate === null && ` (${NO_SAMPLES_QUALIFIER})`}
+      </span>
       <span aria-hidden="true">·</span>
       <span title={`p95 and p50 over the ${durationStats.count} traces loaded into the list.`}>
-        p95 {formatDuration(durationStats.p95)} · p50 {formatDuration(durationStats.p50)}
+        {durationStats.count === 0
+          ? `p95 ${NO_VALUE} · p50 ${NO_VALUE}`
+          : `p95 ${formatDuration(durationStats.p95)} · p50 ${formatDuration(durationStats.p50)}`}
       </span>
     </span>
   ) : undefined;

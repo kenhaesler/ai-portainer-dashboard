@@ -13,6 +13,7 @@ import { DataTable, type ColumnDef } from '@/shared/components/tables/data-table
 import { SkeletonKpi, SkeletonList } from '@/shared/components/feedback/skeleton';
 import { EmptyState } from '@/shared/components/feedback/empty-state';
 import { cn, formatDate } from '@/shared/lib/utils';
+import { NO_SAMPLES_QUALIFIER, formatOrNoValue } from '@/shared/lib/missing-value';
 import {
   Activity,
   MessageSquare,
@@ -375,16 +376,19 @@ export default function LlmObservabilityPage() {
             // `errorRate` arrives as a percentage (0-100). This multiplied it
             // by 100 a second time, so a single failed call — 100% of a
             // one-call window — rendered as "10000.0%".
-            value={`${(stats?.errorRate ?? 0).toFixed(1)}%`}
+            // null (payload carried no rate) is "—", never "0.0%" (invariant #7).
+            value={formatOrNoValue(stats?.errorRate, (v) => `${v.toFixed(1)}%`)}
             icon={<AlertTriangle className="h-5 w-5" />}
             // No trend arrow: a down arrow on a rising error rate reads as an
             // improvement, and there is no direction in this payload anyway.
             hoverDetail={
               // Compared against 5, not 0.05 — on a percentage the old
               // threshold fired at 0.05% while the text claimed 5%.
-              (stats?.errorRate ?? 0) > ERROR_RATE_THRESHOLD_PCT
-                ? `${stats?.failedQueries ?? 0} of ${stats?.totalQueries ?? 0} calls failed, above the ${ERROR_RATE_THRESHOLD_PCT}% error threshold`
-                : undefined
+              stats?.errorRate == null
+                ? NO_SAMPLES_QUALIFIER
+                : stats.errorRate > ERROR_RATE_THRESHOLD_PCT
+                  ? `${stats.failedQueries} of ${stats.totalQueries} calls failed, above the ${ERROR_RATE_THRESHOLD_PCT}% error threshold`
+                  : undefined
             }
           />
         </div>

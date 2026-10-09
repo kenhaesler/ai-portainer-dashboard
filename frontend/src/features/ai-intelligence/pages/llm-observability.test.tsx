@@ -438,6 +438,24 @@ describe('error rate tile', () => {
     expect(screen.queryByText('10000.0%')).toBeNull();
   });
 
+  it('renders a dash, not "0.0%", when the stats carry no error rate (invariant #7)', () => {
+    withStats({ ...mockStats, errorRate: null });
+
+    renderPage();
+
+    const tile = screen.getByText('Error Rate').closest('div.rounded-lg, div[class*="rounded"]') as HTMLElement;
+    expect(tile.textContent).toContain('—');
+    expect(screen.queryByText('0.0%')).toBeNull();
+  });
+
+  it('still renders a measured 0.0% error rate as 0.0%', () => {
+    withStats({ ...mockStats, errorRate: 0, failedQueries: 0, succeededQueries: 142 });
+
+    renderPage();
+
+    expect(screen.getByText('0.0%')).toBeTruthy();
+  });
+
   it('does not flag a sub-threshold error rate (the check reads percent, not fraction)', () => {
     // 1% is below the stated 5% threshold. The comparison was written against
     // 0.05, so on a percentage scale it fired for anything above 0.05%.

@@ -170,7 +170,8 @@ export default function HomePage() {
                   {
                     icon: PackageOpen,
                     label: 'Stopped',
-                    value: healthStats?.stopped ?? 0,
+                    // null (not 0) while the fleet is unknown — invariant #7.
+                    value: healthStats?.stopped ?? null,
                     // No link at zero: a chevron into an empty filtered table
                     // is the dead end this was meant to fix.
                     // `state=stopped`, not `state=exited`: the explorer filters
@@ -181,7 +182,9 @@ export default function HomePage() {
                   {
                     icon: ShieldAlert,
                     label: 'Security Findings',
-                    value: data?.security.flagged ?? 0,
+                    // A summary that has not loaded is unknown, not "0 flagged".
+                    value: data?.security.flagged ?? null,
+                    qualifier: 'audit not loaded',
                     variant: (data?.security.flagged ?? 0) > 0 ? 'danger' : 'default',
                     // Always linked: the audit page is worth opening at zero
                     // findings too — it shows what was actually checked.

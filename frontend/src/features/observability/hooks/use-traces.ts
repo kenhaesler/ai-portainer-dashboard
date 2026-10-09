@@ -96,8 +96,10 @@ interface ServiceMap {
 
 interface TraceSummary {
   totalTraces: number;
-  avgDuration: number;
-  errorRate: number;
+  /** null = no traces in the window (invariant #7); never 0. */
+  avgDuration: number | null;
+  /** null = no spans in the window (invariant #7); never 0. */
+  errorRate: number | null;
   services: number;
   sourceCounts?: {
     http: number;

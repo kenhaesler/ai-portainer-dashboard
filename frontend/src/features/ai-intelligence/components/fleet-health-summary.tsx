@@ -2,6 +2,7 @@ import { Activity, AlertCircle, AlertTriangle, CheckCircle2, ChevronRight, HelpC
 import { Link } from 'react-router';
 import { SkeletonChart } from '@/shared/components/feedback/skeleton';
 import { HealthScoreCard } from '@/shared/components/data-display/health-score-card';
+import { NO_VALUE, NO_SAMPLES_QUALIFIER } from '@/shared/lib/missing-value';
 import {
   calculateHealthStats,
   calculateHealthcheckPassRate,
@@ -27,13 +28,16 @@ function HealthStatTile({
   icon: Icon,
   label,
   value,
+  qualifier,
   variant = 'default',
   onClick,
   to,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
-  value: number;
+  /** null = unknown: rendered as a dash plus `qualifier`, never as a zero. */
+  value: number | null;
+  qualifier?: string;
   variant?: 'default' | 'success' | 'warning' | 'danger' | 'info';
   onClick?: () => void;
   /**
@@ -57,8 +61,11 @@ function HealthStatTile({
         <Icon className="h-4 w-4" />
       </div>
       <div className="flex-1 min-w-0">
-        <span className="text-xl font-bold tabular-nums leading-none">{value}</span>
+        <span className="text-xl font-bold tabular-nums leading-none">{value ?? NO_VALUE}</span>
         <p className="text-xs text-muted-foreground mt-0.5 truncate">{label}</p>
+        {value === null && (
+          <p className="text-xs text-muted-foreground truncate">{qualifier ?? NO_SAMPLES_QUALIFIER}</p>
+        )}
       </div>
     </>
   );
@@ -120,7 +127,10 @@ export interface InsightStats {
 export interface ExtraTile {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
-  value: number;
+  /** null = unknown: rendered as a dash plus `qualifier`, never as a zero. */
+  value: number | null;
+  /** Why the value is unknown; defaults to the shared "no samples in range". */
+  qualifier?: string;
   variant?: 'default' | 'success' | 'warning' | 'danger' | 'info';
   onClick?: () => void;
   to?: string;
@@ -214,6 +224,7 @@ export function FleetHealthSummary({
             icon={tile.icon}
             label={tile.label}
             value={tile.value}
+            qualifier={tile.qualifier}
             variant={tile.variant}
             onClick={tile.onClick}
             to={tile.to}
