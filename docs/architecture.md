@@ -49,6 +49,18 @@ exports the feature-aware `ColumnDef` used by every caller. Do not import `Colum
 always registered, while `manualPagination` bypasses the client row model for server-paginated,
 virtual, and window-scroll tables.
 
+`useTable` memoizes its return value on the options object, which is a fresh literal on every
+render, so the `table` it returns is a **new identity on every render**. An effect keyed on `table`
+therefore runs on every render. `DataTable`'s selection notifier was such an effect and handed the
+parent a fresh array each time; `/workloads` stores that array in state, so the two re-rendered each
+other until React reported "Maximum update depth exceeded" (#1706). `onSelectionChange` now fires
+from TanStack's `onRowSelectionChange` handler only — once per user toggle, never on mount, sort, or
+a data refresh — and the parent clearing selection through `selectedRowIds` does not echo back.
+Do not call a parent callback from an effect keyed on `table`. Render-count guards live in
+`data-table-render-loop.test.tsx` and `workload-explorer-render-loop.test.tsx`; the latter mounts the
+real page with only `fetch` mocked, because `workload-explorer.test.tsx` stubs `DataTable` and so
+could never see the loop.
+
 Fastify 5.12 distinguishes HTTP/1 (`http2?: false`) and HTTP/2 (`http2: true`) factory overloads.
 `packages/server/src/app.ts` narrows the validated TLS/HTTP2 options before calling Fastify, then
 passes either instance to the protocol-generic `finishBuild()` registration path. This preserves

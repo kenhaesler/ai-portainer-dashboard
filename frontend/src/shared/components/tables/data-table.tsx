@@ -356,6 +356,28 @@ export function DataTable<T extends RowData>({
     return [selectionColumn, ...columns];
   }, [selectionColumn, columns]);
 
+  // Notify the parent from TanStack's selection handler — i.e. only when the
+  // user actually changed the selection — never from an effect keyed on
+  // `table`. TanStack Table 9's `useTable` returns a new `table` identity on
+  // every render (it memoizes on the options object, which is a fresh literal
+  // each render), so such an effect ran on every render and handed the parent a
+  // new array each time. A parent that stores that array in state re-renders
+  // this table, which ran the effect again: "Maximum update depth exceeded" on
+  // /workloads on mount and on every sort (#1706).
+  const handleRowSelectionChange: OnChangeFn<RowSelectionState> = (updater) => {
+    const next = typeof updater === 'function' ? updater(rowSelection) : updater;
+    setRowSelection(next);
+    if (!onSelectionChange) return;
+    // `getSelectedRowModel()` still reflects the previous state here, so derive
+    // the selected rows from the next state over the core row model directly.
+    onSelectionChange(
+      table
+        .getCoreRowModel()
+        .flatRows.filter((row) => next[row.id])
+        .map((row) => row.original),
+    );
+  };
+
   const table = useTable({
     features: dataTableFeatures,
     data,
@@ -383,7 +405,7 @@ export function DataTable<T extends RowData>({
             const selectedCount = Object.keys(rowSelection).filter((k) => rowSelection[k]).length;
             return row.getIsSelected() || selectedCount < maxSelection;
           },
-          onRowSelectionChange: setRowSelection,
+          onRowSelectionChange: handleRowSelectionChange,
         }
       : {}),
     state: {
@@ -397,13 +419,6 @@ export function DataTable<T extends RowData>({
       : {}),
     ...(getRowIdProp ? { getRowId: (row: T) => getRowIdProp(row) } : {}),
   });
-
-  // Notify parent when selection changes
-  useEffect(() => {
-    if (!enableRowSelection || !onSelectionChange) return;
-    const selectedRows = table.getSelectedRowModel().rows.map((r) => r.original);
-    onSelectionChange(selectedRows);
-  }, [rowSelection, enableRowSelection, onSelectionChange, table]);
 
   // Sync external search value into column filter
   useEffect(() => {
