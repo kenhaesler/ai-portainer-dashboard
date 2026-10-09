@@ -59,31 +59,27 @@ describe('status-page-store (real PostgreSQL)', () => {
   });
 
   describe('empty monitoring_snapshots table (#1526 regression)', () => {
-    it('getOverallUptime returns 100, never NaN', async () => {
+    it('getOverallUptime returns null (no data), never NaN or 100', async () => {
       for (const hours of [24, 168, 720]) {
         const result = await getOverallUptime(hours);
-        expect(result).toBe(100);
-        expect(Number.isFinite(result)).toBe(true);
+        expect(result).toBeNull();
       }
     });
 
-    it('getEndpointUptime returns 100, never NaN', async () => {
+    it('getEndpointUptime returns null (no data), never NaN or 100', async () => {
       for (const hours of [24, 168, 720]) {
         const result = await getEndpointUptime(hours);
-        expect(result).toBe(100);
-        expect(Number.isFinite(result)).toBe(true);
+        expect(result).toBeNull();
       }
     });
 
-    it('getUptimeSummary returns 100 for all windows and serializes without null', async () => {
+    it('getUptimeSummary returns null for all windows (no data is not 100%) (#1708)', async () => {
       const summary = await getUptimeSummary();
 
       expect(summary).toEqual({
-        containers: { '24h': 100, '7d': 100, '30d': 100 },
-        endpoints: { '24h': 100, '7d': 100, '30d': 100 },
+        containers: { '24h': null, '7d': null, '30d': null },
+        endpoints: { '24h': null, '7d': null, '30d': null },
       });
-      // NaN would serialize to null in the public JSON payload
-      expect(JSON.stringify(summary)).not.toContain('null');
     });
 
     it('getDailyUptimeBuckets returns an empty array', async () => {

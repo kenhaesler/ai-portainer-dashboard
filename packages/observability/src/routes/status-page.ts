@@ -60,8 +60,12 @@ async function loadStatusPayload(): Promise<CachedStatus> {
     snapshot && (snapshot.containersStopped > 0 || snapshot.containersUnhealthy > 0);
   const hasDown = snapshot && snapshot.endpointsDown > 0;
 
-  let overallStatus: 'operational' | 'degraded' | 'major_outage' = 'operational';
-  if (hasDown) {
+  // No snapshot means nothing has been measured — never claim "operational"
+  // from the absence of bad news (#1708).
+  let overallStatus: 'operational' | 'degraded' | 'major_outage' | 'unknown' = 'operational';
+  if (!snapshot) {
+    overallStatus = 'unknown';
+  } else if (hasDown) {
     overallStatus = 'major_outage';
   } else if (hasStoppedOrUnhealthy) {
     overallStatus = 'degraded';

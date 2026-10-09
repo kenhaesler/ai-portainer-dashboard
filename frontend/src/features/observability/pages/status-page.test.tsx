@@ -186,6 +186,47 @@ describe('StatusPage', () => {
     expect(screen.queryByText('Current Status')).not.toBeInTheDocument();
   });
 
+  describe('no data (#1708)', () => {
+    const noData = () =>
+      makeStatusData({
+        overallStatus: 'unknown',
+        uptime: { '24h': null, '7d': null, '30d': null },
+        endpointUptime: { '24h': null, '7d': null, '30d': null },
+        snapshot: null,
+        uptimeTimeline: [],
+      });
+
+    it('shows a neutral "no data" banner instead of claiming operational', async () => {
+      await renderPage(noData());
+      expect(screen.queryByText('All Systems Operational')).not.toBeInTheDocument();
+      expect(screen.getByText('Status Unknown')).toBeInTheDocument();
+      const banner = screen.getByTestId('status-banner');
+      expect(banner.className).not.toContain('emerald');
+      expect(banner.className).not.toContain('red');
+    });
+
+    it('renders "No data" for every uptime window, never 100%', async () => {
+      await renderPage(noData());
+      expect(screen.getAllByText('No data')).toHaveLength(3);
+      expect(screen.queryByText(/%/)).not.toBeInTheDocument();
+    });
+
+    it('renders a null timeline bucket as no data rather than a green bar', async () => {
+      await renderPage(
+        makeStatusData({
+          uptimeTimeline: [
+            { date: '2026-02-07', uptime_pct: null },
+            { date: '2026-02-08', uptime_pct: 99.9 },
+          ],
+        }),
+      );
+      const bars = screen.getByTestId('uptime-timeline').children;
+      expect(bars[0].className).not.toContain('emerald');
+      expect(bars[0].getAttribute('title')).toBe('2026-02-07: No data');
+      expect(bars[1].className).toContain('emerald');
+    });
+  });
+
   it('renders uptime timeline', async () => {
     await renderPage();
     expect(screen.getByTestId('uptime-timeline')).toBeInTheDocument();

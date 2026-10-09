@@ -144,6 +144,24 @@ describe('status-page routes', () => {
       expect(mockedGetRecentIncidentsPublic).not.toHaveBeenCalled();
     });
 
+    it('should report unknown, not operational, when no snapshot exists (#1708)', async () => {
+      mockedGetLatestSnapshot.mockResolvedValue(null);
+      mockedGetUptimeSummary.mockResolvedValue({
+        containers: { '24h': null, '7d': null, '30d': null },
+        endpoints: { '24h': null, '7d': null, '30d': null },
+      });
+      mockedGetDailyUptimeBuckets.mockResolvedValue([]);
+
+      const response = await app.inject({ method: 'GET', url: '/api/status' });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.payload);
+      expect(body.overallStatus).toBe('unknown');
+      expect(body.snapshot).toBeNull();
+      expect(body.uptime).toEqual({ '24h': null, '7d': null, '30d': null });
+      expect(body.endpointUptime).toEqual({ '24h': null, '7d': null, '30d': null });
+    });
+
     it('should report degraded when containers are stopped', async () => {
       mockedGetLatestSnapshot.mockResolvedValue({
         containersRunning: 3,
@@ -235,7 +253,7 @@ describe('status-page routes', () => {
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.payload);
       expect(body.snapshot).toBeNull();
-      expect(body.overallStatus).toBe('operational');
+      expect(body.overallStatus).toBe('unknown');
     });
 
     it('should not require authentication', async () => {

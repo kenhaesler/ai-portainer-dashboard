@@ -10,9 +10,9 @@ export interface StatusPageConfig {
 }
 
 export interface UptimeWindows {
-  '24h': number;
-  '7d': number;
-  '30d': number;
+  '24h': number | null;
+  '7d': number | null;
+  '30d': number | null;
 }
 
 export interface UptimeSummary {
@@ -33,10 +33,14 @@ const STATUS_PAGE_SETTING_KEYS = [
  * strict `total === 0` guard misses and `'0' / '0'` yields NaN on the public
  * status page (#1526). The queries below cast to ::integer, and this helper
  * coerces defensively so an empty window can never produce NaN.
+ *
+ * An empty window returns `null` ("no data"), never 100: with no samples there
+ * is nothing to measure, and a default rendered as a measurement is a false
+ * all-clear on a public page (#1708).
  */
-function uptimePct(part: unknown, total: unknown): number {
+function uptimePct(part: unknown, total: unknown): number | null {
   const totalNum = Number(total);
-  if (!Number.isFinite(totalNum) || totalNum === 0) return 100;
+  if (!Number.isFinite(totalNum) || totalNum <= 0) return null;
   return Math.round((Number(part) / totalNum) * 10000) / 100;
 }
 
@@ -46,14 +50,14 @@ export interface ServiceStatus {
   endpoint_name: string;
   status: 'operational' | 'degraded' | 'down';
   last_checked: string;
-  uptime_24h: number;
-  uptime_7d: number;
-  uptime_30d: number;
+  uptime_24h: number | null;
+  uptime_7d: number | null;
+  uptime_30d: number | null;
 }
 
 export interface UptimeDayBucket {
   date: string;
-  uptime_pct: number;
+  uptime_pct: number | null;
 }
 
 export async function getStatusPageConfig(): Promise<StatusPageConfig> {
@@ -70,7 +74,7 @@ export async function getStatusPageConfig(): Promise<StatusPageConfig> {
   };
 }
 
-export async function getOverallUptime(hours: number): Promise<number> {
+export async function getOverallUptime(hours: number): Promise<number | null> {
   const monitoringDb = getDbForDomain('monitoring');
   const cutoff = new Date(Date.now() - hours * 3600_000).toISOString();
 
@@ -85,7 +89,7 @@ export async function getOverallUptime(hours: number): Promise<number> {
   return uptimePct(row?.total_running, row?.total_all);
 }
 
-export async function getEndpointUptime(hours: number): Promise<number> {
+export async function getEndpointUptime(hours: number): Promise<number | null> {
   const monitoringDb = getDbForDomain('monitoring');
   const cutoff = new Date(Date.now() - hours * 3600_000).toISOString();
 
