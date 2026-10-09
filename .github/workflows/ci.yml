@@ -278,10 +278,29 @@ jobs:
   test-gate:
     name: Test Gate (Required)
     runs-on: ubuntu-latest
-    needs: [test-packages, test-backend, test-frontend, test-tools]
+    # Aggregate required check. `always()` is essential: when a needed job
+    # fails, a plain dependent job is *skipped*, and GitHub counts a skipped
+    # required check as passing (#1711). Running always lets us fail explicitly.
+    #
+    # Skipped-job policy: STRICT. Every needed job must report exactly
+    # `success`; `failure`, `cancelled` and `skipped` all fail the gate. None of
+    # the needed jobs is path-filtered or label-gated today, so a skip can only
+    # mean an upstream failure. Conditional jobs (e.g. `e2e`) must stay out of
+    # `needs` — they are downstream of this gate. ci-test-gate.test.ts enforces
+    # that the gate needs every non-downstream job and none of them has an `if:`.
+    if: always()
+    needs: [lockfile-integrity, typecheck, lint, test-packages, test-backend, test-frontend, test-tools]
     steps:
-      - name: All tests passed
-        run: echo "All package, backend, and frontend tests passed. PR is eligible for merge."
+      - name: Fail unless every required job succeeded
+        env:
+          NEEDS_RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS_RESULTS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          if echo "$NEEDS_RESULTS" | jq -e 'to_entries | map(select(.value.result != "success")) | length > 0' > /dev/null; then
+            echo "::error::One or more required jobs did not succeed (failure, cancelled or skipped)."
+            exit 1
+          fi
+          echo "All required jobs succeeded. PR is eligible for merge."
 
   build:
     name: Build
