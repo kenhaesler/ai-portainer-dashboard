@@ -11,7 +11,7 @@ const mockSocket = {
 let socketIdCounter = 0;
 
 vi.mock('socket.io-client', () => ({
-  io: vi.fn(() => {
+  io: vi.fn((_url?: string, opts?: unknown) => {
     socketIdCounter++;
     return {
       ...mockSocket,
@@ -20,7 +20,10 @@ vi.mock('socket.io-client', () => ({
       on: vi.fn(),
       off: vi.fn(),
       disconnect: vi.fn(),
+      connect: vi.fn(),
       emit: vi.fn(),
+      auth: (opts as { auth?: unknown } | undefined)?.auth,
+      io: { opts: { query: (opts as { query?: unknown } | undefined)?.query } },
     };
   }),
 }));
@@ -87,10 +90,34 @@ describe('socket singleton', () => {
       expect(mockIo).toHaveBeenCalledTimes(2);
     });
 
-    it('creates new socket for different token', () => {
+    it('reuses the same socket on token change and updates its credentials (#1704)', () => {
+      const s1 = getNamespaceSocket('monitoring', 'token-1') as any;
+      const s2 = getNamespaceSocket('monitoring', 'token-2') as any;
+      expect(s2).toBe(s1);
+      expect(mockIo).toHaveBeenCalledTimes(1);
+      expect(s1.auth).toEqual({ token: 'token-2' });
+      expect(s1.io.opts.query).toEqual({ token: 'token-2' });
+      // Reconnect so the handshake presents the new token
+      expect(s1.disconnect).toHaveBeenCalledTimes(1);
+      expect(s1.connect).toHaveBeenCalledTimes(1);
+      expect(_getNamespaceCache().get('monitoring')).toBe(s1);
+    });
+
+    it('does not reconnect when the token is unchanged', () => {
+      const s1 = getNamespaceSocket('monitoring', 'token-1') as any;
       getNamespaceSocket('monitoring', 'token-1');
-      getNamespaceSocket('monitoring', 'token-2');
-      expect(mockIo).toHaveBeenCalledTimes(2);
+      expect(s1.disconnect).not.toHaveBeenCalled();
+      expect(s1.connect).not.toHaveBeenCalled();
+    });
+
+    it('keeps exactly 3 live namespace sockets across repeated token changes (#1704)', () => {
+      for (const token of ['t1', 't2', 't3', 't4']) {
+        getNamespaceSocket('monitoring', token);
+        getNamespaceSocket('llm', token);
+        getNamespaceSocket('remediation', token);
+      }
+      expect(mockIo).toHaveBeenCalledTimes(3);
+      expect(_getNamespaceCache().size).toBe(3);
     });
 
     it('creates new socket after explicit client disconnect removes from cache', () => {

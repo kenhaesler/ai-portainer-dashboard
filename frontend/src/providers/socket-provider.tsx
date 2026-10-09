@@ -37,7 +37,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     }
 
     // getNamespaceSocket is idempotent: returns the cached socket if it already
-    // exists for this namespace+token, so calling this on every effect run is safe.
+    // exists for this namespace (re-authenticating it in place if the token changed), so calling this on every effect run is safe.
     const monitoring = getNamespaceSocket('monitoring', token);
     const llm = potatoMode ? null : getNamespaceSocket('llm', token);
     const remediation = potatoMode ? null : getNamespaceSocket('remediation', token);
