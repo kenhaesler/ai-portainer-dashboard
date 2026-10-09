@@ -11,6 +11,7 @@ import {
   Container,
   Activity,
   Globe,
+  HelpCircle,
 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import { formatRelativeTime } from '@/shared/lib/format-relative-time';
@@ -20,8 +21,11 @@ import { useAuth } from '@/features/core/hooks/use-auth';
 
 interface UptimeBucket {
   date: string;
-  uptime_pct: number;
+  /** null = no samples in the bucket; never a default 100 (#1708). */
+  uptime_pct: number | null;
 }
+
+type UptimeWindows = { '24h': number | null; '7d': number | null; '30d': number | null };
 
 interface Incident {
   id: string;
@@ -36,9 +40,9 @@ interface Incident {
 interface StatusData {
   title: string;
   description: string;
-  overallStatus: 'operational' | 'degraded' | 'major_outage';
-  uptime: { '24h': number; '7d': number; '30d': number };
-  endpointUptime: { '24h': number; '7d': number; '30d': number };
+  overallStatus: 'operational' | 'degraded' | 'major_outage' | 'unknown';
+  uptime: UptimeWindows;
+  endpointUptime: UptimeWindows;
   snapshot: {
     containersRunning: number;
     containersStopped: number;
@@ -99,6 +103,14 @@ const STATUS_CONFIG = {
     iconBg: 'bg-red-500/15',
     icon: XCircle,
   },
+  // Nothing has been measured yet: neutral, never the green of "operational".
+  unknown: {
+    label: 'Status Unknown',
+    color: 'text-muted-foreground',
+    bg: 'bg-muted/40 border-border',
+    iconBg: 'bg-muted',
+    icon: HelpCircle,
+  },
 } as const;
 
 function usePrefersReducedMotion(): boolean {
@@ -115,7 +127,8 @@ function usePrefersReducedMotion(): boolean {
   return reducedMotion;
 }
 
-function uptimeBarColor(pct: number): string {
+function uptimeBarColor(pct: number | null): string {
+  if (pct === null) return 'bg-muted';
   if (pct >= 99.9) return 'bg-emerald-500';
   if (pct >= 99) return 'bg-emerald-400';
   if (pct >= 95) return 'bg-yellow-400';
@@ -123,12 +136,17 @@ function uptimeBarColor(pct: number): string {
   return 'bg-red-500';
 }
 
-function uptimeTextColor(pct: number): string {
+function uptimeTextColor(pct: number | null): string {
+  if (pct === null) return 'text-muted-foreground';
   if (pct >= 99.9) return 'text-emerald-600';
   if (pct >= 99) return 'text-emerald-500';
   if (pct >= 95) return 'text-yellow-600';
   if (pct >= 90) return 'text-orange-600';
   return 'text-red-600';
+}
+
+function formatUptime(pct: number | null): string {
+  return pct === null ? 'No data' : `${pct}%`;
 }
 
 function formatTime(iso: string): string {
@@ -164,7 +182,7 @@ function UptimeTimeline({ buckets, reducedMotion }: { buckets: UptimeBucket[]; r
             )}
             onMouseEnter={() => setHovered(i)}
             onMouseLeave={() => setHovered(null)}
-            title={`${bucket.date}: ${bucket.uptime_pct}%`}
+            title={`${bucket.date}: ${formatUptime(bucket.uptime_pct)}`}
           />
         ))}
       </div>
@@ -172,7 +190,7 @@ function UptimeTimeline({ buckets, reducedMotion }: { buckets: UptimeBucket[]; r
         <div className="absolute top-12 left-1/2 -translate-x-1/2 bg-card/90 backdrop-blur-lg border border-border rounded-lg shadow-xl px-3 py-2 text-sm z-10 whitespace-nowrap">
           <span className="font-medium text-foreground">{last90[hovered].date}</span>
           <span className={cn('ml-2 font-semibold', uptimeTextColor(last90[hovered].uptime_pct))}>
-            {last90[hovered].uptime_pct}%
+            {formatUptime(last90[hovered].uptime_pct)}
           </span>
         </div>
       )}
@@ -441,7 +459,7 @@ export default function StatusPage() {
               {(['24h', '7d', '30d'] as const).map((period) => (
                 <div key={period} className={cn(GLASS_CARD, 'p-4 text-center')}>
                   <div className={cn('text-2xl font-bold', uptimeTextColor(data.uptime[period]))}>
-                    {data.uptime[period]}%
+                    {formatUptime(data.uptime[period])}
                   </div>
                   <div className="text-xs text-muted-foreground uppercase mt-1">{period}</div>
                 </div>

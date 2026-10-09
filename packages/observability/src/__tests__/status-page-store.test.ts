@@ -97,20 +97,20 @@ describe('status-page-store SQL queries', () => {
   });
 
   describe('getOverallUptime', () => {
-    it('should return 100 when no snapshots exist', async () => {
+    it('should return null (not 100) when no snapshots exist', async () => {
       vi.mocked(mockMonitoringDb.queryOne).mockResolvedValue(null);
       const { getOverallUptime } = await import('../services/status-page-store.js');
 
       const result = await getOverallUptime(24);
-      expect(result).toBe(100);
+      expect(result).toBeNull();
     });
 
-    it('should return 100 when total_all is 0', async () => {
+    it('should return null (not 100) when total_all is 0', async () => {
       vi.mocked(mockMonitoringDb.queryOne).mockResolvedValue({ total_running: 0, total_all: 0 });
       const { getOverallUptime } = await import('../services/status-page-store.js');
 
       const result = await getOverallUptime(24);
-      expect(result).toBe(100);
+      expect(result).toBeNull();
     });
 
     it('should calculate uptime from snapshots', async () => {
@@ -152,13 +152,12 @@ describe('status-page-store SQL queries', () => {
       await expect(getOverallUptime(720)).resolves.not.toThrow();
     });
 
-    it('should return 100 (not NaN) when pg returns bigint sums as strings (#1526)', async () => {
+    it('should return null (not NaN or 100) when pg returns zero bigint sums as strings (#1526, #1708)', async () => {
       vi.mocked(mockMonitoringDb.queryOne).mockResolvedValue({ total_running: '0', total_all: '0' });
       const { getOverallUptime } = await import('../services/status-page-store.js');
 
       const result = await getOverallUptime(24);
-      expect(result).toBe(100);
-      expect(Number.isNaN(result)).toBe(false);
+      expect(result).toBeNull();
     });
 
     it('should compute uptime when pg returns bigint sums as strings (#1526)', async () => {
@@ -180,12 +179,12 @@ describe('status-page-store SQL queries', () => {
   });
 
   describe('getEndpointUptime', () => {
-    it('should return 100 when no snapshots exist', async () => {
+    it('should return null (not 100) when no snapshots exist', async () => {
       vi.mocked(mockMonitoringDb.queryOne).mockResolvedValue(null);
       const { getEndpointUptime } = await import('../services/status-page-store.js');
 
       const result = await getEndpointUptime(24);
-      expect(result).toBe(100);
+      expect(result).toBeNull();
     });
 
     it('should calculate endpoint uptime from snapshots', async () => {
@@ -206,13 +205,12 @@ describe('status-page-store SQL queries', () => {
       await expect(getEndpointUptime(720)).resolves.not.toThrow();
     });
 
-    it('should return 100 (not NaN) when pg returns bigint sums as strings (#1526)', async () => {
+    it('should return null (not NaN or 100) when pg returns zero bigint sums as strings (#1526, #1708)', async () => {
       vi.mocked(mockMonitoringDb.queryOne).mockResolvedValue({ total_up: '0', total_all: '0' });
       const { getEndpointUptime } = await import('../services/status-page-store.js');
 
       const result = await getEndpointUptime(24);
-      expect(result).toBe(100);
-      expect(Number.isNaN(result)).toBe(false);
+      expect(result).toBeNull();
     });
   });
 
@@ -259,14 +257,14 @@ describe('status-page-store SQL queries', () => {
       expect(cutoff30d).toBeLessThanOrEqual(Date.now() - 720 * 3600_000 + 1000);
     });
 
-    it('should return 100 everywhere for an empty window (never NaN)', async () => {
+    it('should return null everywhere for an empty window (never NaN, never 100) (#1708)', async () => {
       vi.mocked(mockMonitoringDb.queryOne).mockResolvedValue(null);
       const { getUptimeSummary } = await import('../services/status-page-store.js');
 
       const result = await getUptimeSummary();
       expect(result).toEqual({
-        containers: { '24h': 100, '7d': 100, '30d': 100 },
-        endpoints: { '24h': 100, '7d': 100, '30d': 100 },
+        containers: { '24h': null, '7d': null, '30d': null },
+        endpoints: { '24h': null, '7d': null, '30d': null },
       });
     });
 
@@ -288,8 +286,8 @@ describe('status-page-store SQL queries', () => {
       const { getUptimeSummary } = await import('../services/status-page-store.js');
 
       const result = await getUptimeSummary();
-      expect(result.containers).toEqual({ '24h': 100, '7d': 80, '30d': 100 });
-      expect(result.endpoints).toEqual({ '24h': 100, '7d': 100, '30d': 75 });
+      expect(result.containers).toEqual({ '24h': null, '7d': 80, '30d': null });
+      expect(result.endpoints).toEqual({ '24h': null, '7d': null, '30d': 75 });
     });
   });
 
@@ -348,14 +346,14 @@ describe('status-page-store SQL queries', () => {
       ]);
     });
 
-    it('should return 100% when total_all is 0', async () => {
+    it('should return a null bucket (not 100%) when total_all is 0', async () => {
       vi.mocked(mockMonitoringDb.query).mockResolvedValue([
         { date: '2026-02-14', total_running: 0, total_all: 0 },
       ]);
       const { getDailyUptimeBuckets } = await import('../services/status-page-store.js');
 
       const result = await getDailyUptimeBuckets(30);
-      expect(result).toEqual([{ date: '2026-02-14', uptime_pct: 100 }]);
+      expect(result).toEqual([{ date: '2026-02-14', uptime_pct: null }]);
     });
 
     it('should not throw for different day values (regression)', async () => {
@@ -367,7 +365,7 @@ describe('status-page-store SQL queries', () => {
       await expect(getDailyUptimeBuckets(90)).resolves.not.toThrow();
     });
 
-    it('should return 100 (not NaN) when pg returns bigint sums as strings (#1526)', async () => {
+    it('should return null (not NaN or 100) when pg returns zero bigint sums as strings (#1526, #1708)', async () => {
       vi.mocked(mockMonitoringDb.query).mockResolvedValue([
         { date: '2026-02-13', total_running: '0', total_all: '0' },
         { date: '2026-02-14', total_running: '7', total_all: '10' },
@@ -376,7 +374,7 @@ describe('status-page-store SQL queries', () => {
 
       const result = await getDailyUptimeBuckets(30);
       expect(result).toEqual([
-        { date: '2026-02-13', uptime_pct: 100 },
+        { date: '2026-02-13', uptime_pct: null },
         { date: '2026-02-14', uptime_pct: 70 },
       ]);
     });
