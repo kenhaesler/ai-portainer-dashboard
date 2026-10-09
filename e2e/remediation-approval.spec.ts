@@ -12,6 +12,7 @@ import {
   deleteAction,
   type SeededAction,
 } from './helpers/seed-action';
+import { decideSeedFailure, SEED_SKIP_REASON } from './helpers/seed-gate';
 
 /**
  * Remediation Approval E2E tests (#1521).
@@ -24,8 +25,8 @@ import {
  * Seeding: there is intentionally no create-action API (actions are AI-proposed,
  * never client-created), so the seed-dependent tests insert a `pending` row via
  * `pg` against the app Postgres published by docker-compose.e2e.yml on
- * 127.0.0.1:5442. When that DB is not reachable those tests skip with a clear
- * message — no faked assertions. The RBAC test needs no seed and always runs.
+ * 127.0.0.1:5442. When that DB is not reachable those tests skip locally with
+ * a clear message, but FAIL under CI (#1712) — no faked assertions. The RBAC test needs no seed and always runs.
  *
  * Boundary: the approved → execute path calls the container client against the
  * canned WireMock Portainer (never a real container), so we assert execution is
@@ -33,13 +34,16 @@ import {
  * container outcome.
  */
 
-const SEED_SKIP =
-  'app Postgres not reachable for seeding — docker-compose.e2e.yml publishes it on 127.0.0.1:5442';
+const SEED_SKIP = SEED_SKIP_REASON;
 
 async function trySeed(overrides: Partial<SeededAction> = {}): Promise<SeededAction | null> {
   try {
     return await seedPendingAction(overrides);
   } catch (err) {
+    // Under CI a seed failure must fail the run (#1712) — this spec is the only
+    // e2e proof of the approval gate. Locally it returns null and tests skip.
+    const decision = decideSeedFailure(process.env.CI, (err as Error).message);
+    if (decision.mode === 'fail') throw new Error(decision.message);
     // eslint-disable-next-line no-console
     console.warn(`[remediation-approval] seed skipped: ${(err as Error).message}`);
     return null;
