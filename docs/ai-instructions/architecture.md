@@ -147,7 +147,8 @@ pinned to absolute paths rather than written relative to either cwd.
 | `wiring.ts` | DI wiring — builds adapters implementing contract interfaces |
 | `scheduler.ts` | Background jobs: metrics, monitoring, webhook retry, cleanup, etc. (see [Background Scheduler](#background-scheduler)) |
 | `socket-setup.ts` | Socket.IO namespace initialization |
-| `index.ts` | Entry point — DB init, server start, graceful shutdown |
+| `index.ts` | Entry point — DB init, scheduler start, listen, graceful shutdown |
+| `startup.ts` | `runMain` — any startup failure logs fatal and exits 1 (#1702) |
 
 ### @dashboard/foundation — Foundational Routes
 

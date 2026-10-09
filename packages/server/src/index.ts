@@ -9,6 +9,7 @@ import { shutdownSpanBuffer } from '@dashboard/core/tracing/span-buffer.js';
 import { initOtelExporterFromConfig, shutdownOtelExporter } from '@dashboard/core/tracing/otel-exporter.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { autoConnectAll, disconnectAll } from '@dashboard/ai';
+import { runMain } from './startup.js';
 
 const log = createChildLogger('server');
 
@@ -64,17 +65,15 @@ async function main() {
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));
 
-  try {
-    await app.listen({ port: config.PORT, host: '0.0.0.0' });
-    log.info({ port: config.PORT }, 'Server started');
-    log.info('Socket.IO namespaces: /llm, /monitoring, /remediation');
+  // Any failure here (and in everything above) is handled by runMain: fatal log + exit(1)
+  await app.listen({ port: config.PORT, host: '0.0.0.0' });
+  log.info({ port: config.PORT }, 'Server started');
+  log.info('Socket.IO namespaces: /llm, /monitoring, /remediation');
 
-    // Auto-connect enabled MCP servers in the background (non-blocking)
-    autoConnectAll().catch(() => {});
-  } catch (err) {
-    log.fatal({ err }, 'Failed to start server');
-    process.exit(1);
-  }
+  // Auto-connect enabled MCP servers in the background (non-blocking)
+  autoConnectAll().catch((err) => {
+    log.warn({ err }, 'MCP auto-connect failed');
+  });
 }
 
-main();
+void runMain(main);

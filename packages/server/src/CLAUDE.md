@@ -12,6 +12,7 @@ This is the **only package** that imports from all domain packages.
 | `scheduler.ts` | Background jobs: metrics collection (60s), monitoring cycle (5min), daily cleanup |
 | `socket-setup.ts` | Socket.IO namespace initialization (`/llm`, `/monitoring`, `/remediation`) |
 | `index.ts` | Entry point — DB init, server start, graceful shutdown (SIGTERM/SIGINT) |
+| `startup.ts` | `runMain` — wraps bootstrap so startup failures exit non-zero |
 
 ## DI Pattern (`wiring.ts`)
 
@@ -31,4 +32,5 @@ Adapters are passed to domain routes/services via `Fastify.register()` options o
 - **All cross-domain imports belong in `wiring.ts`** — never add domain package imports to `app.ts` or other files (except route imports for registration)
 - Route registration order: `@dashboard/foundation` routes first, then domain package routes
 - `initRemediationDeps()` and `initInvestigationDeps()` must be called before route registration
-- Scheduler starts after server is listening (called from `index.ts`)
+- `index.ts` starts the scheduler **before** `app.listen` (DB init → socket setup → `startScheduler` → listen), so the order is not "after listening"
+- Startup runs through `runMain` (`startup.ts`): any failure before/at listen logs fatal and `exit(1)` (#1702). The `unhandledRejection` handler only covers post-startup rejections
