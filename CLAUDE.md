@@ -6,6 +6,13 @@ This file provides guidance to Claude Code when working with this repository. AG
 
 AI-powered container monitoring dashboard extending Portainer with real-time insights, anomaly detection, and an LLM chat assistant. **Observer-first** — visibility comes first; actions require explicit approval via remediation workflow. Monorepo: `backend/` (Fastify 5 + PostgreSQL) and `frontend/` (React 19 + Vite).
 
+## Read these when relevant
+
+- `docs/claude/architecture.md`: REQUIRED before structural or cross-package changes.
+- `docs/claude/ui-ux.md`: REQUIRED before any UI change.
+- `docs/claude/dependencies-and-quality.md`: REQUIRED before changing dependencies; code-quality conventions.
+- `docs/claude/environment.md`: read before changing configuration or environment variables.
+
 ## Mandatory Rules
 
 1. **Tests required** — Every change needs tests. PRs without tests are blocked by CI. Backend: `backend/src/**/*.test.ts`, Packages: `packages/*/src/**/*.test.ts`, Frontend: `frontend/src/**/*.test.{ts,tsx}`, E2E: `e2e/*.spec.ts`. Both use Vitest; frontend uses jsdom + `@testing-library/react`. Never use `--no-verify`.
@@ -34,110 +41,6 @@ npm run test -w frontend   # Frontend only
 # Docker: docker compose -f docker/docker-compose.dev.yml up -d
 ```
 
-## Architecture
-
-**Portainer 2.45 compatibility:** Endpoint reads exclude unused snapshots (list:
-`excludeSnapshots=true`; inspect: `excludeSnapshot=true`). Omitted endpoint `Status`
-is Portainer's zero/unknown value, not an up signal. Docker nil collections are
-normalized at the Zod boundary. Live `/docker/info` uses the shared TLS dispatcher.
-Stack lifecycle vocabulary lives in `@dashboard/contracts` (`STACK_STATUSES`):
-1/2/3/4 map to active/inactive/deploying/error; unknown values remain unknown.
-See `docs/portainer-2.45-compatibility.md` for upstream evidence and verification.
-
-Backend uses npm workspaces under `packages/` with a `core/` kernel (`@dashboard/core`). See `@docs/ai-instructions/architecture.md` for complete directory structure. See `@packages/core/src/CLAUDE.md` for kernel boundaries and security-critical files.
-
-**Portainer data source:** All endpoint container counts, host CPU/memory, and stack totals come from live `/docker/info` calls — Portainer's per-endpoint `Snapshots[]` is **not read**. The pipeline lives in `packages/core/src/portainer/live-fleet.ts` (`enrichEndpointsWithLiveDockerInfo`, `attachStackCounts`, `computeFleetTotals`, `collectFleetOverview`). Up Docker endpoints are `live`; Edge Async (Type 7) and any down or non-Docker endpoint are `unavailable`. `EDGE_LIVE_QUERY_ENABLED=false` is a hard kill-switch — all endpoints become `unavailable` with no fallback. Our `kpi_snapshots`/`monitoring_snapshots` history tables are unchanged; only their inputs are now live.
-
-**Metrics Dashboard resource labels (#1429):** The Metrics Dashboard (`/metrics`) surfaces per-container CPU%/memory% **denominators**. CPU% keeps the Docker `docker stats` convention (100% = one core) with an "of N cores (max N×100%)" sub-label; memory% shows `used / limit` and flags host-total when no limit is set. The limit + online-CPU count come from a read-only `GET /api/metrics/:endpointId/:containerId/meta` endpoint (`packages/observability/src/routes/metrics.ts`) that projects the already-cached Docker stats into `{ memoryLimitBytes, onlineCpus, usedBytes }` — no schema change, no persisted data, `authenticate`-only, and degrades to nulls when stats are unavailable (a `0` limit is treated as unset). Containers are filtered with a `FleetSearch` box above the selector. The selected container name appears in the global header via the ephemeral `useHeaderContextStore` slice (`frontend/src/stores/header-context-store.ts`), set by the page and cleared on unmount.
-
-**Unknown metric samples are excluded, never zero-filled (#1567):** `collectMetrics()` (`packages/observability/src/services/metrics-collector.ts`) returns `cpu`/`memory` as `number | null` — `null` when `system_cpu_usage` (CPU), `memory_stats.usage`, or `memory_stats.limit` (memory) is missing/non-positive in the Docker stats payload, i.e. the percentage genuinely cannot be computed this cycle. The scheduler (`packages/server/src/scheduler.ts`) skips writing that `metric_type` row entirely rather than persisting a fabricated `0` (the `metrics.value` column stays `NOT NULL` — no migration; "unknown" is the row's absence, not a null cell). Latest reads return only rows sharing each container's newest collection timestamp, so an omitted metric is not silently carried forward from an older cycle. `buildFleetResources()` (`packages/foundation/src/routes/dashboard.ts`) tracks independent CPU/memory sample counts so a container with a known memory reading but unknown CPU doesn't dilute the fleet CPU average (and vice versa), while independently known `memory_bytes` still contributes to per-stack totals. No total-node-memory fallback is used for a missing memory limit: Docker already reports host-total memory as `limit` when a container has no explicit cap, so a still-missing limit signals a malformed payload, not an unlimited container.
-
-**Design-critique remediation (2026-07-26):** a whole-app review produced 173 findings; see
-`@docs/architecture.md` ("Design-critique remediation") for the full rationale. Six invariants
-worth knowing before touching UI:
-
-1. **Navigation comes from one manifest.** `frontend/src/features/core/lib/navigation-manifest.ts`
-   feeds the sidebar, breadcrumb, command palette, mobile nav and shortcuts overlay. There were
-   previously six hand-maintained copies and they had drifted (breadcrumb read "Dashboard /
-   Dashboard" on 7 of 20 routes; Cmd-K was missing 5 destinations). Do not add a seventh — add to
-   the manifest. `navigation-manifest.test.ts` fails if an entry lacks a breadcrumb label or a
-   palette entry. `NAV_CHORDS` lives there too, not in `app-layout.tsx`, because the shortcuts
-   overlay needs it and `app-layout` renders that overlay (the cycle left it `undefined` at
-   module-init).
-2. **`useAutoRefresh` owns the timer.** Pass `{ onTick }`; never hand-roll a `window.setInterval`
-   at the call site. Six pages previously showed a pulsing "live" dot over a dropdown that
-   scheduled nothing. Pass a page-specific `storageKey` unless the page should share the global
-   cadence. Prefer `setRefreshInterval` over the deprecated `setInterval` alias — destructuring the
-   latter shadows `window.setInterval` in the consuming module. The hook **does not persist on
-   mount**: only a cadence the user actually picked is written, because a page that merely stored
-   its own default to the *shared* key changed every other page's cadence (opening Image Footprint,
-   which asks for 60s, slowed every dashboard query). The mount-skip compares the state object by
-   identity — a boolean first-run flag is spent by StrictMode's mount/cleanup/mount and writes anyway.
-3. **Never render a default as if it were a measurement.** `clampConfidenceScore` and
-   `parseSeverity` live in `packages/core/src/utils/model-confidence.ts` and return `null` when the
-   model supplied nothing; omit the badge rather than showing a fallback number. They are in `core`
-   because all three analysers need them — remediation (`@dashboard/operations`), investigation
-   (`@dashboard/ai`) and PCAP (`@dashboard/security`) — and those packages may not import one
-   another, so the previous single-package fix left the other two still defaulting to `0.5`. Use the
-   shared helpers; do not re-add a local copy. A view that renders confidence must guard on null
-   (`null * 100` is `0`, which prints a confident "Confidence: 0%" — worse than the default it
-   replaced). Likewise, label rule-derived text as such (`rationaleSource`) — a threshold rule
-   presented under a Brain icon as "ML-Detected" is the failure this review named most often. The
-   maths is sound; it is the framing that must not overclaim.
-4. **Use `PageHeader` and `PRODUCT_NAME`.** One `<h1>` per page from
-   `shared/components/layout/page-header.tsx` (no gradient/icon/size-override prop, deliberately);
-   the product's name comes from `shared/lib/product.ts` and is **Container Insights**.
-5. **A navigating table row is an anchor, not a `role="link"` row.** `DataTable`'s `rowHref` wraps
-   the first data cell in a real `<a>`; the `<tr>` deliberately keeps its implicit `row` role. An
-   explicit role on the `<tr>` replaces `row` — which each `<td>`'s `cell` role requires as an
-   ancestor, and the virtual scroll container declares `role="grid"` — collapsing table navigation
-   for assistive tech, and nesting a link inside a link announces the destination twice.
-6. **A capped list travels with its real count.** When a payload caps an array (`ALL_NAMES_CAP` in
-   `incident-store.ts`, `RULE_CONTAINER_NAMES_CAP` in `reports.ts`), send the uncapped total
-   alongside it and have the UI count with that. Counting the truncated array under-reports exactly
-   the large fleet the cap exists for. This applies to the *sentence* describing a capped list
-   too: `/traces` read "All 200 traces: … container: unknown" while 3982 matched, and an operator
-   concluded the fleet had no container attribution. Say "These 200 of 3982".
-
-**Design-critique remediation round 2 (2026-07-27):** a second review, hunting "AI slop", found
-the prose was already good and the numbers were not. See `@docs/architecture.md`
-("Design-critique remediation, round 2"). Five more invariants:
-
-7. **A number and its qualifier render together, or neither renders.** Almost every round-2
-   finding was one shape: the system computed the qualifier — `status='error'`, `r_squared`,
-   `confidence`, the sample count, which table a value came from — and dropped it at the render
-   boundary while keeping the figure it qualifies. That produced `Error Rate 10000.0%`, `p95`
-   above `max`, a breach ETA for a container at 0.0% CPU, `confidence: 1.00` on every anomaly,
-   and "13.8 GB total disk usage" that double-counted every shared layer. Before rendering a
-   figure, ask what would let a reader discount it, and render that too — or render neither.
-   Never coerce a null statistic to `0`: `percentile_cont` over an empty set and a 0/0
-   satisfaction rate both printed confident zeroes.
-8. **Detector and state vocabularies have exactly one definition.** `CONTAINER_STATES` lives in
-   `@dashboard/contracts`; detector labels live in
-   `frontend/src/features/ai-intelligence/lib/detection-method-labels.ts`. Both existed twice and
-   both drifted — the fleet tile compared against Docker's `'exited'`, which the normalizer never
-   emits, so Home reported "0 stopped" with six containers down; and one detector rendered as
-   "ML" and "Metric anomaly" simultaneously on `/health`. Comparing a `ContainerState` against a
-   Docker-native word is now a compile error. **Record an honesty rule as a test, not a comment**
-   — `insight-card.tsx` had twelve lines explaining why the badge must not say "ML" and the rule
-   was lost anyway.
-9. **Gate an affordance on its real precondition, not on the ones you remembered.**
-   `startDisabledReason` on `/packet-capture` handled three preconditions and not `PCAP_ENABLED`,
-   which defaults to false — so a stock install offered a live Start Capture and answered the
-   click with a server error. `GET /api/pcap/status` and `GET /api/llm/status` exist for this.
-   Every disabled control names its reason; `title={canMutate ? undefined : NOT_ADMIN}` left an
-   admin with no explanation at all in the state most installs start in.
-10. **A guess must not wear the same treatment as a fact.** The log level column was a keyword
-   grep presented as the emitter's own level — `module: "trace-store"` badged DEBUG for containing
-   "trace", on the field operators triage on. `resolveLevel` prefers what the record declares and
-   marks the fallback `levelSource: 'guessed'`, rendered dimmed with a `?`.
-11. **Contrast and keyboard access are checked, not assumed.** `frontend/src/theme-contrast.test.ts`
-   holds every theme's `--color-muted-foreground` to 4.5:1 against its own background (three light
-   themes failed). The app shell has a skip link to `<main id="main-content">`; before it, reaching
-   content took 22-29 Tab presses on every route. `DataTable` takes controlled
-   `sorting`/`onSortingChange` — reach for that rather than hand-rolling `<span onClick>` headers,
-   which is how `/reports` ended up with `aria-sort` null on all eight columns and five inert.
-
 ## Security (Mandatory)
 
 1. **Auth & RBAC** — JWT via `jose` (32+ char secrets); session store in PostgreSQL, validated server-side per request. OIDC/SSO via `openid-client` v6 with PKCE; login rate-limited (`LOGIN_RATE_LIMIT`). OIDC roles derive only from group→role mappings on every login; the `oidc.allow_unmapped_viewer` setting (Settings → Security, default **off**/restrictive) controls the fallback: off ⇒ a login resolving to no mapped role (and no `*` wildcard) is denied `403` (`oidc_login_denied` audit) and the user's lingering sessions are revoked (`invalidateAllUserSessions`, best-effort), enforced for new *and* existing users; on ⇒ unmatched *new* users get `viewer` while existing users keep their stored role (the `resolvedRole || existingUser?.role || 'viewer'` fallback). A `*` wildcard applies even to users who present no groups. Local auth is unaffected. Gate lives in `packages/foundation/src/routes/oidc.ts`. `fastify.authenticate` on all protected routes; mutating endpoints (POST/PUT/DELETE) and sensitive reads (Backups, Settings, Cache, User Management) MUST also use `fastify.requireRole('admin')` — never assume `authenticate` alone is sufficient for admin actions. Edge Async log collection/polling and eBPF coverage verification are explicitly admin-only because they create/delete Portainer jobs or persist verification state. Role changes, password resets, user deletions, and OIDC group-mapping downgrades revoke all of the target's sessions immediately (`invalidateAllUserSessions`, best-effort) — the role is frozen into the signed JWT, so without revocation a demotion only takes effect at token expiry. Live Socket.IO connections re-validate their session (and the `admin` role on the remediation namespace) every 60s and are disconnected on revocation/demotion (`packages/core/src/plugins/socket-io.ts`). Insight acknowledgement is gated `requireRole('operator')`; `/health/ready/detail` is admin-only.
@@ -152,18 +55,6 @@ the prose was already good and the numbers were not. See `@docs/architecture.md`
 
 For the full checklist, see `@docs/ai-instructions/security-checklist.md`.
 
-## UI/UX Design
-
-Premium glassmorphic dashboard: bento grids, backdrop blur cards, staggered animations, 16 themes (Glass Light/Dark, Nordic Frost, Sandstone Dusk, Obsidian Ink, Forest Night, Hyperpop Chaos, 4 Retro, 4 Catppuccin, System). Motion via Framer Motion (`LazyMotion`), charts via Recharts, primitives via Radix UI. Animated gradient mesh background (configurable). All animations respect `prefers-reduced-motion`. A global themed scrollbar in `frontend/src/index.css` (page + `.scrollbar-themed` opt-in utility) reads theme tokens via `color-mix` and applies to every overflow container; the sidebar keeps its hover-reveal scrollbar via cascade order. Native form controls (checked checkboxes/radios, `<select>` option popups) follow each theme's light/dark via a per-theme-class `color-scheme` declaration in `index.css` (light/dark split mirrors `resolvedTheme()` in `theme-store.ts`), with `accent-color: var(--color-primary)` theming the checkbox/radio fill — without `color-scheme`, dark themes render checked native checkboxes as near-black squares and `<select>` popups as white-on-white. Tests live in `frontend/src/native-control-color-scheme.test.ts`.
-
-**Status colors:** Green=healthy, Yellow=warning, Orange=critical, Red=error, Blue=info, Gray=inactive, Purple=AI insight.
-
-**Empty / loading / error states:** Use `<EmptyState>` (variants: `empty` / `error` / `not-configured`) and the skeleton primitives (`SkeletonText`, `SkeletonKpi`, `SkeletonTableRow`, `SkeletonChart`, `SkeletonList`) in `frontend/src/shared/components/feedback/`. Skeletons live inside the caller's pane chrome — they do not wrap themselves in cards. `EmptyState` is purely informational; render any retry / settings action in the parent pane's header. See `@docs/superpowers/specs/2026-05-16-empty-loading-states-design.md` for the full rationale.
-
-For detailed specs (animation durations, easing curves, glass override patterns, layout patterns), see `@docs/ai-instructions/ui-design-system.md`.
-
-**`DESIGN.md` is the design system of record (#1647)** — tokens, type scale, radius scale, status-colour mapping, and the do's/don't's the design critiques produced. Four source files already cited it before it was tracked, so treat a claim in it as settled. Two things to know before editing it. **The radius utilities do not mean what Tailwind's defaults mean:** `index.css` overrides `--radius-sm/md/lg/xl` to 0.75/1/1.25/1.5rem and leaves `2xl`/`3xl` alone, so `rounded-2xl` (16px) is *smaller* than `rounded-lg` (20px) — stay inside `sm`–`xl`. **No webfont is shipped:** there is no `@font-face`, no `--font-*` token and no font asset, so type resolves to Tailwind v4's default stacks; a direction the app has not adopted belongs under DESIGN.md's "Considered and not adopted" heading, not stated as fact. `frontend/src/design-doc.test.ts` holds the checkable claims — product name, radius scale, font stack — against their real sources, because the untracked copies had drifted on all three.
-
 ## Testing & Mocks
 
 **Mocks are for CI only.** External services (Portainer API, LLM API, Redis) are unavailable in CI, so tests must mock those calls. But mocks should be minimal — only mock what CI cannot reach. Prefer real integrations wherever possible:
@@ -174,139 +65,9 @@ For detailed specs (animation durations, easing curves, glass override patterns,
 - **Never mock pure utility functions** — test them directly with real inputs.
 - **Keep mocks close to the boundary** — mock the HTTP call, not the service function that wraps it.
 
-## Dependency Management
-
-- **Always run `npm install` from the repo root** — never from `backend/` or `frontend/` directories. npm workspaces requires a single root lock file.
-- **Dependabot** creates weekly PRs for npm, monthly for Docker and GitHub Actions. Triage these PRs weekly.
-- **React is pinned to exact version** (no caret) since React 19 is a new major version. Update deliberately.
-- `pino-pretty` is a devDependency (not shipped to production Docker images).
-- **CVE/vulnerability scanning is not enforced in CI** (removed in #1623; originally added by #1578). `npm run audit:prod` / `audit:all` / `audit:loadtests` still exist as local, on-demand scripts — run them manually when reviewing a Dependabot PR or before a release — but nothing in CI runs them. This was a deliberate trade-off: `npm audit` gates on the *installed version* of a package, not on whether this app's code path can reach the vulnerable function, and with no suppression allowlist the only way to clear a red one was an immediate migration/override. That blocked every open Dependabot PR at once on advisories that turned out unreachable here — #1618's react-router advisory is scoped to RSC mode, which this app doesn't use; #1621's hono advisory only backs an MCP *server* transport this app never imports (client-only usage). Known consequence, accepted rather than overlooked: a High or moderate production CVE can now reach `dev` without CI failing.
-- **If a manual audit check turns up something:** prefer a lockfile refresh (`npm update <pkg>`) or a root `overrides` entry — both remove the vulnerable code rather than hiding it. Every production High this repo has hit was fixable that way, including one npm reported as `fixAvailable: false` (that field is not a reliable signal).
-- **`npm ci` exits 0 on a lockfile that cannot fully install.** A dependency a package declares but the lockfile carries no entry for is skipped silently; `npm audit` and `npm ls --package-lock-only` do not see it either. Only **`npm ls --all`** against the installed tree catches it (this repo has been bitten twice: #1573 range drift, and `@reduxjs/toolkit` → `@standard-schema/utils`). This is the one dependency check still enforced in CI, in the `lockfile-integrity` job right after `npm ci`. **`--all` is load-bearing:** bare `npm ls` validates only to depth 0 and exits 0 on precisely such a tree — a silent no-op in the same family as `npm audit --offline`. `backend/src/ci-audit-gate.test.ts` asserts the flag is present. The check cannot cover `loadtests/` — `npm ls` needs an installed tree and CI deliberately does not install there.
-- `loadtests/package.json` carries three `overrides` (`@opentelemetry/core`, `uuid`, `brace-expansion`) pinning transitive deps past advisories that `artillery` / `autocannon` had not yet picked up. npm's suggested "fix" for the first two was a **major downgrade** (`artillery` 2.x→1.7.9, `autocannon` 8.x→2.0.1) — do not take it. Drop each override once the upstream range moves past it; verify with `npm audit` plus an autocannon smoke run, since `hyperid` (autocannon's ID generator) is the `uuid` consumer. Note an override also pins **forward**: `@opentelemetry/core: ^2.9.0` will block a future `artillery` that needs otel core 3.x, and surfaces as a confusing resolution failure rather than an obvious stale override — check these three entries first when a `loadtests/` upgrade refuses to resolve.
-- **Raising an override floor is two edits, and the lockfile is the one that counts (CVE-2026-69152).** `brace-expansion` was pinned `^5.0.8` for CVE-2026-14257; the follow-up advisory found that mitigation incomplete and moved the patched floor to **5.0.9**. Nothing in CI notices: CI does not install `loadtests/` (so the `lockfile-integrity` job cannot reach it) and runs no `npm audit` at all since #1623 — the only signal was a GitHub Dependabot alert. Bump the manifest range **and** run `npm install --package-lock-only` in `loadtests/`, then commit both; a manifest that reads as fixed over a lockfile still resolving the vulnerable version is the exact shape a security bump fails in. `backend/src/dependency-overrides.test.ts` now guards all three loadtests overrides in both directions — the lockfile must satisfy the declared range (the check that catches the failure above), and each override must still be *needed* (some declared range must still reject the resolved version). Know what the second one reaches: it is a real drop signal for a **same-major** pin like `@opentelemetry/core` (`2.7.1`/`2.9.0` declared), but close to inert for a **cross-major** one — `brace-expansion`'s consumers declare `^1.1.7`/`^2.0.1` against a 5.x pin and can never accept it, so that override is forcing a major upgrade rather than breaking a tie. Dropping those still takes `npm audit` plus an autocannon smoke run; the test will not tell you.
-- **The load-test lockfile guards advisory ranges per release line (Dependabot alert IDs 238/241).** Artillery currently resolves `js-yaml@3.15.1` and `nanoid@3.3.18`, and its existing `^3.14.1` / `^3.3.4` ranges accept those patches, so refresh the lockfile rather than adding overrides that would pin the tree forward. Do not turn those current versions into global semver floors: `js-yaml@4.3.0` is newer than 3.15.1 but remains vulnerable. `backend/src/routes/security-regression-dependencies.test.ts` therefore rejects the published intervals for js-yaml 3.x, 4.x, and the related 5.x advisory, plus Nano ID's pre-3.3.18 and 4.0.0–5.1.5 intervals, across every copy in `loadtests/package-lock.json`. The vulnerable functions are not exposed by the dashboard runtime: `js-yaml` parses developer-supplied load-test configuration, while no repository load-test path calls Nano ID's custom generator with an externally supplied size. Still remove the vulnerable packages; reachability limits impact, not whether known-vulnerable code belongs in the toolchain.
-- **The root `lightningcss` override exists to keep the tree single-copy (#1631).** vite 8.2.1 wants `lightningcss ^1.33.0`; `@tailwindcss/node` pins it at exactly `1.32.0`. With both installed, the lockfile-integrity job fails — and not for an obvious reason: lightningcss **1.33.0 added `libc` metadata** to its platform bindings while 1.32.0 has none, so on a glibc runner the hoisted `lightningcss-linux-x64-musl@1.32.0` installs (nothing filters it) while the nested `@1.33.0` musl binding is correctly skipped; `npm ls --all` then resolves the nested copy's binding up to the hoisted 1.32.0 and reports `invalid` on a package neither version would ever load there. The override collapses the tree to one copy, deliberately overriding tailwind's exact pin — a minor bump of a **build-time-only** transformer (`dev: true`, absent from the runtime image), verified with `npm run build -w frontend`. Drop it once `@tailwindcss/node`'s pin reaches a version vite's range accepts; `backend/src/dependency-overrides.test.ts` fails when that happens, so the override cannot quietly outlive its conflict. `npm dedupe` now unifies the root and frontend vite copies at 8.2.1; keep running the full frontend tests after vite changes so that shared copy exercises both vitest and production builds.
-- **Dependency baseline (2026-08-13).** The root workspace lockfile is resolved to the registry's latest direct versions (`npm outdated --workspaces --include-workspace-root` returns empty) and `npm audit` reports zero findings. The supported local Node ranges are `^22.22.2 || ^24.15.0 || >=26.0.0`: direct tooling dependencies do not support early Node 22 or Node 25, so keep `package.json`, README, `docker/.env.example`, and `backend/src/node-version-contract.test.ts` aligned when that intersection changes. TanStack Table 9 is an architectural migration, not a manifest-only bump: the shared `DataTable` owns one explicit `tableFeatures()` registry (filtering, sorting, pagination, selection, sizing, and visibility), exports its feature-aware `ColumnDef`, and uses `useTable`; callers must import that column type from the wrapper, not directly from TanStack. Fastify 5.12's HTTP/1 overload declares `http2?: false`, so the composition root must narrow `getHttp2Options()` before invoking the HTTP/1 or HTTP/2 factory overload; `finishBuild()` keeps plugin registration protocol-generic without casts. Its deprecated top-level `disableRequestLogging` option has also been replaced by `new LogController({ disableRequestLogging: true })` in production and the request-logging tests.
-- Run `npm outdated` monthly to review stale packages.
-
-## Code Quality
-
-- Readability first. Explicit over clever.
-- Every PR must include doc updates: `docs/architecture.md`, `docker/.env.example`, and this file.
-- ESLint in each workspace. TypeScript strict mode. No over-engineering.
-- **Package boundaries are machine-enforced (#1585).** `packages/` dependency directions are
-  checked by `eslint-plugin-boundaries` in `eslint.packages.config.mjs`; the root `npm run lint`
-  covers it via the `lint:packages` script (CI runs a bare `npm run lint`). A cross-package import
-  in a forbidden direction, or a package barrel re-exporting from `routes/`, **fails lint**. The
-  authoritative allowed-import table is in `packages/core/src/CLAUDE.md`. Adding a package requires
-  both an element descriptor and a policy entry in `eslint.packages.config.mjs` — without both its
-  imports are denied by default. `tsconfig.eslint.json` exists solely to pin lint resolution of
-  `@dashboard/*` to `packages/<dir>/src`: `dist/` is gitignored, so a dist-resolved config would
-  pass vacuously on a fresh clone or pre-build CI run. Do not weaken either file — no blanket
-  `boundaries/ignore` for tests (an over-broad ignore is what made the old `backend` rules a no-op).
-  Cross-domain behaviour obtained via DI (`LLMInterface`, `MetricsInterface`, … from
-  `@dashboard/contracts`, wired in `packages/server/src/wiring.ts`) is not an import and needs no
-  exception.
-- **`frontend/` -> `@dashboard/*` imports are machine-enforced too (#1587).** A sibling
-  `eslint-plugin-boundaries` block in `frontend/eslint.config.js` allows only
-  `frontend -> @dashboard/contracts`; any other `@dashboard/*` import (`core`, a domain package,
-  `server`, …) **fails lint**, since only `frontend` and `contracts` are declared elements and an
-  import of an undeclared package is caught by the `boundaries/no-unknown-dependencies` backstop.
-  Today's only real usage is 6 `import type { ... } from '@dashboard/contracts'` sites; this keeps
-  that a checked invariant instead of a convention. The root `npm run lint` reaches it via
-  `npm run lint -w frontend`, and `-w <workspace>` sets that child process's cwd to `frontend/` —
-  **different** from `lint:packages`, which is invoked directly from the repo root — so both
-  cwd-sensitive settings (`boundaries/root-path`, the resolver's `project` path) are pinned to
-  absolute paths computed from the config file's own location rather than written relative to
-  either cwd; the `files:` glob that gates the whole block, however, is unavoidably cwd-relative
-  (an ESLint flat-config constraint, not fixable with an absolute pattern — verified), so this
-  config still has a real "must be invoked with cwd = frontend/" precondition, exactly like
-  `lint:packages` has one for the repo root. Tests in `frontend/src/eslint-boundaries.test.ts`
-  drive the actual shipped config through ESLint's Node API with `cwd` forced to match the real
-  `npm run lint -w frontend` invocation.
-- **`npm run typecheck` covers packages/ test files too (#1586).** Every `packages/*/tsconfig.build.json`
-  excludes `**/*.test.ts` and `**/__tests__/**` — correctly, tests must not ship to `dist/` — but the
-  root `typecheck` script used to run only `tsc --build tsconfig.build.json`, so those excluded test
-  files were never typechecked by anything, hiding 49 errors across 5 packages from both local
-  `npm run typecheck` and CI's `Type Check` job. Each package already had its own non-build
-  `tsconfig.json` (no test exclusion) and its own `"typecheck": "tsc --noEmit"` script; the root
-  script now also chains `npm run typecheck -w <pkg>` for all 9 packages before typechecking
-  frontend. `backend/src/typecheck-gate.test.ts` guards both halves of the wiring — that the root
-  script still invokes every package's script, and that no package's plain `tsconfig.json` regains a
-  test-file exclusion — following the same "drive the actual shipped config, don't describe it"
-  pattern as `ci-audit-gate.test.ts` (#1578) and `packages-boundaries.test.ts` (#1585).
-- **`npm run typecheck` covers frontend test files too (#1617).** The frontend twin of #1586, and
-  worse: `frontend/tsconfig.json` excluded `src/**/*.test.ts(x)` and `frontend/package.json`'s
-  `typecheck` was a bare `tsc --noEmit`, with **no** sibling config adding them back, so all 246
-  frontend test files were compiled by nothing. `frontend/tsconfig.test.json` is that sibling —
-  same base config plus the tests, `vitest.setup.ts`, `scripts/`, and `types: ["node"]`. Keep
-  them separate programs: the base one stays the *browser* program (`npm run build` runs it, it
-  has no node types, so `process.env` in a component is still an error). A **third**,
-  `tsconfig.node.json`, holds `vite.config.ts` + `vitest.config.ts`; it existed but was reachable
-  only through `tsconfig.json`'s `references`, which a plain `tsc -p` does not follow and no
-  script here runs `tsc -b`, so those were compiled by nothing either — and that hid a live bug:
-  `configureServer`, a **plugin** hook, sat under `server:`, where vite silently ignores unknown
-  keys, so the `/__commit` middleware never registered and the dev build-ref fetch in
-  `header.tsx` had never once succeeded. `typecheck` now runs all three.
-  **Matcher types belong with matcher registration:** `expect.extend(matchers)` types
-  nothing, which is why 2241 of the 2401 surfaced errors were `TS2339` on jest-dom matchers that
-  do exist; `vitest.setup.ts` now uses `@testing-library/jest-dom/vitest` (one import, both
-  halves) and declares vitest-axe's `toHaveNoViolations` beside its `expect.extend`, since
-  vitest-axe 0.1.0 still augments the pre-vitest-2 `global.Vi` namespace. `frontend/src/typecheck-gate.test.ts`
-  asserts every file **vitest's own `test.include` matches on disk** lands in a program the
-  `typecheck` script actually runs — it reads the patterns out of `vitest.config.ts` rather than
-  restating them, since a hardcoded copy would drift exactly the way the thing it guards did —
-  and expands each config with `tsc --listFilesOnly` so an exclusion inherited via `extends`
-  cannot hide. It shells out to the **binary** rather than importing the compiler API
-  because frontend pins TypeScript 7, the native port, which ships no compiler API —
-  `import ts from 'typescript'` there yields a version stub, not `ts.sys`. It does not assert the
-  two-program layout — merging them is a legitimate design; coverage is the invariant.
-- **`npm run typecheck` covers backend test files too (#1645).** Third and last instance of the
-  same bug, and the barest: `backend/tsconfig.json` already included the tests and
-  `backend/package.json` already had a working `"typecheck": "tsc --noEmit"`. Both halves existed.
-  The root script simply never said **`-w backend`** — so the only path reaching the workspace was
-  `tsconfig.build.json`'s reference to `backend/tsconfig.build.json`, which excludes
-  `**/*.test.ts`. Eight real errors sat behind it, all in `security-regression-*.test.ts`: dead
-  config keys (`OLLAMA_*`, `LLM_OPENAI_ENDPOINT`, `LLM_BEARER_TOKEN`) still being passed to
-  `setConfigForTest(partial: Partial<EnvConfig>)` long after the schema dropped them, and two
-  implicitly-`any` plugin parameters. **When adding a workspace, add it to the `typecheck` chain**
-  — `backend/src/typecheck-gate.test.ts` now fails if `-w backend` or `-w frontend` leaves it.
-  Note TS2353 reports only the *first* excess property per object literal, so removing one dead key
-  reveals the next: check the whole literal against the schema rather than iterating on `tsc`.
-  `rootDir` and `composite` moved from `backend/tsconfig.json` down to `tsconfig.build.json`, where
-  the emit they constrain happens. In the base config they made it impossible for the typecheck
-  program to hold any file outside `src/` (TS6307 / TS6059), which is why `backend/vitest.config.ts`
-  was compiled by nothing — the same gap that hid frontend's misplaced `configureServer`. The
-  build's emit is unchanged, verified by diffing a clean `dist/` before and after.
-- **The frontend lint script and `eslint.config.js`'s `files:` glob must stay in step (#1617).**
-  They are independent lists, and a file in the config's `files:` but not in the CLI's path
-  arguments is linted by *nothing* — no error, just never visited. `frontend/vitest.setup.ts`
-  sat in that hole: loaded into all 246 test files, and carrying two live `no-empty-object-type`
-  violations plus a stale `eslint-disable` naming rules this config turns off globally. `lint`
-  now passes `src/ scripts/ vitest.setup.ts vite.config.ts vitest.config.ts` and `files:` covers
-  the same set; `eslint-boundaries.test.ts` fails in **both** directions (a governed file the CLI
-  never reaches, and a `files:` narrowed until it governs no non-`src` file at all). Note
-  `lintFiles([])` means "lint the cwd" to ESLint, so a reachability check that filters its
-  argument list down to empty passes vacuously — that check compares against the argument strings.
-- **Shared frontend test fixtures live in `frontend/src/test/`** — `endpoint-fixture.ts`
-  (`snapshotSourceFor`, mirroring `endpointSupportsLiveDockerInfo` on `status` + `type` **only**;
-  it must not be *stricter* than production either), `query-fixture.ts` (`mockQuery`, the one
-  place a `UseQueryResult` cast lives), `container-fixture.ts` (`withNonContractState`, the one
-  place a state outside `CONTAINER_STATES` can be built). One copy each, on purpose: a widening
-  cast duplicated across files is a widening cast nobody is counting.
-
 ## Git Workflow
 
 Branch: `dev` → `feature/<issue#>-<desc>`. PRs: `feature/* → dev` (CI runs). `dev → main` for releases. Always link PRs to issues (`Closes #<issue>`). Commits: concise, describe "why" not "what". Never ignore CI failures.
-
-## Environment
-
-Per-user preferences (e.g. the anomaly Sensitivity preset from #1297) live in the `user_settings(user_id, key, value)` table (migration 036). The Sensitivity post-filter reads each insight's typed `insights.z_score` column (migration 038, #1308) rather than regex-parsing the description; detectors persist `z_score` only for z-score-based anomalies (statistical metric + trace `latency_p95`), leaving it NULL elsewhere so non-z-score insights pass through. Callers MUST look up their own row via `request.user.sub` — there is no cross-user accessor, and the per-user routes (`GET/PUT /api/monitoring/sensitivity`) are gated by `fastify.authenticate` only (no admin gate — personal preference).
-
-Copy `docker/.env.example` to `.env`. Key vars: `PORTAINER_API_URL`, `PORTAINER_API_KEY`, `EDGE_LIVE_QUERY_ENABLED` (default `true` — set to `false` to disable all live `/docker/info` queries; affected endpoints become `unavailable`), `DASHBOARD_USERNAME`, `DASHBOARD_PASSWORD`, `LLM_API_URL` (OpenAI-compatible base URL — `/v1/chat/completions` is auto-appended), `LLM_API_TOKEN`, `LLM_MODEL` (default `gpt-4o-mini`), `REDIS_URL`, `JWT_SECRET` (32+ chars), `POSTGRES_APP_PASSWORD`, `TIMESCALE_PASSWORD`. Harbor (optional): `HARBOR_API_URL`, `HARBOR_ROBOT_NAME`, `HARBOR_ROBOT_SECRET`, `HARBOR_VERIFY_SSL` (default `true`), `HARBOR_SYNC_ENABLED` (default `false`), `HARBOR_SYNC_INTERVAL_MINUTES` (default `30`), `HARBOR_CONCURRENCY` (default `5`), `HARBOR_MAX_PAGES` (default `500` = 50k items; `0` disables the cap). Harbor can also be configured via Settings UI (stored in PostgreSQL, takes precedence over env vars). eBPF traces (optional): `TRACES_INGESTION_ENABLED`, `TRACES_INGESTION_API_KEY`, `TRACES_RETENTION_DAYS` (default `7`), `TRACES_SAMPLE_RATE` (default `1.0` = no-op), `TRACES_INGEST_MAX_SPANS_PER_SEC` (default `0` = unbounded), `TRACES_ANOMALY_P95_ZSCORE` (default `3.0`, raised from `2.5` in #1294 to reduce false positives), `TRACES_ANOMALY_ERROR_RATE_PCT` (default `5`), `TRACES_ANOMALY_PER_SERVICE_MIN` (default `5` minutes — per-service anomaly rate limit, layered on top of the 10-min per-key cooldown; #1294), `TRACES_ANOMALY_MIN_SAMPLES` (default `10` — trace-path baseline warm-up, mirrors `ANOMALY_MIN_SAMPLES`; #1294), `ANOMALY_HOUROFDAY_LOOKBACK_DAYS` (default `14`, hour-of-day baseline window; #1295), `ANOMALY_HOUROFDAY_MIN_SAMPLES` (default `3`, warm-up threshold per hour bucket; #1295), `ANOMALY_DAYOFWEEK_ENABLED` (default `true`, day-of-week × hour-of-day seasonal baseline; #1307), `ANOMALY_DAYOFWEEK_LOOKBACK_DAYS` (default `28`, weekly bucket window ≈ 4 same-weekday occurrences; #1307 — on the robust path the effective lookback is clamped to `METRICS_RAW_RETENTION_DAYS` with a one-time warning when it exceeds retention; #1527), `ANOMALY_DAYOFWEEK_MIN_SAMPLES` (default `3`, warm-up per weekday×hour bucket counted as **distinct same-weekday days**, not raw samples; #1527), `ANOMALY_DETECT_CONCURRENCY` (default `8` — p-limit cap on the per-container×metric anomaly-detection fan-out and the Isolation Forest pass, protecting the shared TimescaleDB pool; #1498/#1502), `LLM_PEER_HOSTNAMES` (comma-separated, default covers Anthropic/OpenAI/Mistral/DeepSeek/Groq). See `docker/.env.example` for full list.
-
-**Seasonal anomaly baseline (#1295, #1307):** the metric anomaly detector compares each sample against its **seasonal bucket**, falling back from the finest bucket that has data: **day-of-week × hour-of-day** (#1307) → **hour-of-day** (#1295) → **flat trailing window**. Each level falls through when below its warm-up threshold, so cold starts and sparse weekday buckets degrade gracefully (set `ANOMALY_DAYOFWEEK_ENABLED=false` for hour-of-day-only). Data source differs by detector (#1307): the mean/std path (`getMovingAverageByHourOfDay`) reads TimescaleDB's `metrics_1hour` continuous aggregate and reconstructs the exact population mean + `STDDEV_POP` from per-bucket `avg`/`stddev`/`count` via the law of total variance (`packages/observability/src/services/seasonal-baseline.ts`) — cheap and equivalent to the old raw scan; the **robust median+MAD** path (default detector) stays on the raw `metrics` hypertable (median+MAD needs raw samples, not pooled hourly averages) but adds a day-of-week filter that narrows its query; its day-of-week lookback is clamped to `METRICS_RAW_RETENTION_DAYS` and the weekly warm-up counts distinct same-weekday days, skipping the weekly query entirely when retention cannot hold enough occurrences (#1527). A PR-AUC CI regression guard (`packages/ai-intelligence/src/services/anomaly-eval.ts`) asserts a same-phase seasonal baseline beats a flat trailing window on a weekly-seasonal series.
 
 ## Issue Templates
 

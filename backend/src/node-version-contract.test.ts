@@ -21,7 +21,7 @@ describe('Node version contract', () => {
     expect(read('docker/.env.example')).toContain(
       'Local Node requirement: 22.22.2+ (22.x), 24.15.0+ (24.x), or 26+',
     );
-    expect(read('CLAUDE.md')).toContain(`supported local Node ranges are \`${NODE_ENGINE}\``);
+    expect(read('docs/claude/dependencies-and-quality.md')).toContain(`supported local Node ranges are \`${NODE_ENGINE}\``);
     expect(read('docs/architecture.md')).toContain(
       `local development engine range is \`${NODE_ENGINE}\``,
     );

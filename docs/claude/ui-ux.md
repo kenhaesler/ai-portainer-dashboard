@@ -1,0 +1,15 @@
+# UI and UX
+
+Moved verbatim from `CLAUDE.md`. Paths are relative to the repository root.
+
+## UI/UX Design
+
+Premium glassmorphic dashboard: bento grids, backdrop blur cards, staggered animations, 16 themes (Glass Light/Dark, Nordic Frost, Sandstone Dusk, Obsidian Ink, Forest Night, Hyperpop Chaos, 4 Retro, 4 Catppuccin, System). Motion via Framer Motion (`LazyMotion`), charts via Recharts, primitives via Radix UI. Animated gradient mesh background (configurable). All animations respect `prefers-reduced-motion`. A global themed scrollbar in `frontend/src/index.css` (page + `.scrollbar-themed` opt-in utility) reads theme tokens via `color-mix` and applies to every overflow container; the sidebar keeps its hover-reveal scrollbar via cascade order. Native form controls (checked checkboxes/radios, `<select>` option popups) follow each theme's light/dark via a per-theme-class `color-scheme` declaration in `index.css` (light/dark split mirrors `resolvedTheme()` in `theme-store.ts`), with `accent-color: var(--color-primary)` theming the checkbox/radio fill — without `color-scheme`, dark themes render checked native checkboxes as near-black squares and `<select>` popups as white-on-white. Tests live in `frontend/src/native-control-color-scheme.test.ts`.
+
+**Status colors:** Green=healthy, Yellow=warning, Orange=critical, Red=error, Blue=info, Gray=inactive, Purple=AI insight.
+
+**Empty / loading / error states:** Use `<EmptyState>` (variants: `empty` / `error` / `not-configured`) and the skeleton primitives (`SkeletonText`, `SkeletonKpi`, `SkeletonTableRow`, `SkeletonChart`, `SkeletonList`) in `frontend/src/shared/components/feedback/`. Skeletons live inside the caller's pane chrome — they do not wrap themselves in cards. `EmptyState` is purely informational; render any retry / settings action in the parent pane's header. See `@docs/superpowers/specs/2026-05-16-empty-loading-states-design.md` for the full rationale.
+
+For detailed specs (animation durations, easing curves, glass override patterns, layout patterns), see `@docs/ai-instructions/ui-design-system.md`.
+
+**`DESIGN.md` is the design system of record (#1647)** — tokens, type scale, radius scale, status-colour mapping, and the do's/don't's the design critiques produced. Four source files already cited it before it was tracked, so treat a claim in it as settled. Two things to know before editing it. **The radius utilities do not mean what Tailwind's defaults mean:** `index.css` overrides `--radius-sm/md/lg/xl` to 0.75/1/1.25/1.5rem and leaves `2xl`/`3xl` alone, so `rounded-2xl` (16px) is *smaller* than `rounded-lg` (20px) — stay inside `sm`–`xl`. **No webfont is shipped:** there is no `@font-face`, no `--font-*` token and no font asset, so type resolves to Tailwind v4's default stacks; a direction the app has not adopted belongs under DESIGN.md's "Considered and not adopted" heading, not stated as fact. `frontend/src/design-doc.test.ts` holds the checkable claims — product name, radius scale, font stack — against their real sources, because the untracked copies had drifted on all three.

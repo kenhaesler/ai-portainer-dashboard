@@ -117,7 +117,7 @@ describe('lightningcss override (#1631)', () => {
       agreeable,
       `declared lightningcss ranges now agree (${distinct.join(', ') || 'none left'}) — ` +
         'delete overrides.lightningcss from the root package.json, re-run npm install, ' +
-        'drop its note from CLAUDE.md, and delete this file',
+        'drop its note from docs/claude/dependencies-and-quality.md, and delete this file',
     ).toBe(false);
   });
 
@@ -299,7 +299,7 @@ describe('loadtests/ dependency overrides (CVE-2026-69152)', () => {
       conflicting.length,
       `every declared ${name} range in loadtests/ now accepts ${resolved} — the tree agrees ` +
         `without help, so delete "${name}": "${range}" from loadtests/package.json overrides, ` +
-        're-run npm install there, and drop its note from CLAUDE.md',
+        're-run npm install there, and drop its note from docs/claude/dependencies-and-quality.md',
     ).toBeGreaterThan(0);
   });
 });
